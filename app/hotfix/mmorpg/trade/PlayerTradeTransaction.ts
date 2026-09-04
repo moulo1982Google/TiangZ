@@ -1,6 +1,7 @@
 import {
   GameConfigs,
   GlobalIdSystem,
+  type ItemContentDefinition,
   type ItemSnapshot,
   type PlayerTradeOfferState,
   utf8Decode,
@@ -30,6 +31,10 @@ interface TransferChunk {
   readonly reusableItemId: boolean;
 }
 
+export type TradeItemContentResolver = (
+  itemConfigId: number,
+) => Pick<Readonly<ItemContentDefinition>, "maxStack" | "sellPrice">;
+
 /**
  * 在纯值快照上同时规划两边金币和Item所有权变化；整个函数不修改Entity，也不访问DBProxy。
  * 完整计划会进入多记录事务回执，ACK丢失时禁止重新分配ItemId。
@@ -48,16 +53,17 @@ export function PlanPlayerTrade(
   targetGold: bigint,
   targetItems: readonly ItemSnapshot[],
   targetOffer: PlayerTradeOfferState,
+  resolveItem: TradeItemContentResolver = resolveColdItem,
 ): PlayerTradeReceipt {
   requireTradeId(tradeId);
   requireDistinctCharacters(requesterCharacterId, targetCharacterId);
   requireGoldOffer(requesterOffer.gold, requesterGold);
   requireGoldOffer(targetOffer.gold, targetGold);
 
-  const requesterRemoved = removeOfferedItems(requesterItems, requesterOffer);
-  const targetRemoved = removeOfferedItems(targetItems, targetOffer);
-  const requesterNext = receiveItems(requesterRemoved.items, targetRemoved.transfers);
-  const targetNext = receiveItems(targetRemoved.items, requesterRemoved.transfers);
+  const requesterRemoved = removeOfferedItems(requesterItems, requesterOffer, resolveItem);
+  const targetRemoved = removeOfferedItems(targetItems, targetOffer, resolveItem);
+  const requesterNext = receiveItems(requesterRemoved.items, targetRemoved.transfers, resolveItem);
+  const targetNext = receiveItems(targetRemoved.items, requesterRemoved.transfers, resolveItem);
   return {
     version: TRADE_RECEIPT_VERSION,
     tradeId,
@@ -105,6 +111,7 @@ export function DecodePlayerTradeReceipt(payload: Uint8Array): PlayerTradeReceip
 function removeOfferedItems(
   baseItems: readonly ItemSnapshot[],
   offer: PlayerTradeOfferState,
+  resolveItem: TradeItemContentResolver,
 ): { readonly items: readonly ItemSnapshot[]; readonly transfers: readonly TransferChunk[] } {
   if (offer.items.length > 16) throw new Error("player trade supports at most 16 offered item stacks");
   const working = new Map(sortItems(baseItems).map((item) => [item.itemId, { ...item }]));
@@ -118,7 +125,7 @@ function removeOfferedItems(
     if (!current || current.configId !== offered.itemConfigId) {
       throw new Error(`offered item does not match inventory: ${offered.itemId}`);
     }
-    const config = GameConfigs.ItemConfig.Get(current.configId);
+    const config = resolveItem(current.configId);
     if (config.sellPrice <= 0) throw new Error(`item is not tradable: ${current.configId}`);
     if (offered.count > current.count) {
       throw new Error(`offered item count exceeds inventory: ${offered.itemId}`);
@@ -138,10 +145,11 @@ function removeOfferedItems(
 function receiveItems(
   baseItems: readonly ItemSnapshot[],
   transfers: readonly TransferChunk[],
+  resolveItem: TradeItemContentResolver,
 ): readonly ItemSnapshot[] {
   const working = new Map(sortItems(baseItems).map((item) => [item.itemId, { ...item }]));
   for (const transfer of transfers) {
-    const config = GameConfigs.ItemConfig.Get(transfer.source.configId);
+    const config = resolveItem(transfer.source.configId);
     let remaining = transfer.count;
     const stacks = [...working.values()]
       .filter((item) => (
@@ -177,6 +185,10 @@ function receiveItems(
     });
   }
   return sortItems([...working.values()]);
+}
+
+function resolveColdItem(itemConfigId: number): Pick<Readonly<ItemContentDefinition>, "maxStack" | "sellPrice"> {
+  return GameConfigs.ItemConfig.Get(itemConfigId);
 }
 
 function validateParticipant(value: PlayerTradeParticipantPlan, label: string): void {

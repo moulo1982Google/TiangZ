@@ -36,10 +36,34 @@ pub struct ProcessConfig {
     pub lifecycle: ProcessLifecycleConfig,
     #[serde(default)]
     pub persistence: ProcessPersistenceConfig,
+    /// 仅供宿主使用的发现配置；来源路径永不投影到业务V8。 / Host-only discovery settings; source paths are never projected into business V8 code.
+    #[serde(default, skip_serializing)]
+    pub data_packs: ProcessDataPackConfig,
     #[serde(default)]
     pub debug: Option<ProcessDebugConfig>,
     #[serde(default)]
     pub observability: Option<ProcessObservabilityConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProcessDataPackConfig {
+    #[serde(default)]
+    pub sources: Vec<String>,
+    #[serde(default = "default_data_pack_max_pack_bytes")]
+    pub max_pack_bytes: u64,
+    #[serde(default = "default_data_pack_max_total_bytes")]
+    pub max_total_bytes: u64,
+}
+
+impl Default for ProcessDataPackConfig {
+    fn default() -> Self {
+        Self {
+            sources: Vec::new(),
+            max_pack_bytes: default_data_pack_max_pack_bytes(),
+            max_total_bytes: default_data_pack_max_total_bytes(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -540,6 +564,14 @@ fn default_dbproxy_max_frame_bytes() -> usize {
     8 * 1024 * 1024
 }
 
+fn default_data_pack_max_pack_bytes() -> u64 {
+    16 * 1024 * 1024
+}
+
+fn default_data_pack_max_total_bytes() -> u64 {
+    256 * 1024 * 1024
+}
+
 fn default_max_catch_up_steps() -> usize {
     2
 }
@@ -880,6 +912,26 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     {
         bail!("process scheduling.eventQueueCapacity must be between 64 and 65536");
     }
+    if config.process.data_packs.sources.len() > 256 {
+        bail!("process dataPacks.sources must contain at most 256 entries");
+    }
+    let mut data_pack_sources = HashSet::new();
+    for source in &config.process.data_packs.sources {
+        if source.trim().is_empty() || source.len() > 1024 {
+            bail!("process dataPacks.sources entries must contain 1..=1024 bytes");
+        }
+        if !data_pack_sources.insert(source) {
+            bail!("process dataPacks.sources contains duplicate entry {source}");
+        }
+    }
+    if !(1024..=256 * 1024 * 1024).contains(&config.process.data_packs.max_pack_bytes) {
+        bail!("process dataPacks.maxPackBytes must be between 1024 and 268435456");
+    }
+    if config.process.data_packs.max_total_bytes < config.process.data_packs.max_pack_bytes
+        || config.process.data_packs.max_total_bytes > 1024 * 1024 * 1024
+    {
+        bail!("process dataPacks.maxTotalBytes must be between maxPackBytes and 1073741824");
+    }
     if let Some(db_proxy) = &config.process.persistence.db_proxy {
         let candidates = std::iter::once(&db_proxy.endpoint)
             .chain(db_proxy.failover_endpoints.iter())
@@ -1158,6 +1210,7 @@ mod tests {
             scheduling: ProcessSchedulingConfig::default(),
             lifecycle: ProcessLifecycleConfig::default(),
             persistence: ProcessPersistenceConfig::default(),
+            data_packs: ProcessDataPackConfig::default(),
             debug: inspector_port.map(|inspector_port| ProcessDebugConfig {
                 inspector_ip: default_inspector_ip(),
                 inspector_port,

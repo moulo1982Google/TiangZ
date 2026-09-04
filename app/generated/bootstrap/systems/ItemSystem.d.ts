@@ -5,6 +5,7 @@ import type { ItemSnapshot } from "../../../model/public";
 declare module "../../../model/domains/item/Item" {
   interface Item {
     Snapshot(): ItemSnapshot;
+    SetDurability(value: number): ItemSnapshot;
     AddCount(count: number): ItemSnapshot;
     RemoveCount(count: number): ItemSnapshot;
     readonly id: bigint;
@@ -14,6 +15,9 @@ declare module "../../../model/domains/item/Item" {
     readonly quality: number;
     readonly level: number;
     readonly version: number;
+    readonly durability: number;
+    readonly maxDurability: number;
+    readonly placementId: number;
   }
 }
 

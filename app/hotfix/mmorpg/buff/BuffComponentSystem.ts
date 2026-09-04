@@ -6,7 +6,6 @@ import {
   BuffRefreshStatePolicy,
   BuffRefreshTickPolicy,
   BuffStackScope,
-  GameConfigs,
   GlobalIdSystem,
   type BuffAddOptions,
   type BuffApplyResult,
@@ -19,6 +18,7 @@ import {
   type Unit,
   systemFor,
 } from "#tiangz/model";
+import { RequireBuffDefinition } from "./BuffDefinitionResolver";
 
 /**
  * Buff集合的唯一拥有者。它负责实例ID、传输快照和AOI事件；单个Buff的规则在BuffSystem。
@@ -51,7 +51,7 @@ export class BuffComponentSystem extends BuffComponent implements ITransfer<read
    * V8. Refresh never replays AddAction; Replace fully removes the old instance.
    */
   ApplyBuff(configId: number, options: BuffAddOptions = {}): BuffApplyResult {
-    const config = GameConfigs.BuffConfig.Get(configId);
+    const config = RequireBuffDefinition(this.owner, configId);
     const sourceUnitId = options.sourceUnitId ?? 0;
     const sourceAbilityId = options.sourceAbilityId ?? 0;
     const priority = options.conflictPriority ?? config.conflictPriority;
@@ -60,7 +60,7 @@ export class BuffComponentSystem extends BuffComponent implements ITransfer<read
     validatePriority(priority);
 
     const conflicts = this.GetChildren(Buff).filter((buff) => {
-      const current = GameConfigs.BuffConfig.Get(buff.ConfigId);
+      const current = RequireBuffDefinition(this.owner, buff.ConfigId);
       if (current.stackGroup !== config.stackGroup) return false;
       return config.stackScope !== BuffStackScope.Source || buff.SourceUnitId === sourceUnitId;
     });
@@ -120,7 +120,7 @@ export class BuffComponentSystem extends BuffComponent implements ITransfer<read
       );
     }
     const now = TimeSystem.Instance.ServerNow;
-    const durationMs = options.durationMs ?? config.durationSeconds * 1_000;
+    const durationMs = options.durationMs ?? config.durationMs;
     const tickIntervalMs = options.tickIntervalMs ?? config.tickIntervalMs;
     validateDuration(durationMs, "durationMs");
     validateDuration(tickIntervalMs, "tickIntervalMs");
@@ -148,9 +148,9 @@ export class BuffComponentSystem extends BuffComponent implements ITransfer<read
   }
 
   private createBuff(configId: number, options: BuffAddOptions): Buff {
-    const config = GameConfigs.BuffConfig.Get(configId);
+    const config = RequireBuffDefinition(this.owner, configId);
     const now = TimeSystem.Instance.ServerNow;
-    const durationMs = options.durationMs ?? config.durationSeconds * 1_000;
+    const durationMs = options.durationMs ?? config.durationMs;
     const tickIntervalMs = options.tickIntervalMs ?? config.tickIntervalMs;
     validateDuration(durationMs, "durationMs");
     validateDuration(tickIntervalMs, "tickIntervalMs");
@@ -181,6 +181,27 @@ export class BuffComponentSystem extends BuffComponent implements ITransfer<read
   /** 查询目标是否拥有某配置Buff；只用于同步规则判断，不要跨await保存返回实例。 / Tests for a configured Buff during synchronous rule checks; never retain the instance across await. */
   HasBuffConfig(configId: number): boolean {
     return this.GetChildren(Buff).some((buff) => buff.ConfigId === configId);
+  }
+
+  /**
+   * 按内容层拥有的不透明效果标签移除所有匹配Buff。先冻结实例ID再执行移除，
+   * 因而RemoveAction即使改变集合，也不会令本次遍历跳项或重复处理。
+   * Removes every Buff matching any opaque content-owned effect tag. Instance
+   * IDs are snapshotted first so RemoveAction collection changes cannot skip or
+   * duplicate work in this operation.
+   */
+  RemoveBuffsByEffectTags(effectTags: readonly number[], reason: string = "effect-tag-action"): number {
+    validateEffectTags(effectTags);
+    const requested = new Set(effectTags);
+    const matchedIds = this.GetChildren(Buff)
+      .filter((buff) => (RequireBuffDefinition(this.owner, buff.ConfigId).effectTags ?? [])
+        .some((tag) => requested.has(tag)))
+      .map((buff) => buff.Id as bigint);
+    let removed = 0;
+    for (const id of matchedIds) {
+      if (this.RemoveBuff(id, reason)) removed++;
+    }
+    return removed;
   }
 
   /** 移除Buff并触发RemoveAction和AOI移除事件；不存在时保持幂等。 / Removes a Buff, runs RemoveAction, and publishes its AOI removal; missing IDs are idempotent. */
@@ -278,7 +299,7 @@ export class BuffComponentSystem extends BuffComponent implements ITransfer<read
 
   /** 反序列化后确认每个Buff仍有合法配置；业务恢复逻辑留在BuffSystem，而不是Core。 / Validates Buff configs after deserialization; business restoration stays in BuffSystem, not Core. */
   Deserialize(): void {
-    for (const buff of this.GetChildren(Buff)) GameConfigs.BuffConfig.Get(buff.ConfigId);
+    for (const buff of this.GetChildren(Buff)) RequireBuffDefinition(this.owner, buff.ConfigId);
   }
 
   private publishAdded(buff: Buff): void {
@@ -338,5 +359,17 @@ function validateConfigId(value: number, name: string, allowZero: boolean): void
 function validatePriority(value: number): void {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`buff conflictPriority must be a non-negative safe integer: ${value}`);
+  }
+}
+
+function validateEffectTags(values: readonly number[]): void {
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new Error("effect tags must be a non-empty array");
+  }
+  if (values.some((value) => !Number.isSafeInteger(value) || value <= 0)) {
+    throw new Error("effect tags must contain positive safe integers");
+  }
+  if (new Set(values).size !== values.length) {
+    throw new Error("effect tags must not contain duplicates");
   }
 }

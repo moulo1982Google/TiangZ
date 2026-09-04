@@ -68,6 +68,7 @@ import {
 } from "./sessionHandlers";
 import type { ProcessLoggingConfig } from "../logging/types";
 import type { Logger } from "../logging/Logger";
+import type { RuntimeDataPackInput } from "../content/RuntimeDataPackRegistry";
 
 export interface SceneConfig {
   name: string;
@@ -181,6 +182,8 @@ export interface ProcessRuntimeConfig {
   scenes: SceneConfig[];
   knownScenes: SceneConfig[];
   tickMs: number;
+  /** 宿主装入的不可变数据信封，在任何Scene构造函数运行前可用。 / Host-loaded immutable data envelopes available before any Scene constructor runs. */
+  dataPacks?: readonly RuntimeDataPackInput[];
 }
 
 export interface LocalSceneRouter {

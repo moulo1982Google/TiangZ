@@ -6,6 +6,7 @@ import type {
   PlayerDomainSaveData,
   PlayerInventorySaveData,
   PlayerPersistenceDomain,
+  PlayerPersistenceExtensionState,
   PlayerProgressionSaveData,
   PlayerQuestSaveData,
   PlayerRuntimeSaveData,
@@ -26,6 +27,9 @@ export const PLAYER_DOMAIN_SCHEMAS: Readonly<Record<PlayerPersistenceDomain, str
 };
 
 const BIGINT_MARKER = "$tiangzI64";
+const BYTES_MARKER = "$tiangzBytes";
+const MAX_EXTENSION_ID_LENGTH = 128;
+const MAX_EXTENSION_PAYLOAD_BYTES = 1_048_576;
 
 /** 把聚合规划值投影为一个领域记录；不会保留其他领域字段。 / Projects aggregate planning values into one domain record without retaining fields owned by other domains. */
 export function ProjectPlayerDomainData<TDomain extends PlayerPersistenceDomain>(
@@ -79,7 +83,12 @@ export function ProjectPlayerDomainData<TDomain extends PlayerPersistenceDomain>
           globalCooldownEndAtMs: data.skill.globalCooldownEndAtMs,
           cooldowns: data.skill.cooldowns.map((cooldown) => ({ ...cooldown })),
           itemCooldowns: data.skill.itemCooldowns.map((cooldown) => ({ ...cooldown })),
+          knownSkillIds: [...(data.skill.knownSkillIds ?? [])],
+          proficiencies: (data.skill.proficiencies ?? []).map((proficiency) => ({ ...proficiency })),
         },
+        ...(data.extensions && data.extensions.length > 0
+          ? { extensions: data.extensions.map(clonePlayerPersistenceExtensionState) }
+          : {}),
         reason: data.reason,
       } satisfies PlayerRuntimeSaveData;
       break;
@@ -138,9 +147,7 @@ export function EncodePlayerSaveData(data: PlayerSaveData): Uint8Array {
   ValidatePlayerSaveData(data);
   const json = JSON.stringify(
     { version: PLAYER_PERSISTENCE_SCHEMA_VERSION, data },
-    (_key, value: unknown) => typeof value === "bigint"
-      ? { [BIGINT_MARKER]: value.toString() }
-      : value,
+    (_key, value: unknown) => encodePersistenceValue(value),
   );
   return utf8Encode(json);
 }
@@ -149,7 +156,7 @@ export function EncodePlayerSaveData(data: PlayerSaveData): Uint8Array {
 export function DecodePlayerSaveData(payload: Uint8Array): PlayerSaveData {
   let decoded: unknown;
   try {
-    decoded = JSON.parse(utf8Decode(payload), (_key, value: unknown) => reviveBigInt(value));
+    decoded = JSON.parse(utf8Decode(payload), (_key, value: unknown) => revivePersistenceValue(value));
   } catch (error) {
     throw new Error(`invalid player persistence payload: ${String(error)}`);
   }
@@ -208,6 +215,7 @@ export function ValidatePlayerSaveData(value: unknown): asserts value is PlayerS
   validateSkill(data.skill);
   validateQuests(data.quests);
   validateStarterDungeon(data.progression, "progression");
+  validatePlayerPersistenceExtensions(data.extensions, "extensions");
   requireText(data.reason, "reason");
 }
 
@@ -235,6 +243,7 @@ export function ValidatePlayerDomainData(
       validateBuff(buff, `player.runtime.buffs[${index}]`)
     );
     validateSkill(runtime.skill);
+    validatePlayerPersistenceExtensions(runtime.extensions, "player.runtime.extensions");
     requireText(runtime.reason, "player.runtime.reason");
     return;
   }
@@ -326,6 +335,40 @@ function validateSkill(value: unknown): void {
     requirePositiveInteger(cooldown.itemConfigId, `skill.itemCooldowns[${index}].itemConfigId`);
     requireNonNegativeInteger(cooldown.cooldownEndAtMs, `skill.itemCooldowns[${index}].cooldownEndAtMs`);
   });
+  if (skill.knownSkillIds !== undefined) {
+    const known = new Set<number>();
+    requireArray(skill.knownSkillIds, "skill.knownSkillIds").forEach((entry, index) => {
+      requirePositiveInteger(entry, `skill.knownSkillIds[${index}]`);
+      if (known.has(entry as number)) {
+        throw new TypeError(`skill.knownSkillIds contains duplicate skill ${entry}`);
+      }
+      known.add(entry as number);
+    });
+  }
+  if (skill.proficiencies !== undefined) {
+    const proficiencyIds = new Set<number>();
+    requireArray(skill.proficiencies, "skill.proficiencies").forEach((entry, index) => {
+      const proficiency = requireRecord(entry, `skill.proficiencies[${index}]`);
+      requirePositiveInteger(
+        proficiency.proficiencyId,
+        `skill.proficiencies[${index}].proficiencyId`,
+      );
+      requireNonNegativeInteger(proficiency.rank, `skill.proficiencies[${index}].rank`);
+      requirePositiveInteger(
+        proficiency.maximumRank,
+        `skill.proficiencies[${index}].maximumRank`,
+      );
+      if ((proficiency.rank as number) > (proficiency.maximumRank as number)) {
+        throw new TypeError(`skill.proficiencies[${index}] rank exceeds maximum`);
+      }
+      if (proficiencyIds.has(proficiency.proficiencyId as number)) {
+        throw new TypeError(
+          `skill.proficiencies contains duplicate proficiency ${proficiency.proficiencyId}`,
+        );
+      }
+      proficiencyIds.add(proficiency.proficiencyId as number);
+    });
+  }
 }
 
 function validateQuests(value: unknown): void {
@@ -396,20 +439,29 @@ function cloneAction(action: ActionDefinition | undefined): ActionDefinition | u
 function encodeJsonEnvelope(version: number, data: unknown): Uint8Array {
   return utf8Encode(JSON.stringify(
     { version, data },
-    (_key, value: unknown) => typeof value === "bigint"
-      ? { [BIGINT_MARKER]: value.toString() }
-      : value,
+    (_key, value: unknown) => encodePersistenceValue(value),
   ));
 }
 
 function decodeJsonEnvelope(payload: Uint8Array, name: string): Record<string, unknown> {
   let decoded: unknown;
   try {
-    decoded = JSON.parse(utf8Decode(payload), (_key, value: unknown) => reviveBigInt(value));
+    decoded = JSON.parse(utf8Decode(payload), (_key, value: unknown) => revivePersistenceValue(value));
   } catch (error) {
     throw new Error(`invalid ${name}: ${String(error)}`);
   }
   return requireRecord(decoded, name);
+}
+
+function encodePersistenceValue(value: unknown): unknown {
+  if (typeof value === "bigint") return { [BIGINT_MARKER]: value.toString() };
+  if (value instanceof Uint8Array) return { [BYTES_MARKER]: [...value] };
+  return value;
+}
+
+function revivePersistenceValue(value: unknown): unknown {
+  const bytes = reviveBytes(value);
+  return bytes ?? reviveBigInt(value);
 }
 
 function reviveBigInt(value: unknown): unknown {
@@ -421,6 +473,60 @@ function reviveBigInt(value: unknown): unknown {
     throw new TypeError("invalid tagged bigint");
   }
   return BigInt(encoded);
+}
+
+function reviveBytes(value: unknown): Uint8Array | undefined {
+  if (!isRecord(value)) return undefined;
+  const keys = Object.keys(value);
+  if (keys.length !== 1 || keys[0] !== BYTES_MARKER) return undefined;
+  const encoded = value[BYTES_MARKER];
+  if (!Array.isArray(encoded)) throw new TypeError("invalid tagged bytes");
+  if (encoded.length > MAX_EXTENSION_PAYLOAD_BYTES) {
+    throw new RangeError("tagged bytes exceed extension payload limit");
+  }
+  const bytes = new Uint8Array(encoded.length);
+  for (let index = 0; index < encoded.length; index += 1) {
+    const byte = encoded[index];
+    if (typeof byte !== "number" || !Number.isInteger(byte) || byte < 0 || byte > 255) {
+      throw new TypeError(`invalid tagged byte at index ${index}`);
+    }
+    bytes[index] = byte;
+  }
+  return bytes;
+}
+
+function validatePlayerPersistenceExtensions(
+  value: unknown,
+  name: string,
+): asserts value is readonly PlayerPersistenceExtensionState[] | undefined {
+  if (value === undefined) return;
+  const extensions = requireArray(value, name);
+  const ids = new Set<string>();
+  extensions.forEach((entry, index) => {
+    const extension = requireRecord(entry, `${name}[${index}]`);
+    requireText(extension.id, `${name}[${index}].id`);
+    if ((extension.id as string).length > MAX_EXTENSION_ID_LENGTH) {
+      throw new RangeError(`${name}[${index}].id exceeds ${MAX_EXTENSION_ID_LENGTH} characters`);
+    }
+    if (ids.has(extension.id as string)) {
+      throw new TypeError(`${name} contains duplicate id ${extension.id}`);
+    }
+    ids.add(extension.id as string);
+    requirePositiveInteger(extension.version, `${name}[${index}].version`);
+    const payload = extension.payload;
+    if (!(payload instanceof Uint8Array)) {
+      throw new TypeError(`${name}[${index}].payload must be Uint8Array`);
+    }
+    if (payload.byteLength > MAX_EXTENSION_PAYLOAD_BYTES) {
+      throw new RangeError(`${name}[${index}].payload exceeds ${MAX_EXTENSION_PAYLOAD_BYTES} bytes`);
+    }
+  });
+}
+
+function clonePlayerPersistenceExtensionState(
+  state: PlayerPersistenceExtensionState,
+): PlayerPersistenceExtensionState {
+  return { id: state.id, version: state.version, payload: state.payload.slice() };
 }
 
 function requireRecord(value: unknown, name: string): Record<string, unknown> {

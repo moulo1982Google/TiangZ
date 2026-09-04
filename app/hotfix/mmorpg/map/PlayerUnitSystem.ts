@@ -1,33 +1,44 @@
 import {
   type AwakePlayerUnit,
+  type DeadPlayerReleaseRequest,
   type FindNavigationPath,
   type NavigatePlayerTo,
   type NavigatePlayerInput,
   type MatchPlayerGate,
+  DirectionalMovementProfileComponent,
   NativeData,
   NativeUnitRef,
   NumericComponent,
   NumericType,
+  NUMERIC_MOVE_SPEED_SCALE,
   PlayerPersistenceComponent,
   type PlayerSnapshot,
   type M2G_TransferPlayer,
   type M2C_AttackMonster,
   type M2C_InspectLootMonster,
   type M2C_LootMonster,
+  type M2C_ReleaseDeadPlayer,
+  type M2C_RevivePlayer,
   type M2C_ToggleAutoAttack,
   type M2C_CastSkill,
   type AutoAttackState,
   CombatComponent,
+  CombatStateComponent,
   CurrencyComponent,
   MonsterComponent,
+  MonsterUnit,
+  NpcComponent,
+  NpcUnit,
+  UnitComponent,
   GameErrCode,
-  GameConfigs,
   MapComponent,
   PlayerUnit,
   PositionComponent,
   RpcError,
+  resolveFacingRelativeGridInput,
   SpatialMode,
   SkillComponent,
+  TimeSystem,
   type SkillCastState,
   type MovePlayer,
   UnitGateComponent,
@@ -42,6 +53,10 @@ export class PlayerUnitSystem extends PlayerUnit {
     this.account = request.account;
     if (request.characterId <= 0n) throw new Error("player characterId must be positive");
     this.characterId = request.characterId;
+    if (!Number.isSafeInteger(request.playerConfigId) || request.playerConfigId <= 0) {
+      throw new Error("player playerConfigId must be positive");
+    }
+    this.playerConfigId = request.playerConfigId;
     this.mapId = request.mapId;
     this.mapInstanceId = request.mapInstanceId;
   }
@@ -91,7 +106,8 @@ export class PlayerUnitSystem extends PlayerUnit {
 
   /** 校验方向并写入 Rust 权威移动意图；不会在 Handler 内直接推进坐标或广播。 / Validates direction and writes Rust-authoritative movement intent without advancing or broadcasting inside the Handler. */
   Move(request: MovePlayer): boolean {
-    if (GameConfigs.MapConfig.Get(this.mapId).spatialMode !== SpatialMode.Grid2D) {
+    const map = this.DomainScene().TryGetComponent(MapComponent);
+    if (map && map.SpatialProfile.spatialMode !== SpatialMode.Grid2D) {
       throw new Error(
         `C2M_Move is a Grid2D input protocol and cannot drive NavMesh3D map ${this.mapId}`,
       );
@@ -123,7 +139,7 @@ export class PlayerUnitSystem extends PlayerUnit {
     acknowledgedSequence: number;
     points: readonly { x: number; y: number; z: number }[];
   } {
-    if (GameConfigs.MapConfig.Get(this.mapId).spatialMode !== SpatialMode.NavMesh3D) {
+    if (this.DomainScene().GetComponent(MapComponent).SpatialProfile.spatialMode !== SpatialMode.NavMesh3D) {
       throw new Error(`C2M_NavigateTo cannot drive Grid2D map ${this.mapId}`);
     }
     validateNavigationPoint(request.targetX, request.targetY, request.targetZ, "target");
@@ -144,9 +160,6 @@ export class PlayerUnitSystem extends PlayerUnit {
     acknowledgedSequence: number;
     points: readonly { x: number; y: number; z: number }[];
   } {
-    if (GameConfigs.MapConfig.Get(this.mapId).spatialMode !== SpatialMode.NavMesh3D) {
-      throw new Error(`C2M_NavigateInput cannot drive Grid2D map ${this.mapId}`);
-    }
     if (
       !Number.isInteger(request.forward) ||
       !Number.isInteger(request.strafe) ||
@@ -161,8 +174,50 @@ export class PlayerUnitSystem extends PlayerUnit {
     if (request.forward !== 0 || request.strafe !== 0) {
       this.GetComponent(SkillComponent).InterruptByMovement();
     }
+    const baseSpeedMetersPerSecond = Number(
+      this.GetComponent(NumericComponent)[NumericType.MoveSpeed],
+    ) / NUMERIC_MOVE_SPEED_SCALE;
+    const position = this.GetComponent(PositionComponent);
+    position.SpeedMetersPerSecond = this
+      .GetComponent(DirectionalMovementProfileComponent)
+      .ResolveSpeedMetersPerSecond(
+        baseSpeedMetersPerSecond,
+        request.forward,
+        request.strafe,
+      );
+    const map = this.DomainScene().GetComponent(MapComponent);
+    const externalSnapshots = map.SpatialProfile.externalMovementSnapshots;
+    if (externalSnapshots) {
+      if (!request.hasPositionSnapshot) {
+        throw new Error(`map ${this.mapId} requires an external movement position snapshot`);
+      }
+      return applyExternalGridMovementSnapshot(
+        this,
+        request,
+        externalSnapshots.maxDeltaMeters,
+        map.SpatialProfile.cellSizeMeters,
+      );
+    }
+    if (request.hasPositionSnapshot) {
+      throw new Error(`map ${this.mapId} does not accept external movement position snapshots`);
+    }
+    if (map.SpatialProfile.spatialMode === SpatialMode.Grid2D) {
+      const input = resolveFacingRelativeGridInput(request.forward, request.strafe, request.yaw);
+      position.yaw = request.yaw;
+      const native = this.GetComponent(NativeUnitRef);
+      const accepted = NativeData.SetMovementInput(
+        native.Handle,
+        input.inputX,
+        input.inputZ,
+        request.sequence,
+      );
+      return {
+        acknowledgedSequence: accepted ? request.sequence : native.sequence,
+        points: [],
+      };
+    }
     return NativeData.SetNavigationInput(
-      this.DomainScene().GetComponent(MapComponent).NativeMapKey,
+      map.NativeMapKey,
       this.GetComponent(NativeUnitRef).Handle,
       request.forward,
       request.strafe,
@@ -170,6 +225,40 @@ export class PlayerUnitSystem extends PlayerUnit {
       request.sequence,
     );
   }
+
+  /**
+   * 将死亡玩家移动到调用方选择且经过当前地图校验的恢复点；没有选择时使用地图默认点。
+   * 该阶段保持死亡和零生命，墓地选择、尸体与幽灵规则仍属于外部玩法模块。
+   *
+   * Moves a dead player to a caller-selected, map-validated recovery point or
+   * the map default. Death and zero health are preserved; game-specific
+   * graveyard, corpse, and ghost rules stay outside this domain.
+   */
+  ReleaseDeadPlayer(request: DeadPlayerReleaseRequest = {}): M2C_ReleaseDeadPlayer {
+    const native = this.GetComponent(NativeUnitRef);
+    const numeric = this.GetComponent(NumericComponent);
+    const position = this.GetComponent(PositionComponent);
+    if (native.alive !== 0) return releaseSnapshot(false, position, numeric);
+    prepareRecoveryTransition(this, "player-death-release");
+    relocateToRecoveryPoint(this, request.recoveryPosition);
+    return releaseSnapshot(true, position, numeric);
+  }
+
+  /** 在当前权威坐标复活；位置由死亡释放阶段或其他上层玩法提前决定。 / Revives at the current authoritative position selected by an earlier release or another gameplay layer. */
+  RevivePlayer(): M2C_RevivePlayer {
+    const native = this.GetComponent(NativeUnitRef);
+    const numeric = this.GetComponent(NumericComponent);
+    const position = this.GetComponent(PositionComponent);
+    if (native.alive !== 0) return reviveSnapshot(false, position, numeric);
+
+    prepareRecoveryTransition(this, "player-revive");
+
+    numeric[NumericType.CurrentHp] = restoreHalf(numeric[NumericType.MaxHp]);
+    numeric[NumericType.CurrentMp] = restoreHalf(numeric[NumericType.MaxMp]);
+    native.alive = 1;
+    return reviveSnapshot(true, position, numeric);
+  }
+
 
   /** 业务只提供目标地图实例；静态地图与动态副本使用完全相同的传送调用。 / Business supplies only the target instance; static maps and dynamic dungeons share this exact transfer call. */
   TransferToMap(mapInstanceId: bigint): Promise<M2G_TransferPlayer> {
@@ -209,12 +298,23 @@ export class PlayerUnitSystem extends PlayerUnit {
   ToggleAutoAttack(targetUnitId: number, enabled: boolean): M2C_ToggleAutoAttack {
     const monsterComponent = this.DomainScene().GetComponent(MonsterComponent);
     if (enabled) {
-      const target = monsterComponent.Get(targetUnitId);
+      const target = this.DomainScene().GetComponent(UnitComponent).Get(targetUnitId);
       if (!target) {
-        throw new RpcError(GameErrCode.MonsterNotFound, `monster not found: ${targetUnitId}`);
+        throw new RpcError(GameErrCode.MonsterNotFound, `combat target not found: ${targetUnitId}`);
       }
       if (target.GetComponent(NativeUnitRef).alive === 0) {
-        throw new RpcError(GameErrCode.MonsterDead, `monster is dead: ${targetUnitId}`);
+        throw new RpcError(GameErrCode.MonsterDead, `combat target is dead: ${targetUnitId}`);
+      }
+      const attackable = target instanceof MonsterUnit
+        ? monsterComponent.CanPlayerAttack(this, target)
+        : target instanceof NpcUnit
+          ? this.DomainScene().GetComponent(NpcComponent).CanPlayerAttack(this, target)
+          : false;
+      if (!attackable) {
+        throw new RpcError(
+          GameErrCode.SkillTargetInvalid,
+          `unit ${targetUnitId} is not attackable by player config ${this.PlayerConfigId}`,
+        );
       }
     }
     const combat = this.GetComponent(CombatComponent);
@@ -268,6 +368,137 @@ function toCastSkillResponse(state: SkillCastState): M2C_CastSkill {
     queuedTargetUnitId: state.queuedTargetUnitId,
     queueDeadlineAtMs: BigInt(Math.max(0, Math.floor(state.queueDeadlineAtMs))),
   };
+}
+
+function prepareRecoveryTransition(player: PlayerUnit, interruptReason: string): void {
+  const native = player.GetComponent(NativeUnitRef);
+  NativeData.ResetMovement(native.Handle);
+  player.GetComponent(CombatStateComponent).Clear(TimeSystem.Instance.ServerNow);
+  player.GetComponent(CombatComponent).ToggleAutoAttack(0, false);
+  player.GetComponent(SkillComponent).Interrupt(interruptReason);
+}
+
+function relocateToRecoveryPoint(
+  player: PlayerUnit,
+  requested: DeadPlayerReleaseRequest["recoveryPosition"],
+): void {
+  const position = player.GetComponent(PositionComponent);
+  const map = player.DomainScene().GetComponent(MapComponent);
+  const spatial = map.SpatialProfile;
+  const recovery = requested ?? {
+    x: spatial.spawnX,
+    y: spatial.spawnY,
+    z: spatial.spawnZ,
+    yaw: spatial.spawnYaw,
+  };
+  if (![recovery.x, recovery.y, recovery.z, recovery.yaw].every(Number.isFinite)) {
+    throw new Error("death recovery position must contain finite x/y/z/yaw");
+  }
+
+  if (spatial.spatialMode === SpatialMode.Grid2D) {
+    position.SetGridWorldPosition(
+      recovery.x,
+      recovery.y,
+      recovery.z,
+      recovery.yaw,
+    );
+    return;
+  }
+  const projected = map.ProjectPosition({
+    x: recovery.x,
+    y: recovery.y,
+    z: recovery.z,
+  });
+  if (!projected) throw new Error("map recovery point is outside NavMesh");
+  position.SetNavMeshWorldPosition(projected.x, projected.y, projected.z, recovery.yaw);
+}
+
+function releaseSnapshot(
+  released: boolean,
+  position: PositionComponent,
+  numeric: NumericComponent,
+): M2C_ReleaseDeadPlayer {
+  return {
+    released,
+    x: position.x,
+    y: position.y,
+    z: position.z,
+    yaw: position.yaw,
+    health: numeric[NumericType.CurrentHp],
+    maxHealth: numeric[NumericType.MaxHp],
+    mana: numeric[NumericType.CurrentMp],
+    maxMana: numeric[NumericType.MaxMp],
+  };
+}
+
+function reviveSnapshot(
+  revived: boolean,
+  position: PositionComponent,
+  numeric: NumericComponent,
+): M2C_RevivePlayer {
+  return {
+    revived,
+    x: position.x,
+    y: position.y,
+    z: position.z,
+    yaw: position.yaw,
+    health: numeric[NumericType.CurrentHp],
+    maxHealth: numeric[NumericType.MaxHp],
+    mana: numeric[NumericType.CurrentMp],
+    maxMana: numeric[NumericType.MaxMp],
+  };
+}
+
+/**
+ * 把外部网关的碰撞后位置量化到当前Grid，并在进入Rust前限制单次位移；具体协议和坐标原点留在网关。
+ * Quantizes a gateway's collision-resolved position to the current Grid and
+ * bounds each accepted delta before Rust; protocol and world origin remain in the gateway.
+ */
+function applyExternalGridMovementSnapshot(
+  player: PlayerUnit,
+  request: NavigatePlayerInput,
+  maxDeltaMeters: number,
+  cellSizeMeters: number,
+): { acknowledgedSequence: number; points: readonly { x: number; y: number; z: number }[] } {
+  const x = request.positionX;
+  const y = request.positionY;
+  const z = request.positionZ;
+  if (![x, y, z].every((value) => typeof value === "number" && Number.isFinite(value))) {
+    throw new Error("external movement position snapshot must contain finite x/y/z");
+  }
+  const position = player.GetComponent(PositionComponent);
+  const cellX = Math.round(x! / cellSizeMeters);
+  const cellZ = Math.round(z! / cellSizeMeters);
+  if (!position.CanOccupy(cellX, cellZ)) {
+    throw new Error(`external movement position snapshot is outside map: ${x},${y},${z}`);
+  }
+  const projectedX = cellX * cellSizeMeters;
+  const projectedZ = cellZ * cellSizeMeters;
+  const deltaMeters = Math.hypot(projectedX - position.x, y! - position.y, projectedZ - position.z);
+  if (deltaMeters > maxDeltaMeters) {
+    throw new Error(
+      `external movement position snapshot delta ${deltaMeters.toFixed(3)} exceeds ${maxDeltaMeters}`,
+    );
+  }
+  const native = player.GetComponent(NativeUnitRef);
+  const accepted = NativeData.ApplyGridMovementSnapshot(
+    native.Handle,
+    cellX,
+    y!,
+    cellZ,
+    request.yaw,
+    request.forward !== 0 || request.strafe !== 0,
+    request.sequence,
+  );
+  return {
+    acknowledgedSequence: accepted ? request.sequence : native.sequence,
+    points: [],
+  };
+}
+
+/** 50%向上取整，保证正上限资源不会恢复成0。 / Restores half rounded up so a positive maximum never revives at zero. */
+function restoreHalf(maximum: bigint): bigint {
+  return maximum <= 0n ? 0n : (maximum + 1n) / 2n;
 }
 
 /** 拒绝非离散方向输入，避免无效意图进入 Rust 权威状态。 / Rejects non-discrete directions before invalid intent reaches Rust-authoritative state. */

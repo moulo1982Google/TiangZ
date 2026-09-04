@@ -9,7 +9,7 @@
     "name": "map_2",
     "sceneType": "MapHost",
     "acceptDynamicMaps": false,
-    "staticMapIds": [1, 2, 100],
+    "staticMapIds": [1, 2, 100, 201],
     "ip": "127.0.0.1",
     "port": 7302
   }],

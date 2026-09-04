@@ -23,6 +23,7 @@ message G2M_EnterMap // IRequest
   uint32 entry_sync_mode = 12;
   uint64 character_id = 13;
   uint64 gate_epoch = 14;
+  uint32 player_config_id = 15;
 }
 
 //ResponseType M2G_SecondEnterMap
@@ -55,6 +56,9 @@ message M2G_SecondEnterMap // IActorResponse
   uint64 character_id = 13;
   uint64 gold = 14;
   uint64 starter_dungeon_cooldown_end_at_ms = 15;
+  repeated uint32 known_skill_ids = 16;
+  repeated UnitNumericDelta numerics = 17;
+  repeated SkillProficiencySnapshot proficiencies = 18;
 }
 
 //ResponseType M2G_RebindPlayerGate
@@ -111,6 +115,9 @@ message M2G_EnterMap // IResponse
   uint64 character_id = 15;
   uint64 gold = 16;
   uint64 starter_dungeon_cooldown_end_at_ms = 17;
+  repeated uint32 known_skill_ids = 18;
+  repeated UnitNumericDelta numerics = 19;
+  repeated SkillProficiencySnapshot proficiencies = 20;
 }
 
 //ResponseType M2G_ClaimStarterDungeonEntry
@@ -161,6 +168,9 @@ message M2G_TransferPlayer // IActorResponse
   uint64 character_id = 17;
   uint64 gold = 18;
   uint64 starter_dungeon_cooldown_end_at_ms = 19;
+  repeated uint32 known_skill_ids = 20;
+  repeated UnitNumericDelta numerics = 21;
+  repeated SkillProficiencySnapshot proficiencies = 22;
 }
 
 // @ets.msg protocol=Gate method=MapReady
@@ -271,6 +281,8 @@ message PlayerTransferSnapshot
   uint64 quest_revision = 28;
   StarterDungeonCooldownSnapshot starter_dungeon = 29;
   uint64 gate_epoch = 30;
+  uint32 player_config_id = 31;
+  repeated OwnedSummonTransferSnapshot owned_summons = 32;
 }
 
 message MapInstanceSnapshot

@@ -1,7 +1,7 @@
 import { defineVetoEvent, SystemErrCode } from "../../../core/public";
-import type { ItemConfig } from "../../../generated/model/config";
 import type { PlayerUnit } from "../map/PlayerUnit";
 import type { ItemView } from "./Item";
+import type { ItemContentDefinition } from "./ItemContentProfileComponent";
 
 /**
  * 道具真正扣除前的只读检查上下文。
@@ -14,7 +14,7 @@ import type { ItemView } from "./Item";
 export interface BeforeUseItemEvent {
   readonly unit: PlayerUnit;
   readonly item: ItemView;
-  readonly config: ItemConfig;
+  readonly config: Readonly<ItemContentDefinition>;
 }
 
 export const ItemEvents = {

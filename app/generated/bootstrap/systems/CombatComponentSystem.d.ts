@@ -5,6 +5,8 @@ import type { AutoAttackState, DamageRequest, DamageResult, HealingPlan, Healing
 declare module "../../../model/mmorpg/combat/CombatComponent" {
   interface CombatComponent {
     AutoAttackState(): AutoAttackState;
+    AutoAttackRangeMeters(): number;
+    SetAutoAttackRangeMeters(rangeMeters: number): number;
     SetAutoAttackInterval(intervalMs: number): AutoAttackState;
     ToggleAutoAttack(targetUnitId: number, enabled: boolean): AutoAttackState;
     BeginAutoAttackSwing(nowMs: number): AutoAttackState;

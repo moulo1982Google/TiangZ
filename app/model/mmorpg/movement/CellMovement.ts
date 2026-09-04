@@ -40,6 +40,38 @@ export function clampDirection(value: number): number {
   return Math.max(-1, Math.min(1, Math.round(value)));
 }
 
+/**
+ * 把角色朝向空间中的前后/横移输入量化为Grid2D八方向。Yaw 0朝+Z，正横移朝角色右侧；
+ * 22.5度阈值让临近主轴的输入保持主轴，其余角度进入对角线。
+ *
+ * Quantizes facing-relative forward/strafe input to Grid2D's eight directions.
+ * Yaw zero faces +Z and positive strafe points right; a 22.5-degree threshold
+ * keeps input near a cardinal axis on that axis and maps the remainder diagonally.
+ */
+export function resolveFacingRelativeGridInput(
+  forward: number,
+  strafe: number,
+  yaw: number,
+): { readonly inputX: number; readonly inputZ: number } {
+  if (
+    !Number.isInteger(forward) ||
+    !Number.isInteger(strafe) ||
+    Math.abs(forward) > 1 ||
+    Math.abs(strafe) > 1 ||
+    !Number.isFinite(yaw)
+  ) {
+    throw new Error("invalid facing-relative Grid2D input");
+  }
+  if (forward === 0 && strafe === 0) return { inputX: 0, inputZ: 0 };
+  const directionX = Math.sin(yaw) * forward + Math.cos(yaw) * strafe;
+  const directionZ = Math.cos(yaw) * forward - Math.sin(yaw) * strafe;
+  const threshold = Math.sin(Math.PI / 8);
+  return {
+    inputX: Math.abs(directionX) >= threshold ? Math.sign(directionX) : 0,
+    inputZ: Math.abs(directionZ) >= threshold ? Math.sign(directionZ) : 0,
+  };
+}
+
 export function canOccupyCell(
   x: number,
   z: number,

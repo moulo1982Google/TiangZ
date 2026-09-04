@@ -43,6 +43,7 @@ export class NumericComponentSystem extends NumericComponent implements ITransfe
       throw new Error(`Derived NumericType is read-only: ${type}`);
     }
     NativeOps.NumericSet(this.unitHandle, type, value);
+    this.clampCurrentValueAfterMaximumChange(type);
     if (isMoveSpeedType(type)) this.syncMoveSpeedToPosition();
   }
 
@@ -119,6 +120,37 @@ export class NumericComponentSystem extends NumericComponent implements ITransfe
       throw new Error(`MoveSpeed is outside the supported numeric range: ${numericValue}`);
     }
     unit.GetComponent(PositionComponent).SpeedMetersPerSecond = metersPerSecond;
+  }
+
+  /**
+   * 派生上限由Base/Add/Pct任一来源改变；降低上限只能夹紧当前值，不能在提高上限时隐式治疗或恢复资源。
+   * A derived cap changes through any Base/Add/Pct source. Lowering it may only
+   * clamp the current value; raising it must never heal or restore resources.
+   */
+  private clampCurrentValueAfterMaximumChange(type: NumericTypeValue): void {
+    const pair = maximumCurrentPair(type);
+    if (!pair) return;
+    const maximum = this.Get(pair.maximumType);
+    const current = this.Get(pair.currentType);
+    const clamped = maximum < 0n ? 0n : maximum;
+    if (current > clamped) NativeOps.NumericSet(this.unitHandle, pair.currentType, clamped);
+  }
+}
+
+function maximumCurrentPair(
+  type: NumericTypeValue,
+): Readonly<{ currentType: NumericTypeValue; maximumType: NumericTypeValue }> | undefined {
+  switch (type) {
+    case NumericType.MaxHpBase:
+    case NumericType.MaxHpAdd:
+    case NumericType.MaxHpPct:
+      return { currentType: NumericType.CurrentHp, maximumType: NumericType.MaxHp };
+    case NumericType.MaxMpBase:
+    case NumericType.MaxMpAdd:
+    case NumericType.MaxMpPct:
+      return { currentType: NumericType.CurrentMp, maximumType: NumericType.MaxMp };
+    default:
+      return undefined;
   }
 }
 

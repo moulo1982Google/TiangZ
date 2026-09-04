@@ -139,6 +139,7 @@ function testFailedBootstrapRollback(): void {
   assert.equal(SingletonRegistry.TryGet(InstanceIdSystem), undefined);
   assert.equal(SingletonRegistry.TryGet(GlobalIdSystem), undefined);
   assert.equal(SingletonRegistry.TryGet(TimerSystem), undefined);
+  assert.equal(TimerSystem.TryGetInstance(), undefined);
 }
 
 function testGlobalAndInstanceIds(): void {
@@ -167,6 +168,7 @@ function testGlobalAndInstanceIds(): void {
 
 function testTimeSemantics(): void {
   const time = TimeSystem.Instance;
+  assert.equal(TimerSystem.TryGetInstance(), TimerSystem.Instance);
   const deadline = time.ServerDeadlineAfter(1_000);
   assert.equal(time.RemainingServerTime(deadline), 1_000);
   assert.equal(time.IsServerDeadlineReached(deadline), false);

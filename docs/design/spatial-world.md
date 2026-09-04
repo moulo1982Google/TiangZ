@@ -65,6 +65,12 @@ MapInstanceId
 
 TS负责地图规则、AI意图、技能、任务、传送和副本流程。Rust负责高频且权威的空间工作：坐标、移动推进、NavMesh查询、AOI索引和批量快照。`FindPath`是无副作用路径查询；`NavigateTo`提交世界目标并持有路径走廊；`NavigateInput`提交相对`yaw`的前后/横移状态，Rust每Tick通过`moveAlongSurface`推进并缓存polygon引用，零输入明确停止。`Raycast`只查询NavMesh边界，`SampleHeight`按Y选择可行走层。`G2C_EntityNavigate`是可覆盖权威状态。禁止在每个Tick逐顶点或逐路径节点跨越V8边界。
 
+Grid2D的`UnitSetMovementInput`表示玩家持续按住离散方向，完成一格后只要输入仍存在就继续；`UnitSetGridMovementTarget`表示服务端AI要抵达的最终Cell。后一接口在Rust Unit中持有目标，逐格选择八方向，完成当前格的同一固定Tick可直接开始下一格，并在精确目标格停止。TS只在目标改变时更新意图或在行为取消时Reset，不用按移动耗时设置Timer；这样AI的5Hz判定频率不会造成每格停顿，也不会因旧方向持续生效而越过目标。
+
+Grid2D可由地图运行资料选择受限的外部碰撞快照模式。它不是全局客户端权威开关：每帧仍进入PlayerUnit mailbox，按地图边界、递增序号和`maxDeltaMeters`验收，再由`UnitApplyGridMovementSnapshot`原子写入Rust Unit并参与AOI；未启用地图拒绝快照字段。`CellMovementState`同时携带Y和连续Yaw，使Grid2D可以表达2.5D高度与任意朝向，旧的Cell/Facing字段继续保留兼容。NavMesh3D始终由Rust导航推进，不接受外部位置快照。
+
+同地图的服务端权威瞬时位移由`MapComponent.RelocateUnit`进入`UnitRelocate`粗粒度操作。Rust拒绝非有限值和跨Map句柄，Grid2D把X/Z吸附到有效Cell并校验边界，NavMesh3D把请求点投影到可行走面；成功后清除旧路径/输入，原子更新位置、朝向、Cell和AOI脏状态，并通过现有Movement批次立即发布停止状态。该记录不带客户端确认序号，表示服务端主动纠偏而非任何客户端输入的ACK。技能名称、位移终点算法、免疫和客户端法术包不进入该接口；调用者也不得在外部重复写Position或另发位置广播。
+
 动态障碍使用地图内稳定`ObstacleId: u32`。TS调用`MapComponent.UpsertNavigationBoxObstacle(id, box)`或`RemoveNavigationObstacle(id)`描述最终状态；相同ID和几何保持幂等，业务不能持有`dtObstacleRef`。业务提交的是障碍真实物理盒体，Rust TileCache会按该导航资源烘焙时的`agentRadius`自动扩大X/Z占用范围，保证角色中心可行走时其体积也不会穿入障碍；业务不得手工重复增加半径。Rust每Tick最多提交16条障碍命令并重建4个受影响Tile，完成后递增障碍版本，所有尚未完成的点击路径从权威当前位置到原目标自动重算。方向输入每Tick直接使用最新NavMesh表面。障碍属于MapInstance，模板相同的两个副本互不影响，地图销毁后全部释放。
 
 Rust不得回调TS读取权威空间数据。地图业务仍使用`MapScene + Component`，Rust空间层是Scene之下的原生能力，不取代Scene或把全部地图业务下沉。

@@ -52,6 +52,12 @@ export function ActionFromConfig(type: number, parameters: readonly number[]): A
   if (type === ActionType.ChangeNumeric && parameters[0] === NumericType.CurrentHp) {
     throw new Error("ChangeNumeric cannot target CurrentHp; use Heal or DealDamage");
   }
+  if (type === ActionType.ChangeNumericBatch) {
+    validateNumericBatch(parameters.map((value) => BigInt(value)));
+  }
+  if (type === ActionType.RemoveBuffsByEffectTags) {
+    validateEffectTags(parameters.map((value) => BigInt(value)));
+  }
   return {
     type: type as ActionDefinition["type"],
     parameters: parameters.map((value) => BigInt(value)),
@@ -78,6 +84,8 @@ export function ExecuteAction(
       return { changed: false };
     case ActionType.ChangeNumeric:
       return executeChangeNumeric(target, action);
+    case ActionType.ChangeNumericBatch:
+      return executeChangeNumericBatch(target, action);
     case ActionType.AddBuff:
       requireParameterCount(action, 1);
       {
@@ -103,6 +111,15 @@ export function ExecuteAction(
           context.reason ?? "action",
         ),
       };
+    case ActionType.RemoveBuffsByEffectTags:
+      {
+        const tags = validateEffectTags(action.parameters);
+        const removed = target.GetComponent(BuffComponent).RemoveBuffsByEffectTags(
+          tags,
+          context.reason ?? "action-effect-tags",
+        );
+        return { changed: removed > 0, value: BigInt(removed) };
+      }
     case ActionType.DealDamage:
       requireParameterCount(action, 2);
       {
@@ -222,9 +239,80 @@ function executeChangeNumeric(
     throw new Error(`ChangeNumeric cannot write derived NumericType: ${numericType}`);
   }
   const numeric = target.GetComponent(NumericComponent);
-  const next = numeric[numericType] + delta;
+  const previous = numeric[numericType];
+  const rawNext = previous + delta;
+  const next = numericType === NumericType.CurrentMp
+    ? clampResource(rawNext, numeric[NumericType.MaxMp])
+    : rawNext;
   numeric[numericType] = next;
-  return { changed: delta !== 0n, value: next };
+  return { changed: next !== previous, value: next };
+}
+
+/**
+ * 在单个同步Action中预检并修改多项非派生Numeric；所有参数通过后才开始写入。
+ * Validates and changes several non-derived Numeric values in one synchronous
+ * Action; no write occurs until every parameter pair has passed validation.
+ */
+function executeChangeNumericBatch(
+  target: Unit<any[]>,
+  action: ActionDefinition,
+): ActionExecutionResult {
+  const pairs = validateNumericBatch(action.parameters);
+  const numeric = target.GetComponent(NumericComponent);
+  const changes = pairs.map(([numericType, delta]) => {
+    const previous = numeric[numericType];
+    const rawNext = previous + delta;
+    const next = numericType === NumericType.CurrentMp
+      ? clampResource(rawNext, numeric[NumericType.MaxMp])
+      : rawNext;
+    return { numericType, previous, next };
+  });
+  for (const change of changes) numeric[change.numericType] = change.next;
+  return { changed: changes.some((change) => change.next !== change.previous) };
+}
+
+function validateNumericBatch(
+  parameters: readonly bigint[],
+): readonly (readonly [numericType: number, delta: bigint])[] {
+  if (parameters.length === 0 || parameters.length % 2 !== 0) {
+    throw new Error(
+      `ChangeNumericBatch expects one or more [numericType, delta] pairs, received ${parameters.length} parameters`,
+    );
+  }
+  const pairs: Array<readonly [number, bigint]> = [];
+  const seenTypes = new Set<number>();
+  for (let index = 0; index < parameters.length; index += 2) {
+    const numericType = toNumericType(parameters[index]);
+    if (numericType === NumericType.CurrentHp) {
+      throw new Error("ChangeNumericBatch cannot write CurrentHp; use Heal or DealDamage");
+    }
+    if (IsDerivedNumericType(numericType)) {
+      throw new Error(`ChangeNumericBatch cannot write derived NumericType: ${numericType}`);
+    }
+    if (seenTypes.has(numericType)) {
+      throw new Error(`ChangeNumericBatch contains duplicate NumericType: ${numericType}`);
+    }
+    seenTypes.add(numericType);
+    pairs.push([numericType, parameters[index + 1]]);
+  }
+  return pairs;
+}
+
+function validateEffectTags(parameters: readonly bigint[]): readonly number[] {
+  if (parameters.length === 0) {
+    throw new Error("RemoveBuffsByEffectTags expects one or more effect tags");
+  }
+  const tags = parameters.map((value) => toConfigId(value));
+  if (new Set(tags).size !== tags.length) {
+    throw new Error("RemoveBuffsByEffectTags contains duplicate effect tags");
+  }
+  return tags;
+}
+
+function clampResource(value: bigint, maximum: bigint): bigint {
+  if (maximum < 0n) throw new Error(`resource maximum must be non-negative: ${maximum}`);
+  if (value < 0n) return 0n;
+  return value > maximum ? maximum : value;
 }
 
 function toDamageSchool(value: bigint): DamageSchoolValue {
@@ -272,6 +360,12 @@ function validateActionShape(action: ActionDefinition): void {
     case ActionType.ChangeNumeric:
     case ActionType.DealDamage:
       requireParameterCount(action, 2);
+      return;
+    case ActionType.ChangeNumericBatch:
+      validateNumericBatch(action.parameters);
+      return;
+    case ActionType.RemoveBuffsByEffectTags:
+      validateEffectTags(action.parameters);
       return;
     case ActionType.AddBuff:
     case ActionType.RemoveBuff:

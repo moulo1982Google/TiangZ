@@ -11,15 +11,25 @@ import {
   encodeActorLocationEnvelope,
 } from "../app/core/process/ActorLocation";
 import {
+  C2M_NavigateInputCodec,
+  CellMovementStateCodec,
+  CharacterExtensionCodec,
+  C2S_CreateCharacterCodec,
   C2S_LoginCodec,
   G2M_EnterMapCodec,
   M2G_MapReadyCodec,
   M2G_EnterMapCodec,
+  OwnedSummonTransferSnapshotCodec,
+  PlayerTransferSnapshotCodec,
   S2G_ClientBroadcastCodec,
   S2G_ClientBroadcastBatchCodec,
   MapEntitySnapshotCodec,
   S2C_LoginCodec,
 } from "../app/generated/model/server/demo/protocol/messages";
+import {
+  DecodeCharacterCatalog,
+  EncodeCharacterCatalog,
+} from "../app/model/mmorpg/login/CharacterRepository";
 import { Integer64FixtureCodec } from "../app/generated/model/server/bench/protocol/messages";
 import {
   GateMessages,
@@ -34,7 +44,10 @@ void main();
 
 async function main(): Promise<void> {
   testGeneratedScalarCodec();
+  testCharacterExtensionRoundTrip();
+  testOwnedSummonTransferCodec();
   testGeneratedInteger64Codec();
+  testExternalMovementSnapshotCodec();
   testActorLocationEnvelope();
   await testRpcMetadataRoundTrip();
   await testHandlerFailureIsolation();
@@ -44,6 +57,155 @@ async function main(): Promise<void> {
   testMalformedLengthDelimitedField();
   testLengthPrefixedFrameDecoder();
   console.log("protocol self-test passed");
+}
+
+function testCharacterExtensionRoundTrip(): void {
+  const extension = {
+    id: "org.tiangz.wow335.character-appearance",
+    version: 1,
+    payload: new Uint8Array([1, 2, 3, 4, 5, 6, 7]),
+  };
+  assert.deepEqual(
+    [...CharacterExtensionCodec.decode(CharacterExtensionCodec.encode(extension)).payload],
+    [...extension.payload],
+  );
+  const create = {
+    account: "extension-test",
+    name: "FemaleHero",
+    playerConfigId: 1,
+    extensions: [extension],
+  };
+  assert.deepEqual(
+    C2S_CreateCharacterCodec.decode(C2S_CreateCharacterCodec.encode(create)),
+    create,
+  );
+  const catalog = {
+    account: "extension-test",
+    credential: { salt: "", hash: "" },
+    characters: [{
+      characterId: 1n,
+      name: "FemaleHero",
+      playerConfigId: 1,
+      level: 1,
+      extensions: [extension],
+    }],
+  };
+  const restored = DecodeCharacterCatalog(EncodeCharacterCatalog(catalog));
+  assert.deepEqual(restored.characters[0].extensions?.[0], extension);
+  assert.notEqual(restored.characters[0].extensions?.[0].payload, extension.payload);
+}
+
+function testOwnedSummonTransferCodec(): void {
+  const summon = {
+    ownershipSlot: 0,
+    createdByAbilityId: 7000,
+    definitionId: 7001,
+    name: "Transfer Fixture",
+    modelId: "summon-model",
+    maxHp: 50,
+    maxMp: 25,
+    attackDamage: 8,
+    moveSpeed: 7,
+    attackRange: 5,
+    attackIntervalMs: 2_000,
+    attackDamageSchool: 2,
+    attackAbilityId: 7002,
+    followDistance: 3,
+    teleportDistance: 40,
+    assistOwner: true,
+    initialReaction: 2,
+    aggressiveAcquireRange: 20,
+    reaction: 3,
+    abilities: [{ abilityId: 7003, autoCastByDefault: true }],
+    autoCastAbilityIds: [7003],
+    resourceRegenAmount: 3,
+    resourceRegenIntervalMs: 2_000,
+    resourceRegenDelayAfterSpendMs: 5_000,
+  };
+  assert.deepEqual(
+    OwnedSummonTransferSnapshotCodec.decode(
+      OwnedSummonTransferSnapshotCodec.encode(summon),
+    ),
+    summon,
+  );
+
+  const snapshot = {
+    schemaVersion: 10,
+    transferId: "protocol-summon-transfer",
+    unitId: 42,
+    account: "transfer-owner",
+    sourceMapId: 1,
+    targetMapId: 2,
+    gateName: "gate_1",
+    speedCellsPerSecond: 7,
+    facing: 1,
+    alive: true,
+    numerics: [],
+    items: [],
+    sourceMapInstanceId: 1n,
+    targetMapInstanceId: 2n,
+    buffs: [],
+    skill: {
+      globalCooldownEndAtMs: 0n,
+      cooldowns: [],
+      itemCooldowns: [],
+      knownSkillIds: [],
+    },
+    quests: [],
+    completedQuestConfigIds: [],
+    persistenceRevision: 0n,
+    characterId: 99n,
+    gold: 0n,
+    progressionRevision: 0n,
+    runtimeRevision: 0n,
+    walletRevision: 0n,
+    inventoryRevision: 0n,
+    questRevision: 0n,
+    starterDungeon: { cooldownEndAtMs: 0n, operationId: "" },
+    gateEpoch: 1n,
+    playerConfigId: 1,
+    ownedSummons: [summon],
+  };
+  assert.deepEqual(PlayerTransferSnapshotCodec.decode(
+    PlayerTransferSnapshotCodec.encode(snapshot),
+  ).ownedSummons, [summon]);
+}
+
+function testExternalMovementSnapshotCodec(): void {
+  const request = {
+    rpcId: 7,
+    forward: 1,
+    strafe: 0,
+    yaw: 0.75,
+    sequence: 9,
+    hasPositionSnapshot: true,
+    positionX: -2.25,
+    positionY: 3.5,
+    positionZ: 45.75,
+  };
+  assert.deepEqual(
+    C2M_NavigateInputCodec.decode(C2M_NavigateInputCodec.encode(request)),
+    request,
+  );
+
+  const movement = {
+    unitId: 1001,
+    acknowledgedSequence: 9,
+    fromCellX: -2,
+    fromCellZ: 45,
+    toCellX: -2,
+    toCellZ: 46,
+    moveStartTick: 10,
+    moveEndTick: 11,
+    moving: true,
+    facing: 3,
+    y: 3.5,
+    yaw: 0.75,
+  };
+  assert.deepEqual(
+    CellMovementStateCodec.decode(CellMovementStateCodec.encode(movement)),
+    movement,
+  );
 }
 
 function testLengthPrefixedFrameDecoder(): void {
@@ -182,6 +344,7 @@ function testGeneratedScalarCodec(): void {
     numerics: [{ unitId: 42, numericType: 1, value: 9_007_199_254_740_993n }],
     speedCellsPerSecond: 10,
     facing: 2,
+    persistentId: 9_007_199_254_740_993n,
   });
   const decoded = MapEntitySnapshotCodec.decode(encoded);
 
@@ -194,6 +357,7 @@ function testGeneratedScalarCodec(): void {
   assert.deepEqual([...decoded.state], [0, 1, 127, 128, 255]);
   assert.equal(decoded.account, "tester");
   assert.equal(decoded.facing, 2);
+  assert.equal(decoded.persistentId, 9_007_199_254_740_993n);
   assert.equal(decoded.numerics[0]?.value, 9_007_199_254_740_993n);
 
   const mapResponse = M2G_EnterMapCodec.decode(

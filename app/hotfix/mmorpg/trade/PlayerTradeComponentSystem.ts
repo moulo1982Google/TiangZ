@@ -29,6 +29,7 @@ import {
   PlanPlayerTrade,
   type PlayerTradeReceipt,
 } from "./PlayerTradeTransaction";
+import { RequireItemContentDefinition } from "../item/ItemContentResolver";
 
 const TRADE_RANGE_METERS = 5;
 const TRADE_TIMEOUT_MS = 60_000;
@@ -299,6 +300,7 @@ export class PlayerTradeComponentSystem extends PlayerTradeComponent {
         target.GetComponent(CurrencyComponent).Gold,
         target.GetComponent(ItemComponent).Snapshot(),
         session.targetOffer,
+        (itemConfigId) => RequireItemContentDefinition(requester, itemConfigId),
       );
       encoded = EncodePlayerTradeReceipt(receipt);
       session.commitPayload = encoded.slice();

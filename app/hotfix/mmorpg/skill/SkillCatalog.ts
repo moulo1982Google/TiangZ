@@ -1,10 +1,12 @@
 import {
   GameConfigRegistry,
   GameConfigs,
+  NumericType,
   type SkillDefinition,
   type SkillEffectDefinition,
 } from "#tiangz/model";
 import { ActionFromConfig } from "../action/ActionExecutor";
+import { GetSkillManaCost } from "./SkillManaCost";
 
 type SkillEffectConfigRow = ReturnType<typeof GameConfigs.SkillEffectConfig.GetAll>[number];
 
@@ -68,6 +70,7 @@ function buildCatalog(): ReadonlyMap<number, SkillDefinition> {
         });
       });
     if (effects.length === 0) throw new Error(`skill config ${config.id} has no effects`);
+    const legacyManaCost = GetSkillManaCost(config.id);
     definitions.set(config.id, Object.freeze({
       id: config.id,
       name: config.name,
@@ -86,6 +89,12 @@ function buildCatalog(): ReadonlyMap<number, SkillDefinition> {
       queueWindowMs: config.queueWindowMs,
       channelTickMs: config.channelTickMs,
       channelTicks: config.channelTicks,
+      ...(legacyManaCost === 0n ? {} : {
+        resourceCosts: Object.freeze([Object.freeze({
+          currentNumericType: NumericType.CurrentMp,
+          fixedAmount: legacyManaCost,
+        })]),
+      }),
       effects: Object.freeze(effects),
     }));
   }

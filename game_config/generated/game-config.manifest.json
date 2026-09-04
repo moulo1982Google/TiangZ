@@ -1,10 +1,10 @@
 {
   "formatVersion": 2,
-  "schemaFingerprint": "9df4f5522ddcf6c804853404c73aef3ee25815e0f82123df1d666a33c64aef3d",
-  "clientSchemaFingerprint": "3f32e7e025ac2d457cf4f2766fb1692005d0865b6b628a01b2bfbea6615ebe46",
-  "dataFingerprint": "d9b36f10850c91a91b8f9db1c31ab8a801a362c76ffe465f8598df18e01d63eb",
+  "schemaFingerprint": "05aa5cdaaf6c23e94862fe7b17fa59539a8c6768714bbaf9cd12dd4f15574430",
+  "clientSchemaFingerprint": "72b6524b2e54728aca67c5da3554f6ba4682a199191e814f27deab17fd8c5d9d",
+  "dataFingerprint": "f71315d85a9c120fb7cb6471ce08959eb058d851d5c486ec43943f34ea41adc6",
   "hotDataFingerprint": "ea97a6ca1d27b170667b603cd097d09f7d64d2af9b8169cc49b3c93785557ec1",
-  "coldDataFingerprint": "a09d6712032a3fee20a0b2ceb34c951b5bf2b1302215d4366d075a6c8ae3cc93",
+  "coldDataFingerprint": "52ce790044f8fbc788dddceda42641b1cb4f6452caa4d6acc3f27dcca8e45d82",
   "reloadPolicies": {
     "hot": [
       "game_tbbuffconfig",
@@ -26,15 +26,15 @@
     ]
   },
   "serverFile": "server.json",
-  "serverHash": "bba53274671fa9298f97d95d98cb883d18153d9e83d0b66f451a9f0d08b5b6ac",
+  "serverHash": "3b2e08e52e3fb5257148524303ad6ad492797e3e85399c65a41064a849ec4f62",
   "serverHotFile": "server.hot.json",
   "serverHotHash": "9b3d54a5ef8337d8256519b610433e921936957043bd26a94f2637b8be26fdf9",
   "serverColdFile": "server.cold.json",
-  "serverColdHash": "89db768ddbc099059af3340b263f30df1753288cc423bc32437e44d0488c830d",
+  "serverColdHash": "09a2e87e7150c4e299116567c27309de0853adefab81f67d529ab19bb20c4e4f",
   "clientFile": "client.json",
-  "clientHash": "a5f4c296961855aacc72d96ed3b2d6683d238edf4b966f84a5b268b6ce3812a8",
+  "clientHash": "64e37d55f435caaf7c7e020106186118dc4bcb9644f4cacecbed18241225058f",
   "clientHotFile": "client.hot.json",
   "clientHotHash": "fd3e376eee2920c97d3fed0dcca1d3e3790e4a0bd320397e653910c9255f4345",
   "clientColdFile": "client.cold.json",
-  "clientColdHash": "7aeecedaa7582b60cae8f4af1c84770b4f1fc759cf32f70a489e5ae25ff23a84"
+  "clientColdHash": "23eea46f85f92d9885a2edf783e4121fee3ecc89230e1b91ae2a35126de908c7"
 }

@@ -34,6 +34,7 @@ export interface BuffComponent {
   ApplyBuff(configId: number, options?: BuffAddOptions): BuffApplyResult;
   AddBuff(configId: number, options?: BuffAddOptions): Buff;
   HasBuffConfig(configId: number): boolean;
+  RemoveBuffsByEffectTags(effectTags: readonly number[], reason?: string): number;
   GetBuffs(): readonly Buff[];
   ApplyCommittedBuff(state: BuffTransferState): BuffPublicState | undefined;
 }

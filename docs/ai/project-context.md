@@ -6,9 +6,13 @@
 
 仓库中的代码、文档和性能报告必须可跨机器使用：命令使用仓库相对路径或显式环境变量，性能报告写入前把仓库内绝对路径转换为相对路径。`npm run verify:no-local-traces`扫描Git候选文件并拒绝本机盘符、个人Home目录和私网IP；第三方Unity模板及Windows路径解析夹具只能使用精确文件级白名单，禁止扩大为目录级忽略。
 
-更新时间：2026-08-17。
+更新时间：2026-09-03。
 
 ## 普通Entity持久化生成
+
+`VersionedEntityRepository<TSnapshot, TEntity>` 是 Core 提供给内置业务和外置模块的中立单记录快照边界。`DbProxyEntityRepository` 与 `InMemoryVersionedEntityRepository` 都执行相同的 schema 校验和 revision CAS；`CreateVersionedEntityRepository(codec, ownerId)` 在 Rust Host 已安装 DBProxy bridge 时选择持久实现，否则选择仅限当前进程的内存实现。模块若要求跨重启恢复，部署验收必须证明 DBProxy 已启用，不能把内存回退当作持久化完成。
+
+这个仓库只理解 namespace、schema、payload 和 revision，不理解玩家、世界事件、地图或任何来源游戏名词。具体状态机、记录 key、冲突后的领域重算、任务贡献和内容重建全部属于外置模块；Core 只提供 `IsVersionedEntityRevisionConflict` 让调用方识别 CAS 冲突并基于最新快照重试。
 
 - `.native`中的具体Entity可用`@persistent(version)`声明稳定存储结构；字段默认进入快照，`@transient`排除`instanceId`等运行时字段。
 - codegen生成`NativeXxxPersistenceSnapshot`、严格Codec、schema/version和`CreateNativeXxxRepository(processName)`；通用Repository负责Revision CAS和同`requestId`重试。
@@ -19,10 +23,12 @@
 
 TiangZ的业务参考目标是一个小而完整的Starter MMORPG，而不是内容庞大的商业游戏。唯一验收主线为：登录/选角、主城、野外战斗、掉落、背包、任务、动态副本/Boss、断线重连和重启恢复。完整矩阵见[Starter验收矩阵](../starter/acceptance-matrix.md)，开发教程见[Starter MMORPG教程](../tutorials/20-starter-mmorpg.md)。
 
+MMORPG层另提供中立`SpawnSelectionComponent`：外置模块可登记共享容量的Monster、Interactable和子选择组。候选冷却期间继续占用自己的槽，到期只重抽该槽；子组叶子到期会重抽直接父组中的子组槽，切换时完整停用旧子树。内容封存阶段拒绝缺失引用、多父级与循环。来源游戏的表名、概率解释、活动日历和持久化规则仍归外置模块，不能进入Core或中立MMORPG契约。
+
 - 框架能力案例负责解释单项能力；Starter负责证明这些能力能组合成真实业务，不能维护两套重复的网络、Actor、持久化或战斗入口。
 - Starter固定一个职业、一个主城、一个野外地图、一个动态副本、三种普通怪、一个Boss和少量技能。社交、商城、运营活动和大量美术资源留在后续示例。
 - 新功能只有同时具备Stable API调用、正式配置/协议来源、状态所有者、失败语义和可重复验收，才算进入Starter。
-- 账号注册、登录和角色目录已经完成运行时闭环：`C2S_Register`通过`CharacterRepository`写入账号密码盐值/摘要并创建同名初始角色，`C2S_Login`必须携带密码且不会再自动创建游客账号；`C2S_Login.characterId`明确选择角色，`characterId`贯穿Gate、Location、Map和Player持久化。配置DBProxy时账号目录与角色记录写入版本化快照，未配置时仅用于当前进程调试。`LoginMgr`对带账号请求使用稳定哈希保持同一账号落到同一Login。`npm run starter:character-smoke`已覆盖all-in-one和split-process。
+- 账号注册、登录和角色目录已经完成运行时闭环：`C2S_Register`通过`CharacterRepository`写入账号密码盐值/摘要并创建同名初始角色；可选`playerConfigId`允许协议适配器从已经冻结的`PlayerContentProfileComponent`选择模块拥有的中立玩家模板，省略或传0仍兼容默认模板1，非法模板在写目录前拒绝。`C2S_Login`必须携带密码且不会再自动创建游客账号；`C2S_Login.characterId`明确选择角色，`characterId`贯穿Gate、Location、Map和Player持久化。配置DBProxy时账号目录与角色记录写入版本化快照，未配置时仅用于当前进程调试。`LoginMgr`对带账号请求使用稳定哈希保持同一账号落到同一Login。`npm run starter:character-smoke`已覆盖all-in-one和split-process。
 - Starter第一版已接入固定任务NPC：Map 100由`NpcComponent`创建`NpcUnit`（`npcConfigId=9001`、`unitId=0x40000001`），NPC作为普通Unit的Subject进入AOI，Cocos3D以紫色方块展示。玩家出生点为`(-3, 1, -18)`，NPC位于出生点东侧约3米；Demo专用`AoiConfig=2`把Enter/Detach扩大为7×7/9×9 Grid，确保出生点能观察到远端刷怪区。10004、10005、10008是三只被动黄色怪，10006、10007是两只主动红色怪，仍分布在远端刷怪区；`MapEntitySnapshot.displayName`由服务端统一提供玩家、NPC和怪物的公开名称，Cocos3D在实体头顶显示名称，怪物额外显示HP。当前所有Starter `QuestConfig`都关闭自动接取；客户端靠近NPC 5米内显示统一“交互”按钮，点击后打开NPC对话框，再点击对话框中的接取/交付按钮才调用`Map.AcceptQuest({ questConfigId, npcUnitId })`或`Map.CompleteQuest({ questConfigId, npcUnitId })`。任务5001由NPC提供，目标是击败5只怪A；在NPC交付5001后，配置前置解锁任务5005，目标是击败5只怪B。服务端在PlayerUnit有序mailbox内校验NPC存在、任务提供关系和5米交互距离，再由`QuestComponent`创建或完成Quest ChildEntity。`npm run starter:smoke`已覆盖NPC快照和接取。
 - `npm run starter:acceptance`另有完整任务链夹具：在all-in-one与split-process中均通过正式NPC、导航、普通攻击、查看/单项拾取和跨图协议完成5001、5005、5006，验证前置拒绝、5A/5B进度、未接任务时不显示徽记、累计5个徽记、三次事务奖励和跨图快照恢复。测试不会直接修改Quest、Inventory或Monster状态。
 - Starter动态副本固定使用MapConfig 200。客户端只向Gate提交稳定`operationId`；Gate先调用当前PlayerUnit有序邮箱中的`ClaimStarterDungeonEntry`，把10分钟个人CD提交到`progression`记录，再通过`DynamicMapProxy`以`starter-dungeon:<characterId>:<operationId>`幂等请求MapManager分配实例并复用普通`EnterMapCore`进入。同一operationId可恢复已接受请求，新的operationId在CD内返回`DungeonCooldown`；CD随跨图快照迁移并在重启读档时恢复，不属于Gate或副本集体状态。副本内MonsterConfig 3“试炼守卫”拥有900生命；死亡事件给击杀玩家增加120累计经验，尸体掉落表3固定包含小红、大红、蓝药各5个和150铜币。拾取通过同一operationId原子提交`inventory + quest + wallet`，经验和CD分别提交`progression`。空副本继续使用现有5分钟无人回收兜底，不恢复崩溃前的Boss现场。
@@ -56,11 +62,49 @@ TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络�
 
 TypeScript仍是默认业务语言；开发者明确选择Rust实现的稳定、高负载领域统一放在`src/game/<domain>`，例如Buff执行引擎、战斗计算或移动算法。`src/native_data.rs`属于框架权威Store，不继续混入新的游戏业务。Rust业务随Process编译、不能Hotfix；Actor Handler即使调用Rust算法，也必须先经过TS的Location、Unit/Session定位、传送屏障和mailbox，不能在网络入口旁路Actor语义。
 
+### 中立怪物脱战表现
+
+`MonsterContentSpawn.idleSequences`的动作现在可以是`Emote`或`Say`。两者共用中立的初次/重复延迟、概率、稳定刷点目标和战斗打断语义；`Say`从内容包提供的非空文本候选中按执行轮次确定性选择一项，并通过既有`UnitPresentationType.Say`广播。Core不读取SmartAI事件/动作编号、不解析来源文本表，也不负责客户端聊天封包；来源适配器必须在构建期完成时序、本地化文本和动作类型的投影。
+
 ### 通用内核与首个领域
 
 TiangZ的内核不是“MMORPG内核”，而是先用MMORPG验证的通用运行时。`app/core`负责Process、Scene、Actor、Component、mailbox、生命周期、协议路由、热更屏障和宿主边界；它不拥有AOI、地图、NavMesh、怪物、任务、技能或战斗规则。当前这些能力位于`app/model/mmorpg`、`app/hotfix/mmorpg`和`src/game`，是第一个领域的可读实现。
 
-这不是现在就抽象第二套游戏的理由。只有第二个领域真正接入后，才根据重复的稳定需求调整边界。当前代码只做三项约束：Core不能依赖Demo/Hotfix，Model不能反向依赖Hotfix或Core内部文件，Rust `src/game`不能绕过`native_data`访问宿主Transport/Process。`npm run verify:domain-boundaries`把这些规则变成门禁。
+外置游戏模块是构建/发布边界，不是新的领域层。Core只提供模块ID/版本/依赖图校验、独立类型检查、不可变Model导出桥、强类型Entity装配和Hotfix组合能力；具体模块的Scene、Component、Handler、协议和配置仍在模块自己的仓库。`modules/`默认忽略第三方目录，构建期读取`tiangz.module.json`并生成确定性模块图；`TIANGZ_MODULES_DIR`让构建与开发宿主使用同一外部集合。目标Factory在Entity发布前调用`applyEntityExtensions`，装配器只能同步`AddComponent`并沿用现有回滚/生命周期。当前MMORPG工厂覆盖`MapScene`、`PlayerUnit`、`MonsterUnit`、`NpcUnit`、`InteractableUnit`和`SummonedUnit`：地图工厂先放入中立的`MapRuntimeProfileComponent`、`SkillDefinitionProfileComponent`与`BuffDefinitionProfileComponent`再执行扩展，AOI、地图、玩家移动/复活、NPC、怪物、技能和Buff状态机随后只读取已经冻结的资料；模块技能与Buff只能登记模块私有只读定义，不能覆盖Luban冷配置或另一个模块。Grid2D也可通过同一个朝向相对输入入口量化为八方向移动。怪物工厂先放入`MonsterSpawnProfileComponent`再执行扩展，出生、追击距离和Evade回巢共用同一坐标；NPC与可交互物先完成基础身份、位置、静态资料和可逆内容增量，再执行扩展，成功后才进入领域索引与AOI。扩展失败必须沿原Factory移除整个Unit，不允许发布半装配实体。模块若给NPC组合`NumericComponent`，NPC快照会自动走既有数值复制白名单；普通服务型NPC没有该组件时仍输出空数值集。所有资料入口都拒绝不明确的多所有者覆盖，避免模块顺序造成静默的最后写入者；伤害仍统一进入怪物领域边界，直接伤害与Buff Tick都不能绕过死亡、尸体和刷怪槽释放。模块集合或Model变化必须重启，已有行为变化继续复用Process级Hotfix事务。完整契约见[外置游戏模块](../design/external-game-modules.md)。
+
+运行时数据包与代码模块是两个独立发布面。Rust宿主从`process.dataPacks.sources`按配置文件相对路径递归发现固定名`runtime.pack.json`，在创建V8前校验来源、大小、JSON信封、SHA-256格式、重复ID和符号链接；随后把资料作为宿主投影交给`ProcessRuntime`。Core在任何Scene创建前建立进程级只读`RuntimeDataPackRegistry`，再次验证纯JSON树并深冻结，同时要求`ownerModuleId`已经存在于封闭模块图且数据包ID位于所有者命名空间。模块只能通过Stable API按所有者或ID读取不透明payload，payload schema、跨表引用、字段迁移和领域装配均由所有者模块负责；Core不认识地图、职业、任务、来源数据库或业务表。增加或替换数据包需要重启Process，但不再要求生成一个新的代码模块或改变模块图；代码行为、协议和稳定状态仍由代码模块拥有。当前实现是进程启动期全量载入，后续海量世界资料应扩展为经DBProxy/内容服务读取的分区快照，不能让Scene直接连接数据库。
+
+模块静态内容复用TiangZ现有Luban能力，不再建立一套面向来源数据库的配置系统。`tiangz.module.json.gameConfig`可声明模块根内的Luban工程、target及生成代码/数据目录；`tools/codegen_module_game_config.mjs`使用Core固定的Luban版本、严格validation、确定性聚合和SHA-256指纹生成模块自己的`Tables`。Core只验证声明路径与输出边界，不认识任何表或字段。来源游戏数据库、Excel或其他工具先转换成模块Luban源数据，运行时包再承载编译结果；所有者模块必须用生成类型解码并投影到中立Profile，禁止把导入JSON直接强转成运行时对象。schema与数据目前均按冷发布处理，改变后要重新生成、构建并重启Process；它不继承Core内置`GameConfig`的热表Reload。通用自测使用不含MMORPG概念的卡牌表证明该生成器不依赖首个游戏。
+
+外部协议适配器在完成自己的协议校验后，可以通过中立的`TriggerNpcInteraction`入口发布“NPC内容交互已发生”事实。Core只校验玩家、Unit、AOI和距离，并把`NpcContentInteractionTrigger`分发给内容规则；触发值和表现动作是稳定内容契约，不包含外部协议opcode、SmartAI枚举、地图号或具体游戏领域状态。这样协议差异留在适配器，内容包与TiangZ运行时仍可复用同一套NPC表现能力。
+
+NPC内容动作还支持不透明的`ExecuteAbility`请求。`NpcComponent`在交互规则到期后只发布`NpcEvents.InteractionActionRequested`，携带NPC、可选目标玩家、动作和时间；Core不解释能力编号，也不生成法术或游戏协议数据包。外置游戏模块负责把自己的能力编号映射为表现或权威效果，未知请求必须安全忽略。这样ACDB/SmartAI的CAST链可以配置驱动导入，同时不会把来源事件、动作、法术号或客户端封包语义带入TiangZ Core。
+
+NPC脱战定时序列同样支持不透明的`ExecuteAbility`动作。`NpcComponent`只推进初次/重复延迟、概率和稳定刷点目标，然后发布`NpcEvents.IdleActionRequested`；Core不解释施法目标、Spell ID或客户端封包，外置适配器自行把能力 ID 映射为实际表现或权威效果。导入器可以直接把SmartAI的UPDATE_OOC定时表CAST行投影为该动作，未知目标或法术仍保留为可审计缺口。
+
+大规模地图内容不再要求外置模块先向Luban逐条添加`MonsterAreaConfig`。`MapHost`在同步装配`MapScene`前创建地图级`MonsterContentProfileComponent`；模块可按稳定ID原子登记中立怪物模板与固定刷点，也可由一个明确所有者声明该地图完全替换演示冷内容，装配结束后目录立即冻结。`MonsterComponent`把冷配置和目录资料规范化为同一种刷怪槽，继续拥有Unit、AOI、战斗、尸体和重生；刷新秒数属于刷点而不是共享模板。创建`MonsterUnit`时会把中立模板中的名称和模型ID冻结到实体，AOI快照只组合实体的冻结展示资料与实时Position/Numeric状态，不得按外部模板ID回查Luban冷表。组件、错误、测试夹具和日志不包含任何具体游戏表名或编号，中立Training Dummy夹具覆盖冻结、所有权冲突、跨所有者引用和原子失败。该边界解决“已生成内容如何进入现有MMORPG运行时”，不代表模块manifest已经拥有通用Data Pack schema、迁移或客户端导出。
+
+`MonsterContentDefinition`可以声明成对的`minimumLevel/maximumLevel`正整数闭区间；省略两项时保持Level 1兼容行为，单独提供、倒置或非正整数都会在内容目录冻结前失败。`MonsterComponent`按稳定刷点ID和该刷点成功创建的代数确定性选择区间内等级，在进入AOI前写入`NumericType.Level`；同一进程内死亡重生会递增代数并重新选择，固定等级区间不会漂移。这个契约只负责中立等级选择，不根据等级暗中缩放生命、资源或伤害；来源游戏若需要等级相关属性、精英修正或随机公式，必须在模块构建/投影侧生成明确配置，不能加入Core分支。
+
+等级相关战斗数值使用可选的`combatStatsByLevel`中立曲线。空数组等价于未配置；一旦提供非空曲线，就必须逐级完整覆盖`minimumLevel..maximumLevel`，每行显式声明`maxHp/maxMp/attackDamage`，目录冻结时拒绝缺级、重复、越界或非法数值。Monster与战斗NPC先用同一刷点代数选出Level，再精确读取该级行；没有曲线时才兼容使用定义顶层静态值。Core不会插值、缩放或读取任何来源成长表，具体游戏的生命、法力、武器/AP及精英公式必须在模块构建期物化为曲线。
+
+`NpcContentDefinition`复用同一对可选等级边界和同一个稳定刷点/成功创建代数选择器。带战斗资料的NPC把Level合并进既有`NumericComponent`；纯服务NPC只有在内容显式提供等级时才装配包含Level和既有正移动占位值的Numeric，不会因此获得生命、攻击、Combat或Skill组件。NPC死亡重生、活动停用后重新激活都在成功创建后推进代数；没有等级配置的既有NPC保持原组件形状。
+
+怪物模板可携带按玩家等级预计算的中立击败经验曲线`rewardExperienceByPlayerLevel`。来源游戏负责在构建期计算公式、等级差、精英和免经验规则；Core只在`MonsterEvents.Killed`提交后选择当前等级对应值，通过玩家mailbox和`ProgressionComponent.GrantExperience`持久化，再发布既有`G2C_ProgressionChanged`。幂等键包含地图实例、稳定刷点、具体怪物生命周期和角色，既能重放同一次奖励，又不会压掉同一刷点复活后的新击杀。Core不得加入具体游戏的经验公式、怪物类别或客户端升级封包。
+
+怪物内容目录还可声明中立的进入战斗表现规则、路径点动作和刷点级脱战空闲序列。运行时规则只使用`Engage`、`Say`、`Emote`等MMORPG语义，不保存SmartAI等来源引擎枚举；路径点动作可按到达后的相对延迟设置持续动作、替换模型、在点附近临时游走或重启本刷点已有路线。`idleSequences`使用初次/重复延迟区间和有序动作，只在脱战时推进；动作执行者可以是自身或同一内容所有者的稳定刷点，跨所有者或不存在的引用会在目录登记时失败。进入战斗会取消当前空闲序列进度，回归后重新初始化。`MonsterComponent`拥有动作调度、战斗打断、确定性概率和移动控制，外置导入器拥有来源命令到这些中立动作的映射。每个权威怪物行为Tick在改变移动或攻击前还会检查同步只读的`MonsterEvents.BeforeBehavior` Veto链；非零模块私有原因只表示“停止当前移动并跳过本Tick”，Core不解释眩晕、恐惧、凿击等具体规则，监听器也不得直接修改移动、仇恨、Buff或战斗状态。一次性或持续表现统一经`MapComponent.PublishUnitPresentation`按AOI广播；运行时模型和持续表现状态同时写入`MonsterUnit`，并通过`MapEntitySnapshot.presentationModelId/presentationStateId`进入迟到观察者快照。具体客户端字段、聊天包、模型编号和动画编号仍由协议适配器投影，不能反向写入Core或通用内容契约。
+
+临时召唤物由地图级`SummonComponent`统一维护，所有者可以是`PlayerUnit`或`MonsterUnit`：模块只提交冻结的中立定义、所有权槽位和创建能力编号，运行时创建普通`SummonedUnit`，负责同槽替换、AOI生命周期、固定5Hz跟随、远距离回收、死亡清理和所有者离场清理。协战、击杀/任务归属和跨地图迁移目前只对玩家所有者启用；怪物所有者使用运行时`UnitId`，不伪造玩家持久ID，也不会因为引用了召唤模板而产生世界刷点。玩家临时召唤物的同进程和跨Process地图迁移只通过`OwnedSummonTransferState`与`PlayerTransferSnapshot.owned_summons`恢复所有权槽、创建能力和冻结定义，目标、位置、Native句柄和战斗中间态不跨地图复制；目标槽位为空且恢复失败会回滚候选。需要重登录恢复的模块私有状态应通过`PlayerPersistenceComponent.RegisterPersistenceExtension`提交版本化不透明字节，未知模块状态会被Core保留而不会静默丢弃；临时召唤物本身仍不是持久化Entity。Core不认识宠物、恶魔、图腾、法术号、动作条或客户端宠物协议，模块不能绕过Unit/AOI生命周期自行保存。
+
+外置Buff资料使用地图级`BuffDefinitionProfileComponent`登记与现有`BuffConfig`同形的中立生命周期定义；`BuffDefinitionResolver`只在外置目录没有命中时读取冷配置，并显式拒绝同ID碰撞，不提供覆盖冷表的旁路。定义可携带模块拥有的不透明正整数`effectTags`，`BuffComponent.RemoveBuffsByEffectTags`先冻结命中实例再按“任一标签”批量移除并完整执行各自RemoveAction；Action层提供同名原子动作，但不解释控制、驱散、免疫或任何具体标签含义。运行时仍只有一套`BuffComponent/BuffSystem`负责冲突、刷新、Tick、伤害吸收、传送和AOI事件，技能、道具与怪物行为都通过已有`AddBuff`入口引用定义。怪物规则支持`HealthRange`触发和`ApplyBuff`动作：血量区间使用千分比；省略重复延迟时，一次遭遇只判定一次；同时提供`repeatDelayMinMs/MaxMs`时，由地图固定更新帧在战斗中持续轮询并按每条规则的确定性截止时间重复执行。重复规则不得创建独立Timer。任一行为动作可用`requiredAbsentBuffDefinitionId`声明“动作目标缺少该不透明Buff时才执行”，Core只做同步存在性检查，不解释该Buff为何阻止动作。来源数据库中的SmartAI事件、动作、施法flag、法术号和DBC光环枚举只能在外置导入器中转换为这些中立定义。Core不得出现SmartAI、Spell.dbc、具体职业、法术或地图编号。
+
+玩家主动接取任务现在使用`QuestComponent.AcceptQuestDurable`把Quest与接取时物品合并为`inventory + quest`原子事务；DBProxy确认后才创建本地Quest和Item，ACK不确定时按稳定operationId读取原回执，重复请求不会再次发放物品或覆盖后来产生的任务进度。`M2C_AcceptQuest`返回受影响物品快照，协议适配器可立即投影客户端背包。首次本地应用提交结果后发布中立的`QuestEvents.Accepted`同步事实，事件包含玩家、Quest状态、交互来源UnitId与物品变化；模块只能追加对白、动作或世界表现，不能否决或改写已经提交的事务。具体任务号、NPC号、对白和延迟全部留在外置模块。
+
+外置职业规则优先组合既有中立扩展点，不在Core增加职业分支。短生命周期状态放模块自己的PlayerUnit Component；施法前置使用`SkillEvents.BeforeCast`只读Veto，击杀、连击、圣印等后续联动订阅`CombatEvents.DamageResolved`。基础技能效果提交后，`SkillEvents.EffectsResolved`会按瞬发命中、弹道命中或每个引导Tick分别发布同步事实，模块可追加非基础效果，但不能改写已经提交的伤害、冷却或施法结果；监听器必须同步且不得抛错。后续效果仍通过`BuffComponent`、`MonsterComponent.ApplyUnitDamage`、`ItemComponent`事务计划或`ActionType.GrantItem`进入既有结算边界。技能发放物品时，`SkillMapComponent`会把受影响Item通过现有私有`ItemChanged`通道发布；外置协议网关只做物品与法术编号投影。通用事件与事务能力属于TiangZ，职业名、法术号、公式和临时状态属于游戏模块。
+
+目标侧通用减伤通过Numeric的`IncomingDamageMultiplier`和`PhysicalDamageMultiplier`三源派生字段组合完成，倍率统一使用1000为基准；伤害在护盾处理前依次应用全局与物理专用倍率，非物理伤害只应用全局倍率。为兼容尚未配置这组字段的旧Entity，三项来源全为0时按1000解释；正式玩家或怪物Profile应显式写入Base=1000。Core只识别通用伤害学校和倍率，不识别护甲、职业、光环或具体法术；具体游戏由外置模块通过Buff的`ChangeNumeric`或`ChangeNumericBatch`动作提供公式和生命周期。批量动作的参数是一个或多个`[numericType, delta]`对，执行前完整校验非派生类型并拒绝重复项和`CurrentHp`，因此一个Buff可以同步维护多项中立数值而不会在坏配置上发生部分写入；它仍不是数据库事务。
+
+这不是现在就抽象第二套游戏的理由。只有第二个领域真正接入后，才根据重复的稳定需求调整边界。当前代码只做四项约束：Core不能依赖Demo/Hotfix，Model不能反向依赖Hotfix或Core内部文件，Rust `src/game`不能绕过`native_data`访问宿主Transport/Process，外置模块不能让Model/Hotfix相对导入越过自己的声明根。`npm run verify:domain-boundaries`、`npm run verify:hotfix-boundary`和模块构建门禁共同检查这些规则。
 
 `SceneConfig`中的`staticMapIds`和`acceptDynamicMaps`是当前MapHost的可选部署能力描述，不是Core执行地图规则；0.4.x保留它们以避免把配置迁移误当成通用性工作。第二个领域需要复用同一Runtime时，再根据实际冲突把它们迁移到领域配置扩展，不提前引入无类型的万能`extensions`。
 
@@ -74,7 +118,13 @@ TiangZ的内核不是“MMORPG内核”，而是先用MMORPG验证的通用运�
 
 本轮已完成`demo -> mmorpg`的服务端业务目录重命名；`native_data/demo`也已改为`native_data/mmorpg`并重新生成Native代码。`.native`中的`namespace demo/native`保留为持久化schema和Native ABI标识，不能随目录整理静默修改。生成协议仍保留`server/demo`和客户端SDK的`Model/demo`路径，因为它们是已发布线协议命名空间，重命名会构成协议兼容性变更。`ActionDefinition + RewardPlan`是第一组跨游戏试点：MMORPG继续在`app/hotfix/mmorpg`执行Action和奖励，`RewardDefinition`只作为旧代码兼容别名，不把当前执行器误宣称为通用框架能力。
 
-Numeric的`MoveSpeed`已从通用Numeric表拆到`app/model/mmorpg/numeric/MovementNumeric.ts`；米/秒到Rust毫米/秒以及写入后同步位置，属于MMORPG移动适配。Item、Quest、Buff已先拆出稳定Model容器和数据契约；Combat、Skill仍完整位于MMORPG适配层，因为当前实现包含平A、伤害学校、读条、引导和技能配置。第二个真实游戏领域出现后，才根据重复实现继续抽取执行代码。
+Numeric的`MoveSpeed`已从通用Numeric表拆到`app/model/mmorpg/numeric/MovementNumeric.ts`；米/秒到Rust毫米/秒以及写入后同步位置，属于MMORPG移动适配。`DirectionalMovementProfileComponent`同样位于MMORPG层：它保存服务端配置的前进/后退/横移倍率，`PlayerUnitSystem.NavigateInput`按离散方向选择有效速度，默认`1/1/1`；外置模块可以配置倍率，但客户端协议不携带可信速度，Core也不认识具体游戏档位。Item、Quest、Buff已先拆出稳定Model容器和数据契约；Combat、Skill仍完整位于MMORPG适配层，因为当前实现包含平A、伤害学校、读条、引导和技能配置。第二个真实游戏领域出现后，才根据重复实现继续抽取执行代码。
+
+五项常见主属性`Strength/Agility/Stamina/Intellect/Spirit`同样只在MMORPG组合层的`AttributeNumeric.ts`中声明，并统一复用Numeric的Base/Add/Pct派生约定。Core不根据主属性推导生命、法力、护甲、攻击或任何职业公式；外置游戏模块可以逐级写入Base、由Buff修改Add/Pct，并由自己的协议适配器决定哪些结果对客户端可见。不使用传统五属性的游戏可以完全不配置这些编号。
+
+当既有客户端已经持有一套无法由TiangZ复刻的场景碰撞时，外置模块可在`MapRuntimeSpatialProfile.externalMovementSnapshots`中为单张Grid2D地图显式声明最大快照位移。此模式仍经PlayerUnit mailbox、地图边界、单调序号和最大位移校验，随后通过一个Rust粗粒度操作原子写入；未声明的地图拒绝位置字段，NavMesh3D继续只接受服务端导航意图。`C2M_NavigateInput`中的位置字段只是这一受控网关模式的兼容载体，不携带速度，也不是所有客户端默认可信。Grid2D移动增量保留Y高度和连续Yaw，避免2.5D投影在后续帧退回零高度或四方向。
+
+技能、传送门或脚本需要在同一地图内立即改变Unit位置时，统一调用`MapComponent.RelocateUnit`，不能直接改`Position`或由模块手写AOI广播。该中立能力只负责有限值、地图归属与空间有效性校验：Grid2D按Cell吸附，NavMesh3D投影到可行走面；成功后清除旧移动、更新Rust权威位置并通过既有Movement/AOI链发布一条服务端来源的不可确认状态。目标选择、距离公式、冲锋/击退/闪现等游戏语义及客户端协议投影仍由外置模块拥有。服务端位移使用未携带客户端确认序号的记录，网关必须把它视为权威纠偏，不能伪装成对某次客户端预测的ACK。
 
 异步业务在外部`await`返回后必须调用Entity的`AssertAlive()`，再读取或修改Entity/Component。JavaScript不能抢占已经开始执行的Promise continuation；框架会在Actor mailbox结算时拒绝已销毁Actor的调用，但不能撤销await之后已经执行的业务代码。需要新的串行边界时，应重新投递Actor mailbox消息或Entity Timer，不要把长Promise当作锁。
 
@@ -83,6 +133,8 @@ Numeric的`MoveSpeed`已从通用Numeric表拆到`app/model/mmorpg/numeric/Movem
 公共`LoginFlow.latestGatePing`保存最近一次Gate Ping的RTT、服务端Unix毫秒时间、估算时钟偏差和本地接收时间。客户端显示网络延迟必须使用RTT，不能直接用`Date.now() - serverTime`，否则客户端与服务器的时钟差会被误算成网络延迟。
 
 当前版本是`0.4.0`，`v0.3.10`是框架能力的首个稳定基线。Phase 0到Phase 3.10.5的实现、专项验收以及Windows/Linux最终发布矩阵已经完成；Phase 4.0空间契约、Phase 4.1 Rust AOI和Phase 4.2.5 NavMesh3D动态障碍链已经完成。工程已有登录、选服、进入地图、2D/3D多人移动、状态广播、WebSocket/Cocos Web、KCP/Cocos Native、Pixi/H5和Godot 4.7.1验收链路，并完成Windows 3000玩家AOI正式容量回归；角色与怪物之间的动态阻挡和动态避让明确不做，尚未完成Linux/分布式空间负载、完整商业MMORPG业务和生产运维方案。
+
+NavMesh3D的同一目标意图由Rust保留现有路径与游标，只更新较新的确认序号；目标变化、显式重置或障碍版本变化才触发重算。这个幂等性是通用导航运行时契约，业务模块仍只决定目标和行为节奏，不把具体游戏巡逻规则写入Core。
 
 ## 为什么形成这套模型
 
@@ -198,7 +250,7 @@ ChildEntity拥有稳定`Id/InstanceId`并进入EntityRoot，但没有mailbox、�
 
 Buff需要被AOI玩家看到，不代表Buff需要mailbox，也不需要通用dirty Delta。Buff创建/删除分别使用不可覆盖的`BuffAdded/BuffRemoved`事件；进入AOI时公开Buff随Unit整体Snapshot发送，离开只移除Unit。公开`BuffPublicView`与受限`BuffDetailView`是两套Projection：前者发给AOI观察者与队伍，后者只发给自己与队伍，不能用字段值`0`表达无权限。详情以`(unitId,buffInstanceId)`为latest key，同帧可覆盖。业务只组合逻辑`ClientAudience`，`ClientBroadcast`负责UnitId到Gate及跨地图Location解析。Buff Tick只执行Action，不同步Buff本身：Numeric、Move及其他效果走各自领域协议。少量Buff可使用ChildEntity Timer；大量Buff应由BuffComponent使用到期时间堆和一个最近到期Timer合并调度。
 
-战斗伤害入口已经统一到Unit上的`CombatComponent`：Monster、Skill和Action只提交`DamageRequest`，CombatComponent依次执行已注册的护盾/受伤处理器、修改`NumericType.CurrentHp`并返回`DamageResult`；治疗使用`ApplyHealing`并由CombatComponent限制`MaxHp`。`ChangeNumeric(CurrentHp, ...)`不再保留兼容语义，配置codegen、`ActionFromConfig`和运行时执行都会拒绝；HP增加只能使用`Heal`，HP减少只能使用`DealDamage`。伤害入口严禁查询或调用`BuffComponent`，Buff只能在添加/移除生命周期中注册或注销`DamageAbsorber`，保存`modifierId`而不是让Buff和Combat各维护一份护盾剩余量。MonsterComponent负责找目标、距离、AI、仇恨和重生，不能直接写目标HP；Combat不负责AOI、Gate、目标选择或Unit销毁。完整规则见[战斗伤害与效果管线](../design/combat-damage-pipeline.md)。
+战斗伤害入口已经统一到Unit上的`CombatComponent`：Monster、Skill和Action只提交`DamageRequest`，CombatComponent依次执行显式允许的`CombatEvents.BeforeDamage`同步只读规避链、目标侧倍率、已注册护盾，最后修改`NumericType.CurrentHp`并返回`DamageResult`；治疗使用`ApplyHealing`并由CombatComponent限制`MaxHp`。普通伤害默认不可规避，只有攻击来源设置`canBePrevented: true`才会分配Unit本地`attemptSequence`并进入扩展链；非零返回值作为不透明`preventedReason`透传，Core不解释闪避、格挡、招架或任何具体命中表。规避不消耗护盾、不扣HP，也不发布已提交伤害事实，但地图仍向参与者发布`G2C_CombatResult`以表现未命中结果。`ChangeNumeric(CurrentHp, ...)`不再保留兼容语义，配置codegen、`ActionFromConfig`和运行时执行都会拒绝；HP增加只能使用`Heal`，HP减少只能使用`DealDamage`。伤害入口严禁查询或调用`BuffComponent`，Buff只能在添加/移除生命周期中注册或注销`DamageAbsorber`，保存`modifierId`而不是让Buff和Combat各维护一份护盾剩余量。MonsterComponent负责找目标、距离、AI、仇恨和重生，不能直接写目标HP；Combat不负责AOI、Gate、目标选择或Unit销毁。完整规则见[战斗伤害与效果管线](../design/combat-damage-pipeline.md)。
 
 Quest默认是玩家私有状态。`QuestComponent`拥有进行中的`Quest ChildEntity`和已完成配置ID集合；活动任务显式区分`InProgress/ReadyToTurnIn`，接取时冻结目标ID与要求数量，配置Reload只影响后续新任务。怪物击杀、道具成功使用和AOI Attach完成后只同步发布`QuestEvents.Progress`领域事实，稳定Hotfix事件Handler再调用`QuestComponent.ApplyProgress`；组件按`(ObjectiveType,TargetConfigId)`运行时索引定位目标，索引不传送、不持久化并从Quest快照重建。接取统一经过`QuestEvents.BeforeAccept`同步Veto，配置内置前置任务与最低等级最终校验。进度使用以QuestConfigId为key的owner-only latest消息；登录、重连和跨地图传送携带活动Quest与已完成ID全量快照。领取必须在PlayerUnit有序mailbox内等待DBProxy关键事务：Inventory先用`PlanGrantItems`在纯快照上规划，`PlayerPersistenceComponent`原子提交奖励后的inventory+quest记录和业务结果，确认后才`CommitGrantPlan`、写完成记录和RemoveChild，最后广播。失败时Entity保持原状；ACK丢失时按稳定operationId读取首次回执并补齐内存，不重复发奖。当前事务Planner只接受`GrantItem`，新增Heal/Buff等事务奖励必须先提供对应纯数据Planner，组队共享任务等待Party系统。完整设计见[任务系统设计](../design/quest-system.md)。
 
@@ -308,7 +360,9 @@ Inner Transport把跨进程调用流与单向广播流分成独立的管理器�
 
 玩家跨MapHost使用稳定protobuf `PlayerTransferSnapshot`。生成端和目标校验端统一引用`PLAYER_TRANSFER_SCHEMA_VERSION`；新增Buff、Skill等可传送Component或修改传送字段时必须显式升级该常量，并通过真实跨图Runtime smoke，不能在两处手写不同版本号。
 
-`MapConfig.SpatialMode`区分`Grid2D`与`NavMesh3D`。Grid2D运行在X/Z Cell上；NavMesh3D固定官方Recast/Detour `v1.6.0`，具备确定性灰盒、v2压缩高度层资源、SHA-256元数据、Map启动装载、Rust投影/寻路/射线/高度和动态障碍。相同资源的MapInstance共享不可变高度层模板，各自独占`dtNavMesh + dtTileCache + Query`、路径、AOI和Unit空间状态；Scene销毁通过`SpatialRelease`幂等释放。动态障碍只表示门、路障等业务物体，不包含角色或怪物之间的动态阻挡与动态避让。业务用稳定地图内`ObstacleId`调用`MapComponent.UpsertNavigationBoxObstacle/RemoveNavigationObstacle`并提交真实物理盒体，Rust按烘焙`agentRadius`扩张X/Z导航占用、合并目标状态并按Tick限制命令和Tile重建；业务不得重复增加半径。提交完成后未结束的点击路径自动重算。`C2M_FindPath`只查询，`C2M_NavigateTo`提交路径目标，`C2M_NavigateInput`提交相对朝向的离散方向；点击路径由Rust先连续转向再前进，方向状态由Rust每个20Hz Tick通过`moveAlongSurface`贴地推进，并缓存Unit当前polygon引用。客户端采用相同的路径转向预测，并每500ms续期1.5秒方向输入租约；断续期后Rust自动停止。Cocos 3D与UE 5.4.4均以`E`键调用同一个动态门RPC，并且只在服务端响应后更新红门表现；Cocos为本地预测增加表现约束，UE只插值权威位置，客户端门Actor均不参与权威导航计算。权威位置以`G2C_EntityNavigate`按AOI批量广播。完整约束见[地图空间与3D坐标契约](../design/spatial-world.md)。
+`MapConfig.SpatialMode`区分`Grid2D`与`NavMesh3D`。Grid2D运行在X/Z Cell上；NavMesh3D固定官方Recast/Detour `v1.6.0`，具备确定性灰盒、v2压缩高度层资源、SHA-256元数据、Map启动装载、Rust投影/寻路/射线/高度和动态障碍。相同资源的MapInstance共享不可变高度层模板，各自独占`dtNavMesh + dtTileCache + Query`、路径、AOI和Unit空间状态；Scene销毁通过`SpatialRelease`幂等释放。动态障碍只表示门、路障等业务物体，不包含角色或怪物之间的动态阻挡与动态避让。业务用稳定地图内`ObstacleId`调用`MapComponent.UpsertNavigationBoxObstacle/RemoveNavigationObstacle`并提交真实物理盒体，Rust按烘焙`agentRadius`扩张X/Z导航占用、合并目标状态并按Tick限制命令和Tile重建；业务不得重复增加半径。提交完成后未结束的点击路径自动重算。`C2M_FindPath`只查询，`C2M_NavigateTo`提交路径目标，`C2M_NavigateInput`提交相对朝向的离散方向；PlayerUnit先用服务端`DirectionalMovementProfileComponent`把最终`MoveSpeed`换算为当前方向的有效速度，再由Rust保存输入、先连续转向并在每个20Hz Tick通过`moveAlongSurface`贴地推进，同时缓存Unit当前polygon引用。客户端采用相同的路径转向预测，并每500ms续期1.5秒方向输入租约；断续期后Rust自动停止。Cocos 3D与UE 5.4.4均以`E`键调用同一个动态门RPC，并且只在服务端响应后更新红门表现；Cocos为本地预测增加表现约束，UE只插值权威位置，客户端门Actor均不参与权威导航计算。权威位置以`G2C_EntityNavigate`按AOI批量广播。完整约束见[地图空间与3D坐标契约](../design/spatial-world.md)。
+
+Grid2D同时区分两种意图：玩家方向输入保持连续按键语义；服务端AI通过`UnitSetGridMovementTarget`提交最终Cell。Rust Unit保存最终目标，在每个Cell完成的同一固定Tick计算下一步，并在最终Cell清除移动，不依赖5Hz AI恰好采样到到达瞬间。怪物、NPC和召唤物共享该MMORPG能力；外置游戏模块仍只配置坐标、速度、路线与行为，不向Core或Native层注入具体地图规则。上层AI必须缓存未变化的导航目标，避免重复提交导致NavMesh路径重算或路线重启。
 
 动态障碍的可见状态不能只放在请求者的RPC响应里。地图状态变化时，业务必须向当前地图所有在线客户端广播状态事件；客户端完成`MapSnapshotReady`时还必须从响应读取当前状态，避免“后来进入的玩家看不到门，但服务端仍然阻挡”的分叉。`G2C_DemoDoorState`是灰盒演示的具体例子，正式门系统应沿用“进图全量状态 + 变化事件”的模式。
 
@@ -368,6 +422,8 @@ docs/patterns/               MMORPG领域设计原则与稳定规则编号
 Generated目录禁止手工编辑。新建平级游戏目录时，codegen通过`codegen.config.json`的搜索根发现Scene和Handler，不维护手工类型表。
 
 游戏静态配置与部署配置严格分离：`configs/<environment>`只描述Machine、Process、Scene、端口和Runtime参数；`game_config`保存策划维护的Luban Excel。仓库固定Luban `4.10.2` CLI，按`c/s`分组生成服务端Model类型、客户端SDK类型和独立JSON数据包。表、字段、类型、分组、索引和引用关系属于绝对不可热更的Model；数据重载策略由`ConfigTablePolicy`按整表声明，不能在一张表内混合Hot/Cold。当前ItemConfig、PlayerConfig为Hot，MapConfig、AoiConfig、AoiSyncTierConfig和策略表为Cold。生成包同时携带完整/Hot/Cold数据及指纹；Rust验证三者分区一致，TS拒绝Cold指纹变化。只有Hot数据可由Watcher通过`reload-config`原子替换，Cold任何值变化都必须完整构建并重启Process。业务统一通过只读`GameConfigs.Xxx.Get/TryGet/GetAll`读取，不直接解析Excel/JSON，不长期缓存整行对象。Reload不重跑Awake、不回写既有Entity状态，旧引用仍指向旧快照。客户端配置仍随SDK发布，服务端Reload不会远程替换Cocos/Pixi数据。
+
+AOI可见密度与内容刷点密度是两份独立数据：外置内容包拥有模板和刷点，Core的`MapConfig -> AoiConfig/AoiSyncTierConfig`只拥有观察范围、迟滞边界和同步频率。奇数范围边长`N`以观察者Grid为中心，每侧半径为`(N - 1) / 2`个Grid；地图应按物理Cell尺寸和目标可见距离选择Cold AOI配置。发现“附近实体太少”时不得复制刷点、扩大导入区域或增加地图分支来掩盖过小的AOI。通用`Large World AOI`是可复用配置数据，不包含任何游戏、种族或区域规则。
 
 游戏配置命令明确区分启动包和在线候选：`npm run build:game-config:startup`会重新生成并覆盖`dist/game-config`，Process重启时读取这里；`npm run build:game-config`只生成`dist/game-config-candidates/<指纹>`，必须配合Watcher的`reload-config`在线切换。`npm run test:game-config`只验证生成物和指纹，不会更新启动目录。
 
@@ -441,13 +497,14 @@ Phase 4计划：
 - 地图传送已经统一为`player.TransferToMap(mapInstanceId)`：业务不提供MapHost、IP、端口或本地/远程分支。Gate在第一个`await`前打开有界屏障，源PlayerUnit mailbox通过MapInstance目录解析目标后协调Location锁、目标候选、位置提交和源Actor清理；Proto `duringTransfer`决定Actor消息排队、拒绝、丢弃或latest覆盖。Map1/Map2拆为两个MapHost的Runtime smoke已经覆盖跨进程传送，并验证并发UseItem只在目标Unit执行一次。Component仍默认不迁移，Numeric、Item显式参与，Position只迁移速度/朝向/存活。目标提交后Location结果不确定时进入可诊断`moving`态，不向旧Actor重放；生产级事务日志和自动恢复仍属后续高可用工作。详见[Entity地图迁移](../design/entity-transfer.md)与[Location路由](../design/location-routing.md)。
 - Phase 4.1 Rust AOI功能链和Windows正式容量回归已完成：每个MapInstance按有限地图边界创建扁平连续X/Z AOI Grid，Grid成员使用紧凑`EntityIndex`连续数组和`slotInGrid`做O(1)迁移；`UnitId -> EntityIndex`哈希只在API入口定位，实体元数据与Audience签名连续存放，候选循环不再逐实体查Hash。单Grid达到128人会额外建立成员位图，降至96人以下释放；微基准显示128人起优于数组去重。空间候选与业务过滤后的最终可见关系使用四张双向稠密位图，迟滞关系另用一张单向位图维持O(1)指标。位图使用单块连续`u64`矩阵并按512实体分段扩容，有意用内存换关系差分、正反向查询和缓存局部性；3000实体预留到3072时五张矩阵约5.6 MiB。当前每MapInstance硬限制16384个AOI实体，对应五张矩阵约160 MiB；更大Scene必须使用分块位图或空间分片。`Cell`是可配置米制空间单位；默认15×15 Cell组成一个Grid，3×3同时作为Enter和20Hz高频区，已可见关系进入5×5外圈后降为5Hz，5×5也是Detach边界，越界立即Leave；不再配置7×7和1Hz档位。TS不镜像关系。FastOP X/Z写入自动标脏，只有跨AOI Grid才更新索引；当前不做每Tick CSR重建。Movement按同步档位节流，开始/停止/转向强制立即发送；Numeric、UnitState和不可覆盖事件保留各自同步语义。进入/离开同帧相同受众合并为`G2C_AoiDelta`。阵营/隐身/位面由同步`IAoiVisibilityFilter`查询并显式Invalidate。3000人正式基线固定80% Grid内移动、20%每2秒跨Grid，理论跨Grid约300次/s。新旧同口径10×10、15×15、20×20 A/B中，Map CPU平均由`74.1%/56.7%/57.3%`降为`55.0%/50.7%/42.9%`，分别下降约`25.8%/10.6%/25.1%`；新30秒Probe p95/p99为`62.18/100.18ms`、`41.34/53.39ms`、`35.59/42.26ms`。三档正式窗口均零错误、过载、超时、背压和慢连接，跨Grid达到理论值的99.8%/101.2%/100.5%。第一次20×20尾延迟异常已通过同参数复测确认是不可重复的环境抖动；10×10另以60秒窗口复测得到CPU 56.2%、p95/p99 50.60/75.17ms，说明CPU收益稳定，但密集场景短窗口p99仍存在调度波动，不能宣称所有延迟分位同比下降。Phase 4.2接入NavMesh3D；Phase 4.3完成Cocos 3D Demo；Phase 4.4进入怪物与战斗；Phase 4.5最后完成持久化基础。Cocos3D手机Web第一版使用`web-mobile`构建，`/m/`部署路径只改变页面模板与输入表现，不改变服务端空间协议。
 - Phase 4.2.5已完成导航主链：`tools/navigation`生成固定灰盒，`navmesh_bake`通过官方Recast离线烘焙v2压缩高度层并立即回读，输出稳定小端资源与SHA-256元数据；Rust提供投影、寻路、连续贴地移动、射线、高度、实例TileCache和动态障碍。开发者不手工烘焙，也不接触Detour句柄；真实地图仍需补展示模型与导航碰撞源的制作期一致性检查。
-- Phase 4.4已接入首版完整怪物业务闭环：`MonsterConfig`描述模板、血量、攻击力、独立攻击距离和复活秒数，`MonsterAreaConfig`只描述固定刷怪槽位、坐标和初始是否生成，二者都是冷配置；`MapHost`创建每个MapScene时自动挂载`MonsterComponent`。怪物是`UnitComponent`中的普通`MonsterUnit`，AOI只把它作为Subject，不拥有Gate连接，也不作为Observer。Map固定桶统一处理主动索敌、仇恨追击、攻击间隔、玩家自动平A、死亡尸体和新Unit重生：20Hz保留既有地图移动，10Hz处理玩家平A读条，5Hz处理怪物AI/仇恨目标，1Hz独立处理尸体清理与刷怪槽重生。玩家和怪物的攻击力都使用链式Numeric：玩家默认写入`AttackBase=5n`，怪物写入配置攻击力到`AttackBase`，Rust推导只读`Attack`；攻击直接读取最终Attack扣除CurrentHp，当前不增加Armor。玩家实际伤害按1:1调用`MonsterComponent.AddThreat`写入仇恨表，攻击距离分别读取`PlayerConfig.attack_range`和`MonsterConfig.attack_range`，不混入Numeric。怪物死亡后以`alive=false`保留原Unit和AOI身份；有掉落的尸体保留5分钟、无掉落的尸体保留10秒，全部普通掉落领取完成后可以提前清理。死亡时刷怪槽立即释放并从该时刻按`respawn_seconds`计时创建新的MonsterUnit；旧尸体保留在独立集合中承载拾取和AOI Leave，因此同一`AreaId`可以同时存在新活怪和旧尸体，二者使用不同UnitId、InstanceId和Native句柄。拾取重试使用同一`operationId`读取DBProxy回执，不因尸体已离开而重复创建Item。NumericComponent不再内置100ms回血Timer；周期规则由具体业务Component显式拥有。玩家的`CombatComponent`只保存平A意图和读条，不创建每玩家Timer；目标必须在前方120°和玩家配置攻击距离内，离开条件只清零读条，重新满足后从零开始。业务Handler只调用`PlayerUnit.AttackMonster/ToggleAutoAttack`，不遍历地图或直接操作Native句柄。技能、掉落、Buff、任务和复杂仇恨扩展仍由业务层继续追加，完整开发示例见[怪物模块教程](../tutorials/16-monster-module.md)和[固定更新桶与自动平A设计](../design/auto-attack-and-fixed-update.md)。演示客户端读取`MonsterConfig.attack_mode`做表现提示：自己蓝色、其他玩家绿色、被动怪黄色、主动怪红色；这个字段只用于客户端识别，不承担服务端权威判断。
-- Gate物理连接关闭后，Cocos3D必须立即清除旧地图状态和`UnitId`并回到登录界面，不能继续使用已经被Map移除的Actor发送技能或移动。Starter尚未实现墓地、灵魂或主动复活流程；DBProxy恢复到`alive=false`的玩家时，当前Demo只在重新创建PlayerUnit的进图边界于出生点满血恢复，正式业务应以独立Revive领域操作替换该策略。
+- Phase 4.4已接入首版完整怪物业务闭环：`MonsterConfig`描述模板、血量、攻击力、独立攻击距离和复活秒数，`MonsterAreaConfig`只描述固定刷怪槽位、坐标和初始是否生成，二者都是冷配置；`MapHost`创建每个MapScene时自动挂载`MonsterComponent`。怪物是`UnitComponent`中的普通`MonsterUnit`，AOI只把它作为Subject，不拥有Gate连接，也不作为Observer。Map固定桶统一处理主动索敌、仇恨追击、攻击间隔、玩家自动平A、死亡尸体和新Unit重生：20Hz保留既有地图移动，10Hz处理玩家平A读条，5Hz处理怪物AI/仇恨目标，1Hz独立处理尸体清理与刷怪槽重生。玩家和怪物的攻击力都使用链式Numeric：玩家默认写入`AttackBase=5n`，怪物写入配置攻击力到`AttackBase`，Rust推导只读`Attack`；攻击直接读取最终Attack扣除CurrentHp，当前不增加Armor。玩家实际伤害按1:1调用`MonsterComponent.AddThreat`写入仇恨表，攻击距离分别读取`PlayerConfig.attack_range`和`MonsterConfig.attack_range`，不混入Numeric。怪物死亡后以`alive=false`保留原Unit和AOI身份；有掉落的尸体保留5分钟、无掉落的尸体保留10秒，全部普通掉落领取完成后可以提前清理。死亡时刷怪槽立即释放并从该时刻按`respawn_seconds`计时创建新的MonsterUnit；旧尸体保留在独立集合中承载拾取和AOI Leave，因此同一`AreaId`可以同时存在新活怪和旧尸体，二者使用不同UnitId、InstanceId和Native句柄。拾取重试使用同一`operationId`读取DBProxy回执，不因尸体已离开而重复创建Item。NumericComponent不再内置100ms回血Timer；周期规则由具体业务Component显式拥有。玩家的`CombatComponent`只保存平A意图和武器计时，不创建每玩家Timer；激活且目标存活后计时持续推进，到点时才检查前方120°和玩家配置攻击距离，暂时无效则保持就绪并按10Hz重试，只有成功命中或显式中断才开始或清除一轮计时。业务Handler只调用`PlayerUnit.AttackMonster/ToggleAutoAttack`，不遍历地图或直接操作Native句柄。技能、掉落、Buff、任务和复杂仇恨扩展仍由业务层继续追加，完整开发示例见[怪物模块教程](../tutorials/16-monster-module.md)和[固定更新桶与自动平A设计](../design/auto-attack-and-fixed-update.md)。演示客户端读取`MonsterConfig.attack_mode`做表现提示：自己蓝色、其他玩家绿色、被动怪黄色、主动怪红色；这个字段只用于客户端识别，不承担服务端权威判断。
+- Gate物理连接关闭后，Cocos3D必须立即清除旧地图状态和`UnitId`并回到登录界面，不能继续使用已经被Map移除的Actor发送技能或移动。死亡恢复现拆为两个中立的有序PlayerUnit动作：`ReleaseDeadPlayer(optionalRecoveryPosition)`清理移动、战斗来源、平A和施法状态，校验同图有限坐标及Grid/NavMesh边界后把仍为死亡、HP为0的玩家释放到调用方选择的位置；未提供位置才回退当前Map出生点。`RevivePlayer()`只在当前位置恢复50% HP/MP并保持幂等，不再次改变位置。墓地选择、尸体、幽灵、回收距离、复活延迟、Buff去留、耐久损耗与复活虚弱仍由外置游戏包拥有，不能扩散进Combat或Core。DBProxy恢复旧`alive=false`快照时保留进图边界的满血兜底，只用于兼容旧记录。
+- 持久化死亡玩家的进图处理由外置 `PlayerContentDefinition.deadAdmissionPolicy` 选择 `revive-at-spawn` 或 `preserve`；Core 只负责策略边界和中立状态恢复，不解释尸体、幽灵、墓地或协议字段。现有 WoW335 内容包暂时使用 `revive-at-spawn`，直到适配器完成尸体元数据与死亡状态的完整跨重连持久化。
 - 怪物基础AI进一步收敛为Hotfix内部的`MonsterBehaviorTree`：只包含待机、追击、攻击和攻击冷却停留，不建立通用AI框架，不创建MonsterActor或每怪物Timer。普通攻击距离由各自配置控制，行为树只选择动作，伤害、仇恨、死亡和Numeric修改仍由`MonsterComponentSystem`执行。
 - 战斗时间轴语义已冻结：玩家或怪物按下普通攻击后只激活`AutoAttack`状态；靠近目标且满足距离、存活、同MapInstance和朝向条件时才推进平A读条。距离过远或朝向失效会清零当前读条，但不取消AutoAttack状态，重新满足条件后从0秒重新开始。移动不停止AutoAttack，右键加A/D的侧移用于保持朝向绕目标移动。施法期间由`SkillComponent.IsCasting()`冻结平A累计，施法完成或中断后才允许重新开始平A读条；受击惩罚只由地图技能调度器在Combat确认本次没有护盾吸收且实际命中后调用，真言术·盾吸收的攻击不会后移读条或缩短引导，不能由客户端或通用Combat反向查询Buff。`G2C_AutoAttackState`是每个玩家本人频道上的`latest`可覆盖状态，只表达当前读条，不承载命中事实；命中、道具消耗等不可逆事实必须使用事件广播。技能配置把伤害类型、瞬发/施法方式和是否重置平A分成独立维度；例如压制是Physical + Instant + Keep，不应按“物理技能”或“瞬发技能”分支猜测平A行为。
-- 主动怪没有仇恨时只在12米主动索敌范围内寻找最近玩家；被动怪没有仇恨时保持待机。平A和技能都必须经`MonsterComponent.ApplyPlayerDamage`按“1点最终实际伤害=1点仇恨”累计，产生仇恨后两类怪都选择本地图存活玩家中的最高仇恨目标，已有仇恨不能再被12米主动索敌距离过滤，因此30米远程命中也会触发追击。当前Demo未定义脱战回出生点范围，未来必须使用独立冷配置，不能复用主动索敌距离。玩家创建时由`PlayerConfig.initial_hp/max_hp`和`initial_mp/max_mp`初始化四个Numeric；当前演示模板的初始MP与最大MP均为200。Cocos3D、UE、Unity、Godot的玩家HUD只消费进入快照和`G2C_EntityNumeric`增量，显示当前/最大HP与MP。客户端不能根据怪物攻击自行扣血，也不能把HUD数值当作战斗权威。
+- 主动怪没有仇恨时只在12米主动索敌范围内寻找最近玩家；被动怪没有仇恨时保持待机。平A和技能都必须经`MonsterComponent.ApplyPlayerDamage`按“1点最终实际伤害=1点仇恨”累计，产生仇恨后两类怪都选择本地图存活玩家中的最高仇恨目标，已有仇恨不能再被12米主动索敌距离过滤，因此30米远程命中也会触发追击。固定刷点怪物在距Home超过30米、旧目标死亡/离线或全部仇恨目标失效时进入独立Evade回归态：先清仇恨和玩家战斗来源，回归途中不接受新伤害/仇恨，到达刷点后停止移动并恢复满HP；不能在失目标同帧重新主动索敌。30米当前是Starter Hotfix规则，正式项目应迁入独立冷配置，绝不能复用12米主动索敌距离。玩家创建时由`PlayerConfig.initial_hp/max_hp`和`initial_mp/max_mp`初始化四个Numeric；当前演示模板的初始MP与最大MP均为200。Cocos3D、UE、Unity、Godot的玩家HUD只消费进入快照和`G2C_EntityNumeric`增量，显示当前/最大HP与MP。客户端不能根据怪物攻击自行扣血，也不能把HUD数值当作战斗权威。
 
-- 标准Demo的战斗结算已收口到`CombatComponent.ApplyDamage/ApplyHealing`。玩家和怪物都挂载Combat；MonsterComponent只选择目标并提交请求，Item Handler通过ActionExecutor提交治疗或Buff，Combat内部按优先级消耗注册的伤害吸收器后再修改CurrentHp。Buff通过`RegisterDamageAbsorber/RemoveDamageAbsorber`在生命周期边界挂载能力，伤害流程不能反向查询BuffComponent；护盾处理器的数据是唯一运行时剩余量。HP仍由Numeric作为权威状态，但旁观者只接收1Hz的AOI latest；受击者与有效攻击者通过私有`G2C_CombatResult`事件立即收到精确结果，客户端以`serverTick`丢弃晚到旧状态。Buff添加/删除、命中/死亡/消耗等事实使用event。详见[战斗伤害与效果管线](../design/combat-damage-pipeline.md)和[Action与Buff设计](../design/action-buff.md)。
+- 标准Demo的战斗结算已收口到`CombatComponent.ApplyDamage/ApplyHealing`。玩家和怪物都挂载Combat；MonsterComponent只选择目标并提交请求，Item Handler通过ActionExecutor提交治疗或Buff。显式`canBePrevented`的伤害先经过`CombatEvents.BeforeDamage`同步只读Veto链，非零不透明原因直接形成`preventedReason`；放行后Combat才按优先级消耗注册的伤害吸收器并修改CurrentHp。Buff通过`RegisterDamageAbsorber/RemoveDamageAbsorber`在生命周期边界挂载能力，伤害流程不能反向查询BuffComponent；护盾处理器的数据是唯一运行时剩余量。HP仍由Numeric作为权威状态，但旁观者只接收1Hz的AOI latest；受击者与有效攻击者通过私有`G2C_CombatResult`事件立即收到精确伤害或规避结果，客户端以`serverTick`丢弃晚到旧状态。Buff添加/删除、命中/死亡/消耗等事实使用event。详见[战斗伤害与效果管线](../design/combat-damage-pipeline.md)和[Action与Buff设计](../design/action-buff.md)。
 - 2026-08-03连续EntityIndex元数据与热点Grid位图完成后，3000人10×10同口径全链路回归的Map CPU平均为51.0%，较前一版55.0%再降约7.3%；Probe p95/p99为47.94/71.78ms，Move 6000/s、跨Grid 309.6/s且全部丢工作指标为0，正式证据在`perf/results/map_capacity_latest.md`。1000人单Grid热点验收得到精确999000条candidate/visible关系，说明混合成员结构不改变可见语义；该热点样本只作专项诊断，不替代正式均匀基线。
 - AOI范围与频率全部由Cold配置驱动：`AoiConfig`定义Enter/Detach，`AoiSyncTierConfig`可定义任意数量的奇数范围与同步Hz，Map通过`aoiConfigId`选择配置。当前默认不启用7×7，但停服增加`7×7/1Hz`不需要修改框架代码。最外层同步范围必须等于Detach，TS生成期与Rust运行时都会拒绝未覆盖迟滞圈的配置；外层频率不能高于内层，且Hz必须整除Process逻辑Tick。
 - Cell与Grid尺寸也是Cold配置：`MapConfig.cellSizeMeters`定义Cell米制边长，`AoiConfig.gridSizeCells`定义每个Grid每边Cell数。地图物理边界由制作流程决定并记录为`widthCells/depthCells × cellSizeMeters`；Grid数量只由宽深Cell数除以`gridSizeCells`推导，不增加独立`gridCount`。Grid2D必须整除，NavMesh3D在Phase 4.2由资源导出器按相同契约对齐或补边。
@@ -503,6 +560,17 @@ Phase 5计划：
 
 16. 当前主工程、`tiangz-developer-tools`、`tiangz-native-language`和独立`TiangZ-DBProxy`都处于开发阶段：日常允许版本副本、Cargo/npm依赖和协议原型迭代，不要求强制使用`npm ci`、Cargo `--locked`或同步更新发布锁文件。开发CI可运行`npm run verify:locks:warn`报告漂移但不阻塞；准备正式Release时，主工程统一执行`npm run verify:release`；插件和DBProxy由各自仓库执行发布前的锁文件、版本、协议指纹和完整测试审查。不要把开发门禁误写成发布承诺。
 
+## 外置内容的条件激活边界
+
+地图内容目录可以登记 `initialSpawn=false` 的 Monster、NPC、Interactable 候选；对应运行时组件提供幂等的
+`ActivateSpawn/DeactivateSpawn`，停用必须同步清理 AOI、Unit、移动、尸体/重生或 NPC 交互游标等本地图状态。
+`SpawnSelectionGroup.initialActive=false` 用于休眠根组，外置模块可通过 `ActivateGroup/DeactivateGroup` 启停整个
+候选树；子组仍只能由父组拥有。TiangZ 不解释节日、事件编号、正负关系或来源数据库表，这些规则必须留在游戏模块。
+
+外置模块在地图静态 profile 扩展阶段早于 Monster/NPC 等运行时组件装配。需要延迟启动的模块组件可用
+`TimerSystem.TryGetInstance()` 探测进程定时服务，并排入下一轮运行时；无完整 Runtime 的模块校验工具不得被迫
+伪造进程单例。模块还应提供可注入时间/控制器的纯运行入口，以便无客户端验证边界和失败回滚。
+
 ## 新AI建议阅读顺序
 
 1. 根目录`AGENTS.md`。
@@ -554,6 +622,12 @@ Cocos3D是业务表现参考，但不是唯一客户端实现。Unity C#、UE C+
 
 Starter的掉落链是`MonsterConfig.drop_table_id -> DropTableConfig -> LootContainer -> C2M_LootMonster`。`quest_objective_id=0`表示归属于首个造成有效伤害账号的普通一次性掉落，非零表示按账号筛选的任务掉落；玩家必须先接取匹配的`CollectItem`任务，剩余数量为0时任务行继续留在尸体上，不会再生成Item。拾取在PlayerUnit有序mailbox中完成距离、归属、资格、数量和operationId检查，Inventory/Quest先生成纯数据计划，DBProxy确认后才提交Entity和私有结果。当前1101是静态任务道具，动态ItemInstance必须保存实例数据，不能套用“尸体只保存配置ID、拾取时生成ItemId”的快捷路径。完整规则见`docs/design/loot-and-task-items.md`。
 
+地图可交互物也可以通过可选的`InteractableContentDefinition.lootTableId`引用同一个中立`LootContentProfileComponent`。普通行按概率独立判定，带`groupId`的行每组最多选一项；同组可以共享`groupGatePermille`，先用独立确定性抽样通过组门槛，再选择显式概率成员，全部未命中时用第三个独立通道等权选择零概率兜底成员，`0`或省略的组门槛表示无门槛。行还可以用`nestedDropTableId`在命中后执行一次子表；包装行不直接发奖励或携带任务资格，登记阶段拒绝缺表、任务子表、超过16层和循环图。数量在`minCount/maxCount`间确定性选择；随机种子来自稳定交互operationId，因此重复请求只恢复原事务结果。普通掉落不要求任务，任务标记行与固定`rewards`仍按玩家当前`CollectItem`剩余量裁剪。物品与任务变化继续通过一次`inventory + quest`事务提交，成功后可交互物才离开AOI并进入配置的重生时间。具体游戏的宝箱、采集点、来源表编号和客户端封包不进入Core或通用MMORPG定义；外置模块只登记中立表ID、行和刷点。
+
+地图中只需要被看见、暂时不能由服务器安全执行玩法的物体，必须显式登记为`InteractableContentDefinition.interactionEnabled=false`。它仍复用Unit、位置、AOI和表现模型进入快照，但`Use`会在读取持久化回执前以`InteractableUnavailable`拒绝，不能生成奖励、任务、掉落或重生副作用。`interactionEnabled=false`的定义不得同时声明任何玩法交互；旧定义省略该字段时仍必须包含实际玩法声明，避免无意创建可点击空物体。外置导入器可以据此先完整投影地图陈设，同时把尚未支持的来源类型、脚本和掉落原因留在覆盖报告中；Core不认识任何来源GameObject类型。
+
+`SkillComponent`现已持久化中立熟练度轨道`proficiencyId/rank/maximumRank`。训练师报价可声明熟练度前置与单调上限授予，并用可选`grantedSkillConfigIds`把稳定报价ID与一次原子授予的实际技能集合分离；省略时仍授予报价技能本身。事务回执记录实际授予集合，重放不会多扣款或漏授技能。可交互物可声明最低rank和成功成长量。涉及成长时，交互使用`inventory + quest + runtime`同一事务，回执携带提交后的熟练度，重复请求和ACK不确定恢复不会重复加点。登录、断线重连和跨地图快照都会传递熟练度。Core与通用MMORPG层不认识WoW SkillLine、Lock、草药或矿脉；这些映射必须由外置模块和协议网关从自己的数据源投影。
+
 ## 框架热路径分配边界
 
 TiangZ不承诺“关闭V8 GC”或绝对0 GC；可执行的目标是稳态下框架热路径的重复堆分配趋近于零，并用指标确认优化是否有效。Promise、protobuf解码对象、跨分片帧副本和业务临时对象仍可能存在，不能把“少分配”误写成“不会回收”。
@@ -584,8 +658,56 @@ Cocos3D的尸体窗口必须持续显示掉落行和领取结果，领取后使�
 
 ## 战斗状态与法力恢复
 
-技能费用当前由Hotfix的`SkillManaCost.ts`维护，技能请求通过法力校验后立即扣除；法力不足不会创建ActiveCast。`CombatStateComponent`按“有效怪物仇恨来源集合”维护战斗状态：怪物死亡、回归出生点或清除仇恨时移除来源，来源为空才脱战。战斗状态不恢复MP；脱战后按180秒从当前MP恢复到MaxMp，固定更新桶用整数余数累计避免漂移。该组件是临时地图运行态，传送时清空，不进入持久化快照。设计细节见[`docs/design/currency-and-npc-shop.md`](../design/currency-and-npc-shop.md)。
+技能费用当前由Hotfix的`SkillManaCost.ts`维护，技能请求通过法力校验后立即扣除；法力不足不会创建ActiveCast。`CombatStateComponent`按“有效非玩家仇恨来源集合”维护战斗状态：Monster或配置为战斗型的NPC死亡、回归出生点或清除仇恨时移除来源，来源为空才脱战。`AddHostile/RemoveHostile`是新入口，`AddMonster/RemoveMonster`只保留为兼容别名。战斗状态不恢复MP；脱战后按180秒从当前MP恢复到MaxMp，固定更新桶用整数余数累计避免漂移。该组件是临时地图运行态，传送时清空，不进入持久化快照。设计细节见[`docs/design/currency-and-npc-shop.md`](../design/currency-and-npc-shop.md)。
 
 ## DBProxy就绪边界
 
 配置了`process.persistence.dbProxy`的Process必须在进入ready前预连接完整DBProxy池；首选Endpoint不可用但备用可用时允许启动，全部Endpoint不可用时启动失败并交给监督器重试。禁止把惰性首连延迟暴露给第一个玩家RPC，也不能仅靠扩大客户端超时掩盖错误ready。
+
+## 随机游走节奏
+
+`MonsterContentSpawn.wanderSchedule`是来源中立的随机游走调度契约：内容包可声明首次移动错峰、到达后停顿区间、首段停顿概率和连续路段的概率增量。`MonsterComponent`持有连续路段计数并执行确定性判定；具体来源游戏的枚举、默认概率和时间范围必须由外置导入器转换，通用运行时不得按地图、怪物编号或来源引擎分支。
+
+## 运行时内容增量
+
+`NpcComponent`与`InteractableComponent`支持由稳定`ownerId`拥有的可逆内容 patch。NPC patch 只能声明中立任务入口/交付、商店物品、对话/商店/训练/修理/恢复服务、表现模型/装束标识和命名空间扩展能力；交互物 patch 当前只声明任务入口。定义级 patch 同时作用于现有和后续刷出的 Unit，刷点级 patch 只作用于对应实例；同一 owner 重复应用必须幂等，移除后按基础资料与其余 owner 重新合成，不能保存“撤销前快照”覆盖其他增量。战斗资格不允许通过低频运行时patch开启，必须来自发布前已冻结的`NpcCombatProfile`。
+
+最终合成状态归 Unit 所有，并通过`MapEntitySnapshot.runtime_profile_revision`及完整数组/服务字段进入 AOI 快照。revision 非零表示这些字段权威；协议适配器不得再用自己的静态目录覆盖。在线变化由外置模块发布命名空间`UnitPresentationType.Extension`，载荷语义由对应适配器拥有，Core只负责受众和有序广播。互斥模型/装束冲突在合成时失败，扩展能力必须带命名空间；来源游戏的NPC flag、模型号、装备表和客户端更新字段不得进入TiangZ通用类型。
+
+## 通用任务内容信号
+
+`QuestObjectiveType.ContentSignal` 是 MMORPG 层的通用任务目标类型：外置内容适配器在自身规则已经确认后，通过既有 `QuestEvents.Progress` 发布正向事实。Core 只按 `objectiveType + targetConfigId` 匹配、封顶计数、持久化和广播，不解释信号来自技能、对话、区域脚本或其他游戏机制。来源协议、数据库编号、半径和目标选择必须留在模块配置与模块 Handler 中；没有活动匹配目标时继续安全无操作。
+
+## 战斗周期行为
+
+`MonsterContentBehaviorTrigger.CombatInterval` 是来源中立的战斗计时契约。内容包声明首次触发和后续重复的最小/最大延迟、概率及中立动作；`MonsterComponent` 只在存在战斗目标时推进计时，并在脱战回归、闪避重置、死亡或重新生成时清理本次遭遇状态。来源引擎的事件编号、施法标志和技能编号仍由外置模块转换，Core 不得按具体游戏或怪物分支。
+
+`MonsterContentBehaviorTrigger.Spawned` 是来源中立的实例创建边界。每次怪物运行实例完成组件初始化并接入 AOI 后执行一次，首次生成与死亡后的新实例语义一致；内容可以在该边界复用现有中立行为动作。Core 不区分来源数据库的加载、刷新或重生事件编号，具体游戏的出生脚本只能由外置模块投影为该契约。
+
+`SummonComponent` 的地图内临时所有者可以是 `PlayerUnit`、`MonsterUnit` 或 `NpcUnit`。三者共享槽位替换、Unit/AOI 生命周期和跟随；只有玩家所有者能够使用现有协战与跨图快照，怪物和 NPC 所有者的召唤物保持被动跟随，并在所有者移除时一起离开。没有 `NumericComponent` 的服务型 NPC 按 1 级创建召唤物，不要求为了召唤而伪造战斗数值；非玩家所有者也没有持久角色ID，地图内关系只由 `ownerUnitId` 表达。具体游戏的召唤法术、模板、阵营继承、遭遇状态机、宠物栏和客户端字段仍完全属于外置模块/协议适配器。
+
+`MonsterContentBehaviorTrigger.ExternalSignal` 是来源中立的外部内容入口。协议适配器通过 `C2M_TriggerMonsterSignal` 只提交当前玩家、AOI 内存活怪物与正整数信号编号；`MonsterComponent` 在玩家有序 mailbox 内完成身份、同地图和可见性校验，再按规则的 `requiredSignalId` 与重复延迟分发。Core 不解释客户端 opcode、表情、交互或脚本事件含义，信号编号、文本和动作都必须由外置模块及其配置拥有；概率失败也会消耗本次冷却窗口，避免客户端高频重试改变配置概率。
+
+NPC 与怪物类名只表达基础身份，不是互斥的玩法能力标签。外置模块在`NpcContentDefinition.combatProfile`声明中立数值、玩家模板资格、主动索敌与追击范围；Core 的NPC工厂据此选择性组合`NumericComponent`、`CombatComponent`、`SkillComponent`，未配置战斗资料的服务NPC保持无数值快照且不可攻击。`NpcComponent`独立拥有NPC仇恨、追击、攻击、回巢、死亡、10秒尸体与刷点`respawnSeconds`重生，玩家平A、技能和延迟伤害都必须进入同一生命周期边界；它不侵入`MonsterComponent`私有运行集合。外置模块仍负责从阵营、队伍或其他游戏规则投影`attackablePlayerConfigIds/aggressivePlayerConfigIds`，Core不认识来源阵营或NPC flag。
+
+`NpcCombatProfile.behaviorRules` 是服务 NPC 的来源中立战斗行为契约。规则可以在重置、进入战斗、战斗周期、生命区间、资源区间和目标距离区间触发，并按序请求不透明能力、启停战斗移动、设置/增减中立状态或逃跑；刷点规则可覆盖定义级规则。运行时按固定 Map Update 推进确定性计时与概率，在死亡、回巢和重生时重置遭遇状态。`NpcEvents.CombatActionRequested` 只把能力 ID 和运行时目标交还内容所有者，Core 不解释来源脚本或技能。可选资源恢复字段必须成组配置，在观察到资源消耗后等待延迟，再按固定间隔恢复并封顶；具体恢复公式由外置数据投影。
+
+`MonsterContentDefinition` 与战斗型 NPC 使用同一组可选主资源恢复语义：`resourceRegenAmount`、`resourceRegenIntervalMs`、`resourceRegenDelayAfterSpendMs` 必须成组声明且要求正的资源上限。Monster 运行时观察公共技能系统已提交的资源消耗，重新开始恢复延迟，随后按固定间隔恢复并在回巢时补满。Core 不解释法力、怒气或来源游戏公式；外置模块只把已计算的中立数值写入内容模板。
+
+伤害学校属于 MMORPG 战斗通用词汇，当前包含 Physical、Frost、Fire、Holy、Shadow、Arcane 和 Nature。外置模块可以把来源数据转换为这些中立值；来源法术表、位掩码和技能效果组合不得进入 Core。
+
+玩家受伤后的公共 MMORPG 生命周期由 `MapComponent.ApplyDamageToPlayer` 收口：来源可以是当前地图中的任意 Unit，入口负责真实来源身份、Combat 结算、私有结果、施法受击、死亡清战斗和配置化耐久损耗。Monster/NPC 只在调用前维护各自仇恨；外置模块的环境机关不需要伪造生物身份。具体游戏的触发与伤害配置不得进入 TiangZ。
+
+`NumericComponent` 在任一生命/资源上限来源字段变化后维护上界：若 `CurrentHp > MaxHp` 或 `CurrentMp > MaxMp`，当前值同步夹紧到非负上限；上限增加时当前值不变。这个规则只保证通用数值合法性，不替外置模块决定属性如何推导上限，也不提供治疗/回蓝语义。
+
+## 外置模块驱动遭遇的最小战斗入口
+
+`MonsterComponent.AddThreat(monster, player, amount)` 是公开的来源中立入口。外置模块可先用 `ActivateSpawn` 激活已注册的休眠刷点，再增加正数权威仇恨，使配置指定的对手进入现有索敌、追击、战斗状态、死亡和清仇恨链路。Core 仍不认识关卡阶段、任务编号、来源 SmartAI、对话或冠军顺序；这些状态机和 Luban 表必须留在模块内。模块不得绕过 `MonsterComponent` 直接修改怪物运行时表，也不得用零伤害伪造一次 `DamageResolved` 来启动战斗。
+
+### Unit 数值脉冲恢复（2026-09-04）
+
+`NumericRegenerationComponent` 是 MMORPG 层的来源中立 Unit 能力：定义只包含当前值/上限的 Numeric 编号、结算间隔、检测到数值下降后的延迟，以及二选一的固定 `amount` 或动态 `amountNumericType`。动态数值来自同一 Unit 的 Numeric，适合等级成长在重算 Numeric 后立即改变后续脉冲，无须重建组件。组件只保存每个 Unit 的观察值与下一结算时刻，不创建 Timer，也不理解 mana、战斗状态、职业、宠物或协议。Monster、战斗 NPC、SummonedUnit 与 PlayerUnit 由各自已有的固定更新桶调用同一个 `Tick`；回巢等领域动作直接重置数值后调用 `ResetSchedule`。具体游戏的恢复公式必须在外置模块构建期投影成配置，不能回填到该组件。
+
+### 可交互物的不透明动作
+
+`InteractableContentDefinition.interactionActionId` 用于没有背包/任务持久化事务、但需要在地图中执行一次动作的交互物。Core 只校验实体存在、可用、同地图、使用距离和通用熟练度，然后同步发布 `InteractableEvents.ActionRequested`；动作编号、目标位置算法、动画和协议封包全部由外置模块拥有。动作型定义不能同时声明奖励、掉落表、任务入口/目标或熟练度写入，成功后不会自动隐藏、持久化或进入重生计时。模块需要移动 Unit 时必须调用 `MapComponent.RelocateUnit`，不得直接写 Position 或自行广播移动。

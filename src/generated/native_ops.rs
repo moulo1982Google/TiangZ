@@ -17,8 +17,10 @@ use crate::native_data::{
     op_native_spatial_project_position, op_native_spatial_raycast, op_native_spatial_release,
     op_native_spatial_remove_obstacle, op_native_spatial_sample_height,
     op_native_spatial_update_obstacles, op_native_spatial_upsert_box_obstacle,
-    op_native_unit_reset_movement, op_native_unit_set_movement_input,
-    op_native_unit_set_navigation_input, op_native_unit_set_navigation_target,
+    op_native_unit_apply_grid_movement_snapshot, op_native_unit_relocate,
+    op_native_unit_reset_movement, op_native_unit_set_grid_movement_target,
+    op_native_unit_set_movement_input, op_native_unit_set_navigation_input,
+    op_native_unit_set_navigation_target,
 };
 
 deno_core::extension!(
@@ -43,6 +45,7 @@ deno_core::extension!(
         op_native_spatial_update_obstacles,
         op_native_unit_set_navigation_target,
         op_native_unit_set_navigation_input,
+        op_native_unit_relocate,
         op_native_spatial_release,
         op_native_aoi_create,
         op_native_aoi_release,
@@ -64,6 +67,8 @@ deno_core::extension!(
         op_native_map_peek_unit_aoi_delta,
         op_native_map_ack_unit_delta,
         op_native_unit_set_movement_input,
+        op_native_unit_set_grid_movement_target,
+        op_native_unit_apply_grid_movement_snapshot,
         op_native_unit_reset_movement,
         op_native_map_update_movement,
         op_native_map_advance_movement,

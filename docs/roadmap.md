@@ -1,5 +1,17 @@
 # TiangZ 路线图
 
+## 2026-09-04 框架可靠性复审后续优先级
+
+本轮只记录决策，不代表对应实现已经完成。执行时保持小步提交，不把进程级、网络级和故障验收强行迁入单元测试框架。
+
+1. **P0：同步生命周期的 async 契约前置校验。** 构建期检查 `Awake`、`OnDestroy`、`Deserialize`、`CaptureTransfer`、`RestoreTransfer` 不得声明为 `async` 或返回 Promise；`HotfixSystem.Commit()` 在修改活动 prototype 前对所有候选实现做同类预检，现有运行时 Promise 检查继续作为兜底。仅检查 `AsyncFunction` 不足以覆盖普通函数返回 Promise的情况。
+2. **P0：DBProxy 保存重试退避。** `StorageUnavailable` 继续复用同一 `requestId`，在有限重试之间增加墙钟指数退避和 full jitter；避免 Repository、SDK和Transport多层叠加重试，并以可注入延迟/随机源做确定性测试。
+3. **P1：统一测试调度与覆盖率基线。** 先让独立测试失败后继续执行并汇总结果、耗时和机器可读报告，再把纯TypeScript、进程内自测逐步迁入 Vitest；端口、子进程、codegen、Cargo和故障测试保留为隔离的集成验收。覆盖率先记录基线，再按模块递增门槛。
+4. **P1：Timer字符串契约静态校验。** 使用现有TypeScript AST工具校验 `NewOnceTimer`、`NewRepeatedTimer` 和 `onCancelled` 的字面量方法名、候选System方法存在性及参数形状。Timer回调当前允许 `MaybePromise<void>`，不得错误地限制为同步方法。
+5. **P2：Core内部二进制信封加固。** 统一保留ActorLocation、batch和Trace等内部msgcode，消除encode/decode两侧裸offset，增加golden vector、截断/边界和随机round-trip测试。内部路由信封不默认并入业务protobuf codegen，除非格式数量或跨语言消费者继续增长。
+6. **P2：SceneEvent精确类型语义文档化。** 明确监听器只匹配 `scene.constructor` 完全相同的Scene，不继承匹配，并增加基类/子类行为测试；未来如有真实需求，通过显式选项设计继承、去重、顺序和veto语义，不静默改变默认行为。
+7. **观察项：GameModuleSystem真实消费者验证。** 当前保持实验性，不继续扩展抽象，也不为证明框架而硬拆MMORPG代码；首个独立模块接入时，把构建、Model导出、Hotfix装配、调试和发布过程作为API人体工学验收，再决定是否调整接口。
+
 ## 2026-08-24 日志与分布式追踪
 
 - 本地观测栈扩展为Prometheus、Loki、Tempo、Grafana和Alloy；JSON日志与采样Trace共享W3C宽度`traceId/spanId`。

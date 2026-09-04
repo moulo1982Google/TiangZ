@@ -28,6 +28,14 @@
 
 “准框架”不是 Core。它是已经被多个游戏形态验证后，才可能复用的业务模式；当前只冻结契约，不提前承诺第二个游戏一定能直接复用全部执行代码。
 
+外置模块是横跨②/③的打包方式，不是第四层：Core可以拥有模块发现、依赖图、独立类型检查、Model导出桥、强类型Entity装配、Hotfix组合和兼容指纹，但模块内的Scene、Component、Handler和规则仍按本表归属。具体游戏模块不得因为由Core装载就变成Core代码，详见[外置游戏模块](external-game-modules.md)。
+
+模块自有技能通过MMORPG层的`SkillDefinitionProfileComponent`进入现有技能状态机：注册表只保存地图级只读定义并拒绝覆盖，施法、伤害、死亡和刷新仍由TiangZ领域组件负责。具体职业、技能ID、数值和客户端动作栏属于模块；该组件不是Core，也不是让协议网关自行结算伤害的后门。
+
+`SkillComponent`还保存中立的已学技能ID与`proficiencyId/rank/maximumRank`轨道，供通用训练师、采集交互、持久化和跨地图迁移复用。Core只保证单调授予、前置检查与事务恢复；“草药学”“采矿”、具体SkillLine编号、训练法术和客户端字段仍属于外置模块/协议网关，不能写进TiangZ Core。
+
+模块批量地图内容通过MMORPG层的`MonsterContentProfileComponent`进入现有刷怪运行时：目录只原子保存中立模板与稳定刷点并在地图发布前冻结，`MonsterComponent`继续拥有Unit、AOI、战斗、尸体和重生。具体来源数据库、表结构、坐标转换、地图编号和内容指纹属于模块；不得把外部世界库schema或生成行放入Core。
+
 ## 2. 当前文件归属
 
 ### ① 框架运行时
@@ -63,10 +71,10 @@
 `app/model/mmorpg/`保留当前游戏的稳定适配：
 
 - `map/`、`mapHost/`、`mapManager/`、`location/`、`movement/`：地图、AOI、传送和NavMesh。
-- `monster/`、`npc/`：刷怪、仇恨、NPC交互和Monster/NPC Unit。
+- `monster/`、`npc/`：刷怪、仇恨、NPC交互、Monster/NPC Unit与模块怪物内容目录。
 - `gate/`、`scenes/`、`broadcast/`：当前服务拓扑和地图客户端路由。
 - `persistence/`、`native/`：当前Player快照、协议投影和MMORPG Native facade。
-- `skill/SkillMapComponent`、`numeric/MovementNumeric`：地图调度和移动单位适配。
+- `skill/SkillMapComponent`、`skill/SkillDefinitionProfileComponent`、`numeric/MovementNumeric`：地图调度、模块技能资料边界和移动单位适配。
 
 `app/hotfix/mmorpg/`保留当前游戏的可热更执行器、Handler和配置适配。例如 `ActionExecutor`、`RewardExecutor`、`SkillMapComponentSystem` 仍然会读取 MMORPG 的 `ActionType`、生成配置、Combat/PlayerUnit和地图目标。它们不能为了“看起来通用”搬进 Core。
 
@@ -83,9 +91,22 @@ app/model/mmorpg/numeric/MovementNumeric.ts
 
 app/hotfix/mmorpg/numeric/NumericComponentSystem.ts
   Rust getter/setter、脏标记、MoveSpeed写入后同步 Position
+
+app/model/mmorpg/numeric/NumericRegenerationComponent.ts
+app/hotfix/mmorpg/numeric/NumericRegenerationComponentSystem.ts
+  任意当前值/上限字段的固定量或 Numeric 动态量脉冲恢复运行态，不包含具体资源语义或公式
+
+app/model/mmorpg/movement/DirectionalMovementProfileComponent.ts
+  PlayerUnit拥有的前进/后退/横移服务端倍率；不保存按键，也不接受客户端速度
 ```
 
 `MoveSpeed` 仍可以在 MMORPG 代码中使用，但它是游戏单位和移动规则，不是通用 Numeric 字段。新增卡牌或模拟经营领域时，可以有完全不同的“行动点/生产速度”，而不必继承地图移动语义。
+
+`C2M_NavigateInput`只提交离散方向和朝向。`PlayerUnitSystem`以最终`MoveSpeed`为基础，通过`DirectionalMovementProfileComponent`选择当前方向的有效速度，再交给Rust权威推进。默认倍率全部为1，现有游戏行为不变；外置游戏模块可以在Entity发布前配置倍率，但不能让客户端提交速度、在gateway节流模拟速度，或把某个游戏的常量写进Core。
+
+服务端AI在Grid2D上追击、巡逻或游荡时使用`NativeData.SetGridMovementTarget`提交最终Cell，而不是反复模拟玩家按住方向键。最终目标和逐Cell推进状态归Rust Unit所有，Rust在同一固定更新中连续开始下一格并在目标格精确清除输入；怪物、NPC和召唤物只决定目标，不按AI判定频率猜测停止时刻。该能力属于MMORPG Native移动层，不进入`app/core`，也不包含任何具体游戏的地图坐标或移动协议。
+
+唯一例外是地图资料显式启用的`externalMovementSnapshots`兼容模式：它用于接入已经完成同源场景碰撞的既有协议客户端，只在Grid2D上接受有最大位移上限的位置快照。PlayerUnit和Rust仍重复校验序号、边界与数值，网关不能提交速度；未启用地图与NavMesh3D一律拒绝。该能力属于MMORPG地图适配，不进入`app/core`，具体坐标原点、阈值与客户端协议仍由外置游戏模块拥有。
 
 派生数值仍沿用 `result * 10 + 1/+2/+3` 的 Base/Add/Pct约定；这属于 Numeric 的稳定计算规则。具体哪个配置字段代表移动速度，由领域适配器决定。
 
@@ -132,7 +153,7 @@ RewardPlan
 
 - Item：`domains/item` 负责 Item ChildEntity 和集合容器；`mmorpg/item` 负责 `ItemSnapshot`、Luban ItemConfig、NativeItemRef、使用道具和持久化。
 - Quest：`domains/quest` 负责活动 Quest 和完成记录容器；`mmorpg/quest` 负责 NPC、QuestConfig、目标索引、任务奖励和网络协议。
-- Buff：`domains/buff` 负责 Buff 生命周期数据；`mmorpg/buff` 负责 BuffConfig、冲突策略、Timer、Action和AOI投影。
+- Buff：`domains/buff` 负责 Buff 生命周期数据和集合契约；`mmorpg/buff` 负责 BuffConfig、冲突策略、Timer、Action和AOI投影。模块定义可携带不透明正整数效果标签，MMORPG执行器只提供按任一标签批量移除，不解释“眩晕”“诱捕”等游戏语义。
 - Combat：当前完整实现位于 `mmorpg/combat`，负责伤害/治疗/护盾、普通攻击、Numeric和死亡表现。只有第二个真实领域证明同一状态形状后，才抽取无MMORPG语义的契约。
 - Skill：当前完整实现位于 `mmorpg/skill`，负责Cast/CD/Channel、SkillConfig、目标距离、地图调度、弹道、命中和技能快捷栏协议；删除了未被运行时使用的 `domains/skill` 影子。
 
@@ -158,6 +179,12 @@ native_data/mmorpg/
 ```
 
 `native_data/mmorpg/*.native` 中的 `namespace demo` 和 `namespace native` 暂时保持不变：它们是持久化 schema/Native ABI 标识，不是目录名。修改这些 namespace 需要单独做 schema 迁移和兼容验收，不能作为目录整理的一部分。
+
+可交互物的通用所有权止于实体/AOI生命周期、可用性、使用距离、通用熟练度与奖励事务。无持久化副作用的模块动作通过正整数 `interactionActionId` 和 `InteractableEvents.ActionRequested` 扩展；Core 不解释动作语义。来源对象类型、槽位几何、动画状态和协议封包属于游戏模块/适配器，模块发起权威位移时复用 `MapComponent.RelocateUnit`。
+
+地图内任意 Unit 对 PlayerUnit 造成伤害时，统一调用 MMORPG 层的 `MapComponent.ApplyDamageToPlayer`。该入口验证双方仍属于当前地图，以真实来源 UnitId 执行 Combat 结算，并统一完成私有战斗结果、施法受击处理、死亡清战斗状态及配置化耐久损耗。Monster/NPC 可以在调用前维护各自仇恨，环境机关或外置模块则不必伪造成怪物。具体陷阱、火焰、法术号、伤害骰和触发半径仍属于外置游戏配置。
+
+MMORPG Numeric 必须维持“当前生命/资源不高于派生上限”的通用不变量。写入 `MaxHpBase/Add/Pct` 或 `MaxMpBase/Add/Pct` 后，运行时只在当前值超过新上限时向下夹紧；提高上限不会自动治疗或补充资源。Buff 的属性公式和具体增减值仍由外置游戏配置，Core 不解释耐力、智力或任何来源法术。
 
 生成协议仍保留 `app/generated/model/server/demo`、`client_sdk/.../Model/demo` 等路径。这些是已经生成并可能被外部客户端引用的线协议命名空间，重命名它们会变成协议/SDK兼容性变更，不属于本次领域目录整理。新的游戏协议应使用自己的协议命名空间和锁文件，不要把 MMORPG 的 `demo` 线协议复制成 Core API。
 

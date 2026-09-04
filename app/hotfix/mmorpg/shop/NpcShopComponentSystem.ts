@@ -1,6 +1,5 @@
 import {
   CurrencyComponent,
-  GameConfigs,
   GameErrCode,
   ItemComponent,
   MapComponent,
@@ -25,6 +24,7 @@ import {
   type NpcShopSellReceipt,
 } from "./NpcShopTransaction";
 import { attachInventoryRecovery } from "../item/InventoryRecovery";
+import { RequireItemContentDefinition } from "../item/ItemContentResolver";
 
 // Starter商店出售一红一蓝；大型生命药水仍可由怪物掉落，避免把掉落表和商店目录绑死。
 // The starter shop sells one health potion and one mana potion; the large health
@@ -48,14 +48,18 @@ export class NpcShopComponentSystem extends NpcShopComponent {
   protected override OnDestroy(): void {}
 
   Open(player: import("#tiangz/model").PlayerUnit, npcUnitId: number): M2C_OpenNpcShop {
-    this.npc.ValidateShopInteraction(player, npcUnitId);
+    const npc = this.npc.ValidateShopInteraction(player, npcUnitId);
     const inventory = player.GetComponent(ItemComponent).Snapshot();
-    const items = SHOP_ITEM_CONFIG_IDS.map((itemConfigId) => {
-      const config = GameConfigs.ItemConfig.Get(itemConfigId);
+    const itemConfigIds = npc.ShopItemConfigIds.length > 0
+      ? npc.ShopItemConfigIds
+      : SHOP_ITEM_CONFIG_IDS;
+    const items = itemConfigIds.map((itemConfigId) => {
+      const config = RequireItemContentDefinition(player, itemConfigId);
       return {
         itemConfigId,
         buyPrice: BigInt(config.buyPrice),
         sellPrice: BigInt(config.sellPrice),
+        purchaseCount: config.purchaseCount ?? 1,
       };
     });
     this.DomainScene().logger.info("NPC shop opened with authoritative inventory", {
@@ -81,7 +85,7 @@ export class NpcShopComponentSystem extends NpcShopComponent {
     player: import("#tiangz/model").PlayerUnit,
     request: C2M_BuyNpcShopItem,
   ): Promise<M2C_BuyNpcShopItem> {
-    this.npc.ValidateShopInteraction(player, request.npcUnitId);
+    const npc = this.npc.ValidateShopInteraction(player, request.npcUnitId);
     validateOperationId(request.operationId);
     requireShopCount(request.count);
     const operationId = shopOperationId(player.Account, "buy", request.operationId);
@@ -92,7 +96,12 @@ export class NpcShopComponentSystem extends NpcShopComponent {
       if (recovered) return recovered;
     }
 
-    const config = this.getBuyConfig(request.itemConfigId);
+    const config = this.getBuyConfig(player, request.itemConfigId, npc.ShopItemConfigIds);
+    const purchaseCount = config.purchaseCount ?? 1;
+    const grantedCount = purchaseCount * request.count;
+    if (!Number.isSafeInteger(grantedCount) || grantedCount <= 0) {
+      throw new RpcError(GameErrCode.InvalidShopCount, "shop grant count exceeds safe integer range");
+    }
     const totalGold = BigInt(config.buyPrice) * BigInt(request.count);
     const currency = player.GetComponent(CurrencyComponent);
     const baseGold = currency.Gold;
@@ -104,7 +113,7 @@ export class NpcShopComponentSystem extends NpcShopComponent {
     try {
       inventoryPlan = inventory.PlanGrantItems([{
         configId: request.itemConfigId,
-        count: request.count,
+        count: grantedCount,
       }]);
     } catch (error) {
       throw attachInventoryRecovery(player, error);
@@ -173,7 +182,7 @@ export class NpcShopComponentSystem extends NpcShopComponent {
         new RpcError(GameErrCode.ItemNotFound, `item not found: ${request.itemId}`),
       );
     }
-    const config = GameConfigs.ItemConfig.Get(current.configId);
+    const config = RequireItemContentDefinition(player, current.configId);
     const sellPrice = BigInt(config.sellPrice);
     if (sellPrice <= 0n) {
       throw new RpcError(GameErrCode.ItemNotSellable, `item is not sellable: ${current.configId}`);
@@ -280,11 +289,16 @@ export class NpcShopComponentSystem extends NpcShopComponent {
     for (const item of items) await map.PublishItemChanged(player, item);
   }
 
-  private getBuyConfig(itemConfigId: number): import("#tiangz/model").ItemConfigData {
-    if (!(SHOP_ITEM_CONFIG_IDS as readonly number[]).includes(itemConfigId)) {
+  private getBuyConfig(
+    player: import("#tiangz/model").PlayerUnit,
+    itemConfigId: number,
+    shopItemConfigIds: readonly number[],
+  ): Readonly<import("#tiangz/model").ItemContentDefinition> {
+    const availableIds = shopItemConfigIds.length > 0 ? shopItemConfigIds : SHOP_ITEM_CONFIG_IDS;
+    if (!(availableIds as readonly number[]).includes(itemConfigId)) {
       throw new RpcError(GameErrCode.ShopItemUnavailable, `item is not sold by starter shop: ${itemConfigId}`);
     }
-    const config = GameConfigs.ItemConfig.Get(itemConfigId);
+    const config = RequireItemContentDefinition(player, itemConfigId);
     if (config.buyPrice <= 0) {
       throw new RpcError(GameErrCode.ShopItemUnavailable, `item has no buy price: ${itemConfigId}`);
     }

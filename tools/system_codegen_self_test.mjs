@@ -9,6 +9,7 @@ const cases = [
   ["ItemComponentSystem.d.ts", [
     "GetItem(itemId: bigint): ItemView | undefined;",
     "UseItem(itemId: bigint): ItemSnapshot;",
+    "SeedInitialItems(seeds: readonly InventorySeed[]): readonly ItemSnapshot[];",
   ]],
   ["NumericComponentSystem.d.ts", [
     "Get(type: NumericTypeValue): bigint;",

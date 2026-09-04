@@ -3,6 +3,7 @@ export interface LoginTokenClaims {
   readonly account: string;
   readonly loginCount: number;
   readonly characterId: bigint;
+  readonly playerConfigId: number;
 }
 
 /**
@@ -18,26 +19,33 @@ export function EncodeLoginToken(claims: LoginTokenClaims): string {
     throw new Error("invalid login token claims");
   }
   if (claims.characterId <= 0n) throw new Error("login token characterId must be positive");
+  if (!Number.isSafeInteger(claims.playerConfigId) || claims.playerConfigId <= 0) {
+    throw new Error("login token playerConfigId must be positive");
+  }
   return [
     encodeURIComponent(claims.processId),
     encodeURIComponent(claims.account),
     claims.loginCount.toString(10),
     claims.characterId.toString(10),
+    claims.playerConfigId.toString(10),
   ].join(".");
 }
 
 export function DecodeLoginToken(token: string): LoginTokenClaims {
   const parts = token.split(".");
-  if (parts.length !== 4) throw new Error("invalid login token");
+  if (parts.length !== 5) throw new Error("invalid login token");
   const loginCount = Number(parts[2]);
   const characterId = BigInt(parts[3]);
+  const playerConfigId = Number(parts[4]);
   const claims = {
     processId: decodeURIComponent(parts[0]),
     account: decodeURIComponent(parts[1]),
     loginCount,
     characterId,
+    playerConfigId,
   } satisfies LoginTokenClaims;
-  if (!claims.processId || !claims.account || !Number.isSafeInteger(loginCount) || loginCount <= 0 || characterId <= 0n) {
+  if (!claims.processId || !claims.account || !Number.isSafeInteger(loginCount) || loginCount <= 0 ||
+    characterId <= 0n || !Number.isSafeInteger(playerConfigId) || playerConfigId <= 0) {
     throw new Error("invalid login token claims");
   }
   return claims;

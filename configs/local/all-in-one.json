@@ -85,7 +85,8 @@
       "acceptDynamicMaps": true,
       "staticMapIds": [
         2,
-        100
+        100,
+        201
       ],
       "ip": "127.0.0.1",
       "port": 7302

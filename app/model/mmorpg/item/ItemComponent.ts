@@ -1,9 +1,13 @@
 import type { ItemSnapshot, M2C_UseItem } from "../../../generated/model/server/demo/protocol/messages";
 import type {
   InventoryConsumePlan as GenericInventoryConsumePlan,
+  InventoryConsumeByConfig as GenericInventoryConsumeByConfig,
+  InventoryExchangePlan as GenericInventoryExchangePlan,
   InventoryGrant as GenericInventoryGrant,
   InventoryGrantPlan as GenericInventoryGrantPlan,
   InventoryReplacePlan as GenericInventoryReplacePlan,
+  InventoryRepairPlan as GenericInventoryRepairPlan,
+  InventorySeed as GenericInventorySeed,
   ItemState,
 } from "../../domains/item/ItemTypes";
 
@@ -12,7 +16,11 @@ export { ItemComponent } from "../../domains/item/ItemComponent";
 export type InventoryGrant = GenericInventoryGrant;
 export type InventoryGrantPlan = GenericInventoryGrantPlan<ItemSnapshot>;
 export type InventoryConsumePlan = GenericInventoryConsumePlan<ItemSnapshot>;
+export type InventoryConsumeByConfig = GenericInventoryConsumeByConfig;
+export type InventoryExchangePlan = GenericInventoryExchangePlan<ItemSnapshot>;
 export type InventoryReplacePlan = GenericInventoryReplacePlan<ItemSnapshot>;
+export type InventoryRepairPlan = GenericInventoryRepairPlan<ItemSnapshot>;
+export type InventorySeed = GenericInventorySeed;
 
 export interface InventoryGrantResult {
   readonly items: readonly ItemSnapshot[];

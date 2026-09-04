@@ -11,6 +11,8 @@
 
 可见范围由每次业务变化决定，不由Entity类型自动决定。Buff是ChildEntity但通常对AOI可见；Quest也是ChildEntity但默认只对本人可见，只有共享任务摘要对附近队友可见。
 
+`UnitPresentation`缺省使用AOI受众；外置游戏模块投影仅属于当前玩家的协议状态时，必须显式选择`UnitPresentationAudience.Self`。模块可用命名空间键承载`Extension`表现，Core只负责受众和传输，不解释具体客户端字段。
+
 进入AOI时发送当前观察者有权看到的Unit整体Snapshot。离开AOI时移除Unit，不逐个删除Unit下面的Buff或共享任务摘要。
 
 禁止把“可能有人需要看到”实现为全地图广播后由客户端过滤。业务层先产生明确Audience，AOI、Party、Guild等目录再解析具体连接。

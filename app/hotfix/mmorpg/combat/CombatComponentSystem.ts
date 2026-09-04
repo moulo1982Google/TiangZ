@@ -1,6 +1,7 @@
 import {
   AutoAttackPhase,
   CombatComponent,
+  CombatEvents,
   DamageSchool,
   NativeData,
   NativeUnitRef,
@@ -13,6 +14,7 @@ import {
   type DamageSchoolValue,
   type HealingResult,
   type HealingPlan,
+  type Unit,
   systemFor,
 } from "#tiangz/model";
 
@@ -34,6 +36,20 @@ export class CombatComponentSystem extends CombatComponent {
     return this.snapshotAutoAttackState();
   }
 
+  /** 返回由冷内容或外置模块选择的服务端权威近战包络。 / Returns the server-authoritative melee envelope selected by cold content or an external module. */
+  AutoAttackRangeMeters(): number {
+    return this.autoAttackRangeMeters;
+  }
+
+  /** 配置游戏中立的近战包络；协议适配器不能决定该值。 / Configures a game-neutral melee envelope; protocol adapters never decide this value. */
+  SetAutoAttackRangeMeters(rangeMeters: number): number {
+    if (!Number.isFinite(rangeMeters) || rangeMeters <= 0) {
+      throw new Error(`auto attack range must be a positive finite number: ${rangeMeters}`);
+    }
+    this.autoAttackRangeMeters = rangeMeters;
+    return this.autoAttackRangeMeters;
+  }
+
   /** 由权威Numeric.AttackSpeed同步当前读条时长；不会重置已经开始的读条。 / Synchronizes the authoritative Numeric.AttackSpeed interval without resetting an active swing. */
   SetAutoAttackInterval(intervalMs: number): AutoAttackState {
     if (!Number.isSafeInteger(intervalMs) || intervalMs <= 0) {
@@ -44,13 +60,13 @@ export class CombatComponentSystem extends CombatComponent {
   }
 
   /**
-   * 开关自动攻击。开启只表示保持攻击意图，当前读条仍须通过10Hz战斗判定后才开始。
-   * 关闭会清除目标和读条；开启后离开范围不会清除enabled，只会清零当前读条。
+   * 开关自动攻击。开启只表示保持攻击意图；目标仍存活时由10Hz战斗桶开始并推进武器计时。
+   * 关闭会清除目标和计时；短暂离开距离或朝向窗口不会清除enabled，也不会重置完整间隔。
    *
-   * Toggles attack intent. Enabling does not start a swing until the 10Hz map
-   * decision accepts range and facing. Disabling clears target and swing;
-  * losing range keeps enabled but resets only the current swing.
-  */
+   * Toggles attack intent. The 10 Hz map scheduler starts and advances the
+   * weapon clock while the target remains alive. Disabling clears target and
+   * clock; temporary range/facing failures keep it ready for a later retry.
+   */
   ToggleAutoAttack(targetUnitId: number, enabled: boolean): AutoAttackState {
     if (typeof enabled !== "boolean") {
       throw new Error(`auto attack enabled must be boolean: ${enabled}`);
@@ -136,19 +152,19 @@ export class CombatComponentSystem extends CombatComponent {
   }
 
   /**
-   * 统一伤害入口：先执行CombatComponent已注册的吸收效果，再修改CurrentHp。
+   * 统一伤害入口：先应用目标的中立入站伤害乘数，再执行CombatComponent已注册的吸收效果，最后修改CurrentHp。
    * 这里绝不能查询BuffComponent；Buff只能在添加/移除时注册或注销处理器。
    *
-   * Unified damage entrypoint: registered CombatComponent modifiers absorb
-   * first, then CurrentHp is changed. This method must never query
-   * BuffComponent; Buffs only register and unregister modifiers at lifecycle boundaries.
+   * Unified damage entrypoint: neutral target-side incoming-damage multipliers
+   * apply before registered absorbers and CurrentHp. This method must never query
+   * BuffComponent; Buffs change Numeric values or register modifiers at lifecycle boundaries.
    */
   ApplyDamage(request: DamageRequest): DamageResult {
     if (!request || typeof request.amount !== "bigint") {
       throw new Error("damage request amount must be bigint");
     }
     validateNonNegativeBigInt(request.amount, "damage amount");
-    const owner = this.GetParent();
+    const owner = this.GetParent<Unit<any[]>>();
     const numeric = owner.GetComponent(NumericComponent);
     const currentHp = numeric[NumericType.CurrentHp];
     const native = owner.TryGetComponent(NativeUnitRef);
@@ -160,7 +176,19 @@ export class CombatComponentSystem extends CombatComponent {
       );
     }
 
-    let pending = request.amount;
+    const damageSchool = request.damageSchool ?? DamageSchool.Physical;
+    if (request.canBePrevented === true) {
+      const attemptSequence = this.allocateDamageAttemptSequence();
+      const preventedReason = this.DomainScene().Events.Check(CombatEvents.BeforeDamage, {
+        target: owner,
+        request: Object.freeze({ ...request, damageSchool }),
+        attemptSequence,
+      });
+      if (preventedReason !== 0) {
+        return emptyDamageResult(request.amount, currentHp, damageSchool, preventedReason);
+      }
+    }
+    let pending = applyIncomingDamageMultipliers(request.amount, numeric, damageSchool);
     let absorbedDamage = 0n;
     const absorptions: DamageAbsorption[] = [];
     const modifiers = [...this.damageAbsorbers.values()]
@@ -187,15 +215,24 @@ export class CombatComponentSystem extends CombatComponent {
       native.alive = 0;
       NativeData.ResetMovement(native.Handle);
     }
-    return {
+    const result: DamageResult = {
       requestedDamage: request.amount,
       absorbedDamage,
       finalDamage,
       remainingHp,
       killed,
       absorptions,
-      damageSchool: request.damageSchool ?? DamageSchool.Physical,
+      damageSchool,
+      preventedReason: 0,
     };
+    if (finalDamage > 0n || absorbedDamage > 0n) {
+      this.DomainScene().Events.Publish(CombatEvents.DamageResolved, {
+        target: owner,
+        request: Object.freeze({ ...request }),
+        result,
+      });
+    }
+    return result;
   }
 
   /**
@@ -281,6 +318,13 @@ export class CombatComponentSystem extends CombatComponent {
     return id;
   }
 
+  /** 为可规避尝试分配Unit本地稳定序号；到达安全整数上限后回绕，不把随机策略带入Combat。 / Allocates a stable Unit-local sequence for preventable attempts; it wraps at the safe-integer limit without embedding a random policy in Combat. */
+  private allocateDamageAttemptSequence(): number {
+    const sequence = this.nextDamageAttemptSequence;
+    this.nextDamageAttemptSequence = sequence >= Number.MAX_SAFE_INTEGER ? 1 : sequence + 1;
+    return sequence;
+  }
+
   private snapshotAutoAttackState(): AutoAttackState {
     return {
       enabled: this.autoAttackEnabled,
@@ -314,6 +358,7 @@ function emptyDamageResult(
   requestedDamage: bigint,
   currentHp: bigint,
   damageSchool: DamageSchoolValue,
+  preventedReason = 0,
 ): DamageResult {
   return {
     requestedDamage,
@@ -323,5 +368,57 @@ function emptyDamageResult(
     killed: false,
     absorptions: [],
     damageSchool,
+    preventedReason,
   };
+}
+
+const DAMAGE_MULTIPLIER_PERMILLE = 1_000n;
+
+/** 按通用及物理专用千分比依次缩放伤害；旧快照未配置四个来源字段时按1000处理。 / Scales damage by generic and physical permille multipliers; legacy snapshots with no configured sources default to 1000. */
+function applyIncomingDamageMultipliers(
+  amount: bigint,
+  numeric: NumericComponent,
+  damageSchool: DamageSchoolValue,
+): bigint {
+  const multipliers = [readConfiguredDamageMultiplier(
+    numeric,
+    NumericType.IncomingDamageMultiplier,
+    NumericType.IncomingDamageMultiplierBase,
+    NumericType.IncomingDamageMultiplierAdd,
+    NumericType.IncomingDamageMultiplierPct,
+  )];
+  if (damageSchool === DamageSchool.Physical) {
+    multipliers.push(readConfiguredDamageMultiplier(
+      numeric,
+      NumericType.PhysicalDamageMultiplier,
+      NumericType.PhysicalDamageMultiplierBase,
+      NumericType.PhysicalDamageMultiplierAdd,
+      NumericType.PhysicalDamageMultiplierPct,
+    ));
+  }
+  let numerator = amount;
+  let denominator = 1n;
+  for (const multiplier of multipliers) {
+    numerator *= multiplier;
+    denominator *= DAMAGE_MULTIPLIER_PERMILLE;
+  }
+  if (numerator <= 0n) return 0n;
+  return (numerator + denominator - 1n) / denominator;
+}
+
+function readConfiguredDamageMultiplier(
+  numeric: NumericComponent,
+  resultType: number,
+  baseType: number,
+  addType: number,
+  pctType: number,
+): bigint {
+  const base = numeric[baseType] ?? 0n;
+  const addition = numeric[addType] ?? 0n;
+  const percentage = numeric[pctType] ?? 0n;
+  if (base === 0n && addition === 0n && percentage === 0n) {
+    return DAMAGE_MULTIPLIER_PERMILLE;
+  }
+  const result = numeric[resultType] ?? ((base + addition) * (100n + percentage) / 100n);
+  return result < 0n ? 0n : result;
 }

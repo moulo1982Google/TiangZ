@@ -159,6 +159,26 @@ struct MapEntitySnapshot {
   std::uint32_t configId = 0;
   std::string displayName;
   bool shopEnabled = false;
+  std::uint64_t persistentId = 0;
+  std::string presentationModelId;
+  std::uint32_t presentationStateId = 0;
+  std::uint32_t ownerUnitId = 0;
+  std::uint64_t ownerPersistentId = 0;
+  std::uint32_t createdByAbilityId = 0;
+  std::vector<std::uint32_t> questStarterConfigIds;
+  std::vector<std::uint32_t> questEnderConfigIds;
+  std::vector<std::uint32_t> shopItemConfigIds;
+  std::uint32_t trainerId = 0;
+  bool questEnabled = false;
+  bool conversationEnabled = false;
+  bool trainingEnabled = false;
+  bool repairEnabled = false;
+  bool recoveryEnabled = false;
+  std::string presentationLoadoutId;
+  std::vector<std::string> extensionCapabilities;
+  std::uint32_t runtimeProfileRevision = 0;
+  std::uint32_t ownedUnitReaction = 0;
+  std::vector<std::uint32_t> autoCastAbilityIds;
 };
 
 struct MapEntitySnapshotCodec {
@@ -294,6 +314,146 @@ struct MapEntitySnapshotCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 19:
+          if (tag.wireType == 0) {
+            value.persistentId = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 20:
+          if (tag.wireType == 2) {
+            value.presentationModelId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 21:
+          if (tag.wireType == 0) {
+            value.presentationStateId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 22:
+          if (tag.wireType == 0) {
+            value.ownerUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 23:
+          if (tag.wireType == 0) {
+            value.ownerPersistentId = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 24:
+          if (tag.wireType == 0) {
+            value.createdByAbilityId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 25:
+          if (tag.wireType == 0) {
+            value.questStarterConfigIds.push_back(reader.UInt32());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 26:
+          if (tag.wireType == 0) {
+            value.questEnderConfigIds.push_back(reader.UInt32());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 27:
+          if (tag.wireType == 0) {
+            value.shopItemConfigIds.push_back(reader.UInt32());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 28:
+          if (tag.wireType == 0) {
+            value.trainerId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 29:
+          if (tag.wireType == 0) {
+            value.questEnabled = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 30:
+          if (tag.wireType == 0) {
+            value.conversationEnabled = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 31:
+          if (tag.wireType == 0) {
+            value.trainingEnabled = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 32:
+          if (tag.wireType == 0) {
+            value.repairEnabled = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 33:
+          if (tag.wireType == 0) {
+            value.recoveryEnabled = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 34:
+          if (tag.wireType == 2) {
+            value.presentationLoadoutId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 35:
+          if (tag.wireType == 2) {
+            value.extensionCapabilities.push_back(reader.String());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 36:
+          if (tag.wireType == 0) {
+            value.runtimeProfileRevision = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 37:
+          if (tag.wireType == 0) {
+            value.ownedUnitReaction = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 38:
+          if (tag.wireType == 0) {
+            value.autoCastAbilityIds.push_back(reader.UInt32());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -322,6 +482,26 @@ struct MapEntitySnapshotCodec {
     writer.UInt32(16, value.configId);
     writer.String(17, value.displayName);
     writer.Bool(18, value.shopEnabled);
+    writer.UInt64(19, value.persistentId);
+    writer.String(20, value.presentationModelId);
+    writer.UInt32(21, value.presentationStateId);
+    writer.UInt32(22, value.ownerUnitId);
+    writer.UInt64(23, value.ownerPersistentId);
+    writer.UInt32(24, value.createdByAbilityId);
+    for (const auto& item : value.questStarterConfigIds) writer.UInt32(25, item, true);
+    for (const auto& item : value.questEnderConfigIds) writer.UInt32(26, item, true);
+    for (const auto& item : value.shopItemConfigIds) writer.UInt32(27, item, true);
+    writer.UInt32(28, value.trainerId);
+    writer.Bool(29, value.questEnabled);
+    writer.Bool(30, value.conversationEnabled);
+    writer.Bool(31, value.trainingEnabled);
+    writer.Bool(32, value.repairEnabled);
+    writer.Bool(33, value.recoveryEnabled);
+    writer.String(34, value.presentationLoadoutId);
+    for (const auto& item : value.extensionCapabilities) writer.String(35, item, true);
+    writer.UInt32(36, value.runtimeProfileRevision);
+    writer.UInt32(37, value.ownedUnitReaction);
+    for (const auto& item : value.autoCastAbilityIds) writer.UInt32(38, item, true);
     return writer.Finish();
   }
 };
@@ -337,6 +517,8 @@ struct CellMovementState {
   std::uint32_t moveEndTick = 0;
   bool moving = false;
   std::uint32_t facing = 0;
+  float y = 0.0;
+  float yaw = 0.0;
 };
 
 struct CellMovementStateCodec {
@@ -416,6 +598,20 @@ struct CellMovementStateCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 11:
+          if (tag.wireType == 5) {
+            value.y = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 12:
+          if (tag.wireType == 5) {
+            value.yaw = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -436,6 +632,8 @@ struct CellMovementStateCodec {
     writer.UInt32(8, value.moveEndTick);
     writer.Bool(9, value.moving);
     writer.UInt32(10, value.facing);
+    writer.Float(11, value.y);
+    writer.Float(12, value.yaw);
     return writer.Finish();
   }
 };
@@ -690,6 +888,9 @@ struct ItemSnapshot {
   std::uint32_t quality = 0;
   std::uint32_t level = 0;
   std::uint32_t version = 0;
+  std::optional<std::uint32_t> durability;
+  std::optional<std::uint32_t> maxDurability;
+  std::optional<std::uint32_t> placementId;
 };
 
 struct ItemSnapshotCodec {
@@ -741,6 +942,27 @@ struct ItemSnapshotCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 7:
+          if (tag.wireType == 0) {
+            value.durability = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 8:
+          if (tag.wireType == 0) {
+            value.maxDurability = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 9:
+          if (tag.wireType == 0) {
+            value.placementId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -757,6 +979,9 @@ struct ItemSnapshotCodec {
     writer.UInt32(4, value.quality);
     writer.UInt32(5, value.level);
     writer.UInt32(6, value.version);
+    if (value.durability.has_value()) writer.UInt32(7, *value.durability);
+    if (value.maxDurability.has_value()) writer.UInt32(8, *value.maxDurability);
+    if (value.placementId.has_value()) writer.UInt32(9, *value.placementId);
     return writer.Finish();
   }
 };
@@ -798,6 +1023,7 @@ struct ShopItemSnapshot {
   std::uint32_t itemConfigId = 0;
   std::uint64_t buyPrice = 0;
   std::uint64_t sellPrice = 0;
+  std::uint32_t purchaseCount = 0;
 };
 
 struct ShopItemSnapshotCodec {
@@ -828,6 +1054,13 @@ struct ShopItemSnapshotCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.purchaseCount = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -841,6 +1074,7 @@ struct ShopItemSnapshotCodec {
     writer.UInt32(1, value.itemConfigId);
     writer.UInt64(2, value.buyPrice);
     writer.UInt64(3, value.sellPrice);
+    writer.UInt32(4, value.purchaseCount);
     return writer.Finish();
   }
 };
@@ -1382,6 +1616,288 @@ struct BuffTransferSnapshotCodec {
   }
 };
 
+struct OwnedUnitAbilitySnapshot {
+  std::uint32_t abilityId = 0;
+  bool autoCastByDefault = false;
+};
+
+struct OwnedUnitAbilitySnapshotCodec {
+  static OwnedUnitAbilitySnapshot Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    OwnedUnitAbilitySnapshot value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.abilityId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.autoCastByDefault = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const OwnedUnitAbilitySnapshot& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt32(1, value.abilityId);
+    writer.Bool(2, value.autoCastByDefault);
+    return writer.Finish();
+  }
+};
+
+struct OwnedSummonTransferSnapshot {
+  std::uint32_t ownershipSlot = 0;
+  std::uint32_t createdByAbilityId = 0;
+  std::uint32_t definitionId = 0;
+  std::string name;
+  std::string modelId;
+  std::uint32_t maxHp = 0;
+  std::uint32_t maxMp = 0;
+  std::uint32_t attackDamage = 0;
+  float moveSpeed = 0.0;
+  float attackRange = 0.0;
+  std::uint32_t attackIntervalMs = 0;
+  std::uint32_t attackDamageSchool = 0;
+  std::uint32_t attackAbilityId = 0;
+  float followDistance = 0.0;
+  float teleportDistance = 0.0;
+  bool assistOwner = false;
+  std::uint32_t initialReaction = 0;
+  float aggressiveAcquireRange = 0.0;
+  std::uint32_t reaction = 0;
+  std::vector<OwnedUnitAbilitySnapshot> abilities;
+  std::vector<std::uint32_t> autoCastAbilityIds;
+  std::uint32_t resourceRegenAmount = 0;
+  std::uint32_t resourceRegenIntervalMs = 0;
+  std::uint32_t resourceRegenDelayAfterSpendMs = 0;
+};
+
+struct OwnedSummonTransferSnapshotCodec {
+  static OwnedSummonTransferSnapshot Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    OwnedSummonTransferSnapshot value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.ownershipSlot = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.createdByAbilityId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.definitionId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 2) {
+            value.name = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 2) {
+            value.modelId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 6:
+          if (tag.wireType == 0) {
+            value.maxHp = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 7:
+          if (tag.wireType == 0) {
+            value.maxMp = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 8:
+          if (tag.wireType == 0) {
+            value.attackDamage = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 9:
+          if (tag.wireType == 5) {
+            value.moveSpeed = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 10:
+          if (tag.wireType == 5) {
+            value.attackRange = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 11:
+          if (tag.wireType == 0) {
+            value.attackIntervalMs = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 12:
+          if (tag.wireType == 0) {
+            value.attackDamageSchool = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 13:
+          if (tag.wireType == 0) {
+            value.attackAbilityId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 14:
+          if (tag.wireType == 5) {
+            value.followDistance = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 15:
+          if (tag.wireType == 5) {
+            value.teleportDistance = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 16:
+          if (tag.wireType == 0) {
+            value.assistOwner = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 17:
+          if (tag.wireType == 0) {
+            value.initialReaction = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 18:
+          if (tag.wireType == 5) {
+            value.aggressiveAcquireRange = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 19:
+          if (tag.wireType == 0) {
+            value.reaction = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 20:
+          if (tag.wireType == 2) {
+            value.abilities.push_back(OwnedUnitAbilitySnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 21:
+          if (tag.wireType == 0) {
+            value.autoCastAbilityIds.push_back(reader.UInt32());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 22:
+          if (tag.wireType == 0) {
+            value.resourceRegenAmount = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 23:
+          if (tag.wireType == 0) {
+            value.resourceRegenIntervalMs = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 24:
+          if (tag.wireType == 0) {
+            value.resourceRegenDelayAfterSpendMs = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const OwnedSummonTransferSnapshot& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt32(1, value.ownershipSlot);
+    writer.UInt32(2, value.createdByAbilityId);
+    writer.UInt32(3, value.definitionId);
+    writer.String(4, value.name);
+    writer.String(5, value.modelId);
+    writer.UInt32(6, value.maxHp);
+    writer.UInt32(7, value.maxMp);
+    writer.UInt32(8, value.attackDamage);
+    writer.Float(9, value.moveSpeed);
+    writer.Float(10, value.attackRange);
+    writer.UInt32(11, value.attackIntervalMs);
+    writer.UInt32(12, value.attackDamageSchool);
+    writer.UInt32(13, value.attackAbilityId);
+    writer.Float(14, value.followDistance);
+    writer.Float(15, value.teleportDistance);
+    writer.Bool(16, value.assistOwner);
+    writer.UInt32(17, value.initialReaction);
+    writer.Float(18, value.aggressiveAcquireRange);
+    writer.UInt32(19, value.reaction);
+    for (const auto& item : value.abilities) writer.BytesField(20, OwnedUnitAbilitySnapshotCodec::Encode(item), true);
+    for (const auto& item : value.autoCastAbilityIds) writer.UInt32(21, item, true);
+    writer.UInt32(22, value.resourceRegenAmount);
+    writer.UInt32(23, value.resourceRegenIntervalMs);
+    writer.UInt32(24, value.resourceRegenDelayAfterSpendMs);
+    return writer.Finish();
+  }
+};
+
 struct SkillCooldownSnapshot {
   std::uint32_t skillId = 0;
   std::uint64_t cooldownEndAtMs = 0;
@@ -1466,10 +1982,63 @@ struct ItemCooldownSnapshotCodec {
   }
 };
 
+struct SkillProficiencySnapshot {
+  std::uint32_t proficiencyId = 0;
+  std::uint32_t rank = 0;
+  std::uint32_t maximumRank = 0;
+};
+
+struct SkillProficiencySnapshotCodec {
+  static SkillProficiencySnapshot Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    SkillProficiencySnapshot value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.proficiencyId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.rank = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.maximumRank = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const SkillProficiencySnapshot& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt32(1, value.proficiencyId);
+    writer.UInt32(2, value.rank);
+    writer.UInt32(3, value.maximumRank);
+    return writer.Finish();
+  }
+};
+
 struct SkillTransferSnapshot {
   std::uint64_t globalCooldownEndAtMs = 0;
   std::vector<SkillCooldownSnapshot> cooldowns;
   std::vector<ItemCooldownSnapshot> itemCooldowns;
+  std::vector<std::uint32_t> knownSkillIds;
+  std::vector<SkillProficiencySnapshot> proficiencies;
 };
 
 struct SkillTransferSnapshotCodec {
@@ -1500,6 +2069,20 @@ struct SkillTransferSnapshotCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.knownSkillIds.push_back(reader.UInt32());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 2) {
+            value.proficiencies.push_back(SkillProficiencySnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -1513,6 +2096,8 @@ struct SkillTransferSnapshotCodec {
     writer.UInt64(1, value.globalCooldownEndAtMs);
     for (const auto& item : value.cooldowns) writer.BytesField(2, SkillCooldownSnapshotCodec::Encode(item), true);
     for (const auto& item : value.itemCooldowns) writer.BytesField(3, ItemCooldownSnapshotCodec::Encode(item), true);
+    for (const auto& item : value.knownSkillIds) writer.UInt32(4, item, true);
+    for (const auto& item : value.proficiencies) writer.BytesField(5, SkillProficiencySnapshotCodec::Encode(item), true);
     return writer.Finish();
   }
 };
@@ -1817,11 +2402,63 @@ struct C2S_LoginCodec {
   }
 };
 
+struct CharacterExtension {
+  std::string id;
+  std::uint32_t version = 0;
+  tiangz::client::Bytes payload;
+};
+
+struct CharacterExtensionCodec {
+  static CharacterExtension Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    CharacterExtension value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 2) {
+            value.id = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.version = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 2) {
+            value.payload = reader.BytesField();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const CharacterExtension& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.String(1, value.id);
+    writer.UInt32(2, value.version);
+    writer.BytesField(3, value.payload);
+    return writer.Finish();
+  }
+};
+
 struct CharacterSummary {
   std::uint64_t characterId = 0;
   std::string name;
   std::uint32_t playerConfigId = 0;
   std::uint32_t level = 0;
+  std::vector<CharacterExtension> extensions;
 };
 
 struct CharacterSummaryCodec {
@@ -1859,6 +2496,13 @@ struct CharacterSummaryCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 5:
+          if (tag.wireType == 2) {
+            value.extensions.push_back(CharacterExtensionCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -1873,6 +2517,7 @@ struct CharacterSummaryCodec {
     writer.String(2, value.name);
     writer.UInt32(3, value.playerConfigId);
     writer.UInt32(4, value.level);
+    for (const auto& item : value.extensions) writer.BytesField(5, CharacterExtensionCodec::Encode(item), true);
     return writer.Finish();
   }
 };
@@ -2013,6 +2658,7 @@ struct C2S_Register {
   std::optional<std::uint32_t> rpcId;
   std::string account;
   std::string password;
+  std::optional<std::uint32_t> playerConfigId;
 };
 
 struct C2S_RegisterCodec {
@@ -2043,6 +2689,13 @@ struct C2S_RegisterCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.playerConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -2056,6 +2709,7 @@ struct C2S_RegisterCodec {
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.String(1, value.account);
     writer.String(2, value.password);
+    if (value.playerConfigId.has_value()) writer.UInt32(3, *value.playerConfigId);
     return writer.Finish();
   }
 };
@@ -2134,6 +2788,7 @@ struct C2S_CreateCharacter {
   std::string account;
   std::string name;
   std::uint32_t playerConfigId = 0;
+  std::vector<CharacterExtension> extensions;
 };
 
 struct C2S_CreateCharacterCodec {
@@ -2171,6 +2826,13 @@ struct C2S_CreateCharacterCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 4:
+          if (tag.wireType == 2) {
+            value.extensions.push_back(CharacterExtensionCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -2185,6 +2847,7 @@ struct C2S_CreateCharacterCodec {
     writer.String(1, value.account);
     writer.String(2, value.name);
     writer.UInt32(3, value.playerConfigId);
+    for (const auto& item : value.extensions) writer.BytesField(4, CharacterExtensionCodec::Encode(item), true);
     return writer.Finish();
   }
 };
@@ -2460,6 +3123,9 @@ struct G2C_EnterMap {
   std::vector<std::uint32_t> completedQuestConfigIds;
   std::uint64_t gold = 0;
   std::uint64_t starterDungeonCooldownEndAtMs = 0;
+  std::vector<std::uint32_t> knownSkillIds;
+  std::vector<UnitNumericDelta> numerics;
+  std::vector<SkillProficiencySnapshot> proficiencies;
 };
 
 struct G2C_EnterMapCodec {
@@ -2616,6 +3282,27 @@ struct G2C_EnterMapCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 19:
+          if (tag.wireType == 0) {
+            value.knownSkillIds.push_back(reader.UInt32());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 20:
+          if (tag.wireType == 2) {
+            value.numerics.push_back(UnitNumericDeltaCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 21:
+          if (tag.wireType == 2) {
+            value.proficiencies.push_back(SkillProficiencySnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -2647,6 +3334,9 @@ struct G2C_EnterMapCodec {
     for (const auto& item : value.completedQuestConfigIds) writer.UInt32(16, item, true);
     writer.UInt64(17, value.gold);
     writer.UInt64(18, value.starterDungeonCooldownEndAtMs);
+    for (const auto& item : value.knownSkillIds) writer.UInt32(19, item, true);
+    for (const auto& item : value.numerics) writer.BytesField(20, UnitNumericDeltaCodec::Encode(item), true);
+    for (const auto& item : value.proficiencies) writer.BytesField(21, SkillProficiencySnapshotCodec::Encode(item), true);
     return writer.Finish();
   }
 };
@@ -3428,6 +4118,10 @@ struct C2M_NavigateInput {
   std::int32_t strafe = 0;
   float yaw = 0.0;
   std::uint32_t sequence = 0;
+  bool hasPositionSnapshot = false;
+  float positionX = 0.0;
+  float positionY = 0.0;
+  float positionZ = 0.0;
 };
 
 struct C2M_NavigateInputCodec {
@@ -3472,6 +4166,34 @@ struct C2M_NavigateInputCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 5:
+          if (tag.wireType == 0) {
+            value.hasPositionSnapshot = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 6:
+          if (tag.wireType == 5) {
+            value.positionX = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 7:
+          if (tag.wireType == 5) {
+            value.positionY = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 8:
+          if (tag.wireType == 5) {
+            value.positionZ = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -3487,6 +4209,10 @@ struct C2M_NavigateInputCodec {
     writer.SInt32(2, value.strafe);
     writer.Float(3, value.yaw);
     writer.UInt32(4, value.sequence);
+    writer.Bool(5, value.hasPositionSnapshot);
+    writer.Float(6, value.positionX);
+    writer.Float(7, value.positionY);
+    writer.Float(8, value.positionZ);
     return writer.Finish();
   }
 };
@@ -3556,6 +4282,381 @@ struct M2C_NavigateInputCodec {
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.UInt32(1, value.acknowledgedSequence);
     for (const auto& item : value.points) writer.BytesField(2, NavigationPathPointCodec::Encode(item), true);
+    return writer.Finish();
+  }
+};
+
+struct C2M_ReleaseDeadPlayer {
+  std::optional<std::uint32_t> rpcId;
+  bool hasRecoveryPosition = false;
+  float recoveryX = 0.0;
+  float recoveryY = 0.0;
+  float recoveryZ = 0.0;
+  float recoveryYaw = 0.0;
+};
+
+struct C2M_ReleaseDeadPlayerCodec {
+  static C2M_ReleaseDeadPlayer Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_ReleaseDeadPlayer value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.hasRecoveryPosition = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 5) {
+            value.recoveryX = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 5) {
+            value.recoveryY = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 5) {
+            value.recoveryZ = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 5) {
+            value.recoveryYaw = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_ReleaseDeadPlayer& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.Bool(1, value.hasRecoveryPosition);
+    writer.Float(2, value.recoveryX);
+    writer.Float(3, value.recoveryY);
+    writer.Float(4, value.recoveryZ);
+    writer.Float(5, value.recoveryYaw);
+    return writer.Finish();
+  }
+};
+
+struct M2C_ReleaseDeadPlayer {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  bool released = false;
+  float x = 0.0;
+  float y = 0.0;
+  float z = 0.0;
+  float yaw = 0.0;
+  std::uint64_t health = 0;
+  std::uint64_t maxHealth = 0;
+  std::uint64_t mana = 0;
+  std::uint64_t maxMana = 0;
+};
+
+struct M2C_ReleaseDeadPlayerCodec {
+  static M2C_ReleaseDeadPlayer Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_ReleaseDeadPlayer value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.released = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 5) {
+            value.x = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 5) {
+            value.y = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 5) {
+            value.z = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 5) {
+            value.yaw = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 6:
+          if (tag.wireType == 0) {
+            value.health = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 7:
+          if (tag.wireType == 0) {
+            value.maxHealth = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 8:
+          if (tag.wireType == 0) {
+            value.mana = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 9:
+          if (tag.wireType == 0) {
+            value.maxMana = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_ReleaseDeadPlayer& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.Bool(1, value.released);
+    writer.Float(2, value.x);
+    writer.Float(3, value.y);
+    writer.Float(4, value.z);
+    writer.Float(5, value.yaw);
+    writer.UInt64(6, value.health);
+    writer.UInt64(7, value.maxHealth);
+    writer.UInt64(8, value.mana);
+    writer.UInt64(9, value.maxMana);
+    return writer.Finish();
+  }
+};
+
+struct C2M_RevivePlayer {
+  std::optional<std::uint32_t> rpcId;
+};
+
+struct C2M_RevivePlayerCodec {
+  static C2M_RevivePlayer Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_RevivePlayer value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_RevivePlayer& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_RevivePlayer {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  bool revived = false;
+  float x = 0.0;
+  float y = 0.0;
+  float z = 0.0;
+  float yaw = 0.0;
+  std::uint64_t health = 0;
+  std::uint64_t maxHealth = 0;
+  std::uint64_t mana = 0;
+  std::uint64_t maxMana = 0;
+};
+
+struct M2C_RevivePlayerCodec {
+  static M2C_RevivePlayer Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_RevivePlayer value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.revived = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 5) {
+            value.x = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 5) {
+            value.y = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 5) {
+            value.z = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 5) {
+            value.yaw = reader.Float();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 6:
+          if (tag.wireType == 0) {
+            value.health = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 7:
+          if (tag.wireType == 0) {
+            value.maxHealth = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 8:
+          if (tag.wireType == 0) {
+            value.mana = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 9:
+          if (tag.wireType == 0) {
+            value.maxMana = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_RevivePlayer& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.Bool(1, value.revived);
+    writer.Float(2, value.x);
+    writer.Float(3, value.y);
+    writer.Float(4, value.z);
+    writer.Float(5, value.yaw);
+    writer.UInt64(6, value.health);
+    writer.UInt64(7, value.maxHealth);
+    writer.UInt64(8, value.mana);
+    writer.UInt64(9, value.maxMana);
     return writer.Finish();
   }
 };
@@ -4859,6 +5960,153 @@ struct M2C_SellItemCodec {
   }
 };
 
+struct C2M_RepairItems {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t npcUnitId = 0;
+  std::uint64_t itemId = 0;
+  std::string operationId;
+};
+
+struct C2M_RepairItemsCodec {
+  static C2M_RepairItems Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_RepairItems value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.npcUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.itemId = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 2) {
+            value.operationId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_RepairItems& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.npcUnitId);
+    writer.UInt64(2, value.itemId);
+    writer.String(3, value.operationId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_RepairItems {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  std::uint64_t cost = 0;
+  std::uint64_t gold = 0;
+  std::vector<ItemSnapshot> items;
+  std::optional<InventorySnapshot> inventoryRecovery;
+};
+
+struct M2C_RepairItemsCodec {
+  static M2C_RepairItems Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_RepairItems value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.cost = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.gold = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 2) {
+            value.items.push_back(ItemSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 2) {
+            value.inventoryRecovery = InventorySnapshotCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_RepairItems& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt64(1, value.cost);
+    writer.UInt64(2, value.gold);
+    for (const auto& item : value.items) writer.BytesField(3, ItemSnapshotCodec::Encode(item), true);
+    if (value.inventoryRecovery.has_value()) writer.BytesField(4, InventorySnapshotCodec::Encode(*value.inventoryRecovery));
+    return writer.Finish();
+  }
+};
+
 struct C2M_RequestPlayerTrade {
   std::optional<std::uint32_t> rpcId;
   std::uint32_t targetUnitId = 0;
@@ -5687,6 +6935,162 @@ struct M2C_ToggleAutoAttackCodec {
   }
 };
 
+struct C2M_CommandOwnedUnit {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t ownedUnitId = 0;
+  std::uint32_t command = 0;
+  std::uint32_t targetUnitId = 0;
+  std::uint32_t abilityId = 0;
+};
+
+struct C2M_CommandOwnedUnitCodec {
+  static C2M_CommandOwnedUnit Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_CommandOwnedUnit value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.ownedUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.command = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.targetUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.abilityId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_CommandOwnedUnit& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.ownedUnitId);
+    writer.UInt32(2, value.command);
+    writer.UInt32(3, value.targetUnitId);
+    writer.UInt32(4, value.abilityId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_CommandOwnedUnit {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t ownedUnitId = 0;
+  std::uint32_t command = 0;
+  bool accepted = false;
+  std::uint32_t abilityId = 0;
+};
+
+struct M2C_CommandOwnedUnitCodec {
+  static M2C_CommandOwnedUnit Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_CommandOwnedUnit value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.ownedUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.command = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.accepted = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.abilityId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_CommandOwnedUnit& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.ownedUnitId);
+    writer.UInt32(2, value.command);
+    writer.Bool(3, value.accepted);
+    writer.UInt32(4, value.abilityId);
+    return writer.Finish();
+  }
+};
+
 struct G2C_AutoAttackState {
   bool enabled = false;
   std::uint32_t targetUnitId = 0;
@@ -5789,6 +7193,153 @@ struct G2C_ItemChangedCodec {
   }
 };
 
+struct C2M_UseInteractable {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t interactableUnitId = 0;
+  std::string operationId;
+};
+
+struct C2M_UseInteractableCodec {
+  static C2M_UseInteractable Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_UseInteractable value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.interactableUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.operationId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_UseInteractable& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.interactableUnitId);
+    writer.String(2, value.operationId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_UseInteractable {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t interactableUnitId = 0;
+  std::vector<ItemSnapshot> items;
+  std::vector<QuestSnapshot> quests;
+  std::uint64_t respawnAtMs = 0;
+  std::vector<SkillProficiencySnapshot> proficiencies;
+};
+
+struct M2C_UseInteractableCodec {
+  static M2C_UseInteractable Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_UseInteractable value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.interactableUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.items.push_back(ItemSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 2) {
+            value.quests.push_back(QuestSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.respawnAtMs = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 2) {
+            value.proficiencies.push_back(SkillProficiencySnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_UseInteractable& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.interactableUnitId);
+    for (const auto& item : value.items) writer.BytesField(2, ItemSnapshotCodec::Encode(item), true);
+    for (const auto& item : value.quests) writer.BytesField(3, QuestSnapshotCodec::Encode(item), true);
+    writer.UInt64(4, value.respawnAtMs);
+    for (const auto& item : value.proficiencies) writer.BytesField(5, SkillProficiencySnapshotCodec::Encode(item), true);
+    return writer.Finish();
+  }
+};
+
 struct C2M_AcceptQuest {
   std::optional<std::uint32_t> rpcId;
   std::uint32_t questConfigId = 0;
@@ -5845,6 +7396,9 @@ struct M2C_AcceptQuest {
   std::optional<std::uint32_t> error;
   std::optional<std::uint32_t> rpcId;
   QuestSnapshot quest;
+  std::vector<ItemSnapshot> inventoryChanges;
+  std::vector<ItemSnapshot> inventoryItems;
+  std::vector<ItemSnapshot> baseInventoryItems;
 };
 
 struct M2C_AcceptQuestCodec {
@@ -5882,6 +7436,27 @@ struct M2C_AcceptQuestCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.inventoryChanges.push_back(ItemSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 2) {
+            value.inventoryItems.push_back(ItemSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 2) {
+            value.baseInventoryItems.push_back(ItemSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -5896,6 +7471,9 @@ struct M2C_AcceptQuestCodec {
     if (value.error.has_value()) writer.UInt32(91, *value.error);
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.BytesField(1, QuestSnapshotCodec::Encode(value.quest));
+    for (const auto& item : value.inventoryChanges) writer.BytesField(2, ItemSnapshotCodec::Encode(item), true);
+    for (const auto& item : value.inventoryItems) writer.BytesField(3, ItemSnapshotCodec::Encode(item), true);
+    for (const auto& item : value.baseInventoryItems) writer.BytesField(4, ItemSnapshotCodec::Encode(item), true);
     return writer.Finish();
   }
 };
@@ -5904,6 +7482,7 @@ struct C2M_CompleteQuest {
   std::optional<std::uint32_t> rpcId;
   std::uint32_t questConfigId = 0;
   std::uint32_t npcUnitId = 0;
+  std::uint32_t rewardChoiceId = 0;
 };
 
 struct C2M_CompleteQuestCodec {
@@ -5934,6 +7513,13 @@ struct C2M_CompleteQuestCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.rewardChoiceId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -5947,6 +7533,7 @@ struct C2M_CompleteQuestCodec {
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.UInt32(1, value.questConfigId);
     writer.UInt32(2, value.npcUnitId);
+    writer.UInt32(3, value.rewardChoiceId);
     return writer.Finish();
   }
 };
@@ -5957,6 +7544,16 @@ struct M2C_CompleteQuest {
   std::optional<std::uint32_t> rpcId;
   std::uint32_t questConfigId = 0;
   std::vector<ItemSnapshot> rewardItems;
+  std::uint64_t gold = 0;
+  std::uint64_t gainedGold = 0;
+  std::uint64_t level = 0;
+  std::uint64_t experience = 0;
+  std::uint64_t gainedExperience = 0;
+  bool leveledUp = false;
+  std::uint32_t selectedRewardChoiceId = 0;
+  std::vector<ItemSnapshot> inventoryItems;
+  std::vector<ItemSnapshot> baseInventoryItems;
+  std::vector<ItemSnapshot> inventoryChanges;
 };
 
 struct M2C_CompleteQuestCodec {
@@ -6001,6 +7598,76 @@ struct M2C_CompleteQuestCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.gold = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.gainedGold = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 0) {
+            value.level = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 6:
+          if (tag.wireType == 0) {
+            value.experience = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 7:
+          if (tag.wireType == 0) {
+            value.gainedExperience = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 8:
+          if (tag.wireType == 0) {
+            value.leveledUp = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 9:
+          if (tag.wireType == 0) {
+            value.selectedRewardChoiceId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 10:
+          if (tag.wireType == 2) {
+            value.inventoryItems.push_back(ItemSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 11:
+          if (tag.wireType == 2) {
+            value.baseInventoryItems.push_back(ItemSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 12:
+          if (tag.wireType == 2) {
+            value.inventoryChanges.push_back(ItemSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -6016,6 +7683,247 @@ struct M2C_CompleteQuestCodec {
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.UInt32(1, value.questConfigId);
     for (const auto& item : value.rewardItems) writer.BytesField(2, ItemSnapshotCodec::Encode(item), true);
+    writer.UInt64(3, value.gold);
+    writer.UInt64(4, value.gainedGold);
+    writer.UInt64(5, value.level);
+    writer.UInt64(6, value.experience);
+    writer.UInt64(7, value.gainedExperience);
+    writer.Bool(8, value.leveledUp);
+    writer.UInt32(9, value.selectedRewardChoiceId);
+    for (const auto& item : value.inventoryItems) writer.BytesField(10, ItemSnapshotCodec::Encode(item), true);
+    for (const auto& item : value.baseInventoryItems) writer.BytesField(11, ItemSnapshotCodec::Encode(item), true);
+    for (const auto& item : value.inventoryChanges) writer.BytesField(12, ItemSnapshotCodec::Encode(item), true);
+    return writer.Finish();
+  }
+};
+
+struct C2M_TriggerNpcInteraction {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t npcUnitId = 0;
+  std::uint32_t trigger = 0;
+  std::uint32_t triggerValue = 0;
+};
+
+struct C2M_TriggerNpcInteractionCodec {
+  static C2M_TriggerNpcInteraction Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_TriggerNpcInteraction value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.npcUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.trigger = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.triggerValue = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_TriggerNpcInteraction& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.npcUnitId);
+    writer.UInt32(2, value.trigger);
+    writer.UInt32(3, value.triggerValue);
+    return writer.Finish();
+  }
+};
+
+struct M2C_TriggerNpcInteraction {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  bool accepted = false;
+};
+
+struct M2C_TriggerNpcInteractionCodec {
+  static M2C_TriggerNpcInteraction Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_TriggerNpcInteraction value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.accepted = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_TriggerNpcInteraction& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.Bool(1, value.accepted);
+    return writer.Finish();
+  }
+};
+
+struct C2M_TriggerMonsterSignal {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t monsterUnitId = 0;
+  std::uint32_t signalId = 0;
+};
+
+struct C2M_TriggerMonsterSignalCodec {
+  static C2M_TriggerMonsterSignal Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_TriggerMonsterSignal value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.monsterUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.signalId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_TriggerMonsterSignal& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.monsterUnitId);
+    writer.UInt32(2, value.signalId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_TriggerMonsterSignal {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  bool accepted = false;
+};
+
+struct M2C_TriggerMonsterSignalCodec {
+  static M2C_TriggerMonsterSignal Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_TriggerMonsterSignal value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.accepted = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_TriggerMonsterSignal& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.Bool(1, value.accepted);
     return writer.Finish();
   }
 };
@@ -6617,6 +8525,162 @@ struct M2C_CastSkillCodec {
   }
 };
 
+struct C2M_LearnTrainerSkill {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t npcUnitId = 0;
+  std::uint32_t skillConfigId = 0;
+  std::string operationId;
+};
+
+struct C2M_LearnTrainerSkillCodec {
+  static C2M_LearnTrainerSkill Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_LearnTrainerSkill value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.npcUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.skillConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 2) {
+            value.operationId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_LearnTrainerSkill& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.npcUnitId);
+    writer.UInt32(2, value.skillConfigId);
+    writer.String(3, value.operationId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_LearnTrainerSkill {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t skillConfigId = 0;
+  bool learned = false;
+  std::uint64_t gold = 0;
+  std::vector<SkillProficiencySnapshot> proficiencies;
+  std::vector<std::uint32_t> learnedSkillConfigIds;
+};
+
+struct M2C_LearnTrainerSkillCodec {
+  static M2C_LearnTrainerSkill Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_LearnTrainerSkill value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.skillConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.learned = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.gold = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 2) {
+            value.proficiencies.push_back(SkillProficiencySnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 0) {
+            value.learnedSkillConfigIds.push_back(reader.UInt32());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_LearnTrainerSkill& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.skillConfigId);
+    writer.Bool(2, value.learned);
+    writer.UInt64(3, value.gold);
+    for (const auto& item : value.proficiencies) writer.BytesField(4, SkillProficiencySnapshotCodec::Encode(item), true);
+    for (const auto& item : value.learnedSkillConfigIds) writer.UInt32(5, item, true);
+    return writer.Finish();
+  }
+};
+
 struct G2C_SkillCastState {
   std::uint32_t phase = 0;
   std::uint64_t castId = 0;
@@ -6944,6 +9008,7 @@ struct G2C_CombatResult {
   std::uint32_t abilityId = 0;
   bool killed = false;
   std::uint32_t serverTick = 0;
+  std::uint32_t preventedReason = 0;
 };
 
 struct G2C_CombatResultCodec {
@@ -7030,6 +9095,13 @@ struct G2C_CombatResultCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 12:
+          if (tag.wireType == 0) {
+            value.preventedReason = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -7051,6 +9123,76 @@ struct G2C_CombatResultCodec {
     writer.UInt32(9, value.abilityId);
     writer.Bool(10, value.killed);
     writer.UInt32(11, value.serverTick);
+    writer.UInt32(12, value.preventedReason);
+    return writer.Finish();
+  }
+};
+
+struct G2C_UnitPresentation {
+  std::uint32_t presentationType = 0;
+  std::uint32_t sourceUnitId = 0;
+  std::uint32_t targetUnitId = 0;
+  std::uint32_t presentationId = 0;
+  std::string text;
+};
+
+struct G2C_UnitPresentationCodec {
+  static G2C_UnitPresentation Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    G2C_UnitPresentation value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.presentationType = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.sourceUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.targetUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.presentationId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 2) {
+            value.text = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const G2C_UnitPresentation& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt32(1, value.presentationType);
+    writer.UInt32(2, value.sourceUnitId);
+    writer.UInt32(3, value.targetUnitId);
+    writer.UInt32(4, value.presentationId);
+    writer.String(5, value.text);
     return writer.Finish();
   }
 };
@@ -7176,6 +9318,10 @@ inline constexpr std::uint16_t C2M_NavigateTo = 10034;
 inline constexpr std::uint16_t M2C_NavigateTo = 10035;
 inline constexpr std::uint16_t C2M_NavigateInput = 10037;
 inline constexpr std::uint16_t M2C_NavigateInput = 10038;
+inline constexpr std::uint16_t C2M_ReleaseDeadPlayer = 10098;
+inline constexpr std::uint16_t M2C_ReleaseDeadPlayer = 10099;
+inline constexpr std::uint16_t C2M_RevivePlayer = 10088;
+inline constexpr std::uint16_t M2C_RevivePlayer = 10089;
 inline constexpr std::uint16_t C2M_ToggleDemoDoor = 10039;
 inline constexpr std::uint16_t M2C_ToggleDemoDoor = 10040;
 inline constexpr std::uint16_t G2C_EntityMove = 10016;
@@ -7196,6 +9342,8 @@ inline constexpr std::uint16_t C2M_BuyNpcShopItem = 10070;
 inline constexpr std::uint16_t M2C_BuyNpcShopItem = 10071;
 inline constexpr std::uint16_t C2M_SellItem = 10072;
 inline constexpr std::uint16_t M2C_SellItem = 10073;
+inline constexpr std::uint16_t C2M_RepairItems = 10096;
+inline constexpr std::uint16_t M2C_RepairItems = 10097;
 inline constexpr std::uint16_t C2M_RequestPlayerTrade = 10074;
 inline constexpr std::uint16_t M2C_RequestPlayerTrade = 10075;
 inline constexpr std::uint16_t C2M_RespondPlayerTrade = 10076;
@@ -7211,12 +9359,20 @@ inline constexpr std::uint16_t G2C_PlayerTradeChanged = 10085;
 inline constexpr std::uint16_t G2C_PlayerTradeClosed = 10086;
 inline constexpr std::uint16_t C2M_ToggleAutoAttack = 10044;
 inline constexpr std::uint16_t M2C_ToggleAutoAttack = 10045;
+inline constexpr std::uint16_t C2M_CommandOwnedUnit = 10104;
+inline constexpr std::uint16_t M2C_CommandOwnedUnit = 10105;
 inline constexpr std::uint16_t G2C_AutoAttackState = 10046;
 inline constexpr std::uint16_t G2C_ItemChanged = 10021;
+inline constexpr std::uint16_t C2M_UseInteractable = 10094;
+inline constexpr std::uint16_t M2C_UseInteractable = 10095;
 inline constexpr std::uint16_t C2M_AcceptQuest = 10052;
 inline constexpr std::uint16_t M2C_AcceptQuest = 10053;
 inline constexpr std::uint16_t C2M_CompleteQuest = 10054;
 inline constexpr std::uint16_t M2C_CompleteQuest = 10055;
+inline constexpr std::uint16_t C2M_TriggerNpcInteraction = 10100;
+inline constexpr std::uint16_t M2C_TriggerNpcInteraction = 10101;
+inline constexpr std::uint16_t C2M_TriggerMonsterSignal = 10102;
+inline constexpr std::uint16_t M2C_TriggerMonsterSignal = 10103;
 inline constexpr std::uint16_t G2C_QuestProgress = 10056;
 inline constexpr std::uint16_t G2C_ProgressionChanged = 10087;
 inline constexpr std::uint16_t G2C_BuffAdded = 10026;
@@ -7228,10 +9384,13 @@ inline constexpr std::uint16_t G2C_AoiDelta = 10025;
 inline constexpr std::uint16_t G2C_DemoDoorState = 10041;
 inline constexpr std::uint16_t C2M_CastSkill = 10047;
 inline constexpr std::uint16_t M2C_CastSkill = 10048;
+inline constexpr std::uint16_t C2M_LearnTrainerSkill = 10091;
+inline constexpr std::uint16_t M2C_LearnTrainerSkill = 10092;
 inline constexpr std::uint16_t G2C_SkillCastState = 10049;
 inline constexpr std::uint16_t G2C_SkillProjectile = 10050;
 inline constexpr std::uint16_t G2C_SkillImpact = 10051;
-inline constexpr std::uint16_t G2C_CombatResult = 10088;
+inline constexpr std::uint16_t G2C_CombatResult = 10090;
+inline constexpr std::uint16_t G2C_UnitPresentation = 10093;
 inline constexpr std::uint16_t C2G_Ping = 10024;
 inline constexpr std::uint16_t G2C_Ping = 10031;
 } // namespace MsgCode
@@ -7284,6 +9443,14 @@ inline constexpr tiangz::client::RpcDescriptor<C2M_NavigateInput, M2C_NavigateIn
   "Map.NavigateInput", MsgCode::C2M_NavigateInput, MsgCode::M2C_NavigateInput
 };
 
+inline constexpr tiangz::client::RpcDescriptor<C2M_ReleaseDeadPlayer, M2C_ReleaseDeadPlayer, C2M_ReleaseDeadPlayerCodec, M2C_ReleaseDeadPlayerCodec> Map_ReleaseDeadPlayer{
+  "Map.ReleaseDeadPlayer", MsgCode::C2M_ReleaseDeadPlayer, MsgCode::M2C_ReleaseDeadPlayer
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_RevivePlayer, M2C_RevivePlayer, C2M_RevivePlayerCodec, M2C_RevivePlayerCodec> Map_RevivePlayer{
+  "Map.RevivePlayer", MsgCode::C2M_RevivePlayer, MsgCode::M2C_RevivePlayer
+};
+
 inline constexpr tiangz::client::RpcDescriptor<C2M_ToggleDemoDoor, M2C_ToggleDemoDoor, C2M_ToggleDemoDoorCodec, M2C_ToggleDemoDoorCodec> Map_ToggleDemoDoor{
   "Map.ToggleDemoDoor", MsgCode::C2M_ToggleDemoDoor, MsgCode::M2C_ToggleDemoDoor
 };
@@ -7316,6 +9483,10 @@ inline constexpr tiangz::client::RpcDescriptor<C2M_SellItem, M2C_SellItem, C2M_S
   "Map.SellItem", MsgCode::C2M_SellItem, MsgCode::M2C_SellItem
 };
 
+inline constexpr tiangz::client::RpcDescriptor<C2M_RepairItems, M2C_RepairItems, C2M_RepairItemsCodec, M2C_RepairItemsCodec> Map_RepairItems{
+  "Map.RepairItems", MsgCode::C2M_RepairItems, MsgCode::M2C_RepairItems
+};
+
 inline constexpr tiangz::client::RpcDescriptor<C2M_RequestPlayerTrade, M2C_RequestPlayerTrade, C2M_RequestPlayerTradeCodec, M2C_RequestPlayerTradeCodec> Map_RequestPlayerTrade{
   "Map.RequestPlayerTrade", MsgCode::C2M_RequestPlayerTrade, MsgCode::M2C_RequestPlayerTrade
 };
@@ -7340,6 +9511,14 @@ inline constexpr tiangz::client::RpcDescriptor<C2M_ToggleAutoAttack, M2C_ToggleA
   "Map.ToggleAutoAttack", MsgCode::C2M_ToggleAutoAttack, MsgCode::M2C_ToggleAutoAttack
 };
 
+inline constexpr tiangz::client::RpcDescriptor<C2M_CommandOwnedUnit, M2C_CommandOwnedUnit, C2M_CommandOwnedUnitCodec, M2C_CommandOwnedUnitCodec> Map_CommandOwnedUnit{
+  "Map.CommandOwnedUnit", MsgCode::C2M_CommandOwnedUnit, MsgCode::M2C_CommandOwnedUnit
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_UseInteractable, M2C_UseInteractable, C2M_UseInteractableCodec, M2C_UseInteractableCodec> Map_UseInteractable{
+  "Map.UseInteractable", MsgCode::C2M_UseInteractable, MsgCode::M2C_UseInteractable
+};
+
 inline constexpr tiangz::client::RpcDescriptor<C2M_AcceptQuest, M2C_AcceptQuest, C2M_AcceptQuestCodec, M2C_AcceptQuestCodec> Map_AcceptQuest{
   "Map.AcceptQuest", MsgCode::C2M_AcceptQuest, MsgCode::M2C_AcceptQuest
 };
@@ -7348,8 +9527,20 @@ inline constexpr tiangz::client::RpcDescriptor<C2M_CompleteQuest, M2C_CompleteQu
   "Map.CompleteQuest", MsgCode::C2M_CompleteQuest, MsgCode::M2C_CompleteQuest
 };
 
+inline constexpr tiangz::client::RpcDescriptor<C2M_TriggerNpcInteraction, M2C_TriggerNpcInteraction, C2M_TriggerNpcInteractionCodec, M2C_TriggerNpcInteractionCodec> Map_TriggerNpcInteraction{
+  "Map.TriggerNpcInteraction", MsgCode::C2M_TriggerNpcInteraction, MsgCode::M2C_TriggerNpcInteraction
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_TriggerMonsterSignal, M2C_TriggerMonsterSignal, C2M_TriggerMonsterSignalCodec, M2C_TriggerMonsterSignalCodec> Map_TriggerMonsterSignal{
+  "Map.TriggerMonsterSignal", MsgCode::C2M_TriggerMonsterSignal, MsgCode::M2C_TriggerMonsterSignal
+};
+
 inline constexpr tiangz::client::RpcDescriptor<C2M_CastSkill, M2C_CastSkill, C2M_CastSkillCodec, M2C_CastSkillCodec> Map_CastSkill{
   "Map.CastSkill", MsgCode::C2M_CastSkill, MsgCode::M2C_CastSkill
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_LearnTrainerSkill, M2C_LearnTrainerSkill, C2M_LearnTrainerSkillCodec, M2C_LearnTrainerSkillCodec> Map_LearnTrainerSkill{
+  "Map.LearnTrainerSkill", MsgCode::C2M_LearnTrainerSkill, MsgCode::M2C_LearnTrainerSkill
 };
 
 inline constexpr tiangz::client::RpcDescriptor<C2G_Ping, G2C_Ping, C2G_PingCodec, G2C_PingCodec> Gate_Ping{
@@ -7454,6 +9645,10 @@ inline constexpr tiangz::client::MessageDescriptor<G2C_SkillImpact, G2C_SkillImp
 
 inline constexpr tiangz::client::MessageDescriptor<G2C_CombatResult, G2C_CombatResultCodec> Client_CombatResult{
   "Client.CombatResult", MsgCode::G2C_CombatResult
+};
+
+inline constexpr tiangz::client::MessageDescriptor<G2C_UnitPresentation, G2C_UnitPresentationCodec> Client_UnitPresentation{
+  "Client.UnitPresentation", MsgCode::G2C_UnitPresentation
 };
 
 } // namespace tiangz::protocol::demo

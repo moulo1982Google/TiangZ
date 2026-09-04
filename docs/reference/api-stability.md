@@ -127,6 +127,8 @@ npm run verify:core-api
 
 ### 开发中
 
+- Stable Core新增`defineGameModule`以及`entityExtensionHandler/applyEntityExtensions`：前者只允许不可变Model装载期登记模块ID、版本、显式Model导出和必需System，后者只在未发布Entity的Factory边界同步装配强类型Component；构建期模块图与Hotfix完整装配器集合均被冻结。具体模块及其领域Component/Handler不属于Core。
+- Stable Core新增只读`RuntimeDataPackRegistry`与`RuntimeDataPack/RuntimeDataPackInput`类型。宿主在Scene创建前装入严格JSON信封，Core校验封闭模块所有权、命名空间与纯JSON payload并深冻结；Stable API只提供`Count/List/Get/TryGet`读取，不提供运行期写入、卸载或业务schema解释。
 - `ProcessHost`、`Singleton/SingletonRegistry`和`InstanceIdSystem`移出Stable入口。EntryScene公开子Scene生命周期和显式命名的本地Actor mailbox窄接口；不再开放整个Process的任意Entity查询。
 - 删除`TimerSystem.Remove`、Entity/Component/Actor上的`RemoveTimer`兼容名以及仅转发类型名称的`TimerComponent`别名；统一使用`TimerSystem`和`Cancel/CancelTimer`，并显式给出取消原因和是否通知。
 - API锁升级到schema 3，在顶层声明签名之外锁定完整可达`.d.ts`图，覆盖继承和传递类型。

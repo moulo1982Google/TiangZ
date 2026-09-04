@@ -27,12 +27,23 @@ message C2S_Login // IRequest
   optional string password = 3;
 }
 
+// A namespaced, versioned character extension owned by an external game
+// adapter. Core persists and forwards the envelope without interpreting its
+// payload; the owning module defines the payload schema.
+message CharacterExtension
+{
+  string id = 1;
+  uint32 version = 2;
+  bytes payload = 3;
+}
+
 message CharacterSummary
 {
   uint64 character_id = 1;
   string name = 2;
   uint32 player_config_id = 3;
   uint32 level = 4;
+  repeated CharacterExtension extensions = 5;
 }
 
 message S2C_Login // IResponse
@@ -54,6 +65,8 @@ message C2S_Register // IRequest
 {
   string account = 1;
   string password = 2;
+  // Optional initial player template. Existing clients omit it and keep template 1.
+  optional uint32 player_config_id = 3;
 }
 
 message S2C_Register // IResponse
@@ -69,6 +82,7 @@ message C2S_CreateCharacter // IRequest
   string account = 1;
   string name = 2;
   uint32 player_config_id = 3;
+  repeated CharacterExtension extensions = 4;
 }
 
 message S2C_CreateCharacter // IResponse
@@ -121,6 +135,9 @@ message G2C_EnterMap // IResponse
   repeated uint32 completed_quest_config_ids = 16;
   uint64 gold = 17;
   uint64 starter_dungeon_cooldown_end_at_ms = 18;
+  repeated uint32 known_skill_ids = 19;
+  repeated UnitNumericDelta numerics = 20;
+  repeated SkillProficiencySnapshot proficiencies = 21;
 }
 
 //ResponseType G2C_EnterStarterDungeon
@@ -235,12 +252,65 @@ message C2M_NavigateInput // IActorLocationRequest
   sint32 strafe = 2;
   float yaw = 3;
   uint32 sequence = 4;
+  // 仅供地图运行资料显式启用的外部协议网关；普通客户端不得提交位置快照。
+  // Only for external protocol gateways explicitly enabled by the map runtime profile.
+  bool has_position_snapshot = 5;
+  float position_x = 6;
+  float position_y = 7;
+  float position_z = 8;
 }
 
 message M2C_NavigateInput // IActorLocationResponse
 {
   uint32 acknowledged_sequence = 1;
   repeated NavigationPathPoint points = 2;
+}
+
+//ResponseType M2C_ReleaseDeadPlayer
+// 将死亡玩家移动到调用方选择且由地图校验的恢复点并保持死亡；未提供时回退地图默认恢复点。
+// 墓地选择、尸体和幽灵表现仍由上层游戏适配。
+// @ets.msg protocol=Map method=ReleaseDeadPlayer duringTransfer=reject
+message C2M_ReleaseDeadPlayer // IActorLocationRequest
+{
+  bool has_recovery_position = 1;
+  float recovery_x = 2;
+  float recovery_y = 3;
+  float recovery_z = 4;
+  float recovery_yaw = 5;
+}
+
+message M2C_ReleaseDeadPlayer // IActorLocationResponse
+{
+  bool released = 1;
+  float x = 2;
+  float y = 3;
+  float z = 4;
+  float yaw = 5;
+  uint64 health = 6;
+  uint64 max_health = 7;
+  uint64 mana = 8;
+  uint64 max_mana = 9;
+}
+
+//ResponseType M2C_RevivePlayer
+// 当前通用最小策略在玩家当前位置恢复生命；位置选择由此前的释放阶段或上层玩法负责。
+// 墓地、尸体和幽灵是上层玩法，不进入Combat Core。
+// @ets.msg protocol=Map method=RevivePlayer duringTransfer=reject
+message C2M_RevivePlayer // IActorLocationRequest
+{
+}
+
+message M2C_RevivePlayer // IActorLocationResponse
+{
+  bool revived = 1;
+  float x = 2;
+  float y = 3;
+  float z = 4;
+  float yaw = 5;
+  uint64 health = 6;
+  uint64 max_health = 7;
+  uint64 mana = 8;
+  uint64 max_mana = 9;
 }
 
 //ResponseType M2C_ToggleDemoDoor
@@ -445,6 +515,25 @@ message M2C_SellItem // IActorLocationResponse
   optional InventorySnapshot inventory_recovery = 5;
 }
 
+//ResponseType M2C_RepairItems
+// 修理在一个幂等事务中提交耐久与金币；item_id 为 0 时修理所有受损物品。
+// Repair commits durability and gold in one idempotent transaction; item_id zero repairs every damaged item.
+// @ets.msg protocol=Map method=RepairItems duringTransfer=queue
+message C2M_RepairItems // IActorLocationRequest
+{
+  uint32 npc_unit_id = 1;
+  uint64 item_id = 2;
+  string operation_id = 3;
+}
+
+message M2C_RepairItems // IActorLocationResponse
+{
+  uint64 cost = 1;
+  uint64 gold = 2;
+  repeated ItemSnapshot items = 3;
+  optional InventorySnapshot inventory_recovery = 4;
+}
+
 //ResponseType M2C_RequestPlayerTrade
 // 交易邀请只允许同地图近距离在线玩家；交易会话是临时状态，不进入玩家持久化快照。
 // Trade invitations accept only nearby online players in the same map; sessions are ephemeral and not persisted.
@@ -568,6 +657,27 @@ message M2C_ToggleAutoAttack // IActorLocationResponse
   uint32 swing_interval_ms = 5;
 }
 
+//ResponseType M2C_CommandOwnedUnit
+// Controls a temporary Unit owned by the requesting player. Command values
+// are protocol-neutral; game adapters translate client-specific controls at
+// the boundary. Ability commands carry an opaque external ability ID.
+// @ets.msg protocol=Map method=CommandOwnedUnit duringTransfer=reject
+message C2M_CommandOwnedUnit // IActorLocationRequest
+{
+  uint32 owned_unit_id = 1;
+  uint32 command = 2;
+  uint32 target_unit_id = 3;
+  uint32 ability_id = 4;
+}
+
+message M2C_CommandOwnedUnit // IActorLocationResponse
+{
+  uint32 owned_unit_id = 1;
+  uint32 command = 2;
+  bool accepted = 3;
+  uint32 ability_id = 4;
+}
+
 // 平A状态是每个玩家的一份可覆盖状态；客户端用最新状态中的服务器时间计算进度，不依赖本地计时起点。
 // @ets.msg protocol=Client method=AutoAttackState
 // @ets.broadcast mode=latest
@@ -587,6 +697,24 @@ message G2C_ItemChanged // IMessage
   ItemSnapshot item = 1;
 }
 
+//ResponseType M2C_UseInteractable
+// 可交互物体使用进入PlayerUnit有序mailbox；operation_id在断线重试中保持不变。
+// @ets.msg protocol=Map method=UseInteractable duringTransfer=queue
+message C2M_UseInteractable // IActorLocationRequest
+{
+  uint32 interactable_unit_id = 1;
+  string operation_id = 2;
+}
+
+message M2C_UseInteractable // IActorLocationResponse
+{
+  uint32 interactable_unit_id = 1;
+  repeated ItemSnapshot items = 2;
+  repeated QuestSnapshot quests = 3;
+  uint64 respawn_at_ms = 4;
+  repeated SkillProficiencySnapshot proficiencies = 5;
+}
+
 //ResponseType M2C_AcceptQuest
 // 接取属于不可重复的玩家事实，进入PlayerUnit有序mailbox。
 // @ets.msg protocol=Map method=AcceptQuest duringTransfer=queue
@@ -599,6 +727,9 @@ message C2M_AcceptQuest // IActorLocationRequest
 message M2C_AcceptQuest // IActorLocationResponse
 {
   QuestSnapshot quest = 1;
+  repeated ItemSnapshot inventory_changes = 2;
+  repeated ItemSnapshot inventory_items = 3;
+  repeated ItemSnapshot base_inventory_items = 4;
 }
 
 //ResponseType M2C_CompleteQuest
@@ -608,12 +739,52 @@ message C2M_CompleteQuest // IActorLocationRequest
 {
   uint32 quest_config_id = 1;
   uint32 npc_unit_id = 2;
+  uint32 reward_choice_id = 3;
 }
 
 message M2C_CompleteQuest // IActorLocationResponse
 {
   uint32 quest_config_id = 1;
   repeated ItemSnapshot reward_items = 2;
+  uint64 gold = 3;
+  uint64 gained_gold = 4;
+  uint64 level = 5;
+  uint64 experience = 6;
+  uint64 gained_experience = 7;
+  bool leveled_up = 8;
+  uint32 selected_reward_choice_id = 9;
+  repeated ItemSnapshot inventory_items = 10;
+  repeated ItemSnapshot base_inventory_items = 11;
+  repeated ItemSnapshot inventory_changes = 12;
+}
+
+//ResponseType M2C_TriggerNpcInteraction
+// 外部游戏适配器在已验证的NPC选项提交后发布中立内容事实；它只排队内容表现，不修改任务、物品或玩家状态。
+// @ets.msg protocol=Map method=TriggerNpcInteraction duringTransfer=queue
+message C2M_TriggerNpcInteraction // IActorLocationRequest
+{
+  uint32 npc_unit_id = 1;
+  uint32 trigger = 2;
+  uint32 trigger_value = 3;
+}
+
+message M2C_TriggerNpcInteraction // IActorLocationResponse
+{
+  bool accepted = 1;
+}
+
+//ResponseType M2C_TriggerMonsterSignal
+// 外部游戏适配器将已解码的模块私有信号提交给当前可见的存活怪物；Core不解释信号编号。
+// @ets.msg protocol=Map method=TriggerMonsterSignal duringTransfer=queue
+message C2M_TriggerMonsterSignal // IActorLocationRequest
+{
+  uint32 monster_unit_id = 1;
+  uint32 signal_id = 2;
+}
+
+message M2C_TriggerMonsterSignal // IActorLocationResponse
+{
+  bool accepted = 1;
 }
 
 // 任务进度是本人可见的可覆盖状态；同一任务只保留队列中的最新revision。
@@ -719,6 +890,25 @@ message M2C_CastSkill // IActorLocationResponse
   uint64 queue_deadline_at_ms = 14;
 }
 
+//ResponseType M2C_LearnTrainerSkill
+// Trainer learning is serialized in the PlayerUnit mailbox and commits runtime skill ownership with wallet state.
+// @ets.msg protocol=Map method=LearnTrainerSkill duringTransfer=reject
+message C2M_LearnTrainerSkill // IActorLocationRequest
+{
+  uint32 npc_unit_id = 1;
+  uint32 skill_config_id = 2;
+  string operation_id = 3;
+}
+
+message M2C_LearnTrainerSkill // IActorLocationResponse
+{
+  uint32 skill_config_id = 1;
+  bool learned = 2;
+  uint64 gold = 3;
+  repeated SkillProficiencySnapshot proficiencies = 4;
+  repeated uint32 learned_skill_config_ids = 5;
+}
+
 // 施法状态只发给本人；移动打断、完成和失败都用新状态覆盖旧读条。
 // @ets.msg protocol=Client method=SkillCastState
 // @ets.broadcast mode=latest
@@ -783,6 +973,20 @@ message G2C_CombatResult // IMessage
   uint32 ability_id = 9;
   bool killed = 10;
   uint32 server_tick = 11;
+  // 模块定义的不透明伤害规避原因；0表示未规避。 / Opaque module-defined damage-prevention reason; zero means not prevented.
+  uint32 prevented_reason = 12;
+}
+
+// Unit语义表现是AOI事件；具体聊天、表情或动画包由外置客户端协议适配器决定。
+// @ets.msg protocol=Client method=UnitPresentation
+// @ets.broadcast mode=event
+message G2C_UnitPresentation // IMessage
+{
+  uint32 presentation_type = 1;
+  uint32 source_unit_id = 2;
+  uint32 target_unit_id = 3;
+  uint32 presentation_id = 4;
+  string text = 5;
 }
 
 //ResponseType G2C_Ping

@@ -26,6 +26,7 @@ export type GateActorRouteState = "active" | "moving";
 export class GatePlayerRoute {
   readonly account: string;
   readonly characterId: bigint;
+  readonly playerConfigId: number;
   readonly gateName: string;
   connectionId?: number;
   lastReceiveTimeMs: number;
@@ -38,12 +39,17 @@ export class GatePlayerRoute {
   constructor(
     account: string,
     characterId: bigint,
+    playerConfigId: number,
     gateName: string,
     connectionId: number,
     nowMs: number,
   ) {
     this.account = account;
     this.characterId = characterId;
+    if (!Number.isSafeInteger(playerConfigId) || playerConfigId <= 0) {
+      throw new Error(`invalid playerConfigId: ${playerConfigId}`);
+    }
+    this.playerConfigId = playerConfigId;
     this.gateName = gateName;
     this.connectionId = connectionId;
     this.lastReceiveTimeMs = nowMs;

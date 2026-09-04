@@ -3,7 +3,6 @@ import {
   BuffConflictPolicy,
   BuffComponent,
   CombatComponent,
-  GameConfigs,
   GameErrCode,
   GlobalIdSystem,
   ItemComponent,
@@ -26,6 +25,8 @@ import {
   utf8Encode,
 } from "#tiangz/model";
 import { ActionFromConfig } from "../action/ActionExecutor";
+import { RequireBuffDefinition } from "../buff/BuffDefinitionResolver";
+import { RequireItemContentDefinition } from "./ItemContentResolver";
 
 const RECEIPT_VERSION = 1;
 
@@ -73,7 +74,7 @@ export function PlanItemUseTransaction(
 ): ItemUseTransactionPlan {
   const inventory = unit.GetComponent(ItemComponent);
   const inventoryPlan = inventory.PlanConsumeItem(itemId);
-  const itemConfig = GameConfigs.ItemConfig.Get(itemConfigId);
+  const itemConfig = RequireItemContentDefinition(unit, itemConfigId);
   const cooldown = unit.GetComponent(SkillComponent).PlanItemCooldown(
     itemConfig.id,
     itemConfig.cooldownMs,
@@ -120,17 +121,17 @@ export function PlanItemUseTransaction(
   } else if (action.type === ActionType.AddBuff) {
     if (action.parameters.length !== 1) throw new Error("transactional AddBuff expects one parameter");
     const buffConfigId = toConfigId(action.parameters[0]);
-    const buffConfig = GameConfigs.BuffConfig.Get(buffConfigId);
+    const buffConfig = RequireBuffDefinition(unit, buffConfigId);
     if (
       buffConfig.conflictPolicy !== BuffConflictPolicy.Stack ||
-      buffConfig.addActionType !== ActionType.None
+      (buffConfig.addAction?.type ?? ActionType.None) !== ActionType.None
     ) {
       throw new Error(
         `transactional item Buff must use Stack policy and no AddAction: ${buffConfigId}`,
       );
     }
     const now = TimeSystem.Instance.ServerNow;
-    const durationMs = buffConfig.durationSeconds * 1_000;
+    const durationMs = buffConfig.durationMs;
     const buff: BuffTransferState = {
       buffInstanceId: GlobalIdSystem.Instance.Next(),
       configId: buffConfigId,

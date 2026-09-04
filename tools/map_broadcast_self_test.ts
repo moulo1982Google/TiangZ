@@ -19,6 +19,7 @@ import {
   G2C_EntityLeaveCodec,
   G2C_EntityMoveCodec,
   G2C_EntityNumericCodec,
+  G2C_UnitPresentationCodec,
   G2C_AutoAttackStateCodec,
   S2G_ClientBroadcastBatchCodec,
   type CellMovementState,
@@ -29,6 +30,10 @@ import { SceneBroadcastTransport } from "../app/model/mmorpg/broadcast/SceneBroa
 import type { SceneMessageHelper } from "../app/core/process/SceneMessageHelper";
 import { MapClientRouteResolver } from "../app/model/mmorpg/broadcast/MapClientRouteResolver";
 import type { LocationProxy } from "../app/model/mmorpg/location/LocationProxy";
+import {
+  UnitPresentationAudience,
+  UnitPresentationType,
+} from "../app/model/mmorpg/map/UnitPresentation";
 
 interface ControlledSend {
   readonly audience: BroadcastAudience;
@@ -97,6 +102,7 @@ async function main(): Promise<void> {
   await testClientBroadcastHidesPhysicalRoutes();
   await testBuffAudienceProjectionDoesNotLeakDetails();
   await testCombatResultAudienceIsParticipantOnly();
+  await testPrivateExtensionPresentationIsSelfOnly();
   await testMapRouteResolverUsesLocalAndCachedRemoteRoutes();
   await testLatestSingleFlight();
   await testLatestCapacityIsExplicit();
@@ -116,6 +122,38 @@ async function main(): Promise<void> {
   await testEventOrderingAndCapacity();
   await testReliableEventCapacityPreflightIsAtomic();
   console.log("broadcast framework self-test passed");
+}
+
+async function testPrivateExtensionPresentationIsSelfOnly(): Promise<void> {
+  const transport = new ControlledTransport();
+  const hub = new BroadcastHub(transport);
+  const broadcast = new ClientBroadcast(hub, {
+    Resolve: (unitIds) => unitIds.map((recipientId) => ({ route: "Gate", recipientId })),
+  });
+  assert.equal(UnitPresentationAudience.Self, 2);
+  assert.equal(UnitPresentationType.Extension, 5);
+  const delivery = broadcast.Publish(
+    ClientAudience.Self(1001),
+    ClientBroadcasts.UnitPresentation,
+    {
+      presentationType: UnitPresentationType.Extension,
+      sourceUnitId: 1001,
+      targetUnitId: 9001,
+      presentationId: 3,
+      text: "org.example.target-counter",
+    },
+  );
+  assert.deepEqual(
+    transport.sends[0].audience.routes.map((route) => route.recipientId),
+    [1001],
+    "private extension presentations must not include AOI bystanders",
+  );
+  const presentation = G2C_UnitPresentationCodec.decode(transport.sends[0].frame.subarray(2));
+  assert.equal(presentation.presentationType, UnitPresentationType.Extension);
+  assert.equal(presentation.targetUnitId, 9001);
+  assert.equal(presentation.presentationId, 3);
+  transport.sends[0].resolve();
+  await delivery;
 }
 
 async function testBuffAudienceProjectionDoesNotLeakDetails(): Promise<void> {
@@ -182,6 +220,7 @@ async function testCombatResultAudienceIsParticipantOnly(): Promise<void> {
       abilityId: 3001,
       killed: false,
       serverTick: 7,
+      preventedReason: 0,
     },
     7,
   );

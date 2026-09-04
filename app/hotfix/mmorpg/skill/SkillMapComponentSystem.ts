@@ -10,10 +10,11 @@ import {
   MapComponent,
   MonsterComponent,
   MonsterUnit,
+  NpcComponent,
+  NpcUnit,
   NativeData,
   NativeUnitRef,
   NumericComponent,
-  NumericType,
   PlayerUnit,
   PositionComponent,
   RpcError,
@@ -23,9 +24,11 @@ import {
   SkillDelivery,
   SkillEffectTarget,
   SkillEvents,
+  SkillDefinitionProfileComponent,
   SkillMapComponent,
   SkillMovementPolicy,
   SkillTargetRelation,
+  SummonedUnit,
   TimeSystem,
   SystemErrCode,
   UnitComponent,
@@ -40,7 +43,7 @@ import {
 } from "#tiangz/model";
 import { ExecuteAction, type ActionExecutionResult } from "../action/ActionExecutor";
 import { BuildSkillCatalog, GetSkillDefinitionFromCatalog } from "./SkillCatalog";
-import { GetSkillManaCost } from "./SkillManaCost";
+import { CommitSkillResourceCosts, PlanSkillResourceCosts } from "./SkillResourceCost";
 
 // 受击调整Demo施法时间线的统一规则；业务入口不应散落硬编码的毫秒数。
 // Shared Demo rule for hit-induced cast timing; business entry points must not scatter magic durations.
@@ -72,7 +75,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     this.skillCatalogFingerprint = "";
   }
 
-  Cast(caster: PlayerUnit, command: SkillCastCommand): SkillCastState {
+  Cast(caster: Unit<any[]>, command: SkillCastCommand): SkillCastState {
     this.requireCaster(caster);
     const definition = this.getDefinition(command.skillId);
     const skill = caster.GetComponent(SkillComponent);
@@ -95,13 +98,13 @@ export class SkillMapComponentSystem extends SkillMapComponent {
       throw new RpcError(vetoReason, `skill ${definition.id} rejected by BeforeCast`);
     }
     this.validateRequiredAbsentBuff(target, definition);
-    const manaCost = GetSkillManaCost(definition.id);
     const numeric = caster.GetComponent(NumericComponent);
-    const currentMp = numeric[NumericType.CurrentMp];
-    if (currentMp < manaCost) {
+    const resourceCosts = PlanSkillResourceCosts(numeric, definition);
+    const insufficient = resourceCosts.find((cost) => cost.available < cost.amount);
+    if (insufficient) {
       throw new RpcError(
         GameErrCode.ManaNotEnough,
-        `skill ${definition.id} requires ${manaCost} mana, current ${currentMp}`,
+        `skill ${definition.id} requires ${insufficient.amount} of resource ${insufficient.currentNumericType}, current ${insufficient.available}`,
       );
     }
 
@@ -116,10 +119,16 @@ export class SkillMapComponentSystem extends SkillMapComponent {
       definition,
     };
     let state = skill.Accept(cast, definition.cooldownMs, definition.globalCooldownMs);
-    // 技能一旦通过目标、Veto、CD和施法状态校验就消耗蓝；后续命中失败不回滚，避免重复施法套利。
-    // Mana is spent after all admission checks pass; later impact failure does
-    // not refund it, preventing retries from turning a cast into a free action.
-    if (manaCost > 0n) numeric[NumericType.CurrentMp] = currentMp - manaCost;
+    // 技能一旦通过目标、Veto、CD和施法状态校验就原子提交全部资源；后续命中失败不退款。
+    // All resources commit atomically after admission; a later impact failure
+    // does not refund the cast and cannot be exploited through retries.
+    CommitSkillResourceCosts(numeric, resourceCosts);
+    this.DomainScene().Events.Publish(SkillEvents.CastAccepted, {
+      caster,
+      target,
+      definition,
+      state,
+    });
 
     if (
       definition.castTimeMs > 0 &&
@@ -145,7 +154,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     return state;
   }
 
-  InterruptByMovement(caster: PlayerUnit): boolean {
+  InterruptByMovement(caster: Unit<any[]>): boolean {
     this.requireCaster(caster);
     const skill = caster.GetComponent(SkillComponent);
     const active = skill.ActiveCast();
@@ -160,15 +169,15 @@ export class SkillMapComponentSystem extends SkillMapComponent {
   }
 
   /**
-   * 处理Combat确认的“没有被护盾吸收”的施法受击：普通读条后移800毫秒，
-   * 引导技能缩短剩余时间800毫秒。调用方必须先完成Combat结算；护盾吸收的攻击
+   * 处理Combat确认的“没有被护盾吸收且没有被规避”的施法受击：普通读条后移800毫秒，
+   * 引导技能缩短剩余时间800毫秒。调用方必须先完成Combat结算；护盾吸收或规避的攻击
    * 不应进入此入口。这里只调整结束时间，不重置起点、Tick计数、技能CD或公共CD，
    * 处理后立即发布新的权威状态。
    *
-   * Handles a casting hit that Combat confirmed was not absorbed by a shield: a
-   * regular cast is pushed back by 800 ms, while a channel loses 800 ms of
-   * remaining time. Callers must resolve Combat first; shield-absorbed hits must
-   * not enter this boundary. The start time, completed ticks, skill cooldown,
+   * Handles a casting hit that Combat confirmed was neither absorbed nor
+   * prevented: a regular cast is pushed back by 800 ms, while a channel loses
+   * 800 ms of remaining time. Callers must resolve Combat first; shield-absorbed
+   * or prevented hits must not enter this boundary. The start time, completed ticks, skill cooldown,
    * and GCD stay unchanged; the new authoritative state is published immediately.
    */
   HandleDamageDuringCast(target: PlayerUnit): boolean {
@@ -193,7 +202,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     if (this.map.IsStopping) return;
     const now = TimeSystem.Instance.ServerNow;
     for (const unitId of [...this.activeCasterUnitIds]) {
-      const caster = this.units.Get<PlayerUnit>(unitId);
+      const caster = this.units.Get(unitId);
       if (!caster) {
         this.activeCasterUnitIds.delete(unitId);
         continue;
@@ -244,7 +253,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     for (const projectile of [...this.projectiles.values()]) {
       if (now < projectile.impactAtMs) continue;
       this.projectiles.delete(projectile.castId);
-      const caster = this.units.Get<PlayerUnit>(projectile.sourceUnitId);
+      const caster = this.units.Get(projectile.sourceUnitId);
       if (!caster) continue;
       try {
         const definition = projectile.definition;
@@ -270,7 +279,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
    * conditions are checked again when the queued cast actually starts.
    */
   private queueCast(
-    caster: PlayerUnit,
+    caster: Unit<any[]>,
     skill: SkillComponent,
     command: SkillCastCommand,
     definition: SkillDefinition,
@@ -292,7 +301,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
 
   /** 推进所有已经到点的引导跳数；单次最多补8跳，避免长时间停顿造成无界结算洪峰。 / Resolves due channel ticks with an eight-tick cap to avoid an unbounded catch-up burst after a stall. */
   private advanceChannel(
-    caster: PlayerUnit,
+    caster: Unit<any[]>,
     skill: SkillComponent,
     cast: import("#tiangz/model").ActiveSkillCast,
     now: number,
@@ -319,7 +328,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
   }
 
   /** 当前Cast完成后立即尝试启动缓存技能；失败只丢弃缓存，不回滚已经完成的技能。 / Starts the buffered skill after the current cast; a failure only drops the buffer and never rolls back the completed skill. */
-  private startQueuedCast(caster: PlayerUnit, command: SkillCastCommand | undefined): void {
+  private startQueuedCast(caster: Unit<any[]>, command: SkillCastCommand | undefined): void {
     if (!command) return;
     try {
       this.Cast(caster, command);
@@ -335,7 +344,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
   }
 
   private launchOrResolve(
-    caster: PlayerUnit,
+    caster: Unit<any[]>,
     target: Unit<any[]>,
     definition: SkillDefinition,
     castId: bigint,
@@ -363,7 +372,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
   }
 
   private resolveEffects(
-    caster: PlayerUnit,
+    caster: Unit<any[]>,
     primaryTarget: Unit<any[]>,
     definition: SkillDefinition,
     castId: bigint,
@@ -403,7 +412,8 @@ export class SkillMapComponentSystem extends SkillMapComponent {
           // MonsterComponentSystem already publishes player-to-monster damage
           // at the authoritative monster boundary. Other targets use the same
           // private participant channel here.
-          if (!(target instanceof MonsterUnit)) {
+          if (!(target instanceof MonsterUnit || target instanceof NpcUnit)
+            && !(caster instanceof NpcUnit && target instanceof PlayerUnit)) {
             this.spawnPublish("publish-combat-damage", () => this.map.PublishCombatDamage(
               target,
               caster.UnitId,
@@ -420,8 +430,25 @@ export class SkillMapComponentSystem extends SkillMapComponent {
             definition.id,
           ));
         }
+        if (target instanceof PlayerUnit) {
+          for (const item of result.grantedItems ?? []) {
+            this.spawnPublish(
+              "publish-skill-item-change",
+              () => this.map.PublishItemChanged(target, item),
+            );
+          }
+        }
       }
     }
+    this.DomainScene().Events.Publish(SkillEvents.EffectsResolved, {
+      caster,
+      target: primaryTarget,
+      definition,
+      castId,
+      damage,
+      damageSchool,
+      killed,
+    });
     this.spawnPublish("publish-skill-impact", () => this.map.PublishSkillImpact(caster, primaryTarget, {
       castId,
       skillId: definition.id,
@@ -434,16 +461,43 @@ export class SkillMapComponentSystem extends SkillMapComponent {
   }
 
   private executeEffect(
-    caster: PlayerUnit,
+    caster: Unit<any[]>,
     target: Unit<any[]>,
     definition: SkillDefinition,
     effect: SkillEffectDefinition,
     resolvedDamage: bigint | undefined,
   ): ActionExecutionResult | undefined {
-    if (effect.action.type === ActionType.DealDamage && target instanceof MonsterUnit) {
+    const playerController = this.playerController(caster);
+    if (
+      effect.action.type === ActionType.DealDamage
+      && (target instanceof MonsterUnit || target instanceof NpcUnit)
+      && playerController
+    ) {
       const amount = effect.action.parameters[0];
       const school = Number(effect.action.parameters[1]) as import("#tiangz/model").DamageSchoolValue;
-      const damage = this.DomainScene().GetComponent(MonsterComponent).ApplyPlayerDamage(caster, target, {
+      const request = {
+        amount,
+        sourceUnitId: caster.UnitId,
+        abilityId: definition.id,
+        damageSchool: school,
+      };
+      const damage = target instanceof MonsterUnit
+        ? this.DomainScene().GetComponent(MonsterComponent).ApplyPlayerDamage(playerController, target, request)
+        : this.DomainScene().GetComponent(NpcComponent).ApplyPlayerDamage(playerController, target, request);
+      return {
+        changed: damage.finalDamage > 0n || damage.absorbedDamage > 0n,
+        value: damage.remainingHp,
+        damage,
+      };
+    }
+    if (
+      effect.action.type === ActionType.DealDamage
+      && caster instanceof NpcUnit
+      && target instanceof PlayerUnit
+    ) {
+      const amount = effect.action.parameters[0];
+      const school = Number(effect.action.parameters[1]) as import("#tiangz/model").DamageSchoolValue;
+      const damage = this.DomainScene().GetComponent(NpcComponent).ApplyDamageToPlayer(caster, target, {
         amount,
         sourceUnitId: caster.UnitId,
         abilityId: definition.id,
@@ -464,23 +518,51 @@ export class SkillMapComponentSystem extends SkillMapComponent {
   }
 
   private resolveTarget(
-    caster: PlayerUnit,
+    caster: Unit<any[]>,
     targetUnitId: number,
     definition: SkillDefinition,
   ): Unit<any[]> {
     if (definition.relation === SkillTargetRelation.Friendly) {
       if (targetUnitId === 0 || targetUnitId === caster.UnitId) return caster;
-      const player = this.units.Get<PlayerUnit>(targetUnitId);
-      if (player) return player;
+      const friendly = this.units.Get(targetUnitId);
+      if (friendly) return friendly;
       throw new RpcError(GameErrCode.SkillTargetInvalid, `friendly target not found: ${targetUnitId}`);
     }
-    const monster = this.units.Get<MonsterUnit>(targetUnitId);
-    if (!monster) throw new RpcError(GameErrCode.SkillTargetInvalid, `enemy target not found: ${targetUnitId}`);
-    return monster;
+    const enemy = this.units.Get(targetUnitId);
+    const playerController = this.playerController(caster);
+    if (
+      !enemy
+      || (playerController
+        && !(enemy instanceof MonsterUnit || enemy instanceof NpcUnit))
+    ) {
+      throw new RpcError(GameErrCode.SkillTargetInvalid, `enemy target not found: ${targetUnitId}`);
+    }
+    return enemy;
   }
 
-  private validateTarget(caster: PlayerUnit, target: Unit<any[]>, definition: SkillDefinition): void {
+  private validateTarget(caster: Unit<any[]>, target: Unit<any[]>, definition: SkillDefinition): void {
     this.validateTargetAlive(target);
+    const playerController = this.playerController(caster);
+    if (
+      playerController
+      && target instanceof MonsterUnit
+      && !this.DomainScene().GetComponent(MonsterComponent).CanPlayerAttack(playerController, target)
+    ) {
+      throw new RpcError(
+        GameErrCode.SkillTargetInvalid,
+        `monster ${target.UnitId} is not attackable by player config ${playerController.PlayerConfigId}`,
+      );
+    }
+    if (
+      playerController
+      && target instanceof NpcUnit
+      && !this.DomainScene().GetComponent(NpcComponent).CanPlayerAttack(playerController, target)
+    ) {
+      throw new RpcError(
+        GameErrCode.SkillTargetInvalid,
+        `NPC ${target.UnitId} is not attackable by player config ${playerController.PlayerConfigId}`,
+      );
+    }
     this.validateTargetRange(caster, target, definition);
   }
 
@@ -490,7 +572,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     }
   }
 
-  private validateTargetRange(caster: PlayerUnit, target: Unit<any[]>, definition: SkillDefinition): void {
+  private validateTargetRange(caster: Unit<any[]>, target: Unit<any[]>, definition: SkillDefinition): void {
     if (this.distance(caster, target) > definition.rangeMeters) {
       throw new RpcError(GameErrCode.SkillTargetTooFar, `target is outside ${definition.rangeMeters}m`);
     }
@@ -502,7 +584,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
    * the selected policy changes state; damage school never implies this rule.
    */
   private applyAutoAttackPolicy(
-    caster: PlayerUnit,
+    caster: Unit<any[]>,
     definition: SkillDefinition,
     phase: "start" | "complete",
   ): void {
@@ -515,7 +597,9 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     const state = shouldCancel
       ? combat.ToggleAutoAttack(0, false)
       : combat.ResetAutoAttackSwing();
-    this.spawnPublish("publish-skill-auto-attack-policy", () => this.map.PublishAutoAttackState(caster, state));
+    if (caster instanceof PlayerUnit) {
+      this.spawnPublish("publish-skill-auto-attack-policy", () => this.map.PublishAutoAttackState(caster, state));
+    }
   }
 
   /** Veto负责可扩展的提前错误，结算前仍保留同一不变量，避免未来入口绕过事件链。 / Veto reports extensible errors early while this invariant remains before resolution so future entrypoints cannot bypass it. */
@@ -545,14 +629,20 @@ export class SkillMapComponentSystem extends SkillMapComponent {
         this.skillCatalogDefinitions = BuildSkillCatalog();
         this.skillCatalogFingerprint = fingerprint;
       }
-      return GetSkillDefinitionFromCatalog(this.skillCatalogDefinitions, skillId);
+      const external = this.DomainScene().TryGetComponent(SkillDefinitionProfileComponent)?.TryGet(skillId);
+      if (external && this.skillCatalogDefinitions.has(skillId)) {
+        throw new Error(`external skill definition cannot override cold config: ${skillId}`);
+      }
+      return external ?? GetSkillDefinitionFromCatalog(this.skillCatalogDefinitions, skillId);
     } catch (error) {
       throw new RpcError(GameErrCode.SkillNotFound, error instanceof Error ? error.message : String(error));
     }
   }
 
-  private publishCastState(caster: PlayerUnit, state: SkillCastState): void {
-    this.spawnPublish("publish-skill-cast-state", () => this.map.PublishSkillCastState(caster, state));
+  private publishCastState(caster: Unit<any[]>, state: SkillCastState): void {
+    if (caster instanceof PlayerUnit) {
+      this.spawnPublish("publish-skill-cast-state", () => this.map.PublishSkillCastState(caster, state));
+    }
   }
 
   private spawnPublish(name: string, publish: () => Promise<void>): void {
@@ -587,10 +677,27 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     }
   }
 
-  private requireCaster(caster: PlayerUnit): void {
-    if (this.units.Get<PlayerUnit>(caster.UnitId) !== caster || caster.GetComponent(NativeUnitRef).alive === 0) {
-      throw new RpcError(GameErrCode.PlayerDead, `invalid caster: ${caster.UnitId}`);
+  private requireCaster(caster: Unit<any[]>): void {
+    if (
+      this.units.Get(caster.UnitId) !== caster
+      || !caster.HasComponent(SkillComponent)
+      || !caster.HasComponent(NumericComponent)
+      || !caster.HasComponent(PositionComponent)
+      || !caster.HasComponent(BuffComponent)
+      || !caster.HasComponent(CombatComponent)
+      || !caster.HasComponent(NativeUnitRef)
+      || caster.GetComponent(NativeUnitRef).alive === 0
+    ) {
+      throw new RpcError(GameErrCode.SkillTargetInvalid, `invalid caster: ${caster.UnitId}`);
     }
+  }
+
+  /** 将玩家拥有的临时Unit归因到控制者；其他Unit保持自身战斗归属。 / Attributes a player-owned temporary Unit to its controller while other Units retain self ownership. */
+  private playerController(caster: Unit<any[]>): PlayerUnit | undefined {
+    if (caster instanceof PlayerUnit) return caster;
+    if (!(caster instanceof SummonedUnit)) return undefined;
+    const owner = this.units.Get(caster.OwnerUnitId);
+    return owner instanceof PlayerUnit ? owner : undefined;
   }
 
   private get units(): UnitComponent {

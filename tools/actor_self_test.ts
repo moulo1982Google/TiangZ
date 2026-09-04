@@ -27,6 +27,7 @@ import { NumericComponent } from "../app/model/mmorpg/numeric/NumericComponent";
 import { IsDerivedNumericType, NumericType } from "../app/model/mmorpg/numeric/NumericType";
 import { Item } from "../app/model/mmorpg/item/Item";
 import { ItemComponent } from "../app/model/mmorpg/item/ItemComponent";
+import { ItemContentProfileComponent } from "../app/model/mmorpg/item/ItemContentProfileComponent";
 import { SkillComponent } from "../app/model/mmorpg/skill/SkillComponent";
 import { CurrencyComponent } from "#tiangz/model";
 import { TimeSystem } from "../app/core/runtime/TimeSystem";
@@ -157,6 +158,17 @@ function testGeneratedNativeHandleScalarAccess(): void {
       values[18] = inputZ;
       values[19] = 1;
       values[20] = sequence;
+      return true;
+    },
+    unitSetGridMovementTarget: (handle, targetCellX, targetCellZ, sequence) => {
+      const values = valuesByHandle.get(handle)!;
+      if (sequence <= values[20]) return false;
+      values[17] = Math.sign(targetCellX - values[7]);
+      values[18] = Math.sign(targetCellZ - values[8]);
+      values[20] = sequence;
+      values[21] = targetCellX;
+      values[22] = targetCellZ;
+      values[23] = 1;
       return true;
     },
     unitResetMovement: (handle) => {
@@ -384,7 +396,23 @@ async function testChildEntityContainer(): Promise<void> {
 
 async function testItemChildEntity(): Promise<void> {
   const host = new ProcessHost("item-child-self-test");
-  host.spawnScene("map:1", MapScene);
+  const map = host.spawnScene("map:1", MapScene);
+  const itemContent = map.AddComponent(ItemContentProfileComponent);
+  itemContent.Register("org.example.durability", [{
+    id: 750_001,
+    name: "Academy Practice Blade",
+    quality: 1,
+    level: 1,
+    maxStack: 1,
+    useEffect: 0,
+    useParams: [],
+    cooldownMs: 0,
+    globalCooldownMs: 0,
+    buyPrice: 0,
+    sellPrice: 0,
+    maxDurability: 12,
+    repairCostPerMillion: 800_000,
+  }]);
   const actor = host.spawnActor("map:1", "item-owner", ComponentProbeActor);
   const inventory = actor.AddComponent(ItemComponent);
   assert.deepEqual(inventory.GetChildren(Item), []);
@@ -405,8 +433,26 @@ async function testItemChildEntity(): Promise<void> {
   assert.equal(inventory.AddItem(item.id, 2).count, 51);
   assert.equal(inventory.RemoveItem(item.id, 3).count, 48);
 
+  const durableActor = host.spawnActor("map:1", "durable-item-owner", ComponentProbeActor);
+  const durableInventory = durableActor.AddComponent(ItemComponent);
+  const seeded = durableInventory.SeedInitialItems([{
+    configId: 750_001,
+    count: 1,
+    placementId: 3,
+  }]);
+  assert.equal(seeded[0]?.durability, 12);
+  assert.equal(seeded[0]?.placementId, 3);
+  const worn = durableInventory.LosePlacedDurability(250);
+  assert.equal(worn[0]?.durability, 9);
+  const repair = durableInventory.PlanRepairItems();
+  assert.equal(repair.cost, 2n);
+  assert.equal(repair.affectedItems[0]?.durability, 12);
+  assert.equal(durableInventory.CommitRepairPlan(repair)[0]?.version, 3);
+  assert.equal(durableInventory.Snapshot()[0]?.durability, 12);
+
   const instanceId = item.InstanceId;
   assert.equal(host.despawnActor("map:1", "item-owner"), true);
+  assert.equal(host.despawnActor("map:1", "durable-item-owner"), true);
   assert.equal(item.IsDisposed, true);
   assert.equal(host.Root.Get(instanceId), undefined);
   host.Dispose();
@@ -451,9 +497,36 @@ async function testPlayerUnitComponents(): Promise<void> {
     mapId: 1,
     mapInstanceId: 1n,
     areaId: 7,
-    monsterConfigId: 1,
+    monsterConfigId: 335_100_299,
+    name: "Actor Fixture Monster",
+    modelId: "monster/fixture",
   });
+  const monsterNative = monster.AddComponent(NativeUnitRef, {
+    id: monster.UnitId,
+    instanceId: monster.InstanceId,
+    mapId: 1,
+    x: -20,
+    y: 3.6134,
+    z: 45,
+    yaw: -2.3990437,
+    cellX: -20,
+    cellZ: 45,
+    targetCellX: -20,
+    targetCellZ: 45,
+  });
+  monster.AddComponent(PositionComponent, monsterNative, 600, 600, 1);
+  monster.AddComponent(NumericComponent, {
+    [NumericType.CurrentHp]: 55n,
+    [NumericType.MaxHpBase]: 55n,
+    [NumericType.MoveSpeedBase]: 6_000n,
+  });
+  const monsterSnapshot = monster.Snapshot();
   assert.equal(monster.AreaId, 7);
+  assert.equal(monsterSnapshot.monsterConfigId, 335_100_299);
+  assert.equal(monsterSnapshot.name, "Actor Fixture Monster");
+  assert.equal(monsterSnapshot.modelId, "monster/fixture");
+  assert.equal(monsterSnapshot.x, -20);
+  assert.equal(monsterSnapshot.z, 45);
   assert.equal(monster.HasComponent(MailBoxComponent), false);
   await assert.rejects(
     host.runActorMailbox(monster.InstanceId, () => undefined),
@@ -464,7 +537,10 @@ async function testPlayerUnitComponents(): Promise<void> {
 
   const player = units.Create(1000, PlayerUnit, {
     account: "tester",
+    characterId: 1n,
+    playerConfigId: 1,
     mapId: 1,
+    mapInstanceId: 1n,
   });
   const native = player.AddComponent(NativeUnitRef, {
     id: 1000,
@@ -486,6 +562,7 @@ async function testPlayerUnitComponents(): Promise<void> {
     [NumericType.MaxMpBase]: 100n,
     [NumericType.AttackBase]: 5n,
     [NumericType.AttackSpeedBase]: 2_000n,
+    [NumericType.StrengthBase]: 20n,
     [NumericType.MoveSpeedBase]: 10_000n,
   });
   const playerGate = player.AddComponent(UnitGateComponent, "gate-1", 1n);
@@ -510,6 +587,10 @@ async function testPlayerUnitComponents(): Promise<void> {
   assert.equal(numeric[NumericType.Attack], 5n);
   assert.equal(numeric[NumericType.AttackBase], 5n);
   assert.equal(numeric[NumericType.AttackSpeed], 2_000n);
+  assert.equal(numeric[NumericType.Strength], 20n);
+  numeric[NumericType.StrengthAdd] = 5n;
+  numeric[NumericType.StrengthPct] = 20n;
+  assert.equal(numeric[NumericType.Strength], 30n);
   assert.equal(numeric[NumericType.MoveSpeed], 10_000n);
   assert.equal(numeric[NumericType.MaxHp], 1000n);
   assert.throws(
@@ -522,8 +603,20 @@ async function testPlayerUnitComponents(): Promise<void> {
   numeric[NumericType.MaxHpAdd] += 100n;
   numeric[NumericType.MaxHpPct] += 20n;
   assert.equal(numeric[NumericType.MaxHp], 1320n);
-  numeric[NumericType.CurrentHp] += 1n;
-  assert.equal(numeric[NumericType.CurrentHp], 101n);
+  numeric[NumericType.CurrentHp] = 1_300n;
+  numeric[NumericType.MaxHpPct] = 0n;
+  assert.equal(numeric[NumericType.MaxHp], 1_100n);
+  assert.equal(numeric[NumericType.CurrentHp], 1_100n);
+  numeric[NumericType.MaxHpAdd] = 0n;
+  assert.equal(numeric[NumericType.MaxHp], 1_000n);
+  assert.equal(numeric[NumericType.CurrentHp], 1_000n);
+  numeric[NumericType.MaxHpAdd] = 100n;
+  assert.equal(numeric[NumericType.CurrentHp], 1_000n, "raising MaxHp healed the unit");
+  numeric[NumericType.MaxMpAdd] = 50n;
+  numeric[NumericType.CurrentMp] = 150n;
+  numeric[NumericType.MaxMpAdd] = 0n;
+  assert.equal(numeric[NumericType.MaxMp], 100n);
+  assert.equal(numeric[NumericType.CurrentMp], 100n);
 
   const initialized = player.Snapshot();
   assert.equal(units.Get<PlayerUnit>(1000), player);
@@ -616,7 +709,10 @@ async function testPlayerUnitComponents(): Promise<void> {
 
   const recreated = units.Create(1000, PlayerUnit, {
     account: "tester",
+    characterId: 1n,
+    playerConfigId: 1,
     mapId: 1,
+    mapInstanceId: 1n,
   });
   const recreatedNative = recreated.AddComponent(NativeUnitRef, {
     id: 1000,

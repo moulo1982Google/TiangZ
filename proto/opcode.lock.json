@@ -87,6 +87,11 @@
       "code": 20019
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#G2M_RebindPlayerGate",
+      "name": "G2M_RebindPlayerGate",
+      "code": 20064
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#G2M_SecondEnterMap",
       "name": "G2M_SecondEnterMap",
       "code": 20017
@@ -95,6 +100,11 @@
       "key": "proto/InnerMessage_S_20001.proto#G2M_TransferPlayer",
       "name": "G2M_TransferPlayer",
       "code": 20035
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#G2S_ProbeGate",
+      "name": "G2S_ProbeGate",
+      "code": 20067
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#L2L_LogWrite",
@@ -125,6 +135,11 @@
       "key": "proto/InnerMessage_S_20001.proto#L2S_LockPlayerLocation",
       "name": "L2S_LockPlayerLocation",
       "code": 20028
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#L2S_RebindPlayerGate",
+      "name": "L2S_RebindPlayerGate",
+      "code": 20069
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#L2S_RecoverPlayerLocations",
@@ -200,6 +215,11 @@
       "key": "proto/InnerMessage_S_20001.proto#M2G_PlayerOffline",
       "name": "M2G_PlayerOffline",
       "code": 20020
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2G_RebindPlayerGate",
+      "name": "M2G_RebindPlayerGate",
+      "code": 20065
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#M2G_SecondEnterMap",
@@ -287,6 +307,11 @@
       "code": 20051
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#S2G_ProbeGate",
+      "name": "S2G_ProbeGate",
+      "code": 20066
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#S2L_AllocatePlayerUnitId",
       "name": "S2L_AllocatePlayerUnitId",
       "code": 20037
@@ -300,6 +325,11 @@
       "key": "proto/InnerMessage_S_20001.proto#S2L_LockPlayerLocation",
       "name": "S2L_LockPlayerLocation",
       "code": 20027
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2L_RebindPlayerGate",
+      "name": "S2L_RebindPlayerGate",
+      "code": 20068
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#S2L_RecoverPlayerLocations",
@@ -422,6 +452,11 @@
       "code": 10047
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_CommandOwnedUnit",
+      "name": "C2M_CommandOwnedUnit",
+      "code": 10104
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_CompleteQuest",
       "name": "C2M_CompleteQuest",
       "code": 10054
@@ -440,6 +475,11 @@
       "key": "proto/OuterMessage_C_10001.proto#C2M_InspectLootMonster",
       "name": "C2M_InspectLootMonster",
       "code": 10064
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_LearnTrainerSkill",
+      "name": "C2M_LearnTrainerSkill",
+      "code": 10091
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#C2M_LootMonster",
@@ -472,6 +512,16 @@
       "code": 10068
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_ReleaseDeadPlayer",
+      "name": "C2M_ReleaseDeadPlayer",
+      "code": 10098
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_RepairItems",
+      "name": "C2M_RepairItems",
+      "code": 10096
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_RequestPlayerTrade",
       "name": "C2M_RequestPlayerTrade",
       "code": 10074
@@ -480,6 +530,11 @@
       "key": "proto/OuterMessage_C_10001.proto#C2M_RespondPlayerTrade",
       "name": "C2M_RespondPlayerTrade",
       "code": 10076
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_RevivePlayer",
+      "name": "C2M_RevivePlayer",
+      "code": 10088
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#C2M_SellItem",
@@ -497,9 +552,24 @@
       "code": 10039
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_TriggerMonsterSignal",
+      "name": "C2M_TriggerMonsterSignal",
+      "code": 10102
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_TriggerNpcInteraction",
+      "name": "C2M_TriggerNpcInteraction",
+      "code": 10100
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_UpdatePlayerTradeOffer",
       "name": "C2M_UpdatePlayerTradeOffer",
       "code": 10078
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_UseInteractable",
+      "name": "C2M_UseInteractable",
+      "code": 10094
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#C2M_UseItem",
@@ -555,6 +625,11 @@
       "key": "proto/OuterMessage_C_10001.proto#G2C_BuffRemoved",
       "name": "G2C_BuffRemoved",
       "code": 10027
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_CombatResult",
+      "name": "G2C_CombatResult",
+      "code": 10090
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#G2C_DemoDoorState",
@@ -672,6 +747,11 @@
       "code": 10050
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_UnitPresentation",
+      "name": "G2C_UnitPresentation",
+      "code": 10093
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_AcceptQuest",
       "name": "M2C_AcceptQuest",
       "code": 10053
@@ -697,6 +777,11 @@
       "code": 10048
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_CommandOwnedUnit",
+      "name": "M2C_CommandOwnedUnit",
+      "code": 10105
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_CompleteQuest",
       "name": "M2C_CompleteQuest",
       "code": 10055
@@ -715,6 +800,11 @@
       "key": "proto/OuterMessage_C_10001.proto#M2C_InspectLootMonster",
       "name": "M2C_InspectLootMonster",
       "code": 10065
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_LearnTrainerSkill",
+      "name": "M2C_LearnTrainerSkill",
+      "code": 10092
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#M2C_LootMonster",
@@ -742,6 +832,16 @@
       "code": 10069
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_ReleaseDeadPlayer",
+      "name": "M2C_ReleaseDeadPlayer",
+      "code": 10099
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_RepairItems",
+      "name": "M2C_RepairItems",
+      "code": 10097
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_RequestPlayerTrade",
       "name": "M2C_RequestPlayerTrade",
       "code": 10075
@@ -750,6 +850,11 @@
       "key": "proto/OuterMessage_C_10001.proto#M2C_RespondPlayerTrade",
       "name": "M2C_RespondPlayerTrade",
       "code": 10077
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_RevivePlayer",
+      "name": "M2C_RevivePlayer",
+      "code": 10089
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#M2C_SellItem",
@@ -767,9 +872,24 @@
       "code": 10040
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_TriggerMonsterSignal",
+      "name": "M2C_TriggerMonsterSignal",
+      "code": 10103
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_TriggerNpcInteraction",
+      "name": "M2C_TriggerNpcInteraction",
+      "code": 10101
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_UpdatePlayerTradeOffer",
       "name": "M2C_UpdatePlayerTradeOffer",
       "code": 10079
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_UseInteractable",
+      "name": "M2C_UseInteractable",
+      "code": 10095
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#M2C_UseItem",

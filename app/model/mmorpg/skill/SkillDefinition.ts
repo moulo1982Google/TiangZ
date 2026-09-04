@@ -28,6 +28,18 @@ export interface SkillEffectDefinition {
   readonly buffOptions?: BuffAddOptions;
 }
 
+/**
+ * 一条可原子校验和提交的技能资源消耗。固定值与可选基础值比例相加，比例以千分比表示并向下取整。
+ * One skill resource cost validated and committed atomically. The fixed amount
+ * and optional basis permille are added, with proportional cost rounded down.
+ */
+export interface SkillResourceCostDefinition {
+  readonly currentNumericType: number;
+  readonly fixedAmount: bigint;
+  readonly basisNumericType?: number;
+  readonly basisPermille?: number;
+}
+
 /** 将Luban技能与效果表组合后的稳定运行时形状；只在当前Cast内冻结，不能当作Unit长期状态。 / Stable runtime shape composed from Luban skill/effect tables; freeze it only for the current Cast, never as long-lived Unit state. */
 export interface SkillDefinition {
   readonly id: number;
@@ -50,5 +62,7 @@ export interface SkillDefinition {
   readonly channelTickMs: number;
   /** 引导总跳数；0表示普通技能。受到攻击时只缩短结束时间，不补发或重置已完成的Tick。 / Total channel ticks; 0 means a regular one-shot skill. Hits shorten the deadline without replaying or resetting completed ticks. */
   readonly channelTicks: number;
+  /** 同一技能的所有资源先全部校验，再与冷却和Cast一起同步提交。 / All costs are validated before any resource, cooldown, or Cast state is committed. */
+  readonly resourceCosts?: readonly SkillResourceCostDefinition[];
   readonly effects: readonly SkillEffectDefinition[];
 }

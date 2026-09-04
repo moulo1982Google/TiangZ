@@ -86,6 +86,7 @@ app/hotfix/bench/            仅由 build:bench 装配的压测 Handler
 app/generated/               服务端与 Native 自动生成代码
 app/generated/bootstrap/     自动生成的 Model Scene 启动入口
 app/generated/hotfix/        自动生成的 Hotfix Handler/补丁入口
+modules/                     构建期发现的外置游戏模块；第三方目录默认不提交
 proto/                       protobuf 源文件
 game_config/                 Luban Excel游戏配置唯一源文件
 native_data/core/            框架内置 Rust Entity op 原型
@@ -111,6 +112,8 @@ docs/design/                 维护者实现文档
 ```
 
 Rust业务代码统一放在`src/game/<domain>/`或对应领域文件中，`.native`只负责数据和op契约。`src/native_data.rs`、`src/process.rs`、`src/host.rs`等仍属于框架Runtime，普通Rust业务不得把实现堆回这些文件。Rust模块不参与TS Hotfix；Actor消息仍先经过TS的Location、Unit定位和mailbox，再由生成或薄适配入口调用Rust。完整约束见[Rust业务模块](docs/tutorials/12-rust-business-modules.md)。
+
+独立游戏或大型功能包可以放在`modules/`的独立仓库目录中，由`tiangz.module.json`声明版本、依赖、能力、Model/Hotfix入口及可选的模块自有Luban工程。构建会独立类型检查模块；开发宿主可通过`TIANGZ_MODULES_DIR`装载并监听外部Hotfix。模块用强类型Entity装配器贡献Component，使用Core固定Luban工具链生成自己的强类型配置，再通过只读运行时数据包部署；模块图或配置schema变化要求完整构建并重启，已有行为仍使用原子Hotfix。模块不能把领域规则带进Core，也不能执行任意安装脚本。详见[外置游戏模块](docs/design/external-game-modules.md)。
 
 Numeric权威值统一使用Rust`i64`、protobuf`int64`和TypeScript`bigint`。派生结果编号固定在1000..9999，Base/Add/Pct按`result*10+1/+2/+3`约定，Rust按编号自动重算而不重复维护业务枚举。
 

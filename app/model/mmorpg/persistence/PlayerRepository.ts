@@ -42,6 +42,35 @@ export interface PersistedBuffState extends Omit<BuffTransferState, "sourceUnitI
   readonly removeAction?: ActionDefinition;
 }
 
+/**
+ * 玩家拥有的扩展字节按外置模块命名空间保存，TiangZ将其视为不透明资料。
+ * 版本号允许所有者迁移自身状态，无需向Core玩家聚合体加入特定游戏字段。
+ *
+ * Player-owned extension bytes are namespaced by the external module and kept
+ * opaque by TiangZ.  The version lets the owning module migrate its own state
+ * without adding game-specific fields to the Core player aggregate.
+ */
+export interface PlayerPersistenceExtensionState {
+  readonly id: string;
+  readonly version: number;
+  readonly payload: Uint8Array;
+}
+
+/**
+ * PlayerPersistenceComponent用于捕获和恢复一份扩展状态的同步模块钩子。
+ * 钩子拥有payload格式与版本迁移；TiangZ只校验信封和字节。
+ *
+ * Synchronous module hook used by PlayerPersistenceComponent to capture and
+ * restore one extension state.  The hook owns the payload format and any
+ * version migration; TiangZ only validates the envelope and bytes.
+ */
+export interface PlayerPersistenceExtension {
+  readonly id: string;
+  readonly version: number;
+  Capture(): Uint8Array;
+  Restore(payload: Uint8Array, version: number): void;
+}
+
 /** 聚合值只用于Entity捕获和业务规划，不对应单条数据库记录。 / Aggregate values are used only for Entity capture and planning, not as one database record. */
 export interface PlayerSaveData {
   readonly player: PersistedPlayerState;
@@ -50,6 +79,7 @@ export interface PlayerSaveData {
   readonly skill: SkillTransferState;
   readonly quests: QuestTransferState;
   readonly progression?: ProgressionTransferState;
+  readonly extensions?: readonly PlayerPersistenceExtensionState[];
   readonly reason: string;
 }
 
@@ -86,6 +116,7 @@ export interface PlayerRuntimeSaveData {
   readonly player: Omit<PersistedPlayerState, "gold" | "numerics">;
   readonly buffs: readonly PersistedBuffState[];
   readonly skill: SkillTransferState;
+  readonly extensions?: readonly PlayerPersistenceExtensionState[];
   readonly reason: string;
 }
 

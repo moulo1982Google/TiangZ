@@ -76,13 +76,34 @@ globalCooldownEndAtMs: number;
 cooldownEndBySkillId: Map<number, number>; // skillId -> deadlineMs
 activeCast: ActiveCastState | null;
 queuedCast: QueuedSkillCast | null; // 最多缓存一个，不提前消耗CD
+knownSkillIds: Set<number>;
+proficiencyById: Map<number, { rank: number; maximumRank: number }>;
 ```
 
-当前Demo没有“已学习技能”持久化，任意存在的SkillConfig都可进入后续校验。正式接入时优先保存SkillConfigId集合，不为每个已学技能创建Skill子Entity；只有出现独立符文、词缀、耐久或可交易技能实例时，才引入有独立身份的子Entity。
+`knownSkillIds`与通用熟练度轨道都属于玩家`runtime`持久化域，并随跨地图快照迁移。熟练度只表达`proficiencyId/rank/maximumRank`；职业名称、采集类型、来源数据库ID和客户端技能栏格式由外置模块及协议适配器拥有。训练师报价ID只是稳定的购买标识；`grantedSkillConfigIds`可让一次购买原子授予一个或多个实际技能，省略时向后兼容为授予报价技能本身，并可在同一事务提高熟练度上限。可交互物可以检查最低rank并在成功事务中增长rank。二者都不得为每个技能或熟练度创建Actor、Timer或子Entity。
 
 玩家和怪物复用同一个`SkillComponent`。玩家通过Handler发起，怪物AI直接调用同一方法；不能再写一套MonsterSkill。
 
-### 2.4 ActiveCastState
+### 2.4 Module-owned Unit casters
+
+The map scheduler accepts any map `Unit` that owns the required neutral
+components (`SkillComponent`, `NumericComponent`, `PositionComponent`,
+`BuffComponent`, and `CombatComponent`). The client RPC still enters through
+`PlayerUnit.CastSkill`; monster or NPC content submits through a module event
+such as `MonsterEvents.BehaviorActionRequested` and calls the same
+`SkillMapComponent.Cast` boundary. Target validation, resource commit,
+cooldowns, movement interruption, Action execution, and projectile deadlines
+therefore remain one authoritative path.
+
+Only `PlayerUnit` receives the private replaceable cast-state and auto-attack
+messages. Projectile and impact publication uses neutral Unit identity and AOI,
+so a protocol adapter can choose the external packet for a monster caster.
+Player-only class rules must explicitly narrow the event caster to
+`PlayerUnit`; a generic caster must not inherit a WoW class prerequisite by
+accident. An NPC without `SkillComponent` remains presentation-only until its
+content module deliberately provisions the neutral skill components.
+
+### 2.5 ActiveCastState
 
 一次施法是短生命周期运行状态，不是Actor，也不是持久化Entity：
 
@@ -148,6 +169,8 @@ SkillEvents.BeforeCast
 
 Veto Handler只能同步、只读、返回错误码，不动态为每个Buff注册闭包。通过后才提交CD/GCD、创建ActiveCast或执行瞬发Action。
 
+基础Action全部结算后，`SkillMapComponent`同步发布`SkillEvents.EffectsResolved`。它是提交后事实，不是第二个Veto：监听器可以通过既有领域入口追加模块效果，但不能改写基础伤害、冷却或施法结果，也不能抛错。瞬发命中、弹道命中和每个引导Tick分别产生一个事件，因此监听器若要保证“一次施法仅执行一次”，必须用`castId`在所属Entity Component中显式去重，不能依赖模块级可变Map。
+
 目标关系通过稳定的Unit关系查询接口判断，不能用“目标当前在AOI可见集合中”推导敌我。AOI决定谁能收到表现，技能规则决定谁可以成为目标，两者必须分开。
 
 当前技能CD、GCD和法力消耗都在请求被接受时提交；读条随后被中断不返还法力或冷却。当前技能法力消耗暂由`SkillManaCost.ts`维护，待配置结构稳定后再纳入`SkillConfig`；法力不足在创建ActiveCast前拒绝。玩家由`CombatStateComponent`维护战斗来源：仍有怪物仇恨时不恢复MP，所有仇恨来源清除后按180秒从当前值恢复到满值。恢复由固定更新桶推进，不为每个玩家创建Timer。
@@ -193,7 +216,9 @@ ExecuteAction(target, action, {
 当前稳定Action包括：
 
 - `ChangeNumeric(type, delta)`：只修改非派生普通数值，不能表达伤害或治疗。
+- `ChangeNumericBatch(type, delta, ...)`：在完整预检后同步修改一个或多个不重复的非派生普通数值；坏参数不会产生部分写入，也不提供数据库事务语义。
 - `AddBuff(buffConfigId)`和`RemoveBuff(buffInstanceId)`：进入目标BuffComponent。
+- `RemoveBuffsByEffectTags(tag, ...)`：按任一不透明正整数标签批量移除目标Buff；动作只做集合操作，不解释控制、驱散或具体游戏类别。
 - `DealDamage(amount, school)`：调用目标Combat的`ApplyDamage`，正确携带sourceUnitId和abilityId。
 - `Heal(amount)`：调用目标Combat的`ApplyHealing`。
 - `RegisterDamageAbsorber(amount[, priority])`：只供Buff添加阶段注册Combat护盾。
@@ -271,7 +296,7 @@ SkillConfig/SkillEffectConfig的表结构、枚举和字段类型属于Model冷�
 4. `3004 真言术·盾`：自己或友方Unit目标、瞬发、15米、8秒冷却；添加30秒200点护盾和15秒虚弱灵魂。
 5. `3005 真言术·韧`：自己或友方Unit目标、瞬发、15米；添加30分钟MaxHpAdd+500的真言术·韧。
 6. `3006 恢复`：自己目标、瞬发，添加24秒恢复Buff；Buff每3秒恢复10点生命，共8次。技能本身不创建ActiveCast，持续效果由BuffComponent的生命周期和Tick负责。
-7. `3007 精神鞭笞`：敌方Unit目标、30米、5秒引导、每1秒造成30点暗影伤害并按该跳实际伤害的50%治疗施法者、共5跳；移动会取消引导，受到一次没有被护盾吸收的有效攻击时将结束时间提前800毫秒，提前到当前服务器时间时立即结束。真言术·盾吸收的攻击不缩短引导。
+7. `3007 精神鞭笞`：敌方Unit目标、30米、5秒引导、每1秒造成30点暗影伤害并按该跳实际伤害的50%治疗施法者、共5跳；移动会取消引导，受到一次没有被护盾吸收且没有被规避的有效攻击时将结束时间提前800毫秒，提前到当前服务器时间时立即结束。真言术·盾吸收或`preventedReason`非零的攻击不缩短引导。
 
 ### 11.1 精神鞭笞的引导语义
 
@@ -279,9 +304,9 @@ SkillConfig/SkillEffectConfig的表结构、枚举和字段类型属于Model冷�
 
 - 开始时冻结5秒结束时间和5次Tick规则，成功施放立即提交1秒GCD，不额外设置技能CD。
 - 每到一个服务器Tick，先按当前目标ID重新取目标，再执行30点暗影伤害；随后以Combat返回的`finalDamage`为基数向下取整计算50%自疗，目标残血、护盾或减伤不会产生虚假治疗；已完成的Tick不会因为受击而重放或回滚。
-- 玩家发生有效移动输入时直接中断；目标受到一次没有被护盾吸收的有效攻击时，只把`finishAtMs`提前800ms，不清除当前Cast、不重置起点，也不改变已完成Tick数量。护盾吸收的攻击不调整`finishAtMs`。
+- 玩家发生有效移动输入时直接中断；目标受到一次没有被护盾吸收且没有被规避的有效攻击时，只把`finishAtMs`提前800ms，不清除当前Cast、不重置起点，也不改变已完成Tick数量。护盾吸收或规避的攻击不调整`finishAtMs`。
 - 如果提前后的结束时间早于下一跳，剩余Tick不强行补发；这是“缩短引导时间”，不是“保证五次伤害”。
-- 当前Demo的有效攻击来源是怪物普通攻击；以后玩家技能或其他战斗来源接入时，必须先完成`CombatComponent.ApplyDamage`，仅在结果显示本次没有护盾吸收且目标仍存活时调用同一个`HandleDamageDuringCast`边界，不能复制一套缩短逻辑。
+- 当前Demo的有效攻击来源是怪物普通攻击；以后玩家技能或其他战斗来源接入时，必须先完成`CombatComponent.ApplyDamage`，仅在结果显示本次没有护盾吸收、`preventedReason === 0`且目标仍存活时调用同一个`HandleDamageDuringCast`边界，不能复制一套缩短逻辑。
 - 客户端只根据`G2C_SkillCastState`的服务器时间和`channelTickIndex/channelTickCount`显示`x/5`引导进度，不自行决定Tick、命中或取消。
 
 对应Buff的冲突语义由BuffConfig表达：冰冷按目标共享并刷新；灼烧按`目标+来源`独立，同来源刷新；盾按目标替换并重置吸收状态；虚弱灵魂重复添加拒绝；韧以HigherWins比较显式优先级。Refresh默认不重复执行AddAction。
@@ -298,7 +323,7 @@ SkillConfig/SkillEffectConfig的表结构、枚举和字段类型属于Model冷�
 4. 距离、移动、死亡和目标重生均不会命中旧Unit。
 5. 重复请求、迟到客户端状态和配置Reload不造成重复结算。
 6. 3006完成时只添加一次Buff 2002；恢复Buff每3秒执行一次Heal(10)，持续24秒共8次，技能本身不进入引导状态。
-7. 3007每秒至多执行一跳；没有护盾吸收的受击会将服务器结束时间提前800ms，真言术·盾吸收的受击不会缩短引导，移动会取消，且不会重复已完成的Tick。Cocos3D对本地引导目标绘制纯表现连线，连线不参与命中判定。
+7. 3007每秒至多执行一跳；没有护盾吸收且没有被规避的受击会将服务器结束时间提前800ms，护盾吸收或规避的受击不会缩短引导，移动会取消，且不会重复已完成的Tick。Cocos3D对本地引导目标绘制纯表现连线，连线不参与命中判定。
 8. 配置排队窗口内最多缓存一个技能；缓存技能开始时重新校验，失败只丢弃缓存，不回滚前一个完成的技能。
 9. 3000个无ActiveCast Unit不会显著增加Map CPU；活跃Cast压力测试无队列积压和丢工作。
 

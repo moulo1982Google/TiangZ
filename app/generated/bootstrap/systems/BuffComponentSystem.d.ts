@@ -8,6 +8,7 @@ declare module "../../../model/domains/buff/BuffComponent" {
     AddBuff(configId: number, options?: BuffAddOptions): Buff;
     GetBuff(buffInstanceId: bigint): Buff | undefined;
     HasBuffConfig(configId: number): boolean;
+    RemoveBuffsByEffectTags(effectTags: readonly number[], reason?: string): number;
     RemoveBuff(buffInstanceId: bigint, reason?: string): boolean;
     GetBuffs(): readonly Buff[];
     SnapshotPublic(): readonly BuffPublicState[];

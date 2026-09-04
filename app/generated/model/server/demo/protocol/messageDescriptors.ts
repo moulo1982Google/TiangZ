@@ -51,6 +51,8 @@ import {
   G2C_SkillImpactCodec,
   G2C_SkillProjectile,
   G2C_SkillProjectileCodec,
+  G2C_UnitPresentation,
+  G2C_UnitPresentationCodec,
   M2G_KickPlayers,
   M2G_KickPlayersCodec,
   M2G_MapReady,
@@ -206,6 +208,11 @@ export const ClientMessages = {
     msgcode: MsgCode.G2C_CombatResult,
     codec: G2C_CombatResultCodec,
   }),
+  UnitPresentation: defineMessage<G2C_UnitPresentation>({
+    name: "Client.UnitPresentation",
+    msgcode: MsgCode.G2C_UnitPresentation,
+    codec: G2C_UnitPresentationCodec,
+  }),
 };
 
 export const MapMessages = {
@@ -249,4 +256,5 @@ export const AllMessageDescriptors = [
   ClientMessages.SkillProjectile,
   ClientMessages.SkillImpact,
   ClientMessages.CombatResult,
+  ClientMessages.UnitPresentation,
 ] as const;

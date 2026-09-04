@@ -44,10 +44,13 @@ Machine
 | `src` | Rust Runtime、网络和宿主 | 默认不修改 |
 | `tools` | codegen、检查和维护工具 | 默认不修改 |
 | `app/generated`、`src/generated`、客户端`Generated` | 自动生成物 | 永远不手工修改 |
+| `modules/` | 构建期发现的外置游戏模块安装点 | 领域源码留在独立模块；不得借模块反向修改Core |
 
 如果业务可以通过现有Scene、Actor、Component、协议和广播能力完成，不得为了该业务新增Core抽象或Rust特殊分支。确实缺少通用能力时，先说明现有机制为什么无法表达、影响范围和最小扩展方案，再修改框架。
 
 当前MMORPG示例不是Core的定义：`app/model/domains`是跨游戏的稳定契约层，`app/model/mmorpg`、`app/hotfix/mmorpg`和`src/game`是具体领域层；AOI、MapHost、NavMesh、怪物、NPC、目标选择和地图技能调度必须留在MMORPG领域。`app/core`只承载运行时语义。修改分层入口后运行`npm run verify:domain-boundaries`，不要用新的转发层绕过边界。详细规则见[能力归属表](docs/design/capability-ownership.md)。
+
+外置游戏模块只通过`tiangz.module.json`、`defineGameModule`、Stable Model/Core入口和显式Model/Hotfix loader接入。给现有Entity贡献Component时，只能在发布前的Factory边界使用强类型`entityExtensionHandler/applyEntityExtensions`；装配器不得异步，也不能代替Entity/Component生命周期。Core可以拥有发现、依赖图、装载与兼容指纹，不能拥有具体模块的协议、地图、职业、技能、任务或内容数据。模块不得携带自动执行的Shell/SQL安装脚本；完整规则见[外置游戏模块](docs/design/external-game-modules.md)。
 
 Developer Tools的设计向导、`@tiangz`、`tiangz-design`和MCP只能提供设计建议。AI解释不能覆盖确定性规则，也不能替代代码、项目检查、生成锁与测试。
 

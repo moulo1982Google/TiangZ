@@ -12,6 +12,7 @@ import type { MapInstanceDefinition } from "./MapInstance";
 import { MapScene } from "./MapScene";
 import { NativeData, type NativeAoiRelation, type NativeAoiVisibilityChange } from "../native/NativeData";
 import { GameConfigs, SpatialMode } from "../../../generated/model/config";
+import { MapRuntimeProfileComponent } from "./MapRuntimeProfileComponent";
 
 export interface IAoiVisibilityFilter {
   /**
@@ -52,6 +53,7 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
       system: "aoi",
     });
     const config = GameConfigs.MapConfig.Get(definition.mapConfigId);
+    const spatial = this.DomainScene<MapScene>().GetComponent(MapRuntimeProfileComponent).Spatial;
     const aoi = config.aoiConfigId_ref;
     if (!aoi) throw new Error(`map ${config.id} has no AOI config`);
     const fixedUpdateMs = Game.Instance.FixedUpdateMs;
@@ -71,29 +73,29 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
           intervalTicks,
         };
       });
-    if (config.spatialMode === SpatialMode.Grid2D) {
+    if (spatial.spatialMode === SpatialMode.Grid2D) {
       NativeData.CreateGrid2DSpatial(
         this.nativeMapKey,
-        config.widthCells,
-        config.depthCells,
-        config.cellSizeMeters,
+        spatial.widthCells,
+        spatial.depthCells,
+        spatial.cellSizeMeters,
       );
-    } else if (config.spatialMode === SpatialMode.NavMesh3D) {
+    } else if (spatial.spatialMode === SpatialMode.NavMesh3D) {
       NativeData.CreateNavMesh3DSpatial(
         this.nativeMapKey,
-        config.widthCells,
-        config.depthCells,
-        config.cellSizeMeters,
-        config.navigationAsset,
-        config.navigationHash,
+        spatial.widthCells,
+        spatial.depthCells,
+        spatial.cellSizeMeters,
+        spatial.navigationAsset,
+        spatial.navigationHash,
       );
     } else {
-      throw new Error(`map ${config.id} has unsupported spatial mode: ${config.spatialMode}`);
+      throw new Error(`map ${config.id} has unsupported spatial mode: ${spatial.spatialMode}`);
     }
     try {
       NativeData.CreateAoi(
         this.nativeMapKey,
-        config.cellSizeMeters * aoi.gridSizeCells,
+        spatial.cellSizeMeters * aoi.gridSizeCells,
         (aoi.enterRangeGrids - 1) / 2,
         (aoi.detachRangeGrids - 1) / 2,
         syncTiers,

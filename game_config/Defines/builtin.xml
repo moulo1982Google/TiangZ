@@ -36,13 +36,17 @@
         <var name="Heal" value="6"/>
         <var name="GrantItem" value="7"/>
         <var name="HealFromResolvedDamagePercent" value="8"/>
-        <var name="Max" value="9"/>
+        <var name="ChangeNumericBatch" value="9"/>
+        <var name="RemoveBuffsByEffectTags" value="10"/>
+        <var name="Max" value="11"/>
     </enum>
     <enum name="QuestObjectiveType" comment="任务目标类型">
         <var name="KillMonster" value="1"/>
         <var name="UseItem" value="2"/>
         <var name="EnterMap" value="3"/>
         <var name="CollectItem" value="4"/>
+        <var name="UseInteractable" value="5"/>
+        <var name="ContentSignal" value="6"/>
     </enum>
     <enum name="QuestStatus" comment="进行中任务的状态">
         <var name="InProgress" value="1"/>

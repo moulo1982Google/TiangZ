@@ -19,7 +19,11 @@ Monster / Player / Skill / Action
           v
 CombatComponent.ApplyDamage(DamageRequest)
           |
-          +-- 已注册的受伤处理器（护盾、减伤、护甲……）
+          +-- 显式可规避请求的BeforeDamage只读Veto链
+          |
+          +-- Numeric目标侧伤害倍率（通用、物理）
+          |
+          +-- 已注册的受伤处理器（护盾、单次命中规则……）
           |
           +-- Numeric.CurrentHp
           |
@@ -44,6 +48,9 @@ CombatComponent.ApplyDamage(DamageRequest)
 挂在所有可以被攻击或治疗的 Unit 上，当前玩家和怪物都必须挂载。它负责：
 
 - `ApplyDamage`：统一伤害入口；
+- 仅对`canBePrevented: true`的请求，在任何倍率、护盾或HP变更前执行`CombatEvents.BeforeDamage`；
+- 为上述尝试分配Unit本地稳定`attemptSequence`，并把非零Veto返回值作为不透明`preventedReason`返回；
+- 在护盾前应用Numeric目标侧通用/物理伤害倍率；
 - 依优先级执行已注册的伤害吸收处理器；
 - 修改权威`NumericType.CurrentHp`；
 - 自动限制伤害不超过当前生命值；
@@ -95,6 +102,8 @@ const result = target.GetComponent(CombatComponent).ApplyDamage({
   sourceUnitId: attacker.UnitId,
   abilityId: 0,
   actionId: 0,
+  damageSchool: DamageSchool.Physical,
+  canBePrevented: true,
 });
 
 // 只能读取结果，不能再对CurrentHp做第二次修改。
@@ -113,6 +122,11 @@ if (result.killed) {
 | `remainingHp` | 结算后的权威生命值 |
 | `killed` | 本次是否把一个存活Unit打到0血 |
 | `absorptions` | 每个处理器本次吸收量和剩余量 |
+| `preventedReason` | 非零表示扩展模块在扣血前规避；具体枚举由模块和协议适配器解释 |
+
+`IncomingDamageMultiplier`与`PhysicalDamageMultiplier`使用1000制派生Numeric。物理伤害依次乘两个倍率，其他伤害只乘通用倍率，结果向上取整后再进入护盾处理器。新建玩家和怪物应显式设置两个Base为1000；只有旧Entity的Base/Add/Pct三项全部为0时，运行时才按1000兼容。具体游戏的护甲、职业、光环和法术公式属于外置模块，通过Buff的`ChangeNumeric`生命周期组合，不得写入Combat Core。
+
+`canBePrevented`默认不存在或为`false`，法术、持续伤害和普通Action不会自动进入规避链。显式可规避请求先发布同步只读`CombatEvents.BeforeDamage`，事件只提供目标、冻结请求和递增尝试序号；第一个非零结果立即结束结算，不消耗护盾、不修改HP、也不发布`DamageResolved`。地图仍把带`preventedReason`的私有`G2C_CombatResult`发给参与者，使外置协议适配器可以投影闪避、格挡或招架等表现，而Combat不认识这些游戏术语。Veto Handler必须确定性、无I/O且无副作用。
 
 ### 治疗
 
@@ -251,9 +265,11 @@ tools/combat_self_test.ts
 - 多个护盾按优先级和稳定ID依次吸收；
 - 护盾剩余量更新和注销；
 - 剩余伤害扣血；
+- 全局与物理目标侧倍率按1000制组合，非物理伤害不应用物理倍率；
 - 治疗MaxHp截断；
 - 负数伤害/治疗拒绝；
 - 测试对象没有`BuffComponent`仍可完成完整伤害结算。
+- NPC 对玩家的近战和模块能力伤害共用 `NpcComponent.ApplyDamageToPlayer`：统一增加仇恨、发布一次伤害事实、执行玩家读条退条，并在致死时清除双方战斗关系和处理耐久；模块不得绕过这条边界直接调用目标 `CombatComponent`。
 
 运行：
 

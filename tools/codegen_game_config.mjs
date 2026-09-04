@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 
 import { collectGeneratedFiles, recordGenerator } from "./codegen_manifest.mjs";
 
-const ACTION_TYPE_MAX = 9;
+const ACTION_TYPE_MAX = 10;
 
 if (process.argv.includes("--self-test-action-validation")) {
   selfTestActionValidation();
@@ -778,10 +778,34 @@ function validateActionConfig(
   if (type === 5 && (parameters.length < 1 || parameters.length > 2)) {
     throw new Error(\`\${owner} \${phase} RegisterDamageAbsorber expects one or two parameters\`);
   }
+  if (type === 9 && (parameters.length === 0 || parameters.length % 2 !== 0)) {
+    throw new Error(\`\${owner} \${phase} ChangeNumericBatch expects one or more [numericType, delta] pairs\`);
+  }
+  if (type === 10 && (parameters.length === 0
+    || parameters.some((value) => value <= 0)
+    || new Set(parameters).size !== parameters.length)) {
+    throw new Error(\`\${owner} \${phase} RemoveBuffsByEffectTags needs unique positive effect tags\`);
+  }
   if (type === 1) {
     const numericType = parameters[0];
     if (numericType <= 0 || (numericType >= 1_000 && numericType <= 9_999)) {
       throw new Error(\`\${owner} \${phase} ChangeNumeric targets an invalid or derived NumericType\`);
+    }
+  }
+  if (type === 9) {
+    const seenNumericTypes = new Set<number>();
+    for (let index = 0; index < parameters.length; index += 2) {
+      const numericType = parameters[index];
+      if (numericType === 1) {
+        throw new Error(\`\${owner} \${phase} ChangeNumericBatch cannot target CurrentHp; use Heal or DealDamage\`);
+      }
+      if (numericType <= 0 || (numericType >= 1_000 && numericType <= 9_999)) {
+        throw new Error(\`\${owner} \${phase} ChangeNumericBatch targets an invalid or derived NumericType\`);
+      }
+      if (seenNumericTypes.has(numericType)) {
+        throw new Error(\`\${owner} \${phase} ChangeNumericBatch contains duplicate NumericType\`);
+      }
+      seenNumericTypes.add(numericType);
     }
   }
   if (type === 2 && !snapshot.BuffConfig.TryGet(parameters[0])) {
@@ -1032,12 +1056,35 @@ function validateRawAction(owner, type, parameters, buffIds, allowEmptyRemove, a
   if (type === 5 && (parameters.length < 1 || parameters.length > 2)) {
     throw new Error(`${owner} RegisterDamageAbsorber expects one or two parameters`);
   }
+  if (type === 9 && (parameters.length === 0 || parameters.length % 2 !== 0)) {
+    throw new Error(`${owner} ChangeNumericBatch expects one or more [numericType, delta] pairs`);
+  }
+  if (type === 10 && (parameters.length === 0
+    || parameters.some((value) => value <= 0)
+    || new Set(parameters).size !== parameters.length)) {
+    throw new Error(`${owner} RemoveBuffsByEffectTags needs unique positive effect tags`);
+  }
   if (type === 1) {
     if (parameters[0] === 1) {
       throw new Error(`${owner} ChangeNumeric cannot target CurrentHp; use Heal or DealDamage`);
     }
     if (parameters[0] <= 0 || (parameters[0] >= 1_000 && parameters[0] <= 9_999)) {
       throw new Error(`${owner} ChangeNumeric targets an invalid or derived NumericType`);
+    }
+  }
+  if (type === 9) {
+    const seenNumericTypes = new Set();
+    for (let index = 0; index < parameters.length; index += 2) {
+      if (parameters[index] === 1) {
+        throw new Error(`${owner} ChangeNumericBatch cannot target CurrentHp; use Heal or DealDamage`);
+      }
+      if (parameters[index] <= 0 || (parameters[index] >= 1_000 && parameters[index] <= 9_999)) {
+        throw new Error(`${owner} ChangeNumericBatch targets an invalid or derived NumericType`);
+      }
+      if (seenNumericTypes.has(parameters[index])) {
+        throw new Error(`${owner} ChangeNumericBatch contains duplicate NumericType`);
+      }
+      seenNumericTypes.add(parameters[index]);
     }
   }
   if (type === 2 && !buffIds.has(parameters[0])) {
@@ -1066,6 +1113,14 @@ function selfTestActionValidation() {
   }
   if (!rejected) throw new Error("ChangeNumeric(CurrentHp) codegen validation did not reject the action");
   validateRawAction("self-test", 1, [2, 50], new Set(), false);
+  validateRawAction("self-test", 9, [2, 50, 3, -10], new Set(), false);
+  rejected = false;
+  try {
+    validateRawAction("self-test", 9, [2, 50, 3], new Set(), false);
+  } catch (error) {
+    rejected = String(error).includes("ChangeNumericBatch expects");
+  }
+  if (!rejected) throw new Error("ChangeNumericBatch odd parameter validation did not reject the action");
   process.stdout.write("game config Action validation self-test passed\n");
 }
 

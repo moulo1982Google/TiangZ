@@ -74,7 +74,7 @@ interface GameConfigSnapshot {
   readonly QuestObjectiveConfig: ConfigTable<game.QuestObjectiveConfig>;
 }
 
-export const GameConfigSchemaFingerprint = "9df4f5522ddcf6c804853404c73aef3ee25815e0f82123df1d666a33c64aef3d";
+export const GameConfigSchemaFingerprint = "05aa5cdaaf6c23e94862fe7b17fa59539a8c6768714bbaf9cd12dd4f15574430";
 
 export class GameConfigRegistry {
   private static current: GameConfigSnapshot | undefined;
@@ -599,10 +599,34 @@ function validateActionConfig(
   if (type === 5 && (parameters.length < 1 || parameters.length > 2)) {
     throw new Error(`${owner} ${phase} RegisterDamageAbsorber expects one or two parameters`);
   }
+  if (type === 9 && (parameters.length === 0 || parameters.length % 2 !== 0)) {
+    throw new Error(`${owner} ${phase} ChangeNumericBatch expects one or more [numericType, delta] pairs`);
+  }
+  if (type === 10 && (parameters.length === 0
+    || parameters.some((value) => value <= 0)
+    || new Set(parameters).size !== parameters.length)) {
+    throw new Error(`${owner} ${phase} RemoveBuffsByEffectTags needs unique positive effect tags`);
+  }
   if (type === 1) {
     const numericType = parameters[0];
     if (numericType <= 0 || (numericType >= 1_000 && numericType <= 9_999)) {
       throw new Error(`${owner} ${phase} ChangeNumeric targets an invalid or derived NumericType`);
+    }
+  }
+  if (type === 9) {
+    const seenNumericTypes = new Set<number>();
+    for (let index = 0; index < parameters.length; index += 2) {
+      const numericType = parameters[index];
+      if (numericType === 1) {
+        throw new Error(`${owner} ${phase} ChangeNumericBatch cannot target CurrentHp; use Heal or DealDamage`);
+      }
+      if (numericType <= 0 || (numericType >= 1_000 && numericType <= 9_999)) {
+        throw new Error(`${owner} ${phase} ChangeNumericBatch targets an invalid or derived NumericType`);
+      }
+      if (seenNumericTypes.has(numericType)) {
+        throw new Error(`${owner} ${phase} ChangeNumericBatch contains duplicate NumericType`);
+      }
+      seenNumericTypes.add(numericType);
     }
   }
   if (type === 2 && !snapshot.BuffConfig.TryGet(parameters[0])) {

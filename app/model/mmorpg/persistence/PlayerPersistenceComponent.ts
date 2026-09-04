@@ -1,4 +1,4 @@
-import { Component, component, transferable, type ITransfer } from "../../../core/public";
+import { Component, component, isPromiseLike, transferable, type ITransfer } from "../../../core/public";
 import { BuffComponent } from "../buff/BuffComponent";
 import { ItemComponent } from "../item/ItemComponent";
 import type { PlayerUnit } from "../map/PlayerUnit";
@@ -15,6 +15,8 @@ import {
   type PlayerMultiTransactionResult,
   type PlayerDomainSaveData,
   type PlayerPersistenceDomain,
+  type PlayerPersistenceExtension,
+  type PlayerPersistenceExtensionState,
   type PlayerPersistenceRevisions,
   type PlayerRepository,
   type PlayerSaveData,
@@ -25,6 +27,8 @@ import {
 
 export const PLAYER_PERIODIC_SNAPSHOT_INTERVAL_MS = 30_000;
 const PLAYER_PERIODIC_RETRY_MS = 5_000;
+const MAX_PERSISTENCE_EXTENSION_ID_LENGTH = 128;
+const MAX_PERSISTENCE_EXTENSION_PAYLOAD_BYTES = 1_048_576;
 
 export interface PlayerSaveOverrides {
   readonly numerics?: PlayerSaveData["player"]["numerics"];
@@ -34,6 +38,7 @@ export interface PlayerSaveOverrides {
   readonly skill?: PlayerSaveData["skill"];
   readonly quests?: PlayerSaveData["quests"];
   readonly progression?: PlayerSaveData["progression"];
+  readonly extensions?: PlayerSaveData["extensions"];
 }
 
 export interface PlayerMultiTransactionParticipant {
@@ -59,6 +64,8 @@ export class PlayerPersistenceComponent extends Component<[
   private nextPeriodicSaveAtMs = 0;
   private readonly uncertainOperations = new Set<string>();
   private readonly committedPayloads = new Map<PlayerPersistenceDomain, Uint8Array>();
+  private readonly persistenceExtensions = new Map<string, PlayerPersistenceExtension>();
+  private pendingPersistenceExtensions = new Map<string, PlayerPersistenceExtensionState>();
 
   /** 保存Repository和领域revision向量；跨图只迁移revision，不迁移Repository引用。 / Captures the Repository and domain revision vector; map transfer moves revisions but never the Repository reference. */
   protected override Awake(repository: PlayerRepository, revisions: PlayerPersistenceRevisions): void {
@@ -86,6 +93,58 @@ export class PlayerPersistenceComponent extends Component<[
     this.revisions = ClonePlayerPersistenceRevisions(revisions);
   }
 
+  /**
+   * 登记一个模块拥有的同步状态钩子。外置Entity装配器在组件组合后挂载钩子；
+   * TiangZ只保留其命名空间信封，不解释payload字节。
+   *
+   * Registers one synchronous module-owned state hook.  The hook is attached by
+   * an external Entity extension after this component is composed; TiangZ keeps
+   * only its namespaced envelope and never interprets the payload bytes.
+   */
+  RegisterPersistenceExtension(extension: PlayerPersistenceExtension): void {
+    validatePersistenceExtension(extension);
+    if (this.persistenceExtensions.has(extension.id)) {
+      throw new Error(`player persistence extension already registered: ${extension.id}`);
+    }
+    this.persistenceExtensions.set(extension.id, extension);
+    const pending = this.pendingPersistenceExtensions.get(extension.id);
+    if (!pending) return;
+    try {
+      const result = extension.Restore(pending.payload.slice(), pending.version);
+      if (isPromiseLike(result)) {
+        throw new Error(`player persistence extension restore must be synchronous: ${extension.id}`);
+      }
+      this.pendingPersistenceExtensions.delete(extension.id);
+    } catch (error) {
+      this.persistenceExtensions.delete(extension.id);
+      throw error;
+    }
+  }
+
+  /**
+   * 在完整PlayerUnit图完成组合后恢复持久化扩展信封。未知模块ID会继续缓冲，
+   * 避免滚动部署仅因所有者暂时不可用而擦除状态。
+   *
+   * Restores persisted extension envelopes after the full PlayerUnit graph has
+   * been composed.  Unknown module IDs remain buffered so a rolling deployment
+   * cannot erase state merely because its owner is temporarily unavailable.
+   */
+  RestorePersistenceExtensions(states: readonly PlayerPersistenceExtensionState[]): void {
+    const normalized = normalizePersistenceExtensionStates(states);
+    this.pendingPersistenceExtensions = new Map(
+      normalized.map((state) => [state.id, clonePersistenceExtensionState(state)]),
+    );
+    for (const extension of this.persistenceExtensions.values()) {
+      const pending = this.pendingPersistenceExtensions.get(extension.id);
+      if (!pending) continue;
+      const result = extension.Restore(pending.payload.slice(), pending.version);
+      if (isPromiseLike(result)) {
+        throw new Error(`player persistence extension restore must be synchronous: ${extension.id}`);
+      }
+      this.pendingPersistenceExtensions.delete(extension.id);
+    }
+  }
+
   /** 无DBProxy迁移把五个领域及revision向量交给目标内存Repository。 / A no-DBProxy transfer hands all five domains and their revisions to the target in-memory Repository. */
   AdoptTransfer(): void {
     const adopt = this.repository.AdoptTransfer;
@@ -99,6 +158,7 @@ export class PlayerPersistenceComponent extends Component<[
     const player = this.GetParent<PlayerUnit>();
     const snapshot = player.Snapshot();
     const { gateName: _gateName, unitId: _unitId, numerics, ...persistent } = snapshot;
+    const extensions = overrides.extensions ?? this.CapturePersistenceExtensions();
     return {
       player: {
         ...persistent,
@@ -113,8 +173,25 @@ export class PlayerPersistenceComponent extends Component<[
       skill: overrides.skill ?? player.GetComponent(SkillComponent).CaptureTransfer(),
       quests: overrides.quests ?? player.GetComponent(QuestComponent).CaptureTransfer(),
       progression: overrides.progression ?? player.GetComponent(ProgressionComponent).CaptureTransfer(),
+      ...(extensions.length > 0 ? { extensions: extensions.map(clonePersistenceExtensionState) } : {}),
       reason,
     };
+  }
+
+  /** 返回适合诊断或聚合覆盖的分离副本。 / Returns a detached copy suitable for diagnostics or an aggregate override. */
+  CapturePersistenceExtensions(): readonly PlayerPersistenceExtensionState[] {
+    const states = [...this.pendingPersistenceExtensions.values()];
+    for (const extension of this.persistenceExtensions.values()) {
+      const payload = extension.Capture();
+      if (isPromiseLike(payload)) {
+        throw new Error(`player persistence extension capture must be synchronous: ${extension.id}`);
+      }
+      if (!(payload instanceof Uint8Array)) {
+        throw new TypeError(`player persistence extension capture must return Uint8Array: ${extension.id}`);
+      }
+      states.push({ id: extension.id, version: extension.version, payload: payload.slice() });
+    }
+    return normalizePersistenceExtensionStates(states).map(clonePersistenceExtensionState);
   }
 
   /** 只提交调用方声明的领域记录；成功前不修改任何本地revision。 / Commits only declared domain records and changes no local revision before success. */
@@ -327,6 +404,62 @@ export class PlayerPersistenceComponent extends Component<[
       throw new Error(`player transaction identity mismatch: ${data.player.account}/${data.player.characterId} != ${player.Account}/${player.CharacterId}`);
     }
   }
+}
+
+function validatePersistenceExtension(extension: PlayerPersistenceExtension): void {
+  if (!extension || typeof extension !== "object") {
+    throw new TypeError("player persistence extension must be an object");
+  }
+  if (typeof extension.id !== "string" || extension.id.trim().length === 0) {
+    throw new TypeError("player persistence extension id must be non-empty");
+  }
+  if (extension.id.length > MAX_PERSISTENCE_EXTENSION_ID_LENGTH) {
+    throw new RangeError(`player persistence extension id exceeds ${MAX_PERSISTENCE_EXTENSION_ID_LENGTH} characters: ${extension.id}`);
+  }
+  if (!Number.isSafeInteger(extension.version) || extension.version <= 0) {
+    throw new TypeError(`player persistence extension version must be positive: ${extension.id}`);
+  }
+  if (typeof extension.Capture !== "function" || typeof extension.Restore !== "function") {
+    throw new TypeError(`player persistence extension hooks are required: ${extension.id}`);
+  }
+}
+
+function normalizePersistenceExtensionStates(
+  states: readonly PlayerPersistenceExtensionState[],
+): readonly PlayerPersistenceExtensionState[] {
+  if (!Array.isArray(states)) throw new TypeError("player persistence extensions must be an array");
+  const normalized = states.map((state) => {
+    if (!state || typeof state !== "object") {
+      throw new TypeError("player persistence extension state must be an object");
+    }
+    if (typeof state.id !== "string" || state.id.trim().length === 0) {
+      throw new TypeError("player persistence extension state id must be non-empty");
+    }
+    if (!Number.isSafeInteger(state.version) || state.version <= 0) {
+      throw new TypeError(`player persistence extension state version must be positive: ${state.id}`);
+    }
+    if (!(state.payload instanceof Uint8Array)) {
+      throw new TypeError(`player persistence extension state payload must be Uint8Array: ${state.id}`);
+    }
+    if (state.payload.byteLength > MAX_PERSISTENCE_EXTENSION_PAYLOAD_BYTES) {
+      throw new RangeError(`player persistence extension state payload exceeds ${MAX_PERSISTENCE_EXTENSION_PAYLOAD_BYTES} bytes: ${state.id}`);
+    }
+    const copy = state.payload.slice();
+    return { id: state.id, version: state.version, payload: copy };
+  });
+  normalized.sort((left, right) => left.id.localeCompare(right.id, "en"));
+  for (let index = 1; index < normalized.length; index += 1) {
+    if (normalized[index - 1].id === normalized[index].id) {
+      throw new Error(`duplicate player persistence extension state: ${normalized[index].id}`);
+    }
+  }
+  return normalized;
+}
+
+function clonePersistenceExtensionState(
+  state: PlayerPersistenceExtensionState,
+): PlayerPersistenceExtensionState {
+  return { id: state.id, version: state.version, payload: state.payload.slice() };
 }
 
 function errorMessage(error: unknown): string {

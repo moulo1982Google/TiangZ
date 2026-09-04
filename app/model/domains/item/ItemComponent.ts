@@ -1,7 +1,17 @@
 import { Component, component, lifecycle, transferable } from "../../../core/public";
 import type { ItemState } from "./ItemTypes";
 
-export type { InventoryConsumePlan, InventoryGrant, InventoryGrantPlan, InventoryReplacePlan, ItemState } from "./ItemTypes";
+export type {
+  InventoryConsumeByConfig,
+  InventoryConsumePlan,
+  InventoryExchangePlan,
+  InventoryGrant,
+  InventoryGrantPlan,
+  InventoryReplacePlan,
+  InventoryRepairPlan,
+  InventorySeed,
+  ItemState,
+} from "./ItemTypes";
 
 export interface InventoryGrantResult<TItem extends ItemState = ItemState> {
   readonly items: readonly TItem[];

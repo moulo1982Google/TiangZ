@@ -47,9 +47,12 @@ Model manifest冻结以下内容：
 - protocol opcode/schema指纹；
 - Stable Core API指纹；
 - Native schema指纹；
+- 外置游戏模块依赖图指纹；
 - demo或bench构建模式。
 
 Hotfix manifest必须逐项匹配这些冻结值。`npm run build:hotfix`只重建Hotfix；只要Model源指纹改变就立即失败，并要求完整构建、部署和Process重启。没有忽略兼容检查的参数。Hotfix-only构建不会覆盖正在服务的`dist/hotfix.js`，而是输出`dist/hotfix-candidates/<内容哈希>/hotfix.js`与manifest，避免Runtime读到写了一半的候选。
+
+外置模块通过构建期稳定拓扑顺序进入同一Model/Hotfix双Bundle。模块集合、版本、依赖、manifest或Model变化都会改变`moduleGraphHash`或Model源指纹，因此只能完整部署并重启；同一模块图中已有System/Handler的纯行为变化仍复用本章的排空、预检、事务提交和回滚。模块不能获得独立V8，也没有绕过Process原子边界的Reload入口。
 
 ## 业务System
 
@@ -99,7 +102,7 @@ Scene、Session和ActorUnit的外置Handler保存在身份稳定的绑定槽中�
 
 第一代候选负责建立Handler key基线；从第二代开始，提交前会双向比较当前generation与暂存候选的完整key集合。漏掉、删除、重命名或新增任意Handler都会在修改prototype和绑定槽之前拒绝，旧generation继续服务。运行中的Scene不会重建Registry，因此Handler路由集合变化属于Model/协议注册变化，必须完整构建并重启Process；Hotfix只允许替换既有key的实现。
 
-Handler实例可能在一个Scene内被复用，Event Handler还可能被多个Scene复用。因此所有`@messageHandler/@rpcHandler`、Session/Unit Handler和同步/Veto Event Handler类都必须无实例字段、无构造函数、无静态初始化块和可变静态成员。状态归属于Scene、Session、Unit或Component；`verify:hotfix-boundary`通过TypeScript符号解析识别直接名、import别名与namespace写法，不能用重命名导入绕过约束。
+Handler实例可能在一个Scene内被复用，Event或Entity Extension Handler还可能被多个实例复用。因此所有`@messageHandler/@rpcHandler`、Session/Unit Handler、同步/Veto Event Handler和`@entityExtensionHandler`类都必须无实例字段、无构造函数、无静态初始化块和可变静态成员。状态归属于Scene、Session、Unit或Component；`verify:hotfix-boundary`通过TypeScript符号解析识别直接名、import别名与namespace写法，不能用重命名导入绕过约束。
 
 方法装饰器形式的Scene内Handler也在每次调用时解析当前方法，因此prototype提交后会进入新实现。
 
@@ -159,7 +162,7 @@ Rust Native Entity是权威状态时同样不迁移schema。`.native`变化意�
 npm run dev -- configs/local/cluster/StartMachine.json
 ```
 
-开发宿主先执行一次完整构建并启动Watcher，之后监听`app/hotfix/**/*.ts`以及`game_config`的Excel/定义源。Hotfix保存会串行执行入口生成、类型检查、不可变候选构建和Watcher `reload`；纯配置数据变化会构建独立数据候选并执行`reload-config`。连续保存会合并，构建失败时不发送切换命令，旧generation或旧配置快照继续运行。它不监听Model、Core、Proto或`.native`；配置表结构变化也会被schema门拒绝，这些边界变化仍要求开发人员停止、完整构建并重新启动。源码模式只是隐藏构建步骤，不会让V8直接执行TypeScript，也不得用于正式部署。
+开发宿主先执行一次完整构建并启动Watcher，之后监听`app/hotfix/**/*.ts`、`game_config`的Excel/定义源，以及`TIANGZ_MODULES_DIR`中每个已校验模块声明的Hotfix源码根。Hotfix保存会串行执行入口生成、主工程与模块独立类型检查、不可变候选构建和Watcher `reload`；纯配置数据变化会构建独立数据候选并执行`reload-config`。连续保存会合并，构建失败时不发送切换命令，旧generation或旧配置快照继续运行。它不监听Model、Core、模块Model/manifest、Proto或`.native`；配置表结构变化也会被schema门拒绝，这些边界变化仍要求开发人员停止、完整构建并重新启动。源码模式只是隐藏构建步骤，不会让V8直接执行TypeScript，也不得用于正式部署。
 
 需要边调试边Reload时使用：
 

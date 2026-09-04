@@ -6,6 +6,9 @@ import {
   Unit,
   unitMessageHandler,
   component,
+  applyEntityExtensions,
+  defineGameModule,
+  entityExtensionHandler,
   actor,
   lifecycle,
   transferable,
@@ -107,6 +110,9 @@ if (
   typeof rpcHandler !== "function" ||
   typeof lifecycle !== "function" ||
   typeof transferable !== "function" ||
+  typeof applyEntityExtensions !== "function" ||
+  typeof defineGameModule !== "function" ||
+  typeof entityExtensionHandler !== "function" ||
   FixtureUnitHandler.prototype.handle.length !== 2 ||
   FixtureRpcHandler.prototype.handle.length !== 2
 ) {

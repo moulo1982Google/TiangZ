@@ -370,6 +370,12 @@ export class HostDbProxyTransport implements DbProxyTransport {
   }
 }
 
+/** 当前运行时是否安装了可选的Rust DBProxy桥。/ Whether the current runtime installed the optional Rust DBProxy bridge. */
+export function IsHostDbProxyAvailable(): boolean {
+  return (globalThis as typeof globalThis & { __hostDbProxy?: HostDbProxyApi })
+    .__hostDbProxy !== undefined;
+}
+
 function requireHostDbProxyApi(): HostDbProxyApi {
   const host = (globalThis as typeof globalThis & { __hostDbProxy?: HostDbProxyApi })
     .__hostDbProxy;

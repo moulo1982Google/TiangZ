@@ -15,10 +15,12 @@ import {
   Game,
   TimeSystem,
   UnitComponent,
+  applyEntityExtensions,
   component,
   type EntityTransferSnapshot,
   type ComponentCtor,
   type MaybePromise,
+  type Unit,
 } from "../../../core/public";
 import { ClientBroadcasts } from "../../../generated/model/server/demo/protocol/broadcastDescriptors";
 import { GateMessages } from "../../../generated/model/server/demo/protocol/messageDescriptors";
@@ -33,6 +35,7 @@ import type {
   G2C_SkillCastState,
   G2C_SkillImpact,
   G2C_SkillProjectile,
+  G2C_UnitPresentation,
   BuffPublicView,
   BuffTransferSnapshot,
   G2C_DemoDoorState,
@@ -44,6 +47,7 @@ import type {
   M2G_RebindPlayerGate,
   M2G_SecondEnterMap,
   M2G_TransferPlayer,
+  OwnedSummonTransferSnapshot,
   PlayerTransferSnapshot,
   SkillTransferSnapshot,
   QuestSnapshot,
@@ -53,9 +57,27 @@ import { MapClientRouteResolver } from "../broadcast/MapClientRouteResolver";
 import type { PlayerDirectoryComponent } from "../mapHost/PlayerDirectoryComponent";
 import { PlayerUnit, type PlayerSnapshot } from "./PlayerUnit";
 import { MonsterUnit, type MonsterSnapshot } from "../monster/MonsterUnit";
+import {
+  SummonComponent,
+  OwnedUnitReaction,
+  type OwnedSummonDefinition,
+  type OwnedSummonTransferState,
+  type OwnedUnitReactionValue,
+} from "../summon/SummonComponent";
+import { SummonedUnit } from "../summon/SummonedUnit";
 import { NpcUnit } from "../npc/NpcUnit";
+import { InteractableUnit } from "../interactable/InteractableUnit";
 import { MapScene } from "./MapScene";
+import {
+  UnitPresentationAudience,
+  type UnitPresentation,
+} from "./UnitPresentation";
 import { PositionComponent } from "./PositionComponent";
+import {
+  MapRuntimeProfileComponent,
+  type MapRuntimeSpatialProfile,
+} from "./MapRuntimeProfileComponent";
+import { DirectionalMovementProfileComponent } from "../movement/DirectionalMovementProfileComponent";
 import { UnitGateComponent } from "./UnitGateComponent";
 import { NativeUnitRef } from "../../../generated/model/native/NativeUnitRef";
 import {
@@ -64,6 +86,7 @@ import {
   type NativeBoxObstacle,
   type NativeAoiRouteRevisionBroadcast,
   type NativeRaycastHit,
+  type NativeRelocation,
   type NativeVec3,
   type NativeNumericReplicationPolicy,
 } from "../native/NativeData";
@@ -85,6 +108,8 @@ import {
   CombatComponent,
   CombatResultType,
   type AutoAttackState,
+  type DamageRequest,
+  type DamageSchoolValue,
   type DamageResult,
   type HealingResult,
 } from "../combat/CombatComponent";
@@ -93,10 +118,11 @@ import type { SkillCastState, SkillTransferState } from "../skill/SkillComponent
 import { SkillComponent } from "../skill/SkillComponent";
 import { QuestComponent, type QuestTransferState } from "../quest/QuestComponent";
 import { QuestEvents } from "../quest/QuestEvents";
-import type { SkillProjectile } from "../skill/SkillMapComponent";
+import { SkillMapComponent, type SkillProjectile } from "../skill/SkillMapComponent";
 import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
 import { ProgressionComponent } from "../progression/ProgressionComponent";
 import { CurrencyComponent } from "../../domains/currency/CurrencyComponent";
+import { PlayerContentProfileComponent } from "../login/PlayerContentProfileComponent";
 import { LocationProxy } from "../location/LocationProxy";
 import type {
   PlayerLoadResult,
@@ -183,6 +209,10 @@ export interface MapLifecycleCoordinator {
   DisposeMap(mapInstanceId: bigint): Promise<boolean>;
 }
 
+export interface UnitRelocationRequest extends NativeVec3 {
+  readonly yaw: number;
+}
+
 @component()
 export class MapComponent extends Component<[
   definition: MapInstanceDefinition,
@@ -210,6 +240,7 @@ export class MapComponent extends Component<[
   private scenes!: SceneMessageHelper;
   private logger!: Logger;
   private config!: MapConfigData;
+  private spatialProfile!: Readonly<MapRuntimeSpatialProfile>;
   private transferCoordinator!: PlayerTransferCoordinator;
   private location!: LocationProxy;
   private nextLocationOperation = 1;
@@ -336,6 +367,11 @@ export class MapComponent extends Component<[
     return this.nativeMapKey;
   }
 
+  /** 返回地图创建前已经冻结的空间资料；业务只能读取，不能在实例运行中改尺寸或空间实现。 / Returns spatial data frozen before map creation; gameplay may read it but cannot mutate dimensions or the spatial implementation at runtime. */
+  get SpatialProfile(): Readonly<MapRuntimeSpatialProfile> {
+    return this.spatialProfile;
+  }
+
   /** 将坐标投影到本地图NavMesh；Grid2D调用属于业务错误，不做隐式模式转换。 / Projects onto this map's NavMesh and rejects Grid2D calls instead of converting spatial modes implicitly. */
   ProjectPosition(
     point: NativeVec3,
@@ -364,6 +400,26 @@ export class MapComponent extends Component<[
   ): NativeRaycastHit {
     this.RequireNavMesh3D();
     return NativeData.Raycast(this.nativeMapKey, start, end, halfExtents);
+  }
+
+  /**
+   * 由服务端领域效果触发一次权威位移；空间校验、AOI刷新和移动广播仍走地图统一管线。
+   * 游戏模块只决定目标点，不得直接改Position或手工广播移动。
+   *
+   * Applies one server-authored relocation while spatial validation, AOI refresh, and movement
+   * publication remain owned by the map pipeline. Game modules choose the destination without
+   * mutating Position or manually publishing movement.
+   */
+  RelocateUnit(unit: Unit<any[]>, request: UnitRelocationRequest): NativeRelocation {
+    if (![request.x, request.y, request.z, request.yaw].every(Number.isFinite)) {
+      throw new Error("unit relocation must contain finite x/y/z/yaw");
+    }
+    return NativeData.RelocateUnit(
+      this.nativeMapKey,
+      unit.GetComponent(NativeUnitRef).Handle,
+      request,
+      request.yaw,
+    );
   }
 
   /** 查询指定X/Z附近可行走层的地面高度；输入Y用于多层地图选层。 / Samples the walkable floor near X/Z while input Y selects among layered surfaces. */
@@ -453,15 +509,15 @@ export class MapComponent extends Component<[
 
   /** 向施法者与目标的AOI观察者发布弹道表现；服务端仍持有唯一命中时间。 / Publishes projectile visuals to observers while the server retains the sole impact deadline. */
   async PublishSkillProjectile(
-    source: PlayerUnit,
+    source: import("../../../core/public").Unit<any[]>,
     target: import("../../../core/public").Unit<any[]>,
     projectile: SkillProjectile,
   ): Promise<void> {
-    this.requirePlayer(source);
+    this.requireMapUnit(source);
     this.requireMapUnit(target);
     await this.clientBroadcast.Publish(
       ClientAudience.Union(
-        this.aoi.ObserversOf(source),
+        this.aoi.ObserversOf(source, source instanceof PlayerUnit),
         this.aoi.ObserversOf(target, target instanceof PlayerUnit),
       ),
       ClientBroadcasts.SkillProjectile,
@@ -479,17 +535,125 @@ export class MapComponent extends Component<[
 
   /** 命中事件只携带公开结果；Buff外观由独立Buff事件维护。 / Publishes public impact results while Buff appearance stays in dedicated Buff events. */
   async PublishSkillImpact(
-    source: PlayerUnit,
+    source: import("../../../core/public").Unit<any[]>,
     _target: import("../../../core/public").Unit<any[]>,
     impact: G2C_SkillImpact,
   ): Promise<void> {
-    this.requirePlayer(source);
+    this.requireMapUnit(source);
     await this.clientBroadcast.Publish(
-      this.aoi.ObserversOf(source),
+      this.aoi.ObserversOf(source, source instanceof PlayerUnit),
       ClientBroadcasts.SkillImpact,
       impact,
       this.serverTick,
     );
+  }
+
+  /**
+   * 发布一条协议中立的Unit表现；缺省走AOI，玩家私有适配状态可显式只发给source本人。
+   * Publishes one protocol-neutral Unit presentation; AOI is the default while private adapter state may explicitly target the source player only.
+   */
+  async PublishUnitPresentation(
+    source: import("../../../core/public").Unit<any[]>,
+    presentation: UnitPresentation,
+  ): Promise<void> {
+    this.requireMapUnit(source);
+    const target = presentation.targetUnitId > 0
+      ? this.units.Get(presentation.targetUnitId)
+      : undefined;
+    if (presentation.targetUnitId > 0 && !target) {
+      throw new Error(`unit presentation target not found: ${presentation.targetUnitId}`);
+    }
+    const presentationAudience = presentation.audience ?? UnitPresentationAudience.Aoi;
+    let audience: ClientAudience;
+    if (presentationAudience === UnitPresentationAudience.Self) {
+      if (!(source instanceof PlayerUnit)) {
+        throw new Error("self unit presentation source must be a PlayerUnit");
+      }
+      audience = ClientAudience.Self(source.UnitId);
+    } else if (presentationAudience === UnitPresentationAudience.Aoi) {
+      audience = target
+        ? ClientAudience.Union(
+          this.aoi.ObserversOf(source, source instanceof PlayerUnit),
+          this.aoi.ObserversOf(target, target instanceof PlayerUnit),
+        )
+        : this.aoi.ObserversOf(source, source instanceof PlayerUnit);
+    } else {
+      throw new Error(`unsupported unit presentation audience: ${presentationAudience}`);
+    }
+    await this.clientBroadcast.Publish(
+      audience,
+      ClientBroadcasts.UnitPresentation,
+      {
+        presentationType: presentation.type,
+        sourceUnitId: source.UnitId,
+        targetUnitId: presentation.targetUnitId,
+        presentationId: presentation.presentationId,
+        text: presentation.text,
+      } satisfies G2C_UnitPresentation,
+      this.serverTick,
+    );
+  }
+
+  /**
+   * 结算当前地图中任意Unit来源的玩家伤害，并统一完成玩家侧生命周期与私有结果发布。
+   * 来源领域仍负责自己的仇恨或触发规则；调用方不得绕过此入口复制死亡清理。
+   *
+   * Resolves player damage from any Unit on this map and owns the shared
+   * player-side lifecycle and private result publication. The source domain
+   * still owns threat or trigger rules and must not duplicate death cleanup.
+   */
+  ApplyDamageToPlayer(
+    source: Unit<any[]>,
+    target: PlayerUnit,
+    request: DamageRequest,
+  ): DamageResult {
+    this.requireMapUnit(source);
+    this.requireMapUnit(target);
+    if (this.units.Get<PlayerUnit>(target.UnitId) !== target
+      || target.GetComponent(NativeUnitRef).alive === 0) {
+      throw new Error(`player damage target is unavailable: ${target.UnitId}`);
+    }
+
+    const result = target.GetComponent(CombatComponent).ApplyDamage({
+      ...request,
+      sourceUnitId: source.UnitId,
+    });
+    void this.PublishCombatDamage(
+      target,
+      source.UnitId,
+      result,
+      request.abilityId ?? 0,
+    ).catch((error) => {
+      this.logger.error("player combat damage publish failed", {
+        sourceUnitId: source.UnitId,
+        playerUnitId: target.UnitId,
+        error,
+      });
+    });
+    if (result.requestedDamage > 0n
+      && !result.killed
+      && result.absorbedDamage === 0n
+      && result.preventedReason === 0) {
+      this.DomainScene().GetComponent(SkillMapComponent).HandleDamageDuringCast(target);
+    }
+    if (!result.killed) return result;
+
+    target.GetComponent(CombatStateComponent).Clear(TimeSystem.Instance.ServerNow);
+    const lossPermille = this.DomainScene()
+      .TryGetComponent(PlayerContentProfileComponent)
+      ?.TryGet(target.PlayerConfigId)
+      ?.deathDurabilityLossPermille ?? 0;
+    const wornItems = target.TryGetComponent(ItemComponent)?.LosePlacedDurability(lossPermille) ?? [];
+    for (const item of wornItems) {
+      void this.PublishItemChanged(target, item).catch((error) => {
+        this.logger.error("player death durability publish failed", {
+          playerUnitId: target.UnitId,
+          itemId: item.itemId.toString(),
+          error,
+        });
+      });
+    }
+    return result;
   }
 
   /**
@@ -523,6 +687,7 @@ export class MapComponent extends Component<[
         abilityId,
         killed: result.killed,
         serverTick: this.serverTick,
+        preventedReason: result.preventedReason,
       } satisfies G2C_CombatResult,
       this.serverTick,
     );
@@ -551,6 +716,7 @@ export class MapComponent extends Component<[
         abilityId,
         killed: false,
         serverTick: this.serverTick,
+        preventedReason: 0,
       } satisfies G2C_CombatResult,
       this.serverTick,
     );
@@ -572,6 +738,9 @@ export class MapComponent extends Component<[
     this.dynamic = definition.dynamic;
     this.nativeMapKey = this.DomainScene().InstanceId;
     this.config = GameConfigs.MapConfig.Get(this.mapId);
+    this.spatialProfile = this.DomainScene<MapScene>()
+      .GetComponent(MapRuntimeProfileComponent)
+      .Spatial;
     this.players = players;
     this.repository = repository;
     this.transferCoordinator = transferCoordinator;
@@ -628,6 +797,21 @@ export class MapComponent extends Component<[
   RebindPlayerGate(unit: PlayerUnit, request: G2M_RebindPlayerGate): Promise<M2G_RebindPlayerGate> {
     this.requirePlayer(unit);
     return this.transferCoordinator.RebindPlayerGate(unit, request);
+  }
+
+  /** 捕获同进程地图迁移所需的召唤物意图；跨地图不携带目标、位置或Native句柄。 / Captures only transfer-safe summon intent for an in-process map transfer; targets, positions, and Native handles never cross maps. */
+  CaptureOwnedSummons(unit: PlayerUnit): readonly OwnedSummonTransferState[] {
+    this.requirePlayer(unit);
+    return this.DomainScene().TryGetComponent(SummonComponent)?.CaptureOwnedState(unit) ?? [];
+  }
+
+  /** 在目标地图重建召唤物Unit；调用方必须先完成PlayerUnit组合且尚未发布AOI。 / Rebuilds summon Units on the target map after PlayerUnit composition and before AOI publication. */
+  RestoreOwnedSummons(
+    unit: PlayerUnit,
+    states: readonly OwnedSummonTransferState[],
+  ): readonly SummonedUnit[] {
+    this.requirePlayer(unit);
+    return this.DomainScene().TryGetComponent(SummonComponent)?.RestoreOwnedState(unit, states) ?? [];
   }
 
   /** Location提交后同步切换下行缓存、Native AOI路由和Actor fencing token。 / Switches downstream caches, the native AOI route, and the Actor fence after Location commits. */
@@ -698,7 +882,7 @@ export class MapComponent extends Component<[
     if (this.units.Count === 0) return;
     const fixedDeltaMs = TimeSystem.Instance.FixedDeltaTime;
     this.serverTick += 1;
-    const moveDescriptor = this.config.spatialMode === SpatialMode.NavMesh3D
+    const moveDescriptor = this.spatialProfile.spatialMode === SpatialMode.NavMesh3D
       ? ClientBroadcasts.EntityNavigate
       : ClientBroadcasts.EntityMove;
     let startedAt = monotonicNow();
@@ -716,7 +900,7 @@ export class MapComponent extends Component<[
     visibility.push(...this.aoi.Refresh());
     this.pipelineMetrics.aoiRefreshMs += monotonicNow() - startedAt;
     startedAt = monotonicNow();
-    const movement = this.config.spatialMode === SpatialMode.NavMesh3D
+    const movement = this.spatialProfile.spatialMode === SpatialMode.NavMesh3D
       ? NativeData.TakeMapNavigationAoiRouteFrames(
         this.nativeMapKey,
         this.serverTick,
@@ -797,7 +981,7 @@ export class MapComponent extends Component<[
 
   /** 每Tick只重建有限Tile，避免批量开关门阻塞地图逻辑；失败保留待处理标志并记录指标。 / Rebuilds a bounded number of tiles per tick so obstacle bursts cannot stall map logic. */
   private UpdateNavigationObstacles(): void {
-    if (!this.navigationObstaclesPending || this.config.spatialMode !== SpatialMode.NavMesh3D) return;
+    if (!this.navigationObstaclesPending || this.spatialProfile.spatialMode !== SpatialMode.NavMesh3D) return;
     const startedAt = monotonicNow();
     try {
       const update = NativeData.UpdateObstacles(
@@ -891,11 +1075,12 @@ export class MapComponent extends Component<[
         }],
       ]),
     };
-    return this.PrepareTransferredPlayer(
+    const player = this.PrepareTransferredPlayer(
       snapshot.unitId,
       {
         account: snapshot.account,
         characterId: snapshot.characterId,
+        playerConfigId: snapshot.playerConfigId,
         token: "cross-process-transfer",
         gateName: snapshot.gateName,
         gateEpoch: snapshot.gateEpoch,
@@ -909,6 +1094,19 @@ export class MapComponent extends Component<[
       },
       transfer,
     );
+    try {
+      this.RestoreOwnedSummons(
+        player,
+        snapshot.ownedSummons.map(fromProtocolOwnedSummonTransfer),
+      );
+      return player;
+    } catch (error) {
+      // PrepareRemoteTransferredPlayer尚未把玩家发布到目录；恢复召唤物失败时必须连同候选Owner一起清理。
+      // The candidate is not published yet; if summon restoration fails,
+      // dispose the owner and every temporary summon before rethrowing.
+      this.DiscardPreparedPlayer(player);
+      throw error;
+    }
   }
 
   /** 销毁提交前失败的候选Unit；不得用于已经发布到目录的玩家。 / Disposes a candidate Unit after a pre-commit failure; never use it for a player already published in the directory. */
@@ -917,6 +1115,11 @@ export class MapComponent extends Component<[
     if (this.players.Get(unit.CharacterId) === unit) {
       throw new Error(`cannot discard published player: ${unit.Account}`);
     }
+    // 失败的同进程迁移可能已在候选地图重建召唤物；销毁Owner前先移除临时Unit，避免未发布Owner留下孤儿AOI实体。
+    // A failed local transfer may already have rebuilt owned summons on this
+    // candidate map. Remove those temporary Units before disposing the owner,
+    // otherwise an unpublished owner would leave orphaned AOI entities.
+    this.DomainScene().TryGetComponent(SummonComponent)?.OwnerLeaving(unit);
     this.units.Remove(unit.UnitId);
   }
 
@@ -956,9 +1159,13 @@ export class MapComponent extends Component<[
       }
     }
     const playerConfig = GameConfigs.PlayerConfig.Get(DEMO_PLAYER_CONFIG_ID);
+    const playerContent = this.DomainScene()
+      .GetComponent(PlayerContentProfileComponent)
+      .TryGet(request.playerConfigId);
     const player = this.units.Create(unitId, PlayerUnit, {
       account: request.account,
       characterId: request.characterId,
+      playerConfigId: request.playerConfigId,
       mapId: this.mapId,
       mapInstanceId: this.mapInstanceId,
     });
@@ -974,19 +1181,19 @@ export class MapComponent extends Component<[
       const position = player.AddComponent(
         PositionComponent,
         native,
-        this.config.widthCells,
-        this.config.depthCells,
-        this.config.cellSizeMeters,
+        this.spatialProfile.widthCells,
+        this.spatialProfile.depthCells,
+        this.spatialProfile.cellSizeMeters,
       );
       const spawn = {
-        x: request.hasInitialSpawnOverride ? request.initialSpawnX : this.config.spawnX,
-        y: request.hasInitialSpawnOverride ? request.initialSpawnY : this.config.spawnY,
-        z: request.hasInitialSpawnOverride ? request.initialSpawnZ : this.config.spawnZ,
+        x: request.hasInitialSpawnOverride ? request.initialSpawnX : this.spatialProfile.spawnX,
+        y: request.hasInitialSpawnOverride ? request.initialSpawnY : this.spatialProfile.spawnY,
+        z: request.hasInitialSpawnOverride ? request.initialSpawnZ : this.spatialProfile.spawnZ,
       };
       const yaw = request.hasInitialSpawnOverride
         ? request.initialSpawnYaw
-        : this.config.spawnYaw;
-      if (this.config.spatialMode === SpatialMode.Grid2D) {
+        : this.spatialProfile.spawnYaw;
+      if (this.spatialProfile.spatialMode === SpatialMode.Grid2D) {
         position.SetGridWorldPosition(spawn.x, spawn.y, spawn.z, yaw);
       } else {
         const projected = this.ProjectPosition(spawn);
@@ -994,7 +1201,7 @@ export class MapComponent extends Component<[
         position.SetNavMeshWorldPosition(projected.x, projected.y, projected.z, yaw);
       }
       position.SpeedMetersPerSecond = playerConfig.moveSpeed;
-      player.AddComponent(NumericComponent, {
+      const initialNumerics: Record<number, bigint> = {
         [NumericType.CurrentHp]: BigInt(playerConfig.initialHp),
         [NumericType.MaxHpBase]: BigInt(playerConfig.maxHp),
         [NumericType.CurrentMp]: BigInt(playerConfig.initialMp),
@@ -1006,24 +1213,38 @@ export class MapComponent extends Component<[
         [NumericType.AttackBase]: 10n,
         [NumericType.AttackSpeedAdd]: 2_000n,
         [NumericType.MoveSpeedBase]: MoveSpeedMetersPerSecondToNumeric(playerConfig.moveSpeed),
-      });
+      };
+      for (const entry of playerContent?.progressionLevels?.[0]?.numerics ?? []) {
+        initialNumerics[entry.numericType] = BigInt(entry.value);
+      }
+      initialNumerics[NumericType.Level] = 1n;
+      initialNumerics[NumericType.Experience] = 0n;
+      player.AddComponent(NumericComponent, initialNumerics);
+      player.AddComponent(DirectionalMovementProfileComponent);
       player.AddComponent(ProgressionComponent);
       player.AddComponent(ItemComponent);
       if (!loaded && !transfer) {
         // 只给真正新建的角色发一次出生道具；读档和跨地图迁移以权威快照为准。
         // Seed only a newly created character; persistence restore and transfer
         // must always keep the authoritative inventory snapshot unchanged.
-        player.GetComponent(ItemComponent).GrantItems(STARTER_PLAYER_ITEM_GRANTS);
+        const inventory = player.GetComponent(ItemComponent);
+        if (playerContent) inventory.SeedInitialItems(playerContent.initialItems ?? []);
+        else inventory.GrantItems(STARTER_PLAYER_ITEM_GRANTS);
       }
       player.AddComponent(CurrencyComponent, loaded?.data.wallet?.gold ?? transfer?.components.get(CurrencyComponent) as bigint | undefined ?? 0n);
       // 平A状态不随地图传送恢复，目标地图创建新的默认CombatComponent。 / Auto-attack is not transferred; the target map gets a fresh default component.
-      player.AddComponent(CombatComponent);
+      player
+        .AddComponent(CombatComponent)
+        .SetAutoAttackRangeMeters(playerConfig.attackRange);
       // 仇恨和战斗状态是地图运行态，不跨地图迁移；新地图从脱战状态开始回蓝。
       // Threat and combat state are map runtime state; transfer creates a fresh out-of-combat state.
       player.AddComponent(CombatStateComponent);
       player.AddComponent(BuffComponent);
       // Unit只持有技能状态；地图上的SkillMapComponent统一以10Hz推进。 / The Unit owns skill state while one map SkillMapComponent advances it at 10 Hz.
-      player.AddComponent(SkillComponent);
+      player.AddComponent(
+        SkillComponent,
+        !loaded && !transfer ? playerContent?.initialSkillConfigIds ?? [] : [],
+      );
       player.AddComponent(QuestComponent);
       player.AddComponent(PlayerPersistenceComponent, this.repository, loaded?.revisions ?? {
         inventory: 0n,
@@ -1033,6 +1254,7 @@ export class MapComponent extends Component<[
         wallet: 0n,
       });
       player.AddComponent(UnitGateComponent, request.gateName, request.gateEpoch);
+      applyEntityExtensions(player);
       if (transfer) player.RestoreTransfer(transfer);
       if (loaded) this.RestorePersistedPlayer(player, position, loaded);
       if (loaded) this.MigrateStarterAttack(player);
@@ -1098,6 +1320,11 @@ export class MapComponent extends Component<[
     }
     player.RestoreTransfer({ components });
 
+    if (runtime) {
+      player
+        .GetComponent(PlayerPersistenceComponent)
+        .RestorePersistenceExtensions(runtime.extensions ?? []);
+    }
     if (!runtime) return;
     const persisted = runtime.player;
 
@@ -1109,7 +1336,15 @@ export class MapComponent extends Component<[
     // new-PlayerUnit admission boundary revives it at full HP and keeps the map
     // spawn authoritative. Production games should replace this Demo policy
     // with an explicit Revive domain operation.
-    if (!persisted.alive) {
+    const deadAdmissionPolicy = this.DomainScene()
+      .GetComponent(PlayerContentProfileComponent)
+      .TryGet(player.PlayerConfigId)
+      ?.deadAdmissionPolicy ?? "revive-at-spawn";
+
+    // Admission is content-owned. The default preserves the original Starter
+    // compatibility behavior; a game module may preserve a dead state so its
+    // protocol adapter can continue its own corpse/ghost flow.
+    if (!persisted.alive && deadAdmissionPolicy === "revive-at-spawn") {
       const native = player.GetComponent(NativeUnitRef);
       const numeric = player.GetComponent(NumericComponent);
       native.alive = 1;
@@ -1122,6 +1357,16 @@ export class MapComponent extends Component<[
         mapInstanceId: this.mapInstanceId.toString(),
       });
       return;
+    }
+
+    if (!persisted.alive) {
+      NativeData.ResetMovement(player.GetComponent(NativeUnitRef).Handle);
+      this.logger.info("dead persisted player preserved by content admission policy", {
+        account: player.Account,
+        characterId: player.CharacterId.toString(),
+        mapId: this.mapId,
+        mapInstanceId: this.mapInstanceId.toString(),
+      });
     }
 
     if (
@@ -1138,13 +1383,30 @@ export class MapComponent extends Component<[
       return;
     }
 
-    if (this.config.spatialMode === SpatialMode.Grid2D) {
-      position.SetGridWorldPosition(
-        persisted.x,
-        persisted.y,
-        persisted.z,
-        persisted.yaw,
-      );
+    if (this.spatialProfile.spatialMode === SpatialMode.Grid2D) {
+      try {
+        position.SetGridWorldPosition(
+          persisted.x,
+          persisted.y,
+          persisted.z,
+          persisted.yaw,
+        );
+      } catch (error) {
+        // 地图空间资料可能在版本部署时从NavMesh切换为Grid2D，旧坐标此时既可能越界，也可能
+        // 不再落在Cell中心。玩家创建流程已经先写入当前地图出生点，因此这里只拒绝旧坐标并保留
+        // 新出生点，不能让一条历史快照阻断角色进图。
+        // A deployment may change a map from NavMesh to Grid2D, leaving a saved
+        // position outside the new bounds or between cell centers. Player creation
+        // has already installed the current spawn, so reject only the stale position
+        // and retain that spawn instead of failing admission for the whole character.
+        this.logger.warn("persisted player position is incompatible with Grid2D; using spawn", {
+          account: player.Account,
+          x: persisted.x,
+          y: persisted.y,
+          z: persisted.z,
+          error,
+        });
+      }
     } else {
       const projected = this.ProjectPosition({
         x: persisted.x,
@@ -1181,7 +1443,7 @@ export class MapComponent extends Component<[
   }
 
   private RequireNavMesh3D(): void {
-    if (this.config.spatialMode !== SpatialMode.NavMesh3D) {
+    if (this.spatialProfile.spatialMode !== SpatialMode.NavMesh3D) {
       throw new Error(`map ${this.mapId} does not use NavMesh3D`);
     }
   }
@@ -1567,6 +1829,9 @@ export class MapComponent extends Component<[
       quests: unit.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
       completedQuestConfigIds: unit.GetComponent(QuestComponent).CompletedQuestConfigIds(),
       gold: unit.Snapshot().gold,
+      knownSkillIds: unit.GetComponent(SkillComponent).KnownSkillIds(),
+      proficiencies: unit.GetComponent(SkillComponent).Proficiencies(),
+      numerics: snapshot.numerics,
       starterDungeonCooldownEndAtMs: unit.GetComponent(ProgressionComponent).StarterDungeonCooldownEndAtMs,
       mapInstanceId: snapshot.mapInstanceId,
     };
@@ -1857,13 +2122,16 @@ export class MapComponent extends Component<[
   }
 
   private RemovePlayer(unit: PlayerUnit): readonly AoiVisibilityDelta[] {
+    const summonChanges = this.DomainScene()
+      .TryGetComponent(SummonComponent)
+      ?.OwnerLeaving(unit) ?? [];
     // 必须先Detach再销毁Entity，Rust才能用仍然有效的Unit句柄生成最终Leave。 / Detach before Entity disposal so Rust can produce final leaves from a valid Unit handle.
     const changes = this.aoi.IsAttached(unit) ? this.aoi.Detach(unit) : [];
     this.pendingInitialSnapshots.delete(unit.UnitId);
     this.gateNamesByUnitId.delete(unit.UnitId);
     this.players.Remove(unit);
     this.units.Remove(unit.UnitId);
-    return changes;
+    return [...summonChanges, ...changes];
   }
 
   private RegisterReplicationSources(): void {
@@ -2376,6 +2644,8 @@ function fromProtocolSkillTransfer(value: SkillTransferSnapshot): SkillTransferS
       itemConfigId: cooldown.itemConfigId,
       cooldownEndAtMs: Number(cooldown.cooldownEndAtMs),
     })),
+    knownSkillIds: [...value.knownSkillIds],
+    proficiencies: value.proficiencies.map((proficiency) => ({ ...proficiency })),
   };
 }
 
@@ -2399,9 +2669,53 @@ function fromProtocolQuest(value: QuestSnapshot): import("../quest/Quest").Quest
 }
 
 function toMapEntity(
-  unit: PlayerUnit | MonsterUnit | NpcUnit | import("../../../core/public").Unit<any[]>,
+  unit: PlayerUnit | MonsterUnit | SummonedUnit | NpcUnit | InteractableUnit | import("../../../core/public").Unit<any[]>,
   includePrivateNumerics = false,
 ): MapEntitySnapshot {
+  if (unit instanceof SummonedUnit) {
+    const snapshot = unit.Snapshot();
+    const control = unit.DomainScene().TryGetComponent(SummonComponent)?.GetControlState(unit.UnitId);
+    return {
+      unitId: snapshot.unitId,
+      account: "",
+      displayName: snapshot.name,
+      x: snapshot.x,
+      y: snapshot.y,
+      z: snapshot.z,
+      yaw: snapshot.yaw,
+      state: new Uint8Array(0),
+      cellX: snapshot.cellX,
+      cellZ: snapshot.cellZ,
+      numerics: AoiVisibleNumericValues(snapshot.numerics),
+      buffs: unit.GetComponent(BuffComponent).SnapshotPublic(),
+      speedCellsPerSecond: snapshot.speedCellsPerSecond,
+      facing: snapshot.facing,
+      alive: snapshot.alive,
+      entityType: 5,
+      configId: snapshot.summonDefinitionId,
+      shopEnabled: false,
+      persistentId: 0n,
+      presentationModelId: snapshot.modelId,
+      presentationStateId: 0,
+      ownerUnitId: snapshot.ownerUnitId,
+      ownerPersistentId: snapshot.ownerPersistentId,
+      createdByAbilityId: snapshot.createdByAbilityId,
+      questStarterConfigIds: [],
+      questEnderConfigIds: [],
+      shopItemConfigIds: [],
+      trainerId: 0,
+      questEnabled: false,
+      conversationEnabled: false,
+      trainingEnabled: false,
+      repairEnabled: false,
+      recoveryEnabled: false,
+      presentationLoadoutId: "",
+      extensionCapabilities: [],
+      runtimeProfileRevision: 0,
+      ownedUnitReaction: control?.reaction ?? 0,
+      autoCastAbilityIds: control?.autoCastAbilityIds ?? [],
+    };
+  }
   if (unit instanceof MonsterUnit) {
     const snapshot = unit.Snapshot();
     return {
@@ -2423,9 +2737,72 @@ function toMapEntity(
       entityType: 2,
       configId: snapshot.monsterConfigId,
       shopEnabled: false,
+      persistentId: 0n,
+      presentationModelId: snapshot.modelId,
+      presentationStateId: snapshot.presentationStateId,
+      ownerUnitId: 0,
+      ownerPersistentId: 0n,
+      createdByAbilityId: 0,
+      questStarterConfigIds: [],
+      questEnderConfigIds: [],
+      shopItemConfigIds: [],
+      trainerId: 0,
+      questEnabled: false,
+      conversationEnabled: false,
+      trainingEnabled: false,
+      repairEnabled: false,
+      recoveryEnabled: false,
+      presentationLoadoutId: "",
+      extensionCapabilities: [],
+      runtimeProfileRevision: 0,
+      ownedUnitReaction: 0,
+      autoCastAbilityIds: [],
     };
   }
   if (unit instanceof NpcUnit) {
+    const snapshot = unit.Snapshot();
+    return {
+      unitId: snapshot.unitId,
+      account: "",
+      displayName: snapshot.name,
+      x: snapshot.x,
+      y: snapshot.y,
+      z: snapshot.z,
+      yaw: snapshot.yaw,
+      state: new Uint8Array(0),
+      cellX: snapshot.cellX,
+      cellZ: snapshot.cellZ,
+      numerics: [],
+      buffs: unit.GetComponent(BuffComponent).SnapshotPublic(),
+      speedCellsPerSecond: snapshot.speedCellsPerSecond,
+      facing: snapshot.facing,
+      alive: snapshot.alive,
+      entityType: 3,
+      configId: snapshot.npcConfigId,
+      shopEnabled: snapshot.shopEnabled,
+      persistentId: 0n,
+      presentationModelId: snapshot.presentationModelId,
+      presentationStateId: snapshot.presentationStateId,
+      ownerUnitId: 0,
+      ownerPersistentId: 0n,
+      createdByAbilityId: 0,
+      questStarterConfigIds: snapshot.questStarterConfigIds,
+      questEnderConfigIds: snapshot.questEnderConfigIds,
+      shopItemConfigIds: snapshot.shopItemConfigIds,
+      trainerId: snapshot.trainerId,
+      questEnabled: snapshot.questEnabled,
+      conversationEnabled: snapshot.conversationEnabled,
+      trainingEnabled: snapshot.trainingEnabled,
+      repairEnabled: snapshot.repairEnabled,
+      recoveryEnabled: snapshot.recoveryEnabled,
+      presentationLoadoutId: snapshot.presentationLoadoutId,
+      extensionCapabilities: snapshot.extensionCapabilities,
+      runtimeProfileRevision: snapshot.runtimeProfileRevision,
+      ownedUnitReaction: 0,
+      autoCastAbilityIds: [],
+    };
+  }
+  if (unit instanceof InteractableUnit) {
     const snapshot = unit.Snapshot();
     return {
       unitId: snapshot.unitId,
@@ -2443,9 +2820,29 @@ function toMapEntity(
       speedCellsPerSecond: snapshot.speedCellsPerSecond,
       facing: snapshot.facing,
       alive: snapshot.alive,
-      entityType: 3,
-      configId: snapshot.npcConfigId,
-      shopEnabled: snapshot.shopEnabled,
+      entityType: 4,
+      configId: snapshot.interactableConfigId,
+      shopEnabled: false,
+      persistentId: 0n,
+      presentationModelId: snapshot.presentationModelId,
+      presentationStateId: 0,
+      ownerUnitId: 0,
+      ownerPersistentId: 0n,
+      createdByAbilityId: 0,
+      questStarterConfigIds: snapshot.questStarterConfigIds,
+      questEnderConfigIds: [],
+      shopItemConfigIds: [],
+      trainerId: 0,
+      questEnabled: snapshot.questStarterConfigIds.length > 0,
+      conversationEnabled: false,
+      trainingEnabled: false,
+      repairEnabled: false,
+      recoveryEnabled: false,
+      presentationLoadoutId: "",
+      extensionCapabilities: [],
+      runtimeProfileRevision: snapshot.runtimeProfileRevision,
+      ownedUnitReaction: 0,
+      autoCastAbilityIds: [],
     };
   }
   if (!(unit instanceof PlayerUnit)) {
@@ -2471,8 +2868,31 @@ function toMapEntity(
     facing: snapshot.facing,
     alive: snapshot.alive,
     entityType: 1,
-    configId: 1,
+    // configId is the neutral player-template identity.  External protocol
+    // adapters can resolve race/class/presentation from their own catalog;
+    // the Core must not replace it with a demo-only constant.
+    configId: unit.PlayerConfigId,
     shopEnabled: false,
+    persistentId: snapshot.characterId,
+    presentationModelId: "",
+    presentationStateId: 0,
+    ownerUnitId: 0,
+    ownerPersistentId: 0n,
+    createdByAbilityId: 0,
+    questStarterConfigIds: [],
+    questEnderConfigIds: [],
+    shopItemConfigIds: [],
+    trainerId: 0,
+    questEnabled: false,
+    conversationEnabled: false,
+    trainingEnabled: false,
+    repairEnabled: false,
+    recoveryEnabled: false,
+    presentationLoadoutId: "",
+    extensionCapabilities: [],
+    runtimeProfileRevision: 0,
+    ownedUnitReaction: 0,
+    autoCastAbilityIds: [],
   };
 }
 
@@ -2493,6 +2913,50 @@ function fromProtocolBuffTransfer(value: BuffTransferSnapshot): BuffTransferStat
     addAction: protocolAction(value.addActionType, value.addActionParams),
     tickAction: protocolAction(value.tickActionType, value.tickActionParams),
     removeAction: protocolAction(value.removeActionType, value.removeActionParams),
+  };
+}
+
+function fromProtocolOwnedSummonTransfer(
+  value: OwnedSummonTransferSnapshot,
+): OwnedSummonTransferState {
+  const initialReaction = value.initialReaction === 0
+    ? OwnedUnitReaction.Defensive
+    : value.initialReaction as OwnedUnitReactionValue;
+  const definition: OwnedSummonDefinition = {
+    id: value.definitionId,
+    name: value.name,
+    modelId: value.modelId,
+    maxHp: value.maxHp,
+    maxMp: value.maxMp,
+    attackDamage: value.attackDamage,
+    moveSpeed: value.moveSpeed,
+    attackRange: value.attackRange,
+    attackIntervalMs: value.attackIntervalMs,
+    attackDamageSchool: value.attackDamageSchool as DamageSchoolValue,
+    attackAbilityId: value.attackAbilityId,
+    followDistance: value.followDistance,
+    teleportDistance: value.teleportDistance,
+    assistOwner: value.assistOwner,
+    initialReaction,
+    aggressiveAcquireRange: value.aggressiveAcquireRange > 0
+      ? value.aggressiveAcquireRange
+      : value.attackRange,
+    abilities: value.abilities.map((ability) => ({
+      abilityId: ability.abilityId,
+      autoCastByDefault: ability.autoCastByDefault,
+    })),
+    ...(value.resourceRegenAmount > 0 ? {
+      resourceRegenAmount: value.resourceRegenAmount,
+      resourceRegenIntervalMs: value.resourceRegenIntervalMs,
+      resourceRegenDelayAfterSpendMs: value.resourceRegenDelayAfterSpendMs,
+    } : {}),
+  };
+  return {
+    ownershipSlot: value.ownershipSlot,
+    createdByAbilityId: value.createdByAbilityId,
+    definition,
+    reaction: value.reaction === 0 ? initialReaction : value.reaction as OwnedUnitReactionValue,
+    autoCastAbilityIds: [...value.autoCastAbilityIds],
   };
 }
 

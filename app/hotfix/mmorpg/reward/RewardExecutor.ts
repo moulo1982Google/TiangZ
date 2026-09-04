@@ -46,7 +46,11 @@ export function PlanTransactionalReward(
   target: Unit<any[]>,
   reward: RewardDefinition,
 ): InventoryGrantPlan {
-  const grants: InventoryGrant[] = reward.actions.map((action) => {
+  return target.GetComponent(ItemComponent).PlanGrantItems(TransactionalRewardGrants(reward));
+}
+
+export function TransactionalRewardGrants(reward: RewardDefinition): readonly InventoryGrant[] {
+  return reward.actions.map((action) => {
     if (action.type !== ActionType.GrantItem || action.parameters.length !== 2) {
       throw new Error(
         `transactional reward only supports GrantItem actions: ${action.type}`,
@@ -56,7 +60,6 @@ export function PlanTransactionalReward(
     const count = toPositiveSafeInteger(action.parameters[1], "reward item count");
     return { configId, count };
   });
-  return target.GetComponent(ItemComponent).PlanGrantItems(grants);
 }
 
 function toPositiveSafeInteger(value: bigint, name: string): number {

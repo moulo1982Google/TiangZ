@@ -22,7 +22,9 @@ export enum ActionType {
     Heal = 6,
     GrantItem = 7,
     HealFromResolvedDamagePercent = 8,
-    Max = 9,
+    ChangeNumericBatch = 9,
+    RemoveBuffsByEffectTags = 10,
+    Max = 11,
 }
 
 
@@ -88,6 +90,8 @@ export enum QuestObjectiveType {
     UseItem = 2,
     EnterMap = 3,
     CollectItem = 4,
+    UseInteractable = 5,
+    ContentSignal = 6,
 }
 
 

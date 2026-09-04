@@ -71,6 +71,7 @@ export class MapWorld {
     if (!this.entities.has(localUnitId)) {
       this.enter({
         unitId: localUnitId,
+        persistentId: 0n,
         account: enterMap.account,
         displayName: enterMap.account,
         x: enterMap.x,
@@ -88,6 +89,25 @@ export class MapWorld {
         entityType: 1,
         configId: playerConfig.id,
         shopEnabled: false,
+        presentationModelId: "",
+        presentationStateId: 0,
+        ownerUnitId: 0,
+        ownerPersistentId: 0n,
+        createdByAbilityId: 0,
+        questStarterConfigIds: [],
+        questEnderConfigIds: [],
+        shopItemConfigIds: [],
+        trainerId: 0,
+        questEnabled: false,
+        conversationEnabled: false,
+        trainingEnabled: false,
+        repairEnabled: false,
+        recoveryEnabled: false,
+        presentationLoadoutId: "",
+        extensionCapabilities: [],
+        runtimeProfileRevision: 0,
+        ownedUnitReaction: 0,
+        autoCastAbilityIds: [],
       });
     }
     window.addEventListener("keydown", this.onKeyDown);

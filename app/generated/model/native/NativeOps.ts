@@ -20,6 +20,7 @@ export interface NativeHostOpsApi {
   spatialUpdateObstacles(mapId: number, maxCommands: number, maxTileUpdates: number): Uint8Array;
   unitSetNavigationTarget(mapId: number, handle: number, targetX: number, targetY: number, targetZ: number, sequence: number): Uint8Array;
   unitSetNavigationInput(mapId: number, handle: number, forward: number, strafe: number, yaw: number, sequence: number): Uint8Array;
+  unitRelocate(mapId: number, handle: number, x: number, y: number, z: number, yaw: number): Uint8Array;
   spatialRelease(mapId: number): void;
   aoiCreate(mapId: number, gridSizeMillimeters: number, enterRadiusGrids: number, detachRadiusGrids: number, syncTiers: Uint8Array): void;
   aoiRelease(mapId: number): void;
@@ -41,6 +42,8 @@ export interface NativeHostOpsApi {
   mapPeekUnitAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
   mapAckUnitDelta(mapId: number, revision: Uint8Array): void;
   unitSetMovementInput(handle: number, inputX: number, inputZ: number, sequence: number): boolean;
+  unitSetGridMovementTarget(handle: number, targetCellX: number, targetCellZ: number, sequence: number): boolean;
+  unitApplyGridMovementSnapshot(handle: number, cellX: number, height: number, cellZ: number, yaw: number, moving: boolean, sequence: number): boolean;
   unitResetMovement(handle: number): void;
   mapUpdateMovement(mapId: number, serverTick: number, fixedUpdateMs: number, messageCode: number): Uint8Array;
   mapAdvanceMovement(mapId: number, serverTick: number, fixedUpdateMs: number): number;
@@ -154,6 +157,10 @@ export class NativeOps {
     return nativeHostOps().unitSetNavigationInput(mapId, handle, forward, strafe, yaw, sequence);
   }
 
+  static UnitRelocate(mapId: number, handle: number, x: number, y: number, z: number, yaw: number): Uint8Array {
+    return nativeHostOps().unitRelocate(mapId, handle, x, y, z, yaw);
+  }
+
   static SpatialRelease(mapId: number): void {
     nativeHostOps().spatialRelease(mapId);
   }
@@ -236,6 +243,14 @@ export class NativeOps {
 
   static UnitSetMovementInput(handle: number, inputX: number, inputZ: number, sequence: number): boolean {
     return nativeHostOps().unitSetMovementInput(handle, inputX, inputZ, sequence);
+  }
+
+  static UnitSetGridMovementTarget(handle: number, targetCellX: number, targetCellZ: number, sequence: number): boolean {
+    return nativeHostOps().unitSetGridMovementTarget(handle, targetCellX, targetCellZ, sequence);
+  }
+
+  static UnitApplyGridMovementSnapshot(handle: number, cellX: number, height: number, cellZ: number, yaw: number, moving: boolean, sequence: number): boolean {
+    return nativeHostOps().unitApplyGridMovementSnapshot(handle, cellX, height, cellZ, yaw, moving, sequence);
   }
 
   static UnitResetMovement(handle: number): void {

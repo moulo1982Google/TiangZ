@@ -13,6 +13,12 @@ import { STARTER_DUNGEON_COOLDOWN_MS } from "../app/model/mmorpg/dungeon/Starter
 
 assert.equal(NumericType.Level, 3);
 assert.equal(NumericType.Experience, 4);
+assert.equal(NumericType.Strength, 1_002);
+assert.equal(NumericType.StrengthBase, 10_021);
+assert.equal(NumericType.AgilityBase, 10_031);
+assert.equal(NumericType.StaminaBase, 10_041);
+assert.equal(NumericType.IntellectBase, 10_051);
+assert.equal(NumericType.SpiritBase, 10_061);
 assert.equal(ExperienceRequiredForLevel(1n), 0n);
 assert.equal(ExperienceRequiredForLevel(2n), 100n);
 assert.equal(ExperienceRequiredForLevel(3n), 300n);
@@ -23,6 +29,16 @@ assert.equal(LevelFromExperience(120n), 2n);
 assert.equal(LevelFromExperience(300n), 3n);
 assert.equal(LevelFromExperience(10_000_000n), STARTER_MAX_LEVEL);
 assert.throws(() => LevelFromExperience(-1n), /non-negative/);
+const externalCurve = [
+  { level: 1, experienceToNextLevel: 400, numerics: [] },
+  { level: 2, experienceToNextLevel: 900, numerics: [] },
+  { level: 3, experienceToNextLevel: 0, numerics: [] },
+] as const;
+assert.equal(LevelFromExperience(399n, externalCurve), 1n);
+assert.equal(LevelFromExperience(400n, externalCurve), 2n);
+assert.equal(LevelFromExperience(1_299n, externalCurve), 2n);
+assert.equal(LevelFromExperience(1_300n, externalCurve), 3n);
+assert.equal(LevelFromExperience(99_999n, externalCurve), 3n);
 
 const receipt = {
   level: 2n,

@@ -9,6 +9,7 @@ import {
   type CustomMetricSnapshot,
   type MaybePromise,
   TransferStagingRegistry,
+  applyEntityExtensions,
 } from "../../../core/public";
 import { GameErrCode } from "../../game/protocol/GameErrCode";
 import { GateMessages } from "../../../generated/model/server/demo/protocol/messageDescriptors";
@@ -35,6 +36,7 @@ import type {
   MapEntitySnapshot,
   MapHostEndpoint,
   MapInstanceSnapshot,
+  OwnedSummonTransferSnapshot,
   PlayerTransferSnapshot,
   SkillTransferSnapshot,
 } from "../../../generated/model/server/demo/protocol/messages";
@@ -43,15 +45,35 @@ import { MapTransferProtocol } from "../../../generated/model/server/demo/protoc
 import { MapComponent } from "../map/MapComponent";
 import { MapScene } from "../map/MapScene";
 import { MapAoiComponent } from "../map/MapAoiComponent";
+import { MapRuntimeProfileComponent } from "../map/MapRuntimeProfileComponent";
 import { MonsterComponent } from "../monster/MonsterComponent";
+import { MonsterContentProfileComponent } from "../monster/MonsterContentProfileComponent";
+import {
+  SummonComponent,
+  type OwnedSummonTransferState,
+} from "../summon/SummonComponent";
 import { NpcComponent } from "../npc/NpcComponent";
+import { NpcContentProfileComponent } from "../npc/NpcContentProfileComponent";
+import { InteractableComponent } from "../interactable/InteractableComponent";
+import { InteractableContentProfileComponent } from "../interactable/InteractableContentProfileComponent";
+import { SpawnSelectionContentProfileComponent } from "../spawn/SpawnSelectionContentProfileComponent";
+import { SpawnSelectionComponent } from "../spawn/SpawnSelectionComponent";
+import { QuestContentProfileComponent } from "../quest/QuestContentProfileComponent";
 import { NpcShopComponent } from "../shop/NpcShopComponent";
+import { NpcRepairComponent } from "../repair/NpcRepairComponent";
 import { PlayerTradeComponent } from "../trade/PlayerTradeComponent";
 import { SkillMapComponent } from "../skill/SkillMapComponent";
+import { SkillDefinitionProfileComponent } from "../skill/SkillDefinitionProfileComponent";
 import { PlayerUnit, type PlayerSnapshot } from "../map/PlayerUnit";
 import { PlayerDirectoryComponent } from "./PlayerDirectoryComponent";
 import { ItemComponent } from "../item/ItemComponent";
+import { ItemContentProfileComponent } from "../item/ItemContentProfileComponent";
+import { LootContentProfileComponent } from "../loot/LootContentProfileComponent";
+import { TrainerContentProfileComponent } from "../trainer/TrainerContentProfileComponent";
+import { TrainerComponent } from "../trainer/TrainerComponent";
+import { PlayerContentProfileComponent } from "../login/PlayerContentProfileComponent";
 import { BuffComponent } from "../buff/BuffComponent";
+import { BuffDefinitionProfileComponent } from "../buff/BuffDefinitionProfileComponent";
 import { SkillComponent, type SkillTransferState } from "../skill/SkillComponent";
 import { QuestComponent } from "../quest/QuestComponent";
 import type { PlayerRepository } from "../persistence/PlayerRepository";
@@ -80,7 +102,7 @@ const monotonicNow = (): number => globalThis.performance?.now() ?? Date.now();
 // 玩家跨MapHost快照的生成端与校验端必须引用同一版本，新增可传送Component时只修改这里。
 // The producer and validator of player transfer snapshots must share one version;
 // bump only this constant when a transferable Component changes the wire shape.
-const PLAYER_TRANSFER_SCHEMA_VERSION = 9;
+const PLAYER_TRANSFER_SCHEMA_VERSION = 10;
 
 export class MapHostComponent extends Component<[repository: PlayerRepository]> {
   private readonly ownerGeneration = GlobalIdSystem.Instance.Next();
@@ -434,6 +456,9 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       quests: player.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
       completedQuestConfigIds: player.GetComponent(QuestComponent).CompletedQuestConfigIds(),
       gold: snapshot.gold,
+      knownSkillIds: player.GetComponent(SkillComponent).KnownSkillIds(),
+      proficiencies: player.GetComponent(SkillComponent).Proficiencies(),
+      numerics: snapshot.numerics,
       starterDungeonCooldownEndAtMs: player.GetComponent(ProgressionComponent).StarterDungeonCooldownEndAtMs,
       mapInstanceId: located.location.mapInstanceId,
       locationRevision: located.location.revision,
@@ -590,11 +615,13 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     let directoryReplaced = false;
     let locationCommitted = false;
     try {
+      const summonTransfer = sourceMap.CaptureOwnedSummons(source);
       target = targetMap.PrepareTransferredPlayer(
         source.UnitId,
         {
           account: source.Account,
           characterId: source.CharacterId,
+          playerConfigId: source.PlayerConfigId,
           token: "map-transfer",
           gateName: request.gateName,
           gateEpoch: source.GetComponent(UnitGateComponent).gateEpoch,
@@ -608,6 +635,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         },
         source.CaptureTransfer(),
       );
+      targetMap.RestoreOwnedSummons(target, summonTransfer);
       if (!this.players.Replace(source, target)) {
         throw new Error(`player changed during map transfer: ${source.Account}`);
       }
@@ -718,6 +746,9 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         quests: target.quests,
         completedQuestConfigIds: target.completedQuestConfigIds,
         gold: target.gold,
+        knownSkillIds: source.GetComponent(SkillComponent).KnownSkillIds(),
+        proficiencies: source.GetComponent(SkillComponent).Proficiencies(),
+        numerics: source.Snapshot().numerics,
         starterDungeonCooldownEndAtMs: source.GetComponent(ProgressionComponent).StarterDungeonCooldownEndAtMs,
         mapHost: targetInstance.mapHost,
       };
@@ -774,6 +805,9 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       quests: player.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
       completedQuestConfigIds: player.GetComponent(QuestComponent).CompletedQuestConfigIds(),
       gold: snapshot.gold,
+      knownSkillIds: player.GetComponent(SkillComponent).KnownSkillIds(),
+      proficiencies: player.GetComponent(SkillComponent).Proficiencies(),
+      numerics: snapshot.numerics,
       starterDungeonCooldownEndAtMs: player.GetComponent(ProgressionComponent).StarterDungeonCooldownEndAtMs,
       mapHost: this.EndpointSnapshot(),
     };
@@ -926,6 +960,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       unitId: snapshot.unitId,
       account: snapshot.account,
       characterId: snapshot.characterId,
+      playerConfigId: player.PlayerConfigId,
       sourceMapId: snapshot.mapId,
       targetMapId: targetInstance.mapConfigId,
       gateName: snapshot.gateName,
@@ -945,13 +980,16 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       persistenceRevision: 0n,
        inventoryRevision: revisions.inventory,
        progressionRevision: revisions.progression,
-       questRevision: revisions.quest,
-       runtimeRevision: revisions.runtime,
+      questRevision: revisions.quest,
+      runtimeRevision: revisions.runtime,
       walletRevision: revisions.wallet,
       starterDungeon: {
         cooldownEndAtMs: player.GetComponent(ProgressionComponent).StarterDungeonCooldownEndAtMs,
         operationId: player.GetComponent(ProgressionComponent).CaptureTransfer().starterDungeonOperationId,
       },
+      ownedSummons: this.mapOf(player)
+        .CaptureOwnedSummons(player)
+        .map(toProtocolOwnedSummonTransfer),
     };
   }
 
@@ -1179,7 +1217,8 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       }
       return existing;
     }
-    if (!GameConfigs.MapConfig.TryGet(definition.mapConfigId)) {
+    const mapConfig = GameConfigs.MapConfig.TryGet(definition.mapConfigId);
+    if (!mapConfig) {
       throw new RpcError(
         GameErrCode.MapNotFound,
         `map config not found: ${definition.mapConfigId}`,
@@ -1190,6 +1229,41 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     const scene = this.owner.SpawnChildScene(localSceneId, MapScene);
     try {
       scene.AddComponent(UnitComponent);
+      const runtimeProfile = scene.AddComponent(MapRuntimeProfileComponent);
+      runtimeProfile.Initialize(mapConfig.id, {
+        spatialMode: mapConfig.spatialMode,
+        widthCells: mapConfig.widthCells,
+        depthCells: mapConfig.depthCells,
+        cellSizeMeters: mapConfig.cellSizeMeters,
+        spawnX: mapConfig.spawnX,
+        spawnY: mapConfig.spawnY,
+        spawnZ: mapConfig.spawnZ,
+        spawnYaw: mapConfig.spawnYaw,
+        navigationAsset: mapConfig.navigationAsset,
+        navigationHash: mapConfig.navigationHash,
+      });
+      const skillDefinitions = scene.AddComponent(SkillDefinitionProfileComponent);
+      const buffDefinitions = scene.AddComponent(BuffDefinitionProfileComponent);
+      const monsterContent = scene.AddComponent(MonsterContentProfileComponent);
+      const npcContent = scene.AddComponent(NpcContentProfileComponent);
+      const interactableContent = scene.AddComponent(InteractableContentProfileComponent);
+      const spawnSelectionContent = scene.AddComponent(SpawnSelectionContentProfileComponent);
+      const questContent = scene.AddComponent(QuestContentProfileComponent);
+      const itemContent = scene.AddComponent(ItemContentProfileComponent);
+      const lootContent = scene.AddComponent(LootContentProfileComponent);
+      const trainerContent = scene.AddComponent(TrainerContentProfileComponent);
+      const playerContent = scene.AddComponent(PlayerContentProfileComponent);
+      applyEntityExtensions(scene);
+      buffDefinitions.Seal();
+      monsterContent.Seal();
+      npcContent.Seal();
+      interactableContent.Seal();
+      spawnSelectionContent.Seal();
+      questContent.Seal();
+      itemContent.Seal();
+      lootContent.Seal();
+      trainerContent.Seal();
+      playerContent.Seal();
       const aoi = scene.AddComponent(MapAoiComponent, definition);
       const map = scene.AddComponent(
         MapComponent,
@@ -1203,9 +1277,14 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         aoi,
       );
       const npc = scene.AddComponent(NpcComponent, map, aoi);
+      const interactable = scene.AddComponent(InteractableComponent, map, aoi);
       scene.AddComponent(NpcShopComponent, npc);
+      scene.AddComponent(NpcRepairComponent, npc);
+      scene.AddComponent(TrainerComponent, npc, trainerContent, skillDefinitions);
       scene.AddComponent(PlayerTradeComponent);
-      scene.AddComponent(MonsterComponent, map, aoi);
+      const monster = scene.AddComponent(MonsterComponent, map, aoi);
+      scene.AddComponent(SpawnSelectionComponent, monster, interactable);
+      scene.AddComponent(SummonComponent, map, aoi);
       scene.AddComponent(SkillMapComponent, map);
       this.maps.set(definition.mapInstanceId, map);
       return map;
@@ -1356,6 +1435,8 @@ function toProtocolSkillTransfer(value: SkillTransferState): SkillTransferSnapsh
       itemConfigId: cooldown.itemConfigId,
       cooldownEndAtMs: BigInt(Math.max(0, Math.floor(cooldown.cooldownEndAtMs))),
     })),
+    knownSkillIds: [...(value.knownSkillIds ?? [])],
+    proficiencies: (value.proficiencies ?? []).map((proficiency) => ({ ...proficiency })),
   };
 }
 
@@ -1400,5 +1481,36 @@ function toProtocolBuffTransfer(
     tickActionParams: value.tickAction?.parameters ?? [],
     removeActionType: value.removeAction?.type ?? 0,
     removeActionParams: value.removeAction?.parameters ?? [],
+  };
+}
+
+function toProtocolOwnedSummonTransfer(
+  value: OwnedSummonTransferState,
+): OwnedSummonTransferSnapshot {
+  return {
+    ownershipSlot: value.ownershipSlot,
+    createdByAbilityId: value.createdByAbilityId,
+    definitionId: value.definition.id,
+    name: value.definition.name,
+    modelId: value.definition.modelId,
+    maxHp: value.definition.maxHp,
+    maxMp: value.definition.maxMp,
+    attackDamage: value.definition.attackDamage,
+    moveSpeed: value.definition.moveSpeed,
+    attackRange: value.definition.attackRange,
+    attackIntervalMs: value.definition.attackIntervalMs,
+    attackDamageSchool: value.definition.attackDamageSchool,
+    attackAbilityId: value.definition.attackAbilityId,
+    followDistance: value.definition.followDistance,
+    teleportDistance: value.definition.teleportDistance,
+    assistOwner: value.definition.assistOwner,
+    initialReaction: value.definition.initialReaction,
+    aggressiveAcquireRange: value.definition.aggressiveAcquireRange,
+    reaction: value.reaction,
+    abilities: value.definition.abilities.map((ability) => ({ ...ability })),
+    autoCastAbilityIds: [...value.autoCastAbilityIds],
+    resourceRegenAmount: value.definition.resourceRegenAmount ?? 0,
+    resourceRegenIntervalMs: value.definition.resourceRegenIntervalMs ?? 0,
+    resourceRegenDelayAfterSpendMs: value.definition.resourceRegenDelayAfterSpendMs ?? 0,
   };
 }

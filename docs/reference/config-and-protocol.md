@@ -25,10 +25,29 @@ Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置�
 | `scheduling` | object? | Process 事件批处理与空闲 Tick 策略，默认 `adaptive` |
 | `lifecycle` | object? | 进程优雅停机配置；默认最多等待 10000ms |
 | `persistence` | object? | Process持久化连接；当前可选配置独立DBProxy |
+| `dataPacks` | object? | 宿主启动期运行时数据包发现与大小限制；路径不投影给TS业务 |
 | `observability` | object? | 延迟采样、健康检查、分布式追踪和Native Store诊断配置 |
 | `debug` | object? | 该 V8 的 Inspector 配置 |
 
 `debug` 支持 `inspectorIp`、`inspectorPort`、`breakOnStart`、`allowRemote`。
+
+`dataPacks`用于在代码模块之外装入只读运行时资料：
+
+```json
+{
+  "dataPacks": {
+    "sources": ["../content-packs"],
+    "maxPackBytes": 16777216,
+    "maxTotalBytes": 268435456
+  }
+}
+```
+
+- `sources`最多256项，可以指向单个`runtime.pack.json`或目录；相对路径以当前Process配置文件所在目录解析，目录会确定性递归扫描固定文件名，符号链接被拒绝。
+- `maxPackBytes`限制单个文件，范围1 KiB到256 MiB，默认16 MiB；`maxTotalBytes`限制当前Process全部数据包，必须不小于单包限制且不超过1 GiB，默认256 MiB。
+- 每份信封严格包含`formatVersion/id/ownerModuleId/contentHash/source/payload`，未知字段、重复ID、非法SHA-256、未安装所有者或ID越出所有者命名空间都会阻止启动。宿主计算的`fileHash`只在投影给TS时追加。
+- source路径是宿主部署信息，不进入TS的`ProcessConfig`；TS只能从Stable `RuntimeDataPackRegistry`读取已经校验、深冻结的数据包。数据包变更不支持热更，需要重启Process。
+- `RuntimeDataPack`只定义部署信封，不定义payload业务schema。外置模块可在`tiangz.module.json.gameConfig`声明自己的Luban工程，通过`npm run modules:codegen-config -- --module-root <目录>`生成强类型`Tables`、聚合数据和schema/data/source指纹；模块负责解码并投影到中立领域Profile。来源数据库导入JSON不能跳过这一步直接作为运行时业务对象。
 
 `persistence.dbProxy`显式启用独立DBProxy：
 

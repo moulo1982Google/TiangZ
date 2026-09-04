@@ -15,7 +15,10 @@ import {
   type DbProxyRecordKey,
 } from "@tiangz/dbproxy-sdk";
 import type { Entity } from "../app/core/runtime/entities";
-import { DbProxyEntityRepository } from "../app/core/persistence/VersionedEntityRepository";
+import {
+  DbProxyEntityRepository,
+  InMemoryVersionedEntityRepository,
+} from "../app/core/persistence/VersionedEntityRepository";
 import { PlayerPersistenceComponent } from "../app/model/mmorpg/persistence/PlayerPersistenceComponent";
 import {
   EmptyPlayerPersistenceRevisions,
@@ -36,6 +39,8 @@ import type {
 } from "../app/model/mmorpg/persistence/PlayerRepository";
 import {
   DecodePlayerSaveData,
+  DecodePlayerDomainData,
+  EncodePlayerDomainData,
   EncodePlayerSaveData,
   ProjectPlayerDomainData,
 } from "../app/model/mmorpg/persistence/PlayerPersistenceCodec";
@@ -54,10 +59,34 @@ async function main(): Promise<void> {
   await testSaveFailureIsVisibleAndIdempotent();
   await testPartialBatchSaveAdvancesSuccessfulRevisions();
   await testGeneratedRepositoryRetriesTheSameRequest();
+  await testInMemoryVersionedRepositoryUsesSharedStrictCasStorage();
   testCodecPreservesBigIntAndRepositoryRejectsStaleRevision();
+  testPlayerPersistenceExtensions();
   testTransactionReceiptIsIdempotent();
   testGeneratedNativeItemCodec();
   console.log("player persistence self-test passed");
+}
+
+async function testInMemoryVersionedRepositoryUsesSharedStrictCasStorage(): Promise<void> {
+  const first = new InMemoryVersionedEntityRepository(NativeItemPersistenceCodec);
+  const second = new InMemoryVersionedEntityRepository(NativeItemPersistenceCodec);
+  const key = `in-memory-cas-${Date.now()}`;
+  const snapshot = {
+    id: 10002,
+    configId: 1002,
+    count: 2,
+    quality: 1,
+    level: 3,
+    version: 1,
+  };
+  assert.equal((await first.SaveSnapshot(key, snapshot, 0n)).revision, 1n);
+  assert.deepEqual((await second.Load(key))?.data, snapshot);
+  await assert.rejects(
+    () => second.SaveSnapshot(key, snapshot, 0n),
+    (error: unknown) => error instanceof DbProxyRemoteError
+      && error.code === DbProxyErrorCode.RevisionConflict
+      && error.actualRevision === 1n,
+  );
 }
 
 async function testUnchangedPeriodicSnapshotSkipsWrites(): Promise<void> {
@@ -354,6 +383,57 @@ function testCodecPreservesBigIntAndRepositoryRejectsStaleRevision(): void {
     () => repository.SaveDomain("wallet", ProjectPlayerDomainData(data, "wallet"), 0n),
     /wallet revision conflict/,
   );
+}
+
+function testPlayerPersistenceExtensions(): void {
+  const repository = new InMemoryPlayerRepository();
+  const component = new PlayerPersistenceComponent();
+  component.__attach(createPlayer() as unknown as Entity);
+  component.__awake(repository, EmptyPlayerPersistenceRevisions());
+
+  const restored: { payload: Uint8Array; version: number }[] = [];
+  component.RestorePersistenceExtensions([
+    { id: "org.example.unloaded", version: 3, payload: new Uint8Array([9, 8]) },
+    { id: "org.example.state", version: 1, payload: new Uint8Array([1, 2, 3]) },
+  ]);
+  component.RegisterPersistenceExtension({
+    id: "org.example.state",
+    version: 2,
+    Capture: () => new Uint8Array([4, 5, 6]),
+    Restore: (payload, version) => restored.push({ payload, version }),
+  });
+  assert.deepEqual(restored, [{ payload: new Uint8Array([1, 2, 3]), version: 1 }]);
+
+  const aggregate = component.Capture("extension-test");
+  assert.deepEqual(aggregate.extensions, [
+    { id: "org.example.state", version: 2, payload: new Uint8Array([4, 5, 6]) },
+    { id: "org.example.unloaded", version: 3, payload: new Uint8Array([9, 8]) },
+  ]);
+  const runtime = ProjectPlayerDomainData(aggregate, "runtime");
+  const decoded = DecodePlayerDomainData("runtime", EncodePlayerDomainData("runtime", runtime));
+  assert.deepEqual(decoded.extensions, runtime.extensions);
+
+  assert.throws(
+    () => EncodePlayerDomainData("runtime", {
+      ...runtime,
+      extensions: [
+        { id: "org.example.duplicate", version: 1, payload: new Uint8Array() },
+        { id: "org.example.duplicate", version: 1, payload: new Uint8Array() },
+      ],
+    }),
+    /duplicate id/,
+  );
+  assert.throws(
+    () => EncodePlayerDomainData("runtime", {
+      ...runtime,
+      extensions: [{ id: "org.example.invalid", version: 1, payload: [1, 2, 3] as unknown as Uint8Array }],
+    }),
+    /payload must be Uint8Array/,
+  );
+
+  const saved = repository.SaveDomain("runtime", runtime, 0n);
+  assert.equal(saved.revision, 1n);
+  assert.deepEqual(repository.GetDomain(7001n, "runtime")?.extensions, runtime.extensions);
 }
 
 function testTransactionReceiptIsIdempotent(): void {

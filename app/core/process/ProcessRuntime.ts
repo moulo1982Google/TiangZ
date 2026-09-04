@@ -18,6 +18,7 @@ import type {
 import { CoreLogger } from "../logging/Logger";
 import { CoroutineLockSystem } from "../runtime/CoroutineLockSystem";
 import { ConfigureTraceContext } from "../telemetry/TraceContext";
+import { InitializeRuntimeDataPacks } from "../content/RuntimeDataPackRegistry";
 
 export interface ProcessUpdateResult {
   outbound: OutboundBatch[];
@@ -58,6 +59,7 @@ export class ProcessRuntime implements LocalSceneRouter {
     let processHost: ProcessHost | undefined;
     try {
       InitializeGameSingletons(config.process.game, config.process.identity);
+      InitializeRuntimeDataPacks(config.dataPacks);
       processHost = new ProcessHost(config.process.name);
       this.processHost = processHost;
       for (const scene of config.scenes) {

@@ -9,6 +9,12 @@
 export { isPromiseLike } from "./async";
 export type { MaybePromise } from "./async";
 
+export { RuntimeDataPackRegistry } from "./content/RuntimeDataPackRegistry";
+export type {
+  RuntimeDataPack,
+  RuntimeDataPackInput,
+} from "./content/RuntimeDataPackRegistry";
+
 export { BroadcastHub } from "./broadcast/BroadcastHub";
 export { ClientAudience } from "./broadcast/ClientAudience";
 export { ClientBroadcast } from "./broadcast/ClientBroadcast";
@@ -31,6 +37,21 @@ export type {
 
 export { Logger } from "./logging/Logger";
 export type { LogCategory, LogFields, LogLevel } from "./logging/Logger";
+
+export { defineGameModule } from "./modules/GameModuleSystem";
+export type {
+  GameModuleDefinition,
+  GameModuleIdentity,
+} from "./modules/GameModuleSystem";
+export {
+  applyEntityExtensions,
+  entityExtensionHandler,
+} from "./modules/EntityExtensionSystem";
+export type {
+  EntityExtensionApplyResult,
+  EntityExtensionHandler,
+  EntityExtensionHandlerOptions,
+} from "./modules/EntityExtensionSystem";
 
 export { readU16BE, utf8Decode, utf8Encode } from "./protocol/binary";
 export { encodePacket } from "./protocol/frame";
@@ -96,11 +117,20 @@ export type {
   SceneMetricsSnapshot,
 } from "./process/types";
 
-export { HostDbProxyTransport } from "./persistence/HostDbProxyTransport";
-export { DbProxyEntityRepository } from "./persistence/VersionedEntityRepository";
+export {
+  HostDbProxyTransport,
+  IsHostDbProxyAvailable,
+} from "./persistence/HostDbProxyTransport";
+export {
+  CreateVersionedEntityRepository,
+  DbProxyEntityRepository,
+  InMemoryVersionedEntityRepository,
+  IsVersionedEntityRevisionConflict,
+} from "./persistence/VersionedEntityRepository";
 export type {
   VersionedEntityCodec,
   VersionedEntityLoadResult,
+  VersionedEntityRepository,
   VersionedEntitySaveResult,
 } from "./persistence/VersionedEntityRepository";
 

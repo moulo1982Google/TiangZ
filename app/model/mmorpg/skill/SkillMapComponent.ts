@@ -1,4 +1,4 @@
-import { Component, component, lifecycle } from "../../../core/public";
+import { Component, component, lifecycle, type Unit } from "../../../core/public";
 import type { MapComponent } from "../map/MapComponent";
 import type { PlayerUnit } from "../map/PlayerUnit";
 import type { SkillCastCommand, SkillCastState } from "./SkillComponent";
@@ -16,8 +16,16 @@ export interface SkillProjectile {
 }
 
 export interface SkillMapComponent {
-  Cast(caster: PlayerUnit, command: SkillCastCommand): SkillCastState;
-  InterruptByMovement(caster: PlayerUnit): boolean;
+  /**
+   * 从任意地图Unit提交一次技能。PlayerUnit仍是唯一暴露给客户端RPC的调用方，
+   * 怪物/NPC系统则可通过同一权威调度器提交模块拥有的能力。
+   *
+   * Submits one skill from any map Unit. PlayerUnit remains the only caller
+   * exposed through the client RPC, while monster/NPC systems can submit
+   * module-owned abilities through the same authoritative scheduler.
+   */
+  Cast(caster: Unit<any[]>, command: SkillCastCommand): SkillCastState;
+  InterruptByMovement(caster: Unit<any[]>): boolean;
   HandleDamageDuringCast(target: PlayerUnit): boolean;
 }
 

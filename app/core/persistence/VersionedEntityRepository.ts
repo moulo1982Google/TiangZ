@@ -4,7 +4,7 @@ import {
   DbProxyRemoteError,
   type DbProxySnapshotWrite,
 } from "@tiangz/dbproxy-sdk";
-import { HostDbProxyTransport } from "./HostDbProxyTransport";
+import { HostDbProxyTransport, IsHostDbProxyAvailable } from "./HostDbProxyTransport";
 
 const SAVE_ATTEMPTS = 3;
 let repositoryInstanceSequence = 0;
@@ -30,6 +30,13 @@ export interface VersionedEntitySaveResult {
   readonly revision: bigint;
 }
 
+/** 引擎和外置模块均可使用的运行时中立CAS仓库契约。/ Runtime-neutral CAS repository contract usable by engine and external modules. */
+export interface VersionedEntityRepository<TSnapshot, TEntity> {
+  Load(key: string): Promise<VersionedEntityLoadResult<TSnapshot> | undefined>;
+  Save(key: string, value: TEntity, expectedRevision: bigint): Promise<VersionedEntitySaveResult>;
+  SaveSnapshot(key: string, value: TSnapshot, expectedRevision: bigint): Promise<VersionedEntitySaveResult>;
+}
+
 /**
  * 普通单Entity快照的通用Repository。它只处理schema校验、revision CAS和同ID重试；
  * 聚合查询、索引、跨玩家事务和恢复生命周期仍由领域Repository负责。
@@ -38,7 +45,8 @@ export interface VersionedEntitySaveResult {
  * checks, revision CAS, and same-ID retry only. Queries, indexes, cross-player
  * transactions, and restoration lifecycle remain domain-repository concerns.
  */
-export class DbProxyEntityRepository<TSnapshot, TEntity> {
+export class DbProxyEntityRepository<TSnapshot, TEntity>
+implements VersionedEntityRepository<TSnapshot, TEntity> {
   private readonly client: DbProxyClient;
   private readonly requestPrefix: string;
   private requestSequence = 0;
@@ -93,4 +101,95 @@ export class DbProxyEntityRepository<TSnapshot, TEntity> {
     }
     throw new Error("unreachable DBProxy entity save retry state");
   }
+}
+
+interface InMemoryVersionedEntityRecord {
+  readonly schema: string;
+  readonly schemaVersion: number;
+  readonly revision: bigint;
+  readonly payload: Uint8Array;
+  readonly updatedAtUnixMs: bigint;
+}
+
+const inMemoryVersionedEntityRecords = new Map<string, InMemoryVersionedEntityRecord>();
+
+/**
+ * 供测试和明确不使用DBProxy的运行时使用的进程内实现；值仍穿过Codec边界并执行严格CAS。
+ * Process-local implementation for tests and runtimes that deliberately run
+ * without DBProxy. Values still cross the codec boundary and use strict CAS,
+ * so enabling DBProxy does not change repository semantics.
+ */
+export class InMemoryVersionedEntityRepository<TSnapshot, TEntity>
+implements VersionedEntityRepository<TSnapshot, TEntity> {
+  constructor(private readonly codec: VersionedEntityCodec<TSnapshot, TEntity>) {}
+
+  async Load(key: string): Promise<VersionedEntityLoadResult<TSnapshot> | undefined> {
+    const record = inMemoryVersionedEntityRecords.get(this.RecordKey(key));
+    if (!record) return undefined;
+    this.RequireSchema(record);
+    return {
+      data: this.codec.Decode(Uint8Array.from(record.payload)),
+      revision: record.revision,
+      updatedAtUnixMs: record.updatedAtUnixMs,
+    };
+  }
+
+  Save(key: string, value: TEntity, expectedRevision: bigint): Promise<VersionedEntitySaveResult> {
+    return this.SaveSnapshot(key, this.codec.Capture(value), expectedRevision);
+  }
+
+  async SaveSnapshot(
+    key: string,
+    value: TSnapshot,
+    expectedRevision: bigint,
+  ): Promise<VersionedEntitySaveResult> {
+    if (expectedRevision < 0n) throw new RangeError("expectedRevision must not be negative");
+    const recordKey = this.RecordKey(key);
+    const previous = inMemoryVersionedEntityRecords.get(recordKey);
+    if (previous) this.RequireSchema(previous);
+    const actualRevision = previous?.revision ?? 0n;
+    if (actualRevision !== expectedRevision) {
+      throw new DbProxyRemoteError(
+        DbProxyErrorCode.RevisionConflict,
+        `revision conflict for ${this.codec.recordNamespace}/${key}`,
+        actualRevision,
+      );
+    }
+    const revision = actualRevision + 1n;
+    inMemoryVersionedEntityRecords.set(recordKey, {
+      schema: this.codec.schema,
+      schemaVersion: this.codec.schemaVersion,
+      revision,
+      payload: Uint8Array.from(this.codec.Encode(value)),
+      updatedAtUnixMs: BigInt(Date.now()),
+    });
+    return { disposition: "applied", revision };
+  }
+
+  private RecordKey(key: string): string {
+    if (key.length === 0) throw new TypeError("versioned entity key must not be empty");
+    return `${this.codec.recordNamespace}\u0000${key}`;
+  }
+
+  private RequireSchema(record: InMemoryVersionedEntityRecord): void {
+    if (record.schema !== this.codec.schema || record.schemaVersion !== this.codec.schemaVersion) {
+      throw new Error(`unsupported entity snapshot schema: ${record.schema}@${record.schemaVersion}; expected ${this.codec.schema}@${this.codec.schemaVersion}`);
+    }
+  }
+}
+
+/** Host桥存在时选择持久DBProxy，否则选择严格的进程内存储。/ Selects durable DBProxy storage when the Host bridge exists, otherwise strict process-local storage. */
+export function CreateVersionedEntityRepository<TSnapshot, TEntity>(
+  codec: VersionedEntityCodec<TSnapshot, TEntity>,
+  ownerId: string,
+): VersionedEntityRepository<TSnapshot, TEntity> {
+  if (ownerId.length === 0) throw new TypeError("versioned entity repository ownerId must not be empty");
+  return IsHostDbProxyAvailable()
+    ? new DbProxyEntityRepository(codec, ownerId)
+    : new InMemoryVersionedEntityRepository(codec);
+}
+
+/** 让领域代码无需依赖DBProxy SDK即可识别并重试乐观并发。/ Lets domain code retry optimistic concurrency without depending on the DBProxy SDK. */
+export function IsVersionedEntityRevisionConflict(error: unknown): boolean {
+  return error instanceof DbProxyRemoteError && error.code === DbProxyErrorCode.RevisionConflict;
 }

@@ -40,6 +40,10 @@ async function main(): Promise<void> {
     const snapshotPromise = result.gateSocket.waitForMessage(ClientMessages.AoiDelta);
     await new GateClient(result.gateSocket).mapSnapshotReady({ unitId: result.enterMap.unitId });
     const snapshot = await snapshotPromise;
+    const owner = snapshot.enters.find((entity) => entity.unitId === result.enterMap.unitId);
+    if (owner?.persistentId !== registered.character.characterId) {
+      throw new Error("AOI owner snapshot did not preserve the selected CharacterId");
+    }
     console.log("client SDK smoke passed", {
       transport,
       account: result.login.account,

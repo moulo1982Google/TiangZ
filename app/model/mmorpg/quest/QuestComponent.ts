@@ -13,4 +13,21 @@ export type QuestComponentDomainSurface = GenericQuestComponent;
 export interface QuestRewardResult {
   readonly questConfigId: number;
   readonly rewardItems: readonly ItemSnapshot[];
+  readonly baseInventoryItems: readonly ItemSnapshot[];
+  readonly inventoryItems: readonly ItemSnapshot[];
+  readonly inventoryChanges: readonly ItemSnapshot[];
+  readonly selectedRewardChoiceId: number;
+  readonly gold: bigint;
+  readonly gainedGold: bigint;
+  readonly level: bigint;
+  readonly experience: bigint;
+  readonly gainedExperience: bigint;
+  readonly leveledUp: boolean;
+}
+
+export interface QuestAcceptResult {
+  readonly quest: import("../../domains/quest/Quest").QuestState;
+  readonly baseInventoryItems: readonly ItemSnapshot[];
+  readonly inventoryItems: readonly ItemSnapshot[];
+  readonly inventoryChanges: readonly ItemSnapshot[];
 }

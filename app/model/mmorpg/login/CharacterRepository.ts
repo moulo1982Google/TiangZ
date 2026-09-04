@@ -19,12 +19,30 @@ const LEGACY_CHARACTER_CATALOG_SCHEMA_VERSION = 1;
 
 const SAVE_ATTEMPTS = 3;
 const BIGINT_MARKER = "$tiangzI64";
+const BYTES_MARKER = "$tiangzBytes";
+const MAX_CHARACTER_EXTENSION_ID_LENGTH = 128;
+const MAX_CHARACTER_EXTENSION_PAYLOAD_BYTES = 64 * 1024;
+
+/**
+ * 外置游戏适配器拥有的不透明角色资料。Login保存该信封并把它放回角色摘要，
+ * 但不会解释payload字节或赋予它特定游戏语义。
+ *
+ * Opaque character data owned by an external game adapter. Login persists the
+ * envelope and returns it in character summaries, but never interprets the
+ * payload bytes or gives them game-specific meaning.
+ */
+export interface CharacterExtensionState {
+  readonly id: string;
+  readonly version: number;
+  readonly payload: Uint8Array;
+}
 
 export interface CharacterRecord {
   readonly characterId: bigint;
   readonly name: string;
   readonly playerConfigId: number;
   readonly level: number;
+  readonly extensions?: readonly CharacterExtensionState[];
 }
 
 export interface AccountCredential {
@@ -262,6 +280,8 @@ export function EncodeCharacterCatalog(data: CharacterCatalog): Uint8Array {
     { version: CHARACTER_CATALOG_SCHEMA_VERSION, data },
     (_key, value: unknown) => typeof value === "bigint"
       ? { [BIGINT_MARKER]: value.toString() }
+      : value instanceof Uint8Array
+        ? { [BYTES_MARKER]: [...value] }
       : value,
   ));
 }
@@ -270,12 +290,24 @@ export function DecodeCharacterCatalog(payload: Uint8Array): CharacterCatalog {
   let value: unknown;
   try {
     value = JSON.parse(utf8Decode(payload), (_key, item: unknown) => {
-      if (!isRecord(item) || Object.keys(item).length !== 1 || !(BIGINT_MARKER in item)) return item;
-      const encoded = item[BIGINT_MARKER];
-      if (typeof encoded !== "string" || !/^-?(0|[1-9][0-9]*)$/.test(encoded)) {
-        throw new TypeError("invalid tagged character id");
+      if (!isRecord(item) || Object.keys(item).length !== 1) return item;
+      if (BIGINT_MARKER in item) {
+        const encoded = item[BIGINT_MARKER];
+        if (typeof encoded !== "string" || !/^-?(0|[1-9][0-9]*)$/.test(encoded)) {
+          throw new TypeError("invalid tagged character id");
+        }
+        return BigInt(encoded);
       }
-      return BigInt(encoded);
+      if (BYTES_MARKER in item) {
+        const encoded = item[BYTES_MARKER];
+        if (!Array.isArray(encoded) || encoded.some((byte) =>
+          !Number.isInteger(byte) || byte < 0 || byte > 255
+        )) {
+          throw new TypeError("invalid tagged character extension payload");
+        }
+        return Uint8Array.from(encoded);
+      }
+      return item;
     });
   } catch (error) {
     throw new Error(`invalid character catalog payload: ${String(error)}`);
@@ -299,8 +331,21 @@ function cloneCatalog(data: CharacterCatalog): CharacterCatalog {
   return {
     account: data.account,
     credential: { ...data.credential },
-    characters: data.characters.map((character) => ({ ...character })),
+    characters: data.characters.map(cloneCharacter),
   };
+}
+
+function cloneCharacter(character: CharacterRecord): CharacterRecord {
+  return {
+    ...character,
+    ...(character.extensions === undefined
+      ? {}
+      : { extensions: character.extensions.map(cloneCharacterExtension) }),
+  };
+}
+
+function cloneCharacterExtension(extension: CharacterExtensionState): CharacterExtensionState {
+  return { ...extension, payload: extension.payload.slice() };
 }
 
 function validateCatalog(value: unknown): asserts value is CharacterCatalog {
@@ -345,6 +390,39 @@ function validateCharacter(value: unknown): asserts value is CharacterRecord {
   }
   if (!Number.isSafeInteger(character.level) || character.level <= 0) {
     throw new TypeError("character.level must be a positive integer");
+  }
+  validateCharacterExtensions(character.extensions);
+}
+
+function validateCharacterExtensions(
+  value: unknown,
+): asserts value is readonly CharacterExtensionState[] | undefined {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) throw new TypeError("character.extensions must be an array");
+  const ids = new Set<string>();
+  for (const [index, raw] of value.entries()) {
+    const extension = requireRecord(raw, `character.extensions[${index}]`);
+    if (
+      typeof extension.id !== "string" ||
+      extension.id.trim().length === 0 ||
+      extension.id.length > MAX_CHARACTER_EXTENSION_ID_LENGTH
+    ) {
+      throw new TypeError(`character extension id must be 1-${MAX_CHARACTER_EXTENSION_ID_LENGTH} characters`);
+    }
+    if (!Number.isSafeInteger(extension.version) || extension.version <= 0) {
+      throw new TypeError(`character extension version must be a positive integer: ${extension.id}`);
+    }
+    if (!(extension.payload instanceof Uint8Array)) {
+      throw new TypeError(`character extension payload must be Uint8Array: ${extension.id}`);
+    }
+    if (extension.payload.length > MAX_CHARACTER_EXTENSION_PAYLOAD_BYTES) {
+      throw new RangeError(
+        `character extension payload exceeds ${MAX_CHARACTER_EXTENSION_PAYLOAD_BYTES} bytes: ${extension.id}`,
+      );
+    }
+    if (!ids.add(extension.id)) {
+      throw new Error(`duplicate character extension: ${extension.id}`);
+    }
   }
 }
 

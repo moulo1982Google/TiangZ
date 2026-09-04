@@ -23,6 +23,20 @@ export class BeforeAcceptQuestPrerequisiteVeto implements VetoSceneEventHandler<
   }
 }
 
+/** 可选模板资格让游戏专属职业/种族映射留在内容模块中。 / Optional template eligibility keeps game-specific class and race mappings in content modules. */
+@vetoEventHandler(MapScene, QuestEvents.BeforeAccept, {
+  id: "quest.before-accept.player-template-eligibility",
+  order: 150,
+})
+export class BeforeAcceptQuestPlayerTemplateEligibilityVeto implements VetoSceneEventHandler<MapScene, BeforeAcceptQuestEvent, number> {
+  Handle(_scene: MapScene, event: BeforeAcceptQuestEvent): number {
+    const eligible = event.config.eligiblePlayerConfigIds;
+    return eligible === undefined || eligible.includes(event.player.PlayerConfigId)
+      ? SystemErrCode.Success
+      : GameErrCode.QuestPrerequisiteNotMet;
+  }
+}
+
 /** 等级条件读取普通Numeric；不得在否决链中补等级、自动完成前置任务或产生其他副作用。 / The level condition reads Numeric only and must not mutate level, auto-complete prerequisites, or create side effects. */
 @vetoEventHandler(MapScene, QuestEvents.BeforeAccept, {
   id: "quest.before-accept.minimum-level",

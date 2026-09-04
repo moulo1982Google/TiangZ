@@ -11,6 +11,8 @@
 /tmp_native_frames_*/
 /temp/
 /logs/
+/.build-tmp/
+/dist-persistence-check/
 /tools/observability/production/.env
 /tools/observability/production/alertmanager/secrets/
 /client_demo/cocos_client2D_3.8.6/temp/

@@ -4,6 +4,8 @@ import type { MonsterSnapshot } from "../../../model/public";
 
 declare module "../../../model/mmorpg/monster/MonsterUnit" {
   interface MonsterUnit {
+    SetPresentationModel(modelId: string): void;
+    SetPresentationState(presentationStateId: number): void;
     Snapshot(): MonsterSnapshot;
   }
 }

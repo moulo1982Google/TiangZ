@@ -1,5 +1,6 @@
 import {
   EntryScene,
+  applyEntityExtensions,
   RpcError,
   SystemErrCode,
   entryScene,
@@ -18,6 +19,7 @@ import { CreateCharacterRepository } from "../login/CharacterRepository";
 import { RankStickyScenes } from "../login/GateSelector";
 import { IsGateReachable } from "../gate/GateHealth";
 import { LocationProxy } from "../location/LocationProxy";
+import { PlayerContentProfileComponent } from "../login/PlayerContentProfileComponent";
 
 @entryScene()
 export class LoginScene extends EntryScene {
@@ -34,11 +36,15 @@ export class LoginScene extends EntryScene {
       throw new Error("LoginScene needs at least one known Gate Scene");
     }
     this.location = new LocationProxy(this.scenes);
+    const playerContent = this.AddComponent(PlayerContentProfileComponent);
+    applyEntityExtensions(this);
+    playerContent.Seal();
     this.login = this.AddComponent(
       LoginComponent,
       this.gateScenes,
       config.process.name,
       CreateCharacterRepository(config.process),
+      playerContent,
     );
   }
 

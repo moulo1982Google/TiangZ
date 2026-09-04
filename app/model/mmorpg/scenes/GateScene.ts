@@ -265,12 +265,16 @@ export class GateScene extends EntryScene {
     if (characterId !== tokenClaims.characterId || characterId <= 0n) {
       throw new RpcError(GameErrCode.CharacterNotFound, "login token character mismatch");
     }
+    const playerConfigId = tokenClaims.playerConfigId;
     const now = TimeSystem.Instance.FrameTime;
     let route = this.routesByAccount.get(request.account);
     let previousConnectionId: number | undefined;
     if (route) {
       if (route.characterId !== characterId) {
         throw new RpcError(GameErrCode.GateSessionRequired, "account already has another character online");
+      }
+      if (route.playerConfigId !== playerConfigId) {
+        throw new RpcError(GameErrCode.GateSessionRequired, "player template changed during an active route");
       }
       try {
         previousConnectionId = route.Attach(connectionId, now);
@@ -281,7 +285,14 @@ export class GateScene extends EntryScene {
         );
       }
     } else {
-      route = new GatePlayerRoute(request.account, characterId, this.self.name, connectionId, now);
+      route = new GatePlayerRoute(
+        request.account,
+        characterId,
+        playerConfigId,
+        this.self.name,
+        connectionId,
+        now,
+      );
       this.routesByAccount.set(request.account, route);
     }
 
@@ -661,6 +672,7 @@ export class GateScene extends EntryScene {
           gateName: this.self.name,
           gateEpoch: 1n,
           characterId: session.characterId,
+          playerConfigId: session.playerConfigId,
           mapInstanceId: target.instance.mapInstanceId,
           hasInitialSpawnOverride: spawnOverride !== undefined,
           initialSpawnX: spawnOverride?.x ?? 0,
@@ -809,6 +821,9 @@ export class GateScene extends EntryScene {
         quests: response.quests,
         completedQuestConfigIds: response.completedQuestConfigIds,
         gold: response.gold,
+        knownSkillIds: response.knownSkillIds,
+        proficiencies: response.proficiencies,
+        numerics: response.numerics,
         starterDungeonCooldownEndAtMs: response.starterDungeonCooldownEndAtMs,
         mapInstanceId: response.mapInstanceId,
         ...this.ClientSpatialMetadata(response.mapId),
@@ -902,6 +917,9 @@ export class GateScene extends EntryScene {
       quests: response.quests,
       completedQuestConfigIds: response.completedQuestConfigIds,
       gold: response.gold,
+      knownSkillIds: response.knownSkillIds,
+      proficiencies: response.proficiencies,
+      numerics: response.numerics,
       starterDungeonCooldownEndAtMs: response.starterDungeonCooldownEndAtMs,
       mapInstanceId: location.mapInstanceId,
       ...this.ClientSpatialMetadata(response.mapId),
@@ -1279,6 +1297,9 @@ export class GateScene extends EntryScene {
       quests: response.quests,
       completedQuestConfigIds: response.completedQuestConfigIds,
       gold: response.gold,
+      knownSkillIds: response.knownSkillIds,
+      proficiencies: response.proficiencies,
+      numerics: response.numerics,
       starterDungeonCooldownEndAtMs: response.starterDungeonCooldownEndAtMs,
       mapInstanceId: response.mapInstanceId,
       ...this.ClientSpatialMetadata(response.mapId),

@@ -5,10 +5,12 @@ import {
   CharacterAccountAlreadyExistsError,
   CreatePasswordCredential,
   type CharacterRecord,
+  type CharacterExtensionState,
   GameErrCode,
   GameConfigs,
   GlobalIdSystem,
   LoginComponent,
+  type PlayerContentProfileComponent,
   RpcError,
   VerifyPassword,
   EncodeLoginToken,
@@ -28,6 +30,7 @@ export class LoginComponentSystem extends LoginComponent {
     gateScenes: readonly SceneConfig[],
     processId: string,
     characterRepository: CharacterRepository,
+    playerContent: PlayerContentProfileComponent,
   ): void {
     if (gateScenes.length === 0) throw new Error("LoginComponent needs at least one Gate Scene");
     this.gateScenes = [...gateScenes].sort((left, right) =>
@@ -35,6 +38,7 @@ export class LoginComponentSystem extends LoginComponent {
     );
     this.processId = processId;
     this.characterRepository = characterRepository;
+    this.playerContent = playerContent;
   }
 
   /** 完成Demo登录，并用账号稳定选择Gate；全部Login实例对同一拓扑会得到相同结果。 / Completes Demo login and selects a stable Gate by account across Login instances sharing the same topology. */
@@ -67,6 +71,7 @@ export class LoginComponentSystem extends LoginComponent {
         account,
         loginCount,
         characterId: selected.characterId,
+        playerConfigId: selected.playerConfigId,
       }),
       gateName: gate.name,
       gateIp: gate.outerIp ?? gate.innerIp,
@@ -76,11 +81,15 @@ export class LoginComponentSystem extends LoginComponent {
     };
   }
 
-  /** 注册账号并创建同名初始角色；密码只以摘要形式进入账号目录。 / Registers an account and creates its same-name starter character; only a digest is stored. */
+  /** 注册账号并用调用方选择的中立玩家模板创建同名初始角色；密码只以摘要形式进入账号目录。 / Registers an account and creates its same-name starter character from the requested neutral player template; only a digest is stored. */
   async Register(request: C2S_Register): Promise<S2C_Register> {
     const account = normalizeAccount(request.account);
     const password = requirePassword(request.password);
-    const character = this.newCharacter(account, account);
+    const character = this.newCharacter(
+      account,
+      account,
+      this.resolvePlayerConfigId(request.playerConfigId),
+    );
     try {
       const created = await Promise.resolve(this.characterRepository.Register(
         account,
@@ -106,12 +115,7 @@ export class LoginComponentSystem extends LoginComponent {
     if (name.length === 0 || name.length > 32) {
       throw new RpcError(GameErrCode.CharacterNameInvalid, "character name must be 1-32 characters");
     }
-    const playerConfigId = request.playerConfigId || 1;
-    try {
-      GameConfigs.PlayerConfig.Get(playerConfigId);
-    } catch {
-      throw new RpcError(GameErrCode.CharacterNameInvalid, `player config not found: ${playerConfigId}`);
-    }
+    const playerConfigId = this.resolvePlayerConfigId(request.playerConfigId);
     const current = await this.characterRepository.Load(account);
     if (!current || current.data.credential.hash.length === 0) {
       throw new RpcError(GameErrCode.AccountNotRegistered, "用户未注册");
@@ -121,7 +125,7 @@ export class LoginComponentSystem extends LoginComponent {
     }
     const created = await Promise.resolve(this.characterRepository.Create(
       account,
-      this.newCharacter(account, name, playerConfigId),
+      this.newCharacter(account, name, playerConfigId, request.extensions),
     ));
     const character = created.data.characters[created.data.characters.length - 1];
     return {
@@ -130,13 +134,39 @@ export class LoginComponentSystem extends LoginComponent {
     };
   }
 
-  private newCharacter(account: string, name: string, playerConfigId = 1): CharacterRecord {
+  private newCharacter(
+    account: string,
+    name: string,
+    playerConfigId = 1,
+    extensions: readonly CharacterExtensionState[] = [],
+  ): CharacterRecord {
     return {
       characterId: this.NextGlobalId(),
       name,
       playerConfigId,
       level: 1,
+      ...(extensions.length > 0
+        ? {
+            extensions: extensions.map((extension) => ({
+              id: extension.id,
+              version: extension.version,
+              payload: extension.payload.slice(),
+            }))
+          }
+        : {}),
     };
+  }
+
+  /** 允许注册和后续创建角色复用同一外置/冷配置校验；0继续表示兼容默认模板1。 / Shares external/cold template validation between registration and later character creation; zero keeps legacy template 1. */
+  private resolvePlayerConfigId(requestedPlayerConfigId: number | undefined): number {
+    const playerConfigId = requestedPlayerConfigId || 1;
+    if (this.playerContent.IsRegistered(playerConfigId)) return playerConfigId;
+    try {
+      GameConfigs.PlayerConfig.Get(playerConfigId);
+      return playerConfigId;
+    } catch {
+      throw new RpcError(GameErrCode.CharacterNameInvalid, `player config not found: ${playerConfigId}`);
+    }
   }
 
   private NextGlobalId(): bigint {
@@ -169,5 +199,10 @@ function toSummary(character: CharacterRecord): import("#tiangz/model").Characte
     name: character.name,
     playerConfigId: character.playerConfigId,
     level: character.level,
+    extensions: (character.extensions ?? []).map((extension) => ({
+      id: extension.id,
+      version: extension.version,
+      payload: extension.payload.slice(),
+    })),
   };
 }

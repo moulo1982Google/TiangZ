@@ -13,6 +13,7 @@ const contractFields = [
   "stableCoreApiHash",
   "nativeSchemaHash",
   "gameConfigSchemaFingerprint",
+  "moduleGraphHash",
   "buildMode",
 ];
 

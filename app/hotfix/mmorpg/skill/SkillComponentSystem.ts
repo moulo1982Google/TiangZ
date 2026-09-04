@@ -8,6 +8,7 @@ import {
   type ItemCooldownPlan,
   type SkillCastCommand,
   type SkillCastState,
+  type SkillProficiencyState,
   type SkillTransferState,
   TimeSystem,
   type Unit,
@@ -18,12 +19,76 @@ import {
 /** Unit级技能状态实现；目标查找、距离与效果结算交给地图级调度器。 / Unit-local skill state; target resolution, range, and effects belong to the map scheduler. */
 @systemFor(SkillComponent)
 export class SkillComponentSystem extends SkillComponent implements ITransfer<SkillTransferState> {
+  protected override Awake(initialSkillIds: readonly number[] = []): void {
+    this.knownSkillIds.clear();
+    this.proficiencyById.clear();
+    for (const skillId of initialSkillIds) {
+      requireSkillId(skillId, "initial skill");
+      this.knownSkillIds.add(skillId);
+    }
+  }
+
   /** Unit销毁时清空瞬态技能状态；不发布网络事件。 / Clears transient skill state on Unit disposal without publishing network events. */
   protected override OnDestroy(): void {
     this.activeCast = null;
     this.queuedCast = null;
     this.cooldownEndBySkillId.clear();
     this.cooldownEndByItemConfigId.clear();
+    this.knownSkillIds.clear();
+    this.proficiencyById.clear();
+  }
+
+  KnowsSkill(skillId: number): boolean {
+    requireSkillId(skillId, "skill");
+    return this.knownSkillIds.has(skillId);
+  }
+
+  KnownSkillIds(): readonly number[] {
+    return Object.freeze([...this.knownSkillIds].sort(numberSort));
+  }
+
+  ApplyCommittedLearnSkill(skillId: number): boolean {
+    requireSkillId(skillId, "learned skill");
+    const size = this.knownSkillIds.size;
+    this.knownSkillIds.add(skillId);
+    return this.knownSkillIds.size !== size;
+  }
+
+  Proficiency(proficiencyId: number): Readonly<SkillProficiencyState> | undefined {
+    requireProficiencyId(proficiencyId);
+    const value = this.proficiencyById.get(proficiencyId);
+    return value ? Object.freeze({ ...value }) : undefined;
+  }
+
+  Proficiencies(): readonly Readonly<SkillProficiencyState>[] {
+    return Object.freeze([...this.proficiencyById.values()]
+      .sort((left, right) => left.proficiencyId - right.proficiencyId)
+      .map((value) => Object.freeze({ ...value })));
+  }
+
+  ProficiencyRank(proficiencyId: number): number {
+    return this.Proficiency(proficiencyId)?.rank ?? 0;
+  }
+
+  ApplyCommittedProficiency(
+    proficiencyId: number,
+    minimumRank: number,
+    maximumRank: number,
+  ): Readonly<SkillProficiencyState> {
+    requireProficiency(proficiencyId, minimumRank, maximumRank);
+    const current = this.proficiencyById.get(proficiencyId);
+    const next = Object.freeze({
+      proficiencyId,
+      rank: Math.max(current?.rank ?? 0, minimumRank),
+      maximumRank: Math.max(current?.maximumRank ?? 0, maximumRank),
+    });
+    if (next.rank > next.maximumRank) {
+      throw new Error(
+        `proficiency ${proficiencyId} rank ${next.rank} exceeds maximum ${next.maximumRank}`,
+      );
+    }
+    this.proficiencyById.set(proficiencyId, next);
+    return Object.freeze({ ...next });
   }
 
   Cast(command: SkillCastCommand): SkillCastState {
@@ -243,6 +308,8 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
         itemCooldowns: [...nextItemCooldowns.entries()]
           .sort(([left], [right]) => left - right)
           .map(([configId, cooldownEndAtMs]) => ({ itemConfigId: configId, cooldownEndAtMs })),
+        knownSkillIds: [...(baseState.knownSkillIds ?? [])],
+        proficiencies: (baseState.proficiencies ?? []).map((entry) => ({ ...entry })),
       },
       result: {
         accepted: true,
@@ -321,6 +388,8 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
     this.globalCooldownEndAtMs = Math.max(0, state.globalCooldownEndAtMs);
     this.cooldownEndBySkillId.clear();
     this.cooldownEndByItemConfigId.clear();
+    this.knownSkillIds.clear();
+    this.proficiencyById.clear();
     const now = TimeSystem.Instance.ServerNow;
     for (const cooldown of state.cooldowns) {
       if (!Number.isSafeInteger(cooldown.skillId) || cooldown.skillId <= 0) {
@@ -338,6 +407,21 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
         this.cooldownEndByItemConfigId.set(cooldown.itemConfigId, cooldown.cooldownEndAtMs);
       }
     }
+    for (const skillId of state.knownSkillIds ?? []) {
+      requireSkillId(skillId, "transferred known skill");
+      this.knownSkillIds.add(skillId);
+    }
+    for (const proficiency of state.proficiencies ?? []) {
+      requireProficiency(
+        proficiency.proficiencyId,
+        proficiency.rank,
+        proficiency.maximumRank,
+      );
+      if (this.proficiencyById.has(proficiency.proficiencyId)) {
+        throw new Error(`duplicate transferred proficiency: ${proficiency.proficiencyId}`);
+      }
+      this.proficiencyById.set(proficiency.proficiencyId, Object.freeze({ ...proficiency }));
+    }
   }
 
   private captureCooldownState(onlyLive: boolean): SkillTransferState {
@@ -353,6 +437,8 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
         .filter(([, endAtMs]) => include(endAtMs))
         .sort(([left], [right]) => left - right)
         .map(([itemConfigId, cooldownEndAtMs]) => ({ itemConfigId, cooldownEndAtMs })),
+      knownSkillIds: this.KnownSkillIds(),
+      proficiencies: this.Proficiencies(),
     };
   }
 
@@ -360,11 +446,25 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
     this.globalCooldownEndAtMs = state.globalCooldownEndAtMs;
     this.cooldownEndBySkillId.clear();
     this.cooldownEndByItemConfigId.clear();
+    this.knownSkillIds.clear();
+    this.proficiencyById.clear();
     for (const cooldown of state.cooldowns) {
       this.cooldownEndBySkillId.set(cooldown.skillId, cooldown.cooldownEndAtMs);
     }
     for (const cooldown of state.itemCooldowns) {
       this.cooldownEndByItemConfigId.set(cooldown.itemConfigId, cooldown.cooldownEndAtMs);
+    }
+    for (const skillId of state.knownSkillIds ?? []) {
+      requireSkillId(skillId, "known skill");
+      this.knownSkillIds.add(skillId);
+    }
+    for (const proficiency of state.proficiencies ?? []) {
+      requireProficiency(
+        proficiency.proficiencyId,
+        proficiency.rank,
+        proficiency.maximumRank,
+      );
+      this.proficiencyById.set(proficiency.proficiencyId, Object.freeze({ ...proficiency }));
     }
   }
 
@@ -377,11 +477,41 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
   }
 }
 
+function requireSkillId(value: number, label: string): void {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${label} id must be a positive safe integer: ${value}`);
+  }
+}
+
+function requireProficiencyId(value: number): void {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`proficiency id must be a positive safe integer: ${value}`);
+  }
+}
+
+function requireProficiency(proficiencyId: number, rank: number, maximumRank: number): void {
+  requireProficiencyId(proficiencyId);
+  if (!Number.isSafeInteger(rank) || rank < 0) {
+    throw new Error(`proficiency ${proficiencyId} rank must be non-negative: ${rank}`);
+  }
+  if (!Number.isSafeInteger(maximumRank) || maximumRank <= 0 || rank > maximumRank) {
+    throw new Error(
+      `proficiency ${proficiencyId} maximum must be positive and at least rank: ${maximumRank}`,
+    );
+  }
+}
+
+function numberSort(left: number, right: number): number {
+  return left - right;
+}
+
 function cloneSkillState(state: SkillTransferState): SkillTransferState {
   return {
     globalCooldownEndAtMs: state.globalCooldownEndAtMs,
     cooldowns: state.cooldowns.map((entry) => ({ ...entry })),
     itemCooldowns: state.itemCooldowns.map((entry) => ({ ...entry })),
+    knownSkillIds: [...(state.knownSkillIds ?? [])],
+    proficiencies: (state.proficiencies ?? []).map((entry) => ({ ...entry })),
   };
 }
 
@@ -395,11 +525,15 @@ function normalizeLiveSkillState(state: SkillTransferState): SkillTransferState 
     itemCooldowns: state.itemCooldowns
       .filter((entry) => entry.cooldownEndAtMs > now)
       .map((entry) => ({ ...entry })),
+    knownSkillIds: [...(state.knownSkillIds ?? [])],
+    proficiencies: (state.proficiencies ?? []).map((entry) => ({ ...entry })),
   };
 }
 
 function skillStatesEqual(left: SkillTransferState, right: SkillTransferState): boolean {
   return left.globalCooldownEndAtMs === right.globalCooldownEndAtMs &&
     JSON.stringify(left.cooldowns) === JSON.stringify(right.cooldowns) &&
-    JSON.stringify(left.itemCooldowns) === JSON.stringify(right.itemCooldowns);
+    JSON.stringify(left.itemCooldowns) === JSON.stringify(right.itemCooldowns) &&
+    JSON.stringify(left.knownSkillIds ?? []) === JSON.stringify(right.knownSkillIds ?? []) &&
+    JSON.stringify(left.proficiencies ?? []) === JSON.stringify(right.proficiencies ?? []);
 }

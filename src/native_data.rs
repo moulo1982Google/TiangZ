@@ -19,8 +19,10 @@ pub(crate) use crate::game::{
     op_native_numeric_set,
 };
 pub(crate) use crate::game::{
-    op_native_unit_reset_movement, op_native_unit_set_movement_input,
-    op_native_unit_set_navigation_input, op_native_unit_set_navigation_target,
+    op_native_unit_apply_grid_movement_snapshot, op_native_unit_relocate,
+    op_native_unit_reset_movement, op_native_unit_set_grid_movement_target,
+    op_native_unit_set_movement_input, op_native_unit_set_navigation_input,
+    op_native_unit_set_navigation_target,
 };
 #[cfg(test)]
 use crate::generated::native_data::{EntityData, UnitData, UnitSplitData};
@@ -32,7 +34,7 @@ use crate::generated::native_data::{
 const INDEX_BITS: u32 = 20;
 const INDEX_MASK: u32 = (1 << INDEX_BITS) - 1;
 const MAX_GENERATION: u32 = (1 << (32 - INDEX_BITS)) - 1;
-const NATIVE_UNIT_RECORD_BYTES: usize = 46;
+const NATIVE_UNIT_RECORD_BYTES: usize = 54;
 const NAVIGATION_INPUT_LEASE_MS: f32 = 1_500.0;
 const NAVIGATION_PATH_TURN_SPEED_RADIANS: f32 = std::f32::consts::TAU;
 
@@ -42,6 +44,7 @@ fn normalize_radians(value: f32) -> f32 {
 
 #[derive(Clone)]
 struct NavigationMovement {
+    target: [f32; 3],
     points: Vec<[f32; 3]>,
     next_point: usize,
     state_changed: bool,
@@ -531,8 +534,254 @@ pub(crate) fn set_unit_movement_input(
         unit.input_changed |= u32::from(unit.input_x != input_x || unit.input_z != input_z);
         unit.input_x = input_x;
         unit.input_z = input_z;
+        unit.grid_goal_active = 0;
         unit.sequence = sequence;
         Ok(true)
+    })
+}
+
+/// 设置Grid2D Unit的最终目标格；Rust逐格连续推进并在精确到达后清除移动输入。 / Sets a Grid2D Unit's final destination so Rust can advance continuously cell by cell and clear movement exactly on arrival.
+pub(crate) fn set_unit_grid_movement_target(
+    handle: u32,
+    target_cell_x: i32,
+    target_cell_z: i32,
+    sequence: u32,
+) -> Result<bool, JsErrorBox> {
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        store.metrics.scalar_sets += 1;
+        let location = store.location(handle)?;
+        let map_id = store
+            .pools
+            .get_unit_cold(location)
+            .ok_or_else(|| wrong_entity_type(handle, "Unit"))?
+            .map_id;
+        if store.navigation_worlds.contains_key(&map_id) {
+            return Err(JsErrorBox::generic(format!(
+                "map {map_id} uses NavMesh movement, not Grid2D targets"
+            )));
+        }
+        let bounds = *store.spatial_bounds.get(&map_id).ok_or_else(|| {
+            JsErrorBox::generic(format!("map {map_id} has no Grid2D spatial state"))
+        })?;
+        if !bounds.contains(target_cell_x, target_cell_z) {
+            return Err(JsErrorBox::generic(format!(
+                "Grid2D movement target is outside map {map_id}: {target_cell_x},{target_cell_z}"
+            )));
+        }
+        let unit = store.get_unit_hot_mut(handle)?;
+        if sequence <= unit.sequence {
+            return Ok(false);
+        }
+        let input_x = (target_cell_x - unit.cell_x).signum() as i8;
+        let input_z = (target_cell_z - unit.cell_z).signum() as i8;
+        unit.input_changed |= u32::from(
+            unit.input_x != input_x
+                || unit.input_z != input_z
+                || unit.grid_goal_active == 0
+                || unit.grid_goal_cell_x != target_cell_x
+                || unit.grid_goal_cell_z != target_cell_z,
+        );
+        unit.input_x = input_x;
+        unit.input_z = input_z;
+        unit.grid_goal_cell_x = target_cell_x;
+        unit.grid_goal_cell_z = target_cell_z;
+        unit.grid_goal_active = 1;
+        unit.sequence = sequence;
+        Ok(true)
+    })
+}
+
+/// 原子写入外部网关已校验的Grid2D位置快照；序号、边界和数值仍在Rust所有权边界重复校验。 / Atomically stores a gateway snapshot already accepted by TS while rechecking sequence, bounds, and numeric validity at the Rust ownership boundary.
+pub(crate) fn apply_unit_grid_movement_snapshot(
+    handle: u32,
+    cell_x: i32,
+    height: f64,
+    cell_z: i32,
+    yaw: f64,
+    moving: bool,
+    sequence: u32,
+) -> Result<bool, JsErrorBox> {
+    let height = height as f32;
+    let yaw = yaw as f32;
+    if !height.is_finite() || !yaw.is_finite() {
+        return Err(JsErrorBox::generic(
+            "external Grid2D movement snapshot must be finite",
+        ));
+    }
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        store.metrics.scalar_sets += 1;
+        let location = store.location(handle)?;
+        let map_id = store
+            .pools
+            .get_unit_cold(location)
+            .ok_or_else(|| wrong_entity_type(handle, "Unit"))?
+            .map_id;
+        let bounds = *store.spatial_bounds.get(&map_id).ok_or_else(|| {
+            JsErrorBox::generic(format!("map {map_id} has no Grid2D spatial state"))
+        })?;
+        if !bounds.contains(cell_x, cell_z) {
+            return Err(JsErrorBox::generic(format!(
+                "external Grid2D movement snapshot is outside map {map_id}: {cell_x},{cell_z}"
+            )));
+        }
+        let x = cell_to_world(cell_x, bounds.cell_size_meters);
+        let z = cell_to_world(cell_z, bounds.cell_size_meters);
+        let yaw = normalize_radians(yaw);
+        {
+            let unit = store.get_unit_hot_mut(handle)?;
+            if sequence <= unit.sequence {
+                return Ok(false);
+            }
+            unit.x = x;
+            unit.y = height;
+            unit.z = z;
+            unit.yaw = yaw;
+            unit.cell_x = cell_x;
+            unit.cell_z = cell_z;
+            unit.target_cell_x = cell_x;
+            unit.target_cell_z = cell_z;
+            unit.move_start_tick = 0;
+            unit.move_end_tick = if moving { u32::MAX } else { 0 };
+            unit.moving = u32::from(moving);
+            unit.facing = facing_from_yaw(yaw);
+            unit.input_x = 0;
+            unit.input_z = 0;
+            unit.grid_goal_active = 0;
+            // Sequence-only heartbeats must still publish an acknowledgement.
+            unit.input_changed = 1;
+            unit.sequence = sequence;
+        }
+        // External snapshots bypass generated X/Z setters, so explicitly enqueue
+        // the accepted position for the next AOI refresh.
+        if store.aoi_worlds.contains_key(&map_id) {
+            store
+                .aoi_dirty_by_map
+                .entry(map_id)
+                .or_default()
+                .insert(handle);
+        }
+        Ok(true)
+    })
+}
+
+/// 由服务端领域效果提交一次无客户端确认序号的权威位移，并在下一固定Tick进入既有AOI移动广播管线。
+/// Applies one server-authored relocation without a client acknowledgement sequence and queues it
+/// into the existing AOI movement pipeline on the next fixed tick.
+pub(crate) fn relocate_unit(
+    map_id: u32,
+    handle: u32,
+    x: f64,
+    y: f64,
+    z: f64,
+    yaw: f64,
+) -> Result<Vec<u8>, JsErrorBox> {
+    let requested = [
+        finite_f32(x, "x")?,
+        finite_f32(y, "y")?,
+        finite_f32(z, "z")?,
+    ];
+    let yaw = normalize_radians(finite_f32(yaw, "yaw")?);
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        store.metrics.scalar_sets += 1;
+        let unit_map_id = store.get_unit_parts(handle)?.1.map_id;
+        if unit_map_id != map_id {
+            return Err(JsErrorBox::generic(format!(
+                "native Unit belongs to map {unit_map_id}, not {map_id}"
+            )));
+        }
+        let bounds = *store
+            .spatial_bounds
+            .get(&map_id)
+            .ok_or_else(|| JsErrorBox::generic(format!("map {map_id} is not configured")))?;
+        let navigation = store.navigation_worlds.contains_key(&map_id);
+        let (position, obstacle_revision) = if navigation {
+            let world = store.navigation_worlds.get(&map_id).ok_or_else(|| {
+                JsErrorBox::generic(format!("NavMesh world is not configured: {map_id}"))
+            })?;
+            let projected = world.project(requested, [2.0, 4.0, 2.0]).ok_or_else(|| {
+                JsErrorBox::generic(format!(
+                    "server relocation is outside NavMesh {map_id}: {},{},{}",
+                    requested[0], requested[1], requested[2]
+                ))
+            })?;
+            (projected, Some(world.obstacle_revision()))
+        } else {
+            let cell_x = (requested[0] / bounds.cell_size_meters).round() as i32;
+            let cell_z = (requested[2] / bounds.cell_size_meters).round() as i32;
+            if !bounds.contains(cell_x, cell_z) {
+                return Err(JsErrorBox::generic(format!(
+                    "server relocation is outside map {map_id}: {cell_x},{cell_z}"
+                )));
+            }
+            (
+                [
+                    cell_to_world(cell_x, bounds.cell_size_meters),
+                    requested[1],
+                    cell_to_world(cell_z, bounds.cell_size_meters),
+                ],
+                None,
+            )
+        };
+        let cell_x = (position[0] / bounds.cell_size_meters).round() as i32;
+        let cell_z = (position[2] / bounds.cell_size_meters).round() as i32;
+        if !bounds.contains(cell_x, cell_z) {
+            return Err(JsErrorBox::generic(format!(
+                "server relocation projection is outside map {map_id}: {cell_x},{cell_z}"
+            )));
+        }
+
+        store.navigation_movements.remove(&handle);
+        store.navigation_directional_inputs.remove(&handle);
+        {
+            let unit = store.get_unit_hot_mut(handle)?;
+            unit.x = position[0];
+            unit.y = position[1];
+            unit.z = position[2];
+            unit.yaw = yaw;
+            unit.cell_x = cell_x;
+            unit.cell_z = cell_z;
+            unit.target_cell_x = cell_x;
+            unit.target_cell_z = cell_z;
+            unit.move_start_tick = 0;
+            unit.move_end_tick = 0;
+            unit.moving = 0;
+            unit.facing = facing_from_yaw(yaw);
+            unit.input_x = 0;
+            unit.input_z = 0;
+            unit.grid_goal_active = 0;
+            // Sequence zero is omitted by protobuf and cannot be mistaken for an
+            // acknowledgement of a client-owned movement snapshot.
+            unit.sequence = 0;
+            unit.input_changed = u32::from(!navigation);
+        }
+        if let Some(obstacle_revision) = obstacle_revision {
+            store.navigation_movements.insert(
+                handle,
+                NavigationMovement {
+                    target: position,
+                    points: vec![position],
+                    next_point: 1,
+                    state_changed: true,
+                    obstacle_revision,
+                },
+            );
+        }
+        if store.aoi_worlds.contains_key(&map_id) {
+            store
+                .aoi_dirty_by_map
+                .entry(map_id)
+                .or_default()
+                .insert(handle);
+        }
+
+        let mut result = Vec::with_capacity(16);
+        for value in [position[0], position[1], position[2], yaw] {
+            result.extend_from_slice(&value.to_le_bytes());
+        }
+        Ok(result)
     })
 }
 
@@ -553,6 +802,7 @@ pub(crate) fn reset_unit_movement(handle: u32) -> Result<(), JsErrorBox> {
             let unit = store.get_unit_hot_mut(handle)?;
             unit.input_x = 0;
             unit.input_z = 0;
+            unit.grid_goal_active = 0;
             unit.input_changed = 0;
             unit.sequence = 0;
             unit.moving = 0;
@@ -565,6 +815,7 @@ pub(crate) fn reset_unit_movement(handle: u32) -> Result<(), JsErrorBox> {
             let unit = store.get_unit_hot_mut(handle)?;
             unit.input_x = 0;
             unit.input_z = 0;
+            unit.grid_goal_active = 0;
             unit.input_changed = 0;
             unit.sequence = 0;
             unit.target_cell_x = unit.cell_x;
@@ -1831,6 +2082,26 @@ pub(crate) fn set_unit_navigation_target(
             result.extend_from_slice(&current_sequence.to_le_bytes());
             return Ok(result);
         }
+        // A repeated server intent must not rebuild or restart an active path.
+        // Callers may submit newer sequence numbers on a periodic AI tick, but
+        // the Rust-owned movement should continue from its current point.  A
+        // changed target still follows the normal path replacement below.
+        let navigation_obstacle_revision = store
+            .navigation_worlds
+            .get(&map_id)
+            .map(|world| world.obstacle_revision());
+        let existing_points = store
+            .navigation_movements
+            .get(&handle)
+            .filter(|movement| {
+                movement.target == target
+                    && Some(movement.obstacle_revision) == navigation_obstacle_revision
+            })
+            .map(|movement| movement.points.clone());
+        if let Some(points) = existing_points {
+            store.get_unit_hot_mut(handle)?.sequence = sequence;
+            return Ok(encode_navigation_intent(sequence, &points));
+        }
         let world = store.navigation_worlds.get(&map_id).ok_or_else(|| {
             JsErrorBox::generic(format!("NavMesh world is not configured: {map_id}"))
         })?;
@@ -1843,12 +2114,14 @@ pub(crate) fn set_unit_navigation_target(
             unit.sequence = sequence;
             unit.input_x = 0;
             unit.input_z = 0;
+            unit.grid_goal_active = 0;
             unit.input_changed = 0;
             unit.moving = u32::from(points.len() > 1);
         }
         store.navigation_movements.insert(
             handle,
             NavigationMovement {
+                target,
                 next_point: usize::from(points.len() > 1),
                 points: points.clone(),
                 state_changed: true,
@@ -1856,10 +2129,7 @@ pub(crate) fn set_unit_navigation_target(
             },
         );
         store.navigation_directional_inputs.remove(&handle);
-        let mut result = Vec::with_capacity(8 + points.len() * 12);
-        result.extend_from_slice(&sequence.to_le_bytes());
-        result.extend_from_slice(&encode_nav_points(&points));
-        Ok(result)
+        Ok(encode_navigation_intent(sequence, &points))
     })
 }
 
@@ -1898,6 +2168,7 @@ pub(crate) fn set_unit_navigation_input(
             unit.yaw = yaw;
             unit.input_x = 0;
             unit.input_z = 0;
+            unit.grid_goal_active = 0;
             unit.input_changed = 0;
             unit.moving = u32::from(forward != 0 || strafe != 0);
         }
@@ -1991,6 +2262,13 @@ fn encode_nav_points(points: impl AsRef<[[f32; 3]]>) -> Vec<u8> {
             bytes.extend_from_slice(&coordinate.to_le_bytes());
         }
     }
+    bytes
+}
+
+fn encode_navigation_intent(sequence: u32, points: &[[f32; 3]]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(8 + points.len() * 12);
+    bytes.extend_from_slice(&sequence.to_le_bytes());
+    bytes.extend_from_slice(&encode_nav_points(points));
     bytes
 }
 
@@ -2162,6 +2440,11 @@ pub(crate) fn op_native_aoi_detach(map_id: u32, handle: u32) -> Result<Uint8Arra
 #[op2]
 /// 刷新 FastOP 写入产生的空间脏实体；同 Cell 写入不会重建邻居关系。 / Refreshes spatially dirty FastOP writes without rebuilding neighbors for same-cell movement.
 pub(crate) fn op_native_aoi_refresh(map_id: u32) -> Result<Uint8Array, JsErrorBox> {
+    refresh_aoi(map_id).map(Into::into)
+}
+
+/// 刷新空间脏实体并返回尚待业务过滤的可见变化。 / Refreshes spatially dirty entities and returns visibility changes awaiting business filters.
+fn refresh_aoi(map_id: u32) -> Result<Vec<u8>, JsErrorBox> {
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         let handles = store.aoi_dirty_by_map.remove(&map_id).unwrap_or_default();
@@ -2187,7 +2470,7 @@ pub(crate) fn op_native_aoi_refresh(map_id: u32) -> Result<Uint8Array, JsErrorBo
             (relocations, world.peek_changes())
         };
         store.metrics.aoi_relocations += relocations;
-        Ok(encode_visibility_changes(&changes).into())
+        Ok(encode_visibility_changes(&changes))
     })
 }
 
@@ -3384,6 +3667,8 @@ fn encode_cell_movement(bytes: &mut Vec<u8>, record: &[u8; NATIVE_UNIT_RECORD_BY
         bytes.push(1);
     }
     write_uint32_field(bytes, 10, read_record_u32(record, 42));
+    write_float_field(bytes, 11, read_record_f32(record, 46));
+    write_float_field(bytes, 12, read_record_f32(record, 50));
 }
 
 fn cell_movement_encoded_len(record: &[u8; NATIVE_UNIT_RECORD_BYTES]) -> usize {
@@ -3397,6 +3682,8 @@ fn cell_movement_encoded_len(record: &[u8; NATIVE_UNIT_RECORD_BYTES]) -> usize {
         + uint32_field_len(8, read_record_u32(record, 38))
         + usize::from(record[17] != 0) * 2
         + uint32_field_len(10, read_record_u32(record, 42))
+        + float_field_len(11, read_record_f32(record, 46))
+        + float_field_len(12, read_record_f32(record, 50))
 }
 
 fn uint32_field_len(field_number: u32, value: u32) -> usize {
@@ -3418,6 +3705,13 @@ fn int64_field_len(field_number: u32, value: i64) -> usize {
         return 0;
     }
     varint_len(field_number << 3) + varint64_len(value as u64)
+}
+
+fn float_field_len(field_number: u32, value: f32) -> usize {
+    if value == 0.0 {
+        return 0;
+    }
+    varint_len((field_number << 3) | 5) + std::mem::size_of::<f32>()
 }
 
 fn varint_len(value: u32) -> usize {
@@ -3507,6 +3801,10 @@ fn read_record_i32(record: &[u8; NATIVE_UNIT_RECORD_BYTES], offset: usize) -> i3
     i32::from_le_bytes(record[offset..offset + 4].try_into().unwrap())
 }
 
+fn read_record_f32(record: &[u8; NATIVE_UNIT_RECORD_BYTES], offset: usize) -> f32 {
+    f32::from_le_bytes(record[offset..offset + 4].try_into().unwrap())
+}
+
 fn update_movement(
     unit: &mut UnitHotData,
     server_tick: u32,
@@ -3522,6 +3820,21 @@ fn update_movement(
         unit.z = cell_to_world(unit.cell_z, bounds.cell_size_meters);
         unit.moving = 0;
         state_changed = true;
+    }
+
+    if unit.moving == 0 && unit.grid_goal_active != 0 {
+        if unit.cell_x == unit.grid_goal_cell_x && unit.cell_z == unit.grid_goal_cell_z {
+            unit.input_x = 0;
+            unit.input_z = 0;
+            unit.grid_goal_active = 0;
+            state_changed = true;
+        } else {
+            let input_x = (unit.grid_goal_cell_x - unit.cell_x).signum() as i8;
+            let input_z = (unit.grid_goal_cell_z - unit.cell_z).signum() as i8;
+            state_changed |= unit.input_x != input_x || unit.input_z != input_z;
+            unit.input_x = input_x;
+            unit.input_z = input_z;
+        }
     }
 
     if unit.moving == 0 && (unit.input_x != 0 || unit.input_z != 0) {
@@ -3545,6 +3858,7 @@ fn update_movement(
         } else {
             unit.input_x = 0;
             unit.input_z = 0;
+            unit.grid_goal_active = 0;
         }
         state_changed = true;
     }
@@ -3567,6 +3881,8 @@ fn encode_snapshot(unit: &UnitHotData, state_changed: bool) -> [u8; NATIVE_UNIT_
     bytes[34..38].copy_from_slice(&unit.move_start_tick.to_le_bytes());
     bytes[38..42].copy_from_slice(&unit.move_end_tick.to_le_bytes());
     bytes[42..46].copy_from_slice(&unit.facing.to_le_bytes());
+    bytes[46..50].copy_from_slice(&unit.y.to_le_bytes());
+    bytes[50..54].copy_from_slice(&unit.yaw.to_le_bytes());
     bytes
 }
 
@@ -3581,6 +3897,18 @@ fn facing_from_input(input_x: i8, input_z: i8) -> u32 {
         2
     } else {
         0
+    }
+}
+
+fn facing_from_yaw(yaw: f32) -> u32 {
+    let input_x = yaw.sin();
+    let input_z = yaw.cos();
+    if input_z.abs() >= input_x.abs() {
+        if input_z >= 0.0 { 3 } else { 0 }
+    } else if input_x < 0.0 {
+        1
+    } else {
+        2
     }
 }
 
@@ -3648,6 +3976,42 @@ mod tests {
         assert!(!bounds.contains(-64, 0));
         assert!(!bounds.contains(0, 31));
         assert!(Grid2DBounds::new(2, 128, 1_000).is_err());
+    }
+
+    #[test]
+    fn server_relocation_grid_snaps_and_queues_an_unacknowledged_stop() {
+        const MAP_ID: u32 = 90_005;
+        let handle = STORE.with(|slot| {
+            let mut store = slot.borrow_mut();
+            *store = NativeEntityStore::default();
+            let mut value = unit(105);
+            value.map_id = MAP_ID;
+            value.sequence = 41;
+            value.input_x = 1;
+            value.moving = 1;
+            store.create(NativeEntityData::Unit(value)).unwrap()
+        });
+        native_spatial_create_grid_2d(MAP_ID, 128, 128, 1_000).unwrap();
+
+        let relocated = relocate_unit(MAP_ID, handle, 5.4, 2.25, -7.6, 0.75).unwrap();
+        let view =
+            |offset: usize| f32::from_le_bytes(relocated[offset..offset + 4].try_into().unwrap());
+        assert_eq!([view(0), view(4), view(8)], [5.0, 2.25, -8.0]);
+        assert!((view(12) - 0.75).abs() < 0.0001);
+
+        assert_eq!(native_map_advance_movement(MAP_ID, 1, 50).unwrap(), 1);
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let unit = store.get_unit_hot(handle).unwrap();
+            assert_eq!([unit.x, unit.y, unit.z], [5.0, 2.25, -8.0]);
+            assert_eq!(unit.sequence, 0);
+            assert_eq!(unit.moving, 0);
+            assert_eq!(unit.input_x, 0);
+            let record = store.pending_movement_records[&MAP_ID].last().unwrap();
+            assert_eq!(read_record_u32(record, 12), 0);
+            assert_eq!(record[16], 1);
+            assert_eq!(record[17], 0);
+        });
     }
 
     #[derive(Deserialize)]
@@ -3844,6 +4208,15 @@ mod tests {
         STORE.with(|slot| {
             assert_eq!(slot.borrow().navigation_worlds[&90_004].obstacle_count(), 1);
         });
+        let refreshed = set_unit_navigation_target(90_004, handle, -12.0, 0.0, 12.0, 2).unwrap();
+        assert_eq!(u32::from_le_bytes(refreshed[0..4].try_into().unwrap()), 2);
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            assert_eq!(
+                store.navigation_movements[&handle].obstacle_revision,
+                store.navigation_worlds[&90_004].obstacle_revision(),
+            );
+        });
         native_map_advance_movement(90_004, 1, 50).unwrap();
         STORE.with(|slot| {
             let store = slot.borrow();
@@ -3907,16 +4280,48 @@ mod tests {
             assert_eq!(unit.moving, 1);
         });
 
+        let before_repeat = STORE.with(|slot| {
+            let store = slot.borrow();
+            (
+                store.get_unit_hot(handle).unwrap().x,
+                store.get_unit_hot(handle).unwrap().z,
+                store.navigation_movements[&handle].next_point,
+            )
+        });
+        let repeated = set_unit_navigation_target(1, handle, 12.0, 0.0, 12.0, 2).unwrap();
+        assert_eq!(u32::from_le_bytes(repeated[0..4].try_into().unwrap()), 2);
+        assert!(u32::from_le_bytes(repeated[4..8].try_into().unwrap()) >= 3);
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let unit = store.get_unit_hot(handle).unwrap();
+            assert_eq!((unit.x, unit.z), (before_repeat.0, before_repeat.1));
+            assert_eq!(
+                store.navigation_movements[&handle].next_point,
+                before_repeat.2
+            );
+        });
+        // A newer sequence with the same endpoint acknowledges the intent but
+        // keeps advancing the existing path instead of restarting at its first
+        // corner, which is what periodic AI callers need.
+        assert_eq!(native_map_advance_movement(1, 3, 200).unwrap(), 1);
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let unit = store.get_unit_hot(handle).unwrap();
+            assert!(unit.x > before_repeat.0 || unit.z > before_repeat.1);
+            assert_eq!(unit.sequence, 2);
+            assert_eq!(unit.moving, 1);
+        });
+
         let stale = set_unit_navigation_target(1, handle, -10.0, 0.0, -10.0, 1).unwrap();
-        assert_eq!(u32::from_le_bytes(stale[0..4].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(stale[0..4].try_into().unwrap()), 2);
         assert_eq!(stale.len(), 4);
 
         let yaw = std::f64::consts::FRAC_PI_2;
         let before_direction = STORE.with(|slot| slot.borrow().get_unit_hot(handle).unwrap().x);
-        let directional = set_unit_navigation_input(1, handle, 1, 0, yaw, 2).unwrap();
-        assert_eq!(u32::from_le_bytes(directional[0..4].try_into().unwrap()), 2);
+        let directional = set_unit_navigation_input(1, handle, 1, 0, yaw, 3).unwrap();
+        assert_eq!(u32::from_le_bytes(directional[0..4].try_into().unwrap()), 3);
         assert_eq!(directional.len(), 4);
-        assert_eq!(native_map_advance_movement(1, 3, 50).unwrap(), 1);
+        assert_eq!(native_map_advance_movement(1, 4, 50).unwrap(), 1);
         STORE.with(|slot| {
             let store = slot.borrow();
             let unit = store.get_unit_hot(handle).unwrap();
@@ -3926,9 +4331,9 @@ mod tests {
             assert!(store.navigation_directional_inputs.contains_key(&handle));
         });
 
-        let stopped = set_unit_navigation_input(1, handle, 0, 0, yaw, 3).unwrap();
-        assert_eq!(u32::from_le_bytes(stopped[0..4].try_into().unwrap()), 3);
-        assert_eq!(native_map_advance_movement(1, 4, 50).unwrap(), 1);
+        let stopped = set_unit_navigation_input(1, handle, 0, 0, yaw, 4).unwrap();
+        assert_eq!(u32::from_le_bytes(stopped[0..4].try_into().unwrap()), 4);
+        assert_eq!(native_map_advance_movement(1, 5, 50).unwrap(), 1);
         STORE.with(|slot| {
             let store = slot.borrow();
             let unit = store.get_unit_hot(handle).unwrap();
@@ -3936,13 +4341,13 @@ mod tests {
             assert!(!store.navigation_movements.contains_key(&handle));
             assert!(!store.navigation_directional_inputs.contains_key(&handle));
             let record = store.pending_navigation_records[&1].last().unwrap();
-            assert_eq!(record.sequence, 3);
+            assert_eq!(record.sequence, 4);
             assert!(!record.moving);
             assert!(record.state_changed);
         });
 
-        set_unit_navigation_input(1, handle, 1, 0, yaw, 4).unwrap();
-        for tick in 5..35 {
+        set_unit_navigation_input(1, handle, 1, 0, yaw, 5).unwrap();
+        for tick in 6..36 {
             native_map_advance_movement(1, tick, 50).unwrap();
         }
         STORE.with(|slot| {
@@ -3950,7 +4355,7 @@ mod tests {
             assert_eq!(store.get_unit_hot(handle).unwrap().moving, 0);
             assert!(!store.navigation_directional_inputs.contains_key(&handle));
             let record = store.pending_navigation_records[&1].last().unwrap();
-            assert_eq!(record.sequence, 4);
+            assert_eq!(record.sequence, 5);
             assert!(!record.moving);
             assert!(record.state_changed);
         });
@@ -4558,6 +4963,73 @@ mod tests {
     }
 
     #[test]
+    fn grid_goal_advances_continuously_and_stops_on_the_exact_cell() {
+        let bounds = Grid2DBounds::new(128, 128, 1_000).unwrap();
+        let mut value = unit_hot(1);
+        value.speed_cells_per_second = 2.5;
+        value.grid_goal_cell_x = 3;
+        value.grid_goal_cell_z = 2;
+        value.grid_goal_active = 1;
+
+        assert!(update_movement(&mut value, 10, 50.0, bounds));
+        assert_eq!((value.target_cell_x, value.target_cell_z), (1, 1));
+        assert_eq!(value.move_end_tick, 22);
+
+        assert!(update_movement(&mut value, 22, 50.0, bounds));
+        assert_eq!((value.cell_x, value.cell_z), (1, 1));
+        assert_eq!((value.target_cell_x, value.target_cell_z), (2, 2));
+        assert_eq!(value.move_end_tick, 34);
+
+        assert!(update_movement(&mut value, 34, 50.0, bounds));
+        assert_eq!((value.cell_x, value.cell_z), (2, 2));
+        assert_eq!((value.target_cell_x, value.target_cell_z), (3, 2));
+        assert_eq!(value.move_end_tick, 42);
+
+        assert!(update_movement(&mut value, 42, 50.0, bounds));
+        assert_eq!((value.cell_x, value.cell_z), (3, 2));
+        assert_eq!((value.input_x, value.input_z), (0, 0));
+        assert_eq!(value.grid_goal_active, 0);
+        assert_eq!(value.moving, 0);
+    }
+
+    #[test]
+    fn grid_movement_target_is_bounded_and_sequence_checked() {
+        let handle = STORE.with(|slot| {
+            let mut store = slot.borrow_mut();
+            *store = NativeEntityStore::default();
+            store
+                .spatial_bounds
+                .insert(1, Grid2DBounds::new(128, 128, 1_000).unwrap());
+            store.create(NativeEntityData::Unit(unit(10))).unwrap()
+        });
+
+        assert!(set_unit_grid_movement_target(handle, 4, -3, 7).unwrap());
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let value = store.get_unit_hot(handle).unwrap();
+            assert_eq!((value.grid_goal_cell_x, value.grid_goal_cell_z), (4, -3));
+            assert_eq!((value.input_x, value.input_z), (1, -1));
+            assert_eq!(value.grid_goal_active, 1);
+            assert_eq!(value.sequence, 7);
+        });
+        assert!(!set_unit_grid_movement_target(handle, 5, -3, 7).unwrap());
+        assert!(
+            set_unit_grid_movement_target(handle, 64, 0, 8)
+                .unwrap_err()
+                .to_string()
+                .contains("outside map")
+        );
+
+        reset_unit_movement(handle).unwrap();
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let value = store.get_unit_hot(handle).unwrap();
+            assert_eq!(value.grid_goal_active, 0);
+            assert_eq!((value.input_x, value.input_z), (0, 0));
+        });
+    }
+
+    #[test]
     fn grid_movement_uses_cell_size_with_meter_speed() {
         let bounds = Grid2DBounds::new(128, 128, 2_000).unwrap();
         let mut value = unit_hot(1);
@@ -4567,6 +5039,119 @@ mod tests {
 
         assert!(update_movement(&mut value, 10, 50.0, bounds));
         assert_eq!(value.move_end_tick, 30);
+    }
+
+    #[test]
+    fn external_grid_snapshot_is_atomic_bounded_and_sequence_checked() {
+        let handle = STORE.with(|slot| {
+            let mut store = slot.borrow_mut();
+            *store = NativeEntityStore::default();
+            store
+                .spatial_bounds
+                .insert(1, Grid2DBounds::new(128, 128, 1_000).unwrap());
+            store.create(NativeEntityData::Unit(unit(10))).unwrap()
+        });
+
+        assert!(apply_unit_grid_movement_snapshot(handle, 2, 3.25, -4, 0.75, true, 7).unwrap());
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let value = store.get_unit_hot(handle).unwrap();
+            assert_eq!((value.cell_x, value.cell_z), (2, -4));
+            assert_eq!((value.x, value.y, value.z), (2.0, 3.25, -4.0));
+            assert!((value.yaw - 0.75).abs() < f32::EPSILON);
+            assert_eq!(value.moving, 1);
+            assert_eq!(value.move_end_tick, u32::MAX);
+            assert_eq!(value.sequence, 7);
+            assert_eq!(value.input_changed, 1);
+        });
+        assert!(!apply_unit_grid_movement_snapshot(handle, 3, 9.0, -3, 1.0, false, 7).unwrap());
+        assert!(
+            apply_unit_grid_movement_snapshot(handle, 64, 0.0, 0, 0.0, false, 8)
+                .unwrap_err()
+                .to_string()
+                .contains("outside map")
+        );
+        assert!(apply_unit_grid_movement_snapshot(handle, 2, 3.5, -4, 0.5, false, 8).unwrap());
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let value = store.get_unit_hot(handle).unwrap();
+            assert_eq!(value.moving, 0);
+            assert_eq!(value.sequence, 8);
+        });
+    }
+
+    #[test]
+    fn external_grid_snapshot_refreshes_aoi_after_crossing_grids() {
+        const MAP_ID: u32 = 90_006;
+        let (observer_handle, _subject_handle) = STORE.with(|slot| {
+            let mut store = slot.borrow_mut();
+            *store = NativeEntityStore::default();
+
+            let mut observer = unit(10);
+            observer.map_id = MAP_ID;
+            let observer_handle = store.create(NativeEntityData::Unit(observer)).unwrap();
+
+            let mut subject = unit(20);
+            subject.map_id = MAP_ID;
+            subject.x = 32.0;
+            subject.cell_x = 32;
+            subject.target_cell_x = 32;
+            let subject_handle = store.create(NativeEntityData::Unit(subject)).unwrap();
+
+            store
+                .spatial_bounds
+                .insert(MAP_ID, Grid2DBounds::new(128, 128, 1_000).unwrap());
+            let mut world = AoiWorld::new(
+                8_000,
+                -64_000,
+                -64_000,
+                16,
+                16,
+                1,
+                1,
+                vec![SyncTier {
+                    radius_grids: 1,
+                    interval_ticks: 1,
+                }],
+            )
+            .unwrap();
+            world.attach_routed(10, 0.0, 0.0, true, true, 1).unwrap();
+            world.take_changes();
+            world.attach_routed(20, 32.0, 0.0, false, true, 0).unwrap();
+            world.take_changes();
+            store.aoi_worlds.insert(MAP_ID, world);
+            (observer_handle, subject_handle)
+        });
+        STORE.with(|slot| {
+            assert!(
+                slot.borrow().aoi_worlds[&MAP_ID]
+                    .visible_subjects(10)
+                    .is_empty()
+            );
+        });
+
+        assert!(
+            apply_unit_grid_movement_snapshot(observer_handle, 32, 0.0, 0, 0.0, false, 1,).unwrap()
+        );
+        STORE.with(|slot| {
+            assert!(slot.borrow().aoi_dirty_by_map[&MAP_ID].contains(&observer_handle));
+        });
+
+        refresh_aoi(MAP_ID).unwrap();
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let world = &store.aoi_worlds[&MAP_ID];
+            assert_eq!(world.visible_subjects(10), vec![20]);
+            assert_eq!(
+                world.peek_changes(),
+                &[VisibilityChange {
+                    observer_id: 10,
+                    subject_id: 20,
+                    visible: true,
+                }]
+            );
+            assert!(!store.aoi_dirty_by_map.contains_key(&MAP_ID));
+        });
     }
 
     #[test]
@@ -4673,6 +5258,9 @@ mod tests {
             input_z: 0,
             input_changed: 0,
             sequence: 0,
+            grid_goal_cell_x: 0,
+            grid_goal_cell_z: 0,
+            grid_goal_active: 0,
         }
     }
 

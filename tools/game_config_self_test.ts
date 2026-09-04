@@ -48,7 +48,7 @@ function main(): void {
   );
   assert.deepEqual(
     serverConfigs.MapConfig.GetAll().map((map) => map.id).sort((left, right) => left - right),
-    [1, 2, 100, 200, 1015, 1020],
+    [1, 2, 100, 200, 201, 1015, 1020],
   );
   assert.equal(serverConfigs.MapConfig.Get(1).spatialMode, 1);
   assert.equal(serverConfigs.MapConfig.Get(1).depthCells, 150);
@@ -58,6 +58,15 @@ function main(): void {
   assert.equal(serverConfigs.MapConfig.Get(1).entryQueueCapacity, 10_000);
   assert.equal(serverConfigs.MapConfig.Get(1015).widthCells, 225);
   assert.equal(serverConfigs.MapConfig.Get(1020).widthCells, 300);
+  const bloodElfMap = serverConfigs.MapConfig.Get(201);
+  assert.equal(bloodElfMap.name, "WoW335 血精灵新手区");
+  assert.equal(bloodElfMap.spatialMode, 1);
+  assert.deepEqual(
+    [bloodElfMap.widthCells, bloodElfMap.depthCells, bloodElfMap.cellSizeMeters],
+    [720, 1200, 1],
+  );
+  assert.equal(bloodElfMap.aoiConfigId_ref?.gridSizeCells, 15);
+  assert.equal(bloodElfMap.entryPlayersPerTick, 1);
   const monsterA = serverConfigs.MonsterConfig.Get(1);
   const monsterB = serverConfigs.MonsterConfig.Get(2);
   assert.equal(monsterA.maxHp, 300);

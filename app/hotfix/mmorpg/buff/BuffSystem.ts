@@ -2,8 +2,11 @@ import {
   ActionType,
   Buff,
   CombatComponent,
-  GameConfigs,
   MapComponent,
+  MonsterComponent,
+  MonsterUnit,
+  NpcComponent,
+  NpcUnit,
   TimeSystem,
   type ActionDefinition,
   type AwakeBuff,
@@ -12,7 +15,12 @@ import {
   Unit,
   systemFor,
 } from "#tiangz/model";
-import { ActionFromConfig, ExecuteAction } from "../action/ActionExecutor";
+import { ExecuteAction } from "../action/ActionExecutor";
+import { RequireBuffDefinition } from "./BuffDefinitionResolver";
+
+type BuffActionExecutionResult = ReturnType<typeof ExecuteAction> & {
+  readonly damagePublishedByTargetBoundary?: boolean;
+};
 
 /**
  * 单个Buff的生命周期实现。Timer只保存方法名，触发时解析当前Hotfix prototype，支持安全热更。
@@ -210,24 +218,44 @@ export class BuffSystem extends Buff {
         ? this.tickAction
         : this.removeAction;
     if (override) return override;
-    const type = phase === "add"
-      ? config.addActionType
+    const configured = phase === "add"
+      ? config.addAction
       : phase === "tick"
-        ? config.tickActionType
-        : config.removeActionType;
-    const parameters = phase === "add"
-      ? config.addActionParams
-      : phase === "tick"
-        ? config.tickActionParams
-        : config.removeActionParams;
-    return ActionFromConfig(type, parameters);
+        ? config.tickAction
+        : config.removeAction;
+    return configured ?? { type: ActionType.None, parameters: [] };
   }
 
   private executePhase(
     action: ActionDefinition,
     phase: string,
     overrides: Partial<import("#tiangz/model").ActionExecutionContext> = {},
-  ): ReturnType<typeof ExecuteAction> {
+  ): BuffActionExecutionResult {
+    if (action.type === ActionType.DealDamage
+      && (this.owner instanceof MonsterUnit || this.owner instanceof NpcUnit)) {
+      const amount = action.parameters[0];
+      const school = Number(action.parameters[1]) as import("#tiangz/model").DamageSchoolValue;
+      if (amount === undefined || action.parameters[1] === undefined) {
+        throw new Error(`buff ${this.configId} damage action requires amount and school`);
+      }
+      const sourceUnitId = overrides.sourceUnitId ?? this.sourceUnitId;
+      const sourceAbilityId = overrides.sourceAbilityId ?? this.sourceAbilityId;
+      const request = {
+        amount,
+        sourceUnitId,
+        abilityId: sourceAbilityId,
+        damageSchool: school,
+      };
+      const damage = this.owner instanceof MonsterUnit
+        ? this.DomainScene().GetComponent(MonsterComponent).ApplyUnitDamage(this.owner, request)
+        : this.DomainScene().GetComponent(NpcComponent).ApplyUnitDamage(this.owner, request);
+      return {
+        changed: damage.finalDamage > 0n || damage.absorbedDamage > 0n,
+        value: damage.remainingHp,
+        damage,
+        damagePublishedByTargetBoundary: true,
+      };
+    }
     return ExecuteAction(this.owner, action, {
       sourceBuffInstanceId: this.Id as bigint,
       sourceUnitId: this.sourceUnitId,
@@ -237,7 +265,7 @@ export class BuffSystem extends Buff {
     });
   }
 
-  private captureLifecycleHandle(result: ReturnType<typeof ExecuteAction>): void {
+  private captureLifecycleHandle(result: BuffActionExecutionResult): void {
     if (result.damageAbsorberModifierId !== undefined) {
       this.damageAbsorberModifierId = result.damageAbsorberModifierId;
     }
@@ -251,11 +279,11 @@ export class BuffSystem extends Buff {
    * channel as skills and monster attacks. Standalone Buff tests without a map
    * component skip presentation only; authoritative numeric resolution stays intact.
    */
-  private publishCombatResult(result: ReturnType<typeof ExecuteAction>, phase: string): void {
+  private publishCombatResult(result: BuffActionExecutionResult, phase: string): void {
     const map = this.tryMap();
     if (!map) return;
     const sourceUnitId = this.sourceUnitId > 0 ? this.sourceUnitId : this.owner.UnitId;
-    const publish = result.damage
+    const publish = result.damage && !result.damagePublishedByTargetBoundary
       ? map.PublishCombatDamage(this.owner, sourceUnitId, result.damage, this.sourceAbilityId)
       : result.healing
         ? map.PublishCombatHealing(this.owner, sourceUnitId, result.healing, this.sourceAbilityId)
@@ -281,7 +309,7 @@ export class BuffSystem extends Buff {
   }
 
   private requireConfig() {
-    return GameConfigs.BuffConfig.Get(this.configId);
+    return RequireBuffDefinition(this.owner, this.configId);
   }
 
   private get owner(): Unit<any[]> {

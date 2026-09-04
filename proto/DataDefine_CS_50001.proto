@@ -18,7 +18,7 @@ message MapEntitySnapshot
   float speed_cells_per_second = 11;
   uint32 facing = 12;
   repeated BuffPublicView buffs = 14;
-  // 1玩家，2怪物，3 NPC；客户端据此选择展示模板。 / 1=player, 2=monster, 3=NPC; clients use this to select a presentation template.
+  // 1玩家，2怪物，3 NPC，4可交互物体，5玩家召唤Unit；客户端据此选择展示模板。 / 1=player, 2=monster, 3=NPC, 4=interactable, 5=player-owned summoned Unit.
   uint32 entity_type = 15;
   // 玩家配置ID或怪物配置ID；不承载运行时状态。 / PlayerConfigId or MonsterConfigId; this is not runtime state.
   uint32 config_id = 16;
@@ -26,6 +26,37 @@ message MapEntitySnapshot
   string display_name = 17;
   // NPC是否提供商店交互；客户端只据此显示入口，价格和权限仍由服务端校验。 / Whether an NPC exposes a shop entry; the server still validates prices and permission.
   bool shop_enabled = 18;
+  // 跨会话稳定实体ID；玩家使用CharacterId，临时实体保持0。 / Stable entity ID across sessions; players use CharacterId and ephemeral entities keep zero.
+  uint64 persistent_id = 19;
+  // 外置游戏模块提供的运行时模型标识；为空时客户端适配器继续使用config_id目录。 / Runtime model identifier supplied by an external game module; empty keeps the adapter's config_id catalog projection.
+  string presentation_model_id = 20;
+  // 持久表现/动画状态；0表示清除。协议适配器决定最终客户端字段。 / Persistent presentation or animation state; zero clears it and adapters own the final client field.
+  uint32 presentation_state_id = 21;
+  // 召唤Unit的当前地图所有者；其他Entity保持0。 / Current map owner for a summoned Unit; zero for other entities.
+  uint32 owner_unit_id = 22;
+  // 所有者跨会话稳定ID；临时所有者或非召唤Entity保持0。 / Stable owner identity across sessions; zero for temporary owners and non-summons.
+  uint64 owner_persistent_id = 23;
+  // 创建该Unit的中立能力ID；客户端协议适配器不得假设它等于目标游戏法术号。 / Neutral ability that created this Unit; adapters must not assume it equals a game spell ID.
+  uint32 created_by_ability_id = 24;
+  // 运行期内容资料；revision为0表示旧发送方未提供，非0时数组和服务字段是完整权威状态。 / Runtime content profile; revision zero means absent, while non-zero makes arrays and service fields authoritative.
+  repeated uint32 quest_starter_config_ids = 25;
+  repeated uint32 quest_ender_config_ids = 26;
+  repeated uint32 shop_item_config_ids = 27;
+  uint32 trainer_id = 28;
+  bool quest_enabled = 29;
+  bool conversation_enabled = 30;
+  bool training_enabled = 31;
+  bool repair_enabled = 32;
+  bool recovery_enabled = 33;
+  // 中立装束/装备集标识；具体客户端适配器负责解析。 / Neutral presentation loadout identifier interpreted by the client adapter.
+  string presentation_loadout_id = 34;
+  // 外置适配器拥有的命名空间能力键；Core不解释其业务含义。 / Namespaced external-adapter capability keys whose business meaning is opaque to Core.
+  repeated string extension_capabilities = 35;
+  uint32 runtime_profile_revision = 36;
+  // 归属Unit当前控制状态；reaction为0表示旧发送方未提供，非0时自动施法列表（包括空列表）是权威状态。
+  // Current owned-Unit controls. Reaction zero means absent; otherwise the autocast list, including empty, is authoritative.
+  uint32 owned_unit_reaction = 37;
+  repeated uint32 auto_cast_ability_ids = 38;
 }
 
 message CellMovementState
@@ -40,6 +71,10 @@ message CellMovementState
   uint32 move_end_tick = 8;
   bool moving = 9;
   uint32 facing = 10;
+  // Grid2D仍保留垂直高度与连续朝向，避免移动增量把2.5D地图压回零高度或四方向。
+  // Grid2D retains height and continuous yaw so movement deltas preserve 2.5D projection.
+  float y = 11;
+  float yaw = 12;
 }
 
 // NavMesh查询返回的米制世界坐标；它是普通协议数据，不暴露引擎Vector3或Detour句柄。
@@ -90,6 +125,9 @@ message ItemSnapshot
   uint32 quality = 4;
   uint32 level = 5;
   uint32 version = 6;
+  optional uint32 durability = 7;
+  optional uint32 max_durability = 8;
+  optional uint32 placement_id = 9;
 }
 
 // 背包权威全量快照；包装层存在但items为空时，明确表示玩家当前背包为空。
@@ -106,6 +144,8 @@ message ShopItemSnapshot
   uint32 item_config_id = 1;
   uint64 buy_price = 2;
   uint64 sell_price = 3;
+  // One purchase operation grants this many item units; defaults to one for legacy content.
+  uint32 purchase_count = 4;
 }
 
 // 玩家交易中的一条具体道具报价；item_id决定扣除哪一个永久Item实体。
@@ -201,6 +241,45 @@ message BuffTransferSnapshot
   repeated int64 remove_action_params = 18;
 }
 
+// 地图迁移时携带的临时召唤物意图；只保存中立定义，不保存Unit、目标、位置或Native句柄。
+// Transfer-safe intent for a temporary owned summon; it carries only neutral
+// definition data and never a Unit, target, position, or Native handle.
+// 归属Unit能力的可迁移目录项；能力ID由外置游戏模块拥有。
+// Transfer-safe owned-Unit ability entry; external game modules own ability IDs.
+message OwnedUnitAbilitySnapshot
+{
+  uint32 ability_id = 1;
+  bool auto_cast_by_default = 2;
+}
+
+message OwnedSummonTransferSnapshot
+{
+  uint32 ownership_slot = 1;
+  uint32 created_by_ability_id = 2;
+  uint32 definition_id = 3;
+  string name = 4;
+  string model_id = 5;
+  uint32 max_hp = 6;
+  uint32 max_mp = 7;
+  uint32 attack_damage = 8;
+  float move_speed = 9;
+  float attack_range = 10;
+  uint32 attack_interval_ms = 11;
+  uint32 attack_damage_school = 12;
+  uint32 attack_ability_id = 13;
+  float follow_distance = 14;
+  float teleport_distance = 15;
+  bool assist_owner = 16;
+  uint32 initial_reaction = 17;
+  float aggressive_acquire_range = 18;
+  uint32 reaction = 19;
+  repeated OwnedUnitAbilitySnapshot abilities = 20;
+  repeated uint32 auto_cast_ability_ids = 21;
+  uint32 resource_regen_amount = 22;
+  uint32 resource_regen_interval_ms = 23;
+  uint32 resource_regen_delay_after_spend_ms = 24;
+}
+
 message SkillCooldownSnapshot
 {
   uint32 skill_id = 1;
@@ -213,12 +292,22 @@ message ItemCooldownSnapshot
   uint64 cooldown_end_at_ms = 2;
 }
 
+// 通用、可持久化的熟练度轨道；具体 ID 及语义由外置游戏模块拥有。
+message SkillProficiencySnapshot
+{
+  uint32 proficiency_id = 1;
+  uint32 rank = 2;
+  uint32 maximum_rank = 3;
+}
+
 // 地图传送保留技能、道具和共享GCD；活动读条不会跨地图恢复。
 message SkillTransferSnapshot
 {
   uint64 global_cooldown_end_at_ms = 1;
   repeated SkillCooldownSnapshot cooldowns = 2;
   repeated ItemCooldownSnapshot item_cooldowns = 3;
+  repeated uint32 known_skill_ids = 4;
+  repeated SkillProficiencySnapshot proficiencies = 5;
 }
 
 // 单个任务目标的权威进度；required由接取时快照固定，不随在线热配置追溯变化。

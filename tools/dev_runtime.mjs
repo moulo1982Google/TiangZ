@@ -3,6 +3,8 @@ import { watch } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
+import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
+
 const root = path.resolve(import.meta.dirname, "..");
 const hotfixRoot = path.join(root, "app", "hotfix");
 const gameConfigWatchTargets = [
@@ -13,6 +15,7 @@ const gameConfigWatchTargets = [
 const defaultConfig = "configs/local/cluster/StartMachine.json";
 const defaultDebugConfig = "configs/local/debug/StartMachine.json";
 const debounceMs = 250;
+let commandEnvironment = process.env;
 
 if (process.argv.includes("--self-test")) {
   selfTest();
@@ -29,19 +32,32 @@ if (process.argv.includes("--self-test")) {
  */
 async function main() {
   const debug = process.argv.includes("--debug");
-  const config = process.argv.slice(2).find((value) => !value.startsWith("--"))
+  const modulesArgument = argumentValue("--modules-dir") ?? process.env.TIANGZ_MODULES_DIR;
+  const moduleCatalog = await loadGameModuleCatalog({
+    projectRoot: root,
+    modulesDirectory: modulesArgument
+      ? path.resolve(root, modulesArgument)
+      : path.join(root, "modules"),
+  });
+  commandEnvironment = {
+    ...process.env,
+    TIANGZ_MODULES_DIR: moduleCatalog.directory,
+  };
+  const config = positionalArguments(process.argv.slice(2))[0]
     ?? (debug ? defaultDebugConfig : defaultConfig);
   if (path.basename(config).toLowerCase() !== "startmachine.json") {
     throw new Error("dev source mode requires a StartMachine.json Watcher config");
   }
 
-  process.stdout.write("[dev] 初次构建 Model/Hotfix 与客户端产物...\n");
+  process.stdout.write(
+    `[dev] 初次构建 Model/Hotfix 与客户端产物，modules=${moduleCatalog.modules.length}...\n`,
+  );
   await runNpm(["run", debug ? "build:debug" : "build"]);
 
   process.stdout.write(`[dev] 启动 Watcher：${config}\n`);
   const runtime = spawn("cargo", ["run", "--bin", "TiangZ", "--", config], {
     cwd: root,
-    env: process.env,
+    env: commandEnvironment,
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -55,12 +71,21 @@ async function main() {
   let pendingGameConfig = false;
   let timer;
 
-  const sourceWatcher = watch(hotfixRoot, { recursive: true }, (_event, filename) => {
-    if (!filename || !filename.endsWith(".ts") || stopping) return;
-    clearTimeout(timer);
-    timer = setTimeout(() => void requestBuild("hotfix"), debounceMs);
+  const hotfixWatchTargets = [...new Set([
+    hotfixRoot,
+    ...moduleCatalog.modules.flatMap((module) => module.entries.hotfixRoots),
+  ])];
+  const sourceWatchers = hotfixWatchTargets.map((source) => {
+    const watcher = watch(source, { recursive: true }, (_event, filename) => {
+      if (!filename || !filename.endsWith(".ts") || stopping) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => void requestBuild("hotfix"), debounceMs);
+    });
+    watcher.on("error", (error) => {
+      stopWithError(`Hotfix 文件监听失败：${source}: ${error.message}`);
+    });
+    return watcher;
   });
-  sourceWatcher.on("error", (error) => stopWithError(`Hotfix 文件监听失败：${error.message}`));
 
   const configWatchers = gameConfigWatchTargets.map(({ source, recursive }) => {
     const watcher = watch(source, { recursive }, (_event, filename) => {
@@ -88,7 +113,7 @@ async function main() {
   const exitCode = await new Promise((resolve) => runtime.once("exit", (code) => resolve(code ?? 1)));
   stopping = true;
   clearTimeout(timer);
-  sourceWatcher.close();
+  for (const watcher of sourceWatchers) watcher.close();
   for (const watcher of configWatchers) watcher.close();
   if (process.exitCode === undefined || process.exitCode === 0) process.exitCode = exitCode;
 
@@ -119,6 +144,7 @@ async function main() {
           process.stdout.write("[dev] Hotfix 已变化，正在生成注册表并检查类型...\n");
           await runNpm(["run", "codegen:scenes"]);
           await runNpm(["run", "typecheck"]);
+          await runNpm(["run", "modules:typecheck"]);
           const output = await runCommand(process.execPath, hotfixBuildArguments(debug), true);
           const candidate = candidateDirectoryFromOutput(output);
           if (!runtime.stdin.writable) throw new Error("Watcher stdin is closed");
@@ -138,7 +164,7 @@ async function main() {
     if (stopping) return;
     stopping = true;
     clearTimeout(timer);
-    sourceWatcher.close();
+    for (const watcher of sourceWatchers) watcher.close();
     for (const watcher of configWatchers) watcher.close();
     if (runtime.stdin.writable) runtime.stdin.write("shutdown\n");
   }
@@ -158,7 +184,7 @@ async function main() {
 async function runCommand(command, args, capture = false, shell = false) {
   const child = spawn(command, args, {
     cwd: root,
-    env: process.env,
+    env: commandEnvironment,
     windowsHide: true,
     shell,
     stdio: ["ignore", "pipe", "pipe"],
@@ -225,6 +251,28 @@ export function hotfixBuildArguments(debug) {
   return ["tools/build_runtime_bundles.mjs", "--hotfix-only", ...(debug ? ["--debug"] : [])];
 }
 
+export function positionalArguments(args) {
+  const result = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index];
+    if (value === "--modules-dir") {
+      index += 1;
+      continue;
+    }
+    if (value.startsWith("--")) continue;
+    result.push(value);
+  }
+  return result;
+}
+
+function argumentValue(name) {
+  const prefix = `${name}=`;
+  const inline = process.argv.find((value) => value.startsWith(prefix));
+  if (inline) return inline.slice(prefix.length);
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] : undefined;
+}
+
 /** 只验证纯解析逻辑，避免自测启动编译器或真实服务器。 / Verifies pure parsing logic without starting compilers or a real server. */
 function selfTest() {
   const parsed = candidateDirectoryFromOutput(
@@ -243,6 +291,15 @@ function selfTest() {
   }
   if (!hotfixBuildArguments(true).includes("--debug")) {
     throw new Error("debug source mode omitted inline sourcemaps");
+  }
+  const positional = positionalArguments([
+    "--debug",
+    "--modules-dir",
+    "../game-modules",
+    "configs/local/cluster/StartMachine.json",
+  ]);
+  if (positional.length !== 1 || !positional[0].endsWith("StartMachine.json")) {
+    throw new Error(`dev runtime positional argument parsing failed: ${positional.join(",")}`);
   }
   const gameConfig = gameConfigCandidateDirectoryFromOutput(
     "[build:game-config] schema=aaa data=bbb candidate=dist/game-config-candidates/0123456789abcdef\n",

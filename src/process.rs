@@ -18,6 +18,7 @@ use sysinfo::{Pid, ProcessesToUpdate, System};
 use tokio::sync::{mpsc as tokio_mpsc, watch};
 
 use crate::config::{ProcessConfig, ProcessSchedulingMode, RuntimeConfig, SceneConfig};
+use crate::data_pack::{LoadedRuntimeDataPack, load_runtime_data_packs};
 use crate::game_config::GameConfigBundle;
 use crate::health::{
     GameObservabilitySnapshot, HealthServer, LatencyObservabilitySnapshot,
@@ -855,6 +856,7 @@ pub async fn run_runtime_config(
     resolved_config: &Path,
     config: RuntimeConfig,
 ) -> Result<()> {
+    let runtime_data_packs = load_runtime_data_packs(resolved_config, &config.process.data_packs)?;
     init_remote_transport();
     let runtime_bundles = RuntimeBundles::load(root)?;
     let game_config_schema_fingerprint =
@@ -869,6 +871,7 @@ pub async fn run_runtime_config(
         game_config = initial_game_config.data_fingerprint(),
         process = %config.process.name,
         scene_count = config.scenes.len(),
+        data_pack_count = runtime_data_packs.len(),
         config = %resolved_config.display(),
         "starting process with one V8"
     );
@@ -969,6 +972,7 @@ pub async fn run_runtime_config(
             known_scenes,
             runtime_bundles,
             initial_game_config,
+            runtime_data_packs,
             event_rx,
             runtime_control_rx,
             runtime_writers,
@@ -1132,6 +1136,7 @@ fn run_process_runtime(
     known_scenes: Vec<SceneConfig>,
     runtime_bundles: RuntimeBundles,
     initial_game_config: GameConfigBundle,
+    runtime_data_packs: Vec<LoadedRuntimeDataPack>,
     mut event_rx: ProcessEventReceiver,
     runtime_control_rx: mpsc::Receiver<RuntimeControl>,
     writers: ConnectionWriters,
@@ -1225,6 +1230,7 @@ fn run_process_runtime(
         "scenes": scenes,
         "knownScenes": known_scenes,
         "tickMs": process.game.fixed_update_ms,
+        "dataPacks": runtime_data_packs,
     });
     let start_result = call_js_start_process(
         &js_event_loop,

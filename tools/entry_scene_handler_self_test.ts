@@ -390,7 +390,10 @@ async function testRuntimePumpFairness(): Promise<void> {
   const runtime = new ProcessRuntime({
     process: {
       name: "runtime-pump-fairness-self-test",
-      game: { fixedUpdateMs: 10, maxCatchUpSteps: 2 },
+      // This test isolates ingress fairness. Keep the catch-up cap well above
+      // scheduler/GC pauses so an unrelated wall-clock stall cannot turn the
+      // fixed-tick progress assertion into a timing flake.
+      game: { fixedUpdateMs: 10, maxCatchUpSteps: 128 },
       scheduling: { maxEventsPerUpdate: 8 },
     },
     scenes: [first, second],

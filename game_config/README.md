@@ -27,6 +27,8 @@ npm run test:game-config
 
 生成文件全部位于`app/generated/model/config`、`client_sdk/typescript/Generated/Config`和`game_config/generated`，禁止手工修改。字段分组使用Luban约定：`c`仅客户端、`s`仅服务端、`c,s`两端共享。
 
+外置游戏模块不把自己的表并入本目录。它在模块仓库内维护独立`game_config/luban.conf`和Schema，并通过`tiangz.module.json.gameConfig`声明输入输出，再执行`npm run modules:codegen-config -- --module-root <模块目录>`。两者复用Core固定的Luban工具链和指纹规则，但表结构所有权彼此隔离；第三方数据库导入器只能生成模块的Luban源数据，不能新增另一套运行时配置加载器。完整约束见[外置游戏模块](../docs/design/external-game-modules.md)。
+
 - 表、字段、类型、分组和引用关系属于Model，修改后必须执行完整`npm run build`并重启Process。
 - 只改行数据或字段值时，在线热更使用`build:game-config`并在Watcher终端执行`reload-config <候选目录>`；准备重启服务器则使用`build:game-config:startup`更新`dist/game-config`。
 - `npm run dev -- configs/local/cluster/StartMachine.json`会监听Excel并自动生成、校验和切换。
@@ -85,6 +87,8 @@ Action当前支持：
 | `6` | `Heal` | `amount` | 统一进入`CombatComponent.ApplyHealing` |
 | `7` | `GrantItem` | `ItemConfigId, count` | 交给Inventory合并堆叠或拆分新Item |
 | `8` | `HealFromResolvedDamagePercent` | `percent` | 按同一技能效果链最近一次实际伤害治疗当前目标；必须位于`DealDamage`之后且以施法者为目标 |
+| `9` | `ChangeNumericBatch` | 一个或多个`NumericType, delta`二元组 | 完整预检后同步修改多项非派生普通数值；拒绝`CurrentHp`和重复类型 |
+| `10` | `RemoveBuffsByEffectTags` | 一个或多个正整数效果标签 | 删除命中任一不透明标签的全部Buff；标签业务含义由内容模块拥有 |
 
 表结构、Action ID和参数形状属于Model，改列或类型必须完整生成并重启；只改数值行时按Hot配置流程生成候选并Reload。生成器会校验参数数量、Buff外键、伤害类型、派生Numeric写入和重复技能效果顺序，不要依赖运行到战斗时才发现坏数据。更完整的调用边界见[Action与Buff设计](../docs/design/action-buff.md)。
 
@@ -114,6 +118,8 @@ Action当前支持：
 - `AoiSyncTierConfig.sync_hz`：本档可覆盖状态的最高同步频率，外层不得高于内层，并且必须整除服务端20Hz逻辑Tick。
 
 Demo Map 100 当前选择`MapConfig.aoi_config_id=2`作为宽视野演示：7×7 Grid建立可见关系、9×9 Grid作为Detach迟滞边界。它只用于让出生点观察远端怪物，不是全局默认值；新地图应按实际空间和玩家密度选择自己的Cold配置。
+
+开放世界的“附近内容太少”必须先区分刷点数量与可见范围：刷点仍由内容包提供，`MapConfig.aoi_config_id`只决定玩家能观察到其中多大的邻域。以观察者所在Grid为中心，奇数边长`N`对应每侧`(N - 1) / 2`个Grid；近似物理半径为`(N - 1) / 2 × grid_size_cells × cell_size_meters`。大地图应复用独立的宽视野Cold配置，不能通过复制刷点或地图专用代码伪造密度。当前通用`Large World AOI`配置使用15米Grid、15×15 Enter和17×17 Detach，近圈5×5以20Hz同步、外圈17×17以5Hz同步；具体地图仅在`MapConfig`中选择它。
 
 Grid数量不单独配置，而是由`MapConfig.width_cells/depth_cells ÷ AoiConfig.grid_size_cells`推导；地图米制尺寸等于`width_cells/depth_cells × cell_size_meters`。地图制作流程决定物理边界并把结果写入MapConfig，运行时只接受能完整切成AOI Grid的尺寸，避免边缘出现半个Grid或多份尺寸配置互相冲突。
 

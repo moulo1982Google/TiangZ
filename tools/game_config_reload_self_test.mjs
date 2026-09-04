@@ -188,10 +188,17 @@ async function waitFor(predicate, timeoutMs, message) {
 
 function waitForExit(timeoutMs) {
   if (watcher.exitCode !== null) return Promise.resolve({ code: watcher.exitCode, signal: watcher.signalCode });
-  return Promise.race([
-    new Promise((resolve) => watcher.once("exit", (code, signal) => resolve({ code, signal }))),
-    sleep(timeoutMs).then(() => ({ code: null, signal: "timeout" })),
-  ]);
+  return new Promise((resolve) => {
+    const onExit = (code, signal) => {
+      clearTimeout(timeout);
+      resolve({ code, signal });
+    };
+    const timeout = setTimeout(() => {
+      watcher.removeListener("exit", onExit);
+      resolve({ code: null, signal: "timeout" });
+    }, timeoutMs);
+    watcher.once("exit", onExit);
+  });
 }
 
 function appendOutput(chunk) {

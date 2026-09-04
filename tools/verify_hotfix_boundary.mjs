@@ -3,8 +3,16 @@ import path from "node:path";
 import process from "node:process";
 
 import ts from "typescript";
+import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
+const moduleDirectoryArgument = argumentValue("--modules-dir") ?? process.env.TIANGZ_MODULES_DIR;
+const moduleCatalog = await loadGameModuleCatalog({
+  projectRoot: root,
+  modulesDirectory: moduleDirectoryArgument
+    ? path.resolve(root, moduleDirectoryArgument)
+    : path.join(root, "modules"),
+});
 const hotfixRoot = path.join(root, "app", "hotfix");
 const decoratorFixture = path.join(root, "tools", "fixtures", "hotfix-decorator-alias.fixture.ts");
 const modelRoots = [
@@ -24,11 +32,21 @@ const handlerDecorators = new Set([
   "unitRpcHandler",
   "syncEventHandler",
   "vetoEventHandler",
+  "entityExtensionHandler",
 ]);
 const configFile = ts.readConfigFile(path.join(root, "tsconfig.json"), ts.sys.readFile);
 if (configFile.error) throw new Error(formatDiagnostic(configFile.error));
 const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, root);
-const program = ts.createProgram([...parsed.fileNames, decoratorFixture], parsed.options);
+const moduleFiles = [];
+for (const module of moduleCatalog.modules) {
+  for (const directory of [...module.entries.modelRoots, ...module.entries.hotfixRoots]) {
+    moduleFiles.push(...await collect(directory));
+  }
+}
+const program = ts.createProgram(
+  [...new Set([...parsed.fileNames, decoratorFixture, ...moduleFiles])],
+  parsed.options,
+);
 const checker = program.getTypeChecker();
 
 verifyDecoratorAliasFixture(program, checker);
@@ -52,6 +70,31 @@ for (const modelRoot of modelRoots) {
       true,
     );
     inspectImports(file, tree, false);
+  }
+}
+for (const module of moduleCatalog.modules) {
+  for (const directory of module.entries.hotfixRoots) {
+    for (const file of await collect(directory)) {
+      const tree = program.getSourceFile(file) ?? ts.createSourceFile(
+        file,
+        await readFile(file, "utf8"),
+        ts.ScriptTarget.Latest,
+        true,
+      );
+      inspectModuleImports(module, file, tree, true);
+      inspectHotfixClasses(file, tree, checker);
+    }
+  }
+  for (const directory of module.entries.modelRoots) {
+    for (const file of await collect(directory)) {
+      const tree = program.getSourceFile(file) ?? ts.createSourceFile(
+        file,
+        await readFile(file, "utf8"),
+        ts.ScriptTarget.Latest,
+        true,
+      );
+      inspectModuleImports(module, file, tree, false);
+    }
   }
 }
 
@@ -82,6 +125,30 @@ function inspectImports(file, tree, hotfix) {
     }
     if (value.includes("/hotfix") || value.startsWith("#tiangz/hotfix")) {
       errors.push(`${relative(file)}: Model/Core禁止依赖Hotfix: ${value}`);
+    }
+  }
+}
+
+function inspectModuleImports(module, file, tree, hotfix) {
+  for (const statement of tree.statements) {
+    if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement)) continue;
+    const specifier = statement.moduleSpecifier;
+    if (!specifier || !ts.isStringLiteral(specifier)) continue;
+    const value = specifier.text;
+    if (hotfix && (value === "#tiangz/model" || value === "#tiangz/module")) continue;
+    if (!hotfix && (value === "#tiangz/core" || value === "#tiangz/model")) continue;
+    if (!value.startsWith(".")) {
+      errors.push(
+        `${relative(file)}: 游戏模块${hotfix ? "Hotfix" : "Model"}只能使用稳定入口或同层相对导入: ${value}`,
+      );
+      continue;
+    }
+    const target = path.resolve(path.dirname(file), value);
+    const roots = hotfix ? module.entries.hotfixRoots : module.entries.modelRoots;
+    if (!roots.some((directory) => isWithin(target, directory))) {
+      errors.push(
+        `${relative(file)}: 游戏模块${hotfix ? "Hotfix" : "Model"}相对导入越过声明边界: ${value}`,
+      );
     }
   }
 }
@@ -174,4 +241,12 @@ function relative(file) {
 
 function formatDiagnostic(diagnostic) {
   return ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
+}
+
+function argumentValue(name) {
+  const prefix = `${name}=`;
+  const inline = process.argv.find((value) => value.startsWith(prefix));
+  if (inline) return inline.slice(prefix.length);
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] : undefined;
 }

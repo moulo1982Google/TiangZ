@@ -20,6 +20,13 @@ export interface NativeNavigationIntent {
   readonly points: readonly NativeVec3[];
 }
 
+export interface NativeRelocation {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly yaw: number;
+}
+
 export interface NativeRaycastHit {
   readonly hit: boolean;
   readonly fraction: number;
@@ -180,6 +187,42 @@ export class NativeData {
     sequence: number,
   ): boolean {
     return NativeOps.UnitSetMovementInput(handle, inputX, inputZ, sequence);
+  }
+
+  /** 设置Grid2D最终目标格，由Rust连续推进并精确停靠；玩家持续方向输入仍走独立入口。 / Sets a final Grid2D destination for continuous Rust advancement and exact arrival while player input keeps its separate continuous semantics. */
+  static SetGridMovementTarget(
+    handle: number,
+    targetCellX: number,
+    targetCellZ: number,
+    sequence: number,
+  ): boolean {
+    return NativeOps.UnitSetGridMovementTarget(
+      handle,
+      targetCellX,
+      targetCellZ,
+      sequence,
+    );
+  }
+
+  /** 原子写入地图策略已验收的Grid2D位置快照；Rust再次校验序号和边界。 / Atomically writes a map-policy-approved Grid2D snapshot while Rust rechecks sequence and bounds. */
+  static ApplyGridMovementSnapshot(
+    handle: number,
+    cellX: number,
+    height: number,
+    cellZ: number,
+    yaw: number,
+    moving: boolean,
+    sequence: number,
+  ): boolean {
+    return NativeOps.UnitApplyGridMovementSnapshot(
+      handle,
+      cellX,
+      height,
+      cellZ,
+      yaw,
+      moving,
+      sequence,
+    );
   }
 
   /** 玩家重连时清空排队移动，避免旧输入继续驱动玩家。 / Clears queued movement when a player reconnects so stale input cannot continue moving it. */
@@ -404,6 +447,33 @@ export class NativeData {
       yaw,
       sequence,
     ));
+  }
+
+  /** 提交一次服务端权威位移；Rust负责地图校验、NavMesh投影或Grid吸附，并由常规AOI移动管线广播。 / Submits one server-authored relocation; Rust validates the map, projects or grid-snaps the point, and publishes it through the normal AOI movement pipeline. */
+  static RelocateUnit(
+    mapId: number,
+    handle: number,
+    target: NativeVec3,
+    yaw: number,
+  ): NativeRelocation {
+    const bytes = NativeOps.UnitRelocate(
+      mapId,
+      handle,
+      target.x,
+      target.y,
+      target.z,
+      yaw,
+    );
+    if (bytes.byteLength !== 16) {
+      throw new Error(`invalid native relocation result length: ${bytes.byteLength}`);
+    }
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return {
+      x: view.getFloat32(0, true),
+      y: view.getFloat32(4, true),
+      z: view.getFloat32(8, true),
+      yaw: view.getFloat32(12, true),
+    };
   }
 
   /** 地图销毁时释放实例私有空间状态；共享导航资产不由该调用卸载。 / Releases per-instance spatial state on map disposal without unloading shared navigation assets. */

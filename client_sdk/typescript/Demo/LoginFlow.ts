@@ -4,6 +4,7 @@ import {
   endpointWithAddress,
 } from "../Core/Net/ClientTransport";
 import type {
+  CharacterExtension,
   G2C_EnterMap,
   G2C_MapReady,
   G2C_SessionReplaced,
@@ -193,6 +194,7 @@ export class LoginFlow {
     account: string,
     name: string,
     playerConfigId = 1,
+    extensions: readonly CharacterExtension[] = [],
   ): Promise<S2C_CreateCharacter> {
     const manager = this.createSocket(this.loginMgrEndpoint);
     let loginAddress;
@@ -210,6 +212,7 @@ export class LoginFlow {
         account,
         name,
         playerConfigId,
+        extensions,
       });
     } finally {
       this.closeSocket(loginSocket);

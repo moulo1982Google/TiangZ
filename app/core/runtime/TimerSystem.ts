@@ -36,6 +36,11 @@ interface TimerEntry {
 }
 
 export class TimerSystem extends Singleton {
+  /** 运行时引导已安装定时器服务时返回实例。 / Returns the process timer service after runtime bootstrap installs it. */
+  static TryGetInstance(): TimerSystem | undefined {
+    return SingletonRegistry.TryGet(TimerSystem);
+  }
+
   private readonly timers = new Map<TimerId, TimerEntry>();
   private readonly heap: TimerEntry[] = [];
 

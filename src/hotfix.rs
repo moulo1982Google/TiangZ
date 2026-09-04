@@ -25,6 +25,8 @@ struct ModelManifest {
     stable_core_api_hash: String,
     native_schema_hash: String,
     game_config_schema_fingerprint: String,
+    #[serde(default)]
+    module_graph_hash: String,
     build_mode: String,
 }
 
@@ -39,6 +41,8 @@ struct HotfixManifest {
     stable_core_api_hash: String,
     native_schema_hash: String,
     game_config_schema_fingerprint: String,
+    #[serde(default)]
+    module_graph_hash: String,
     hotfix_hash: String,
     build_mode: String,
 }
@@ -135,6 +139,7 @@ impl RuntimeBundles {
             "stableCoreApiHash": self.model_manifest.stable_core_api_hash,
             "nativeSchemaHash": self.model_manifest.native_schema_hash,
             "gameConfigSchemaFingerprint": self.model_manifest.game_config_schema_fingerprint,
+            "moduleGraphHash": self.model_manifest.module_graph_hash,
             "buildMode": self.model_manifest.build_mode,
         })
     }
@@ -301,6 +306,11 @@ fn verify_hotfix_contract(
         &model.game_config_schema_fingerprint,
         &hotfix.game_config_schema_fingerprint,
     )?;
+    require_equal(
+        "moduleGraphHash",
+        &model.module_graph_hash,
+        &hotfix.module_graph_hash,
+    )?;
     require_equal("buildMode", &model.build_mode, &hotfix.build_mode)
 }
 
@@ -341,4 +351,42 @@ fn require_equal(name: &str, model: &str, hotfix: &str) -> Result<()> {
 
 fn elapsed_ms(started_at: Instant) -> f64 {
     started_at.elapsed().as_secs_f64() * 1_000.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hotfix_rejects_a_different_game_module_graph() {
+        let bytes = b"fixture-hotfix";
+        let hash = format!("{:x}", Sha256::digest(bytes));
+        let model = ModelManifest {
+            format_version: 1,
+            model_fingerprint: "model".into(),
+            model_source_hash: "source".into(),
+            protocol_fingerprint: "protocol".into(),
+            stable_core_api_hash: "core".into(),
+            native_schema_hash: "native".into(),
+            game_config_schema_fingerprint: "config".into(),
+            module_graph_hash: "graph-a".into(),
+            build_mode: "demo".into(),
+        };
+        let hotfix = HotfixManifest {
+            format_version: 1,
+            bundle_version: "fixture".into(),
+            model_fingerprint: model.model_fingerprint.clone(),
+            model_source_hash: model.model_source_hash.clone(),
+            protocol_fingerprint: model.protocol_fingerprint.clone(),
+            stable_core_api_hash: model.stable_core_api_hash.clone(),
+            native_schema_hash: model.native_schema_hash.clone(),
+            game_config_schema_fingerprint: model.game_config_schema_fingerprint.clone(),
+            module_graph_hash: "graph-b".into(),
+            hotfix_hash: hash,
+            build_mode: model.build_mode.clone(),
+        };
+
+        let error = verify_hotfix_contract(&model, bytes, &hotfix).unwrap_err();
+        assert!(error.to_string().contains("moduleGraphHash"));
+    }
 }

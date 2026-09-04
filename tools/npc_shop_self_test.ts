@@ -6,6 +6,7 @@ import {
   CurrencyComponent,
   GameConfigRegistry,
   GameConfigs,
+  ItemContentProfileComponent,
   MapComponent,
   PlayerPersistenceComponent,
   type PlayerUnit,
@@ -51,7 +52,7 @@ async function main(): Promise<void> {
   const inventory = new FakeInventory([
     item(9001n, 1201, 2),
   ]);
-  const currency = new FakeCurrency(100n);
+  const currency = new FakeCurrency(300n);
   const persistence = new FakePersistence();
   const publishedItems: ItemSnapshot[] = [];
   const map = {
@@ -69,6 +70,19 @@ async function main(): Promise<void> {
       return inventory as T;
     },
     DomainScene: () => ({
+      TryGetComponent<T>(ctor: unknown): T | undefined {
+        if (ctor !== ItemContentProfileComponent) return undefined;
+        return {
+          IncludesColdContent: false,
+          TryGetDefinition(itemConfigId: number) {
+            return new Map([
+              [1001, externalItem(1001, 50, 10, 5)],
+              [1003, externalItem(1003, 50, 10, 1)],
+              [1201, externalItem(1201, 0, 10, 1)],
+            ]).get(itemConfigId);
+          },
+        } as T;
+      },
       GetComponent<T>(ctor: unknown): T {
         assert.equal(ctor, MapComponent);
         return map as T;
@@ -76,9 +90,10 @@ async function main(): Promise<void> {
     }),
   } as unknown as PlayerUnit;
   const npc = {
-    ValidateShopInteraction(receivedPlayer: PlayerUnit, npcUnitId: number): void {
+    ValidateShopInteraction(receivedPlayer: PlayerUnit, npcUnitId: number): { ShopItemConfigIds: readonly number[] } {
       assert.equal(receivedPlayer, player);
       assert.equal(npcUnitId, 0x4000_0002);
+      return { ShopItemConfigIds: [] };
     },
   };
   const shop = Object.create(ShopSystem.prototype) as NpcShopComponentSystem;
@@ -89,7 +104,8 @@ async function main(): Promise<void> {
 
   const opened = shop.Open(player, 0x4000_0002);
   assert.deepEqual(opened.items.map((value) => value.itemConfigId), [1001, 1003]);
-  assert.equal(opened.gold, 100n);
+  assert.equal(opened.gold, 300n);
+  assert.equal(opened.items[0]?.purchaseCount, 5);
   assert.ok(opened.inventory);
   assert.deepEqual(opened.inventory.items, inventory.Snapshot());
 
@@ -102,16 +118,16 @@ async function main(): Promise<void> {
   const bought = await shop.Buy(player, buyRequest);
   assert.equal(bought.itemConfigId, 1001);
   assert.equal(bought.count, 1);
-  assert.equal(bought.gold, 50n);
-  assert.equal(currency.gold, 50n);
-  assert.equal(inventory.Count(1001), 1);
+  assert.equal(bought.gold, 250n);
+  assert.equal(currency.gold, 250n);
+  assert.equal(inventory.Count(1001), 5);
 
   // 同一个operationId重复到达时只能返回第一次回执，不能再次增加药品或扣金币。
   // Replaying one operationId returns the first receipt and must not grant or charge again.
   const duplicateBuy = await shop.Buy(player, buyRequest);
   assert.deepEqual(duplicateBuy, bought);
-  assert.equal(currency.gold, 50n);
-  assert.equal(inventory.Count(1001), 1);
+  assert.equal(currency.gold, 250n);
+  assert.equal(inventory.Count(1001), 5);
 
   const sellRequest = {
     npcUnitId: 0x4000_0002,
@@ -122,20 +138,42 @@ async function main(): Promise<void> {
   const sold = await shop.Sell(player, sellRequest);
   assert.equal(sold.itemConfigId, 1201);
   assert.equal(sold.count, 1);
-  assert.equal(sold.gold, 60n);
-  assert.equal(currency.gold, 60n);
+  assert.equal(sold.gold, 260n);
+  assert.equal(currency.gold, 260n);
   assert.equal(inventory.Count(1201), 1);
 
   // 出售重试同样不能再次扣除同一Item，也不能重复发放金币。
   // Selling the same operation again must not consume the Item or mint more gold.
   const duplicateSell = await shop.Sell(player, sellRequest);
   assert.deepEqual(duplicateSell, sold);
-  assert.equal(currency.gold, 60n);
+  assert.equal(currency.gold, 260n);
   assert.equal(inventory.Count(1201), 1);
   assert.equal(publishedItems.length, 4);
 
   await SingletonRegistry.DestroyAll();
   console.log("NPC shop self-test passed");
+}
+
+function externalItem(
+  id: number,
+  buyPrice: number,
+  sellPrice: number,
+  purchaseCount: number,
+) {
+  return {
+    id,
+    name: `External item ${id}`,
+    quality: 1,
+    level: 1,
+    maxStack: 200,
+    useEffect: 0,
+    useParams: [],
+    cooldownMs: 0,
+    globalCooldownMs: 0,
+    buyPrice,
+    sellPrice,
+    purchaseCount,
+  };
 }
 
 function item(itemId: bigint, configId: number, count: number, version = 1): ItemSnapshot {

@@ -12,7 +12,7 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "d351b67abe24d8d681e0a13394d3a41519be28503fd5f5b4e8fa1aea98be4dd4";
+    public const string Value = "3abe02c247604c1bc417f8d33c75da28c5236e733f242d46224667cb720b3a33";
 }
 
 public static class MsgCode
@@ -27,22 +27,30 @@ public static class MsgCode
     public const ushort C2M_BuyNpcShopItem = 10070;
     public const ushort C2M_CancelPlayerTrade = 10082;
     public const ushort C2M_CastSkill = 10047;
+    public const ushort C2M_CommandOwnedUnit = 10104;
     public const ushort C2M_CompleteQuest = 10054;
     public const ushort C2M_ConfirmPlayerTrade = 10080;
     public const ushort C2M_FindPath = 10032;
     public const ushort C2M_InspectLootMonster = 10064;
+    public const ushort C2M_LearnTrainerSkill = 10091;
     public const ushort C2M_LootMonster = 10062;
     public const ushort C2M_MapProbe = 10014;
     public const ushort C2M_Move = 10013;
     public const ushort C2M_NavigateInput = 10037;
     public const ushort C2M_NavigateTo = 10034;
     public const ushort C2M_OpenNpcShop = 10068;
+    public const ushort C2M_ReleaseDeadPlayer = 10098;
+    public const ushort C2M_RepairItems = 10096;
     public const ushort C2M_RequestPlayerTrade = 10074;
     public const ushort C2M_RespondPlayerTrade = 10076;
+    public const ushort C2M_RevivePlayer = 10088;
     public const ushort C2M_SellItem = 10072;
     public const ushort C2M_ToggleAutoAttack = 10044;
     public const ushort C2M_ToggleDemoDoor = 10039;
+    public const ushort C2M_TriggerMonsterSignal = 10102;
+    public const ushort C2M_TriggerNpcInteraction = 10100;
     public const ushort C2M_UpdatePlayerTradeOffer = 10078;
+    public const ushort C2M_UseInteractable = 10094;
     public const ushort C2M_UseItem = 10019;
     public const ushort C2S_CreateCharacter = 10057;
     public const ushort C2S_GetLoginServiceAddr = 10002;
@@ -53,6 +61,7 @@ public static class MsgCode
     public const ushort G2C_BuffAdded = 10026;
     public const ushort G2C_BuffDetail = 10028;
     public const ushort G2C_BuffRemoved = 10027;
+    public const ushort G2C_CombatResult = 10090;
     public const ushort G2C_DemoDoorState = 10041;
     public const ushort G2C_EnterMap = 10011;
     public const ushort G2C_EnterStarterDungeon = 10067;
@@ -76,26 +85,35 @@ public static class MsgCode
     public const ushort G2C_SkillCastState = 10049;
     public const ushort G2C_SkillImpact = 10051;
     public const ushort G2C_SkillProjectile = 10050;
+    public const ushort G2C_UnitPresentation = 10093;
     public const ushort M2C_AcceptQuest = 10053;
     public const ushort M2C_AttackMonster = 10043;
     public const ushort M2C_BuyNpcShopItem = 10071;
     public const ushort M2C_CancelPlayerTrade = 10083;
     public const ushort M2C_CastSkill = 10048;
+    public const ushort M2C_CommandOwnedUnit = 10105;
     public const ushort M2C_CompleteQuest = 10055;
     public const ushort M2C_ConfirmPlayerTrade = 10081;
     public const ushort M2C_FindPath = 10033;
     public const ushort M2C_InspectLootMonster = 10065;
+    public const ushort M2C_LearnTrainerSkill = 10092;
     public const ushort M2C_LootMonster = 10063;
     public const ushort M2C_MapProbe = 10015;
     public const ushort M2C_NavigateInput = 10038;
     public const ushort M2C_NavigateTo = 10035;
     public const ushort M2C_OpenNpcShop = 10069;
+    public const ushort M2C_ReleaseDeadPlayer = 10099;
+    public const ushort M2C_RepairItems = 10097;
     public const ushort M2C_RequestPlayerTrade = 10075;
     public const ushort M2C_RespondPlayerTrade = 10077;
+    public const ushort M2C_RevivePlayer = 10089;
     public const ushort M2C_SellItem = 10073;
     public const ushort M2C_ToggleAutoAttack = 10045;
     public const ushort M2C_ToggleDemoDoor = 10040;
+    public const ushort M2C_TriggerMonsterSignal = 10103;
+    public const ushort M2C_TriggerNpcInteraction = 10101;
     public const ushort M2C_UpdatePlayerTradeOffer = 10079;
+    public const ushort M2C_UseInteractable = 10095;
     public const ushort M2C_UseItem = 10020;
     public const ushort S2C_CreateCharacter = 10058;
     public const ushort S2C_GetLoginServiceAddr = 10003;
@@ -210,10 +228,20 @@ public sealed class C2M_CastSkill : IRpcRequest
     public uint RpcId { get; set; }
 }
 
+public sealed class C2M_CommandOwnedUnit : IRpcRequest
+{
+    public uint OwnedUnitId { get; set; }
+    public uint Command { get; set; }
+    public uint TargetUnitId { get; set; }
+    public uint AbilityId { get; set; }
+    public uint RpcId { get; set; }
+}
+
 public sealed class C2M_CompleteQuest : IRpcRequest
 {
     public uint QuestConfigId { get; set; }
     public uint NpcUnitId { get; set; }
+    public uint RewardChoiceId { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -237,6 +265,14 @@ public sealed class C2M_FindPath : IRpcRequest
 public sealed class C2M_InspectLootMonster : IRpcRequest
 {
     public uint MonsterId { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2M_LearnTrainerSkill : IRpcRequest
+{
+    public uint NpcUnitId { get; set; }
+    public uint SkillConfigId { get; set; }
+    public string? OperationId { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -268,6 +304,10 @@ public sealed class C2M_NavigateInput : IRpcRequest
     public int Strafe { get; set; }
     public float Yaw { get; set; }
     public uint Sequence { get; set; }
+    public bool HasPositionSnapshot { get; set; }
+    public float PositionX { get; set; }
+    public float PositionY { get; set; }
+    public float PositionZ { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -286,6 +326,24 @@ public sealed class C2M_OpenNpcShop : IRpcRequest
     public uint RpcId { get; set; }
 }
 
+public sealed class C2M_ReleaseDeadPlayer : IRpcRequest
+{
+    public bool HasRecoveryPosition { get; set; }
+    public float RecoveryX { get; set; }
+    public float RecoveryY { get; set; }
+    public float RecoveryZ { get; set; }
+    public float RecoveryYaw { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2M_RepairItems : IRpcRequest
+{
+    public uint NpcUnitId { get; set; }
+    public ulong ItemId { get; set; }
+    public string? OperationId { get; set; }
+    public uint RpcId { get; set; }
+}
+
 public sealed class C2M_RequestPlayerTrade : IRpcRequest
 {
     public uint TargetUnitId { get; set; }
@@ -296,6 +354,11 @@ public sealed class C2M_RespondPlayerTrade : IRpcRequest
 {
     public string? TradeId { get; set; }
     public bool Accept { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2M_RevivePlayer : IRpcRequest
+{
     public uint RpcId { get; set; }
 }
 
@@ -321,11 +384,33 @@ public sealed class C2M_ToggleDemoDoor : IRpcRequest
     public uint RpcId { get; set; }
 }
 
+public sealed class C2M_TriggerMonsterSignal : IRpcRequest
+{
+    public uint MonsterUnitId { get; set; }
+    public uint SignalId { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2M_TriggerNpcInteraction : IRpcRequest
+{
+    public uint NpcUnitId { get; set; }
+    public uint Trigger { get; set; }
+    public uint TriggerValue { get; set; }
+    public uint RpcId { get; set; }
+}
+
 public sealed class C2M_UpdatePlayerTradeOffer : IRpcRequest
 {
     public string? TradeId { get; set; }
     public ulong Gold { get; set; }
     public List<PlayerTradeItemOffer> Items { get; set; } = new List<PlayerTradeItemOffer>();
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2M_UseInteractable : IRpcRequest
+{
+    public uint InteractableUnitId { get; set; }
+    public string? OperationId { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -341,6 +426,7 @@ public sealed class C2S_CreateCharacter : IRpcRequest
     public string? Account { get; set; }
     public string? Name { get; set; }
     public uint PlayerConfigId { get; set; }
+    public List<CharacterExtension> Extensions { get; set; } = new List<CharacterExtension>();
     public uint RpcId { get; set; }
 }
 
@@ -362,6 +448,7 @@ public sealed class C2S_Register : IRpcRequest
 {
     public string? Account { get; set; }
     public string? Password { get; set; }
+    public uint PlayerConfigId { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -377,6 +464,15 @@ public sealed class CellMovementState
     public uint MoveEndTick { get; set; }
     public bool Moving { get; set; }
     public uint Facing { get; set; }
+    public float Y { get; set; }
+    public float Yaw { get; set; }
+}
+
+public sealed class CharacterExtension
+{
+    public string? Id { get; set; }
+    public uint Version { get; set; }
+    public byte[]? Payload { get; set; }
 }
 
 public sealed class CharacterSummary
@@ -385,6 +481,7 @@ public sealed class CharacterSummary
     public string? Name { get; set; }
     public uint PlayerConfigId { get; set; }
     public uint Level { get; set; }
+    public List<CharacterExtension> Extensions { get; set; } = new List<CharacterExtension>();
 }
 
 public sealed class G2C_AoiDelta
@@ -421,6 +518,22 @@ public sealed class G2C_BuffRemoved
     public uint Revision { get; set; }
 }
 
+public sealed class G2C_CombatResult
+{
+    public uint ResultType { get; set; }
+    public uint SourceUnitId { get; set; }
+    public uint TargetUnitId { get; set; }
+    public ulong RequestedAmount { get; set; }
+    public ulong EffectiveAmount { get; set; }
+    public ulong AbsorbedAmount { get; set; }
+    public ulong CurrentHp { get; set; }
+    public uint DamageSchool { get; set; }
+    public uint AbilityId { get; set; }
+    public bool Killed { get; set; }
+    public uint ServerTick { get; set; }
+    public uint PreventedReason { get; set; }
+}
+
 public sealed class G2C_DemoDoorState
 {
     public bool Closed { get; set; }
@@ -446,6 +559,9 @@ public sealed class G2C_EnterMap : IRpcResponse
     public List<uint> CompletedQuestConfigIds { get; set; } = new List<uint>();
     public ulong Gold { get; set; }
     public ulong StarterDungeonCooldownEndAtMs { get; set; }
+    public List<uint> KnownSkillIds { get; set; } = new List<uint>();
+    public List<UnitNumericDelta> Numerics { get; set; } = new List<UnitNumericDelta>();
+    public List<SkillProficiencySnapshot> Proficiencies { get; set; } = new List<SkillProficiencySnapshot>();
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -611,6 +727,15 @@ public sealed class G2C_SkillProjectile
     public ulong ImpactAtMs { get; set; }
 }
 
+public sealed class G2C_UnitPresentation
+{
+    public uint PresentationType { get; set; }
+    public uint SourceUnitId { get; set; }
+    public uint TargetUnitId { get; set; }
+    public uint PresentationId { get; set; }
+    public string? Text { get; set; }
+}
+
 public sealed class InventorySnapshot
 {
     public List<ItemSnapshot> Items { get; set; } = new List<ItemSnapshot>();
@@ -630,6 +755,9 @@ public sealed class ItemSnapshot
     public uint Quality { get; set; }
     public uint Level { get; set; }
     public uint Version { get; set; }
+    public uint Durability { get; set; }
+    public uint MaxDurability { get; set; }
+    public uint PlacementId { get; set; }
 }
 
 public sealed class LootDropSnapshot
@@ -643,6 +771,9 @@ public sealed class LootDropSnapshot
 public sealed class M2C_AcceptQuest : IRpcResponse
 {
     public QuestSnapshot? Quest { get; set; }
+    public List<ItemSnapshot> InventoryChanges { get; set; } = new List<ItemSnapshot>();
+    public List<ItemSnapshot> InventoryItems { get; set; } = new List<ItemSnapshot>();
+    public List<ItemSnapshot> BaseInventoryItems { get; set; } = new List<ItemSnapshot>();
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -700,10 +831,31 @@ public sealed class M2C_CastSkill : IRpcResponse
     public string? Message { get; set; }
 }
 
+public sealed class M2C_CommandOwnedUnit : IRpcResponse
+{
+    public uint OwnedUnitId { get; set; }
+    public uint Command { get; set; }
+    public bool Accepted { get; set; }
+    public uint AbilityId { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
 public sealed class M2C_CompleteQuest : IRpcResponse
 {
     public uint QuestConfigId { get; set; }
     public List<ItemSnapshot> RewardItems { get; set; } = new List<ItemSnapshot>();
+    public ulong Gold { get; set; }
+    public ulong GainedGold { get; set; }
+    public ulong Level { get; set; }
+    public ulong Experience { get; set; }
+    public ulong GainedExperience { get; set; }
+    public bool LeveledUp { get; set; }
+    public uint SelectedRewardChoiceId { get; set; }
+    public List<ItemSnapshot> InventoryItems { get; set; } = new List<ItemSnapshot>();
+    public List<ItemSnapshot> BaseInventoryItems { get; set; } = new List<ItemSnapshot>();
+    public List<ItemSnapshot> InventoryChanges { get; set; } = new List<ItemSnapshot>();
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -730,6 +882,18 @@ public sealed class M2C_InspectLootMonster : IRpcResponse
 {
     public uint MonsterId { get; set; }
     public List<LootDropSnapshot> Drops { get; set; } = new List<LootDropSnapshot>();
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class M2C_LearnTrainerSkill : IRpcResponse
+{
+    public uint SkillConfigId { get; set; }
+    public bool Learned { get; set; }
+    public ulong Gold { get; set; }
+    public List<SkillProficiencySnapshot> Proficiencies { get; set; } = new List<SkillProficiencySnapshot>();
+    public List<uint> LearnedSkillConfigIds { get; set; } = new List<uint>();
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -785,6 +949,33 @@ public sealed class M2C_OpenNpcShop : IRpcResponse
     public string? Message { get; set; }
 }
 
+public sealed class M2C_ReleaseDeadPlayer : IRpcResponse
+{
+    public bool Released { get; set; }
+    public float X { get; set; }
+    public float Y { get; set; }
+    public float Z { get; set; }
+    public float Yaw { get; set; }
+    public ulong Health { get; set; }
+    public ulong MaxHealth { get; set; }
+    public ulong Mana { get; set; }
+    public ulong MaxMana { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class M2C_RepairItems : IRpcResponse
+{
+    public ulong Cost { get; set; }
+    public ulong Gold { get; set; }
+    public List<ItemSnapshot> Items { get; set; } = new List<ItemSnapshot>();
+    public InventorySnapshot? InventoryRecovery { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
 public sealed class M2C_RequestPlayerTrade : IRpcResponse
 {
     public PlayerTradeSnapshot? Trade { get; set; }
@@ -796,6 +987,22 @@ public sealed class M2C_RequestPlayerTrade : IRpcResponse
 public sealed class M2C_RespondPlayerTrade : IRpcResponse
 {
     public PlayerTradeSnapshot? Trade { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class M2C_RevivePlayer : IRpcResponse
+{
+    public bool Revived { get; set; }
+    public float X { get; set; }
+    public float Y { get; set; }
+    public float Z { get; set; }
+    public float Yaw { get; set; }
+    public ulong Health { get; set; }
+    public ulong MaxHealth { get; set; }
+    public ulong Mana { get; set; }
+    public ulong MaxMana { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -834,9 +1041,37 @@ public sealed class M2C_ToggleDemoDoor : IRpcResponse
     public string? Message { get; set; }
 }
 
+public sealed class M2C_TriggerMonsterSignal : IRpcResponse
+{
+    public bool Accepted { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class M2C_TriggerNpcInteraction : IRpcResponse
+{
+    public bool Accepted { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
 public sealed class M2C_UpdatePlayerTradeOffer : IRpcResponse
 {
     public PlayerTradeSnapshot? Trade { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class M2C_UseInteractable : IRpcResponse
+{
+    public uint InteractableUnitId { get; set; }
+    public List<ItemSnapshot> Items { get; set; } = new List<ItemSnapshot>();
+    public List<QuestSnapshot> Quests { get; set; } = new List<QuestSnapshot>();
+    public ulong RespawnAtMs { get; set; }
+    public List<SkillProficiencySnapshot> Proficiencies { get; set; } = new List<SkillProficiencySnapshot>();
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -874,6 +1109,26 @@ public sealed class MapEntitySnapshot
     public uint ConfigId { get; set; }
     public string? DisplayName { get; set; }
     public bool ShopEnabled { get; set; }
+    public ulong PersistentId { get; set; }
+    public string? PresentationModelId { get; set; }
+    public uint PresentationStateId { get; set; }
+    public uint OwnerUnitId { get; set; }
+    public ulong OwnerPersistentId { get; set; }
+    public uint CreatedByAbilityId { get; set; }
+    public List<uint> QuestStarterConfigIds { get; set; } = new List<uint>();
+    public List<uint> QuestEnderConfigIds { get; set; } = new List<uint>();
+    public List<uint> ShopItemConfigIds { get; set; } = new List<uint>();
+    public uint TrainerId { get; set; }
+    public bool QuestEnabled { get; set; }
+    public bool ConversationEnabled { get; set; }
+    public bool TrainingEnabled { get; set; }
+    public bool RepairEnabled { get; set; }
+    public bool RecoveryEnabled { get; set; }
+    public string? PresentationLoadoutId { get; set; }
+    public List<string> ExtensionCapabilities { get; set; } = new List<string>();
+    public uint RuntimeProfileRevision { get; set; }
+    public uint OwnedUnitReaction { get; set; }
+    public List<uint> AutoCastAbilityIds { get; set; } = new List<uint>();
 }
 
 public sealed class NavigationMovementState
@@ -892,6 +1147,40 @@ public sealed class NavigationPathPoint
     public float X { get; set; }
     public float Y { get; set; }
     public float Z { get; set; }
+}
+
+public sealed class OwnedSummonTransferSnapshot
+{
+    public uint OwnershipSlot { get; set; }
+    public uint CreatedByAbilityId { get; set; }
+    public uint DefinitionId { get; set; }
+    public string? Name { get; set; }
+    public string? ModelId { get; set; }
+    public uint MaxHp { get; set; }
+    public uint MaxMp { get; set; }
+    public uint AttackDamage { get; set; }
+    public float MoveSpeed { get; set; }
+    public float AttackRange { get; set; }
+    public uint AttackIntervalMs { get; set; }
+    public uint AttackDamageSchool { get; set; }
+    public uint AttackAbilityId { get; set; }
+    public float FollowDistance { get; set; }
+    public float TeleportDistance { get; set; }
+    public bool AssistOwner { get; set; }
+    public uint InitialReaction { get; set; }
+    public float AggressiveAcquireRange { get; set; }
+    public uint Reaction { get; set; }
+    public List<OwnedUnitAbilitySnapshot> Abilities { get; set; } = new List<OwnedUnitAbilitySnapshot>();
+    public List<uint> AutoCastAbilityIds { get; set; } = new List<uint>();
+    public uint ResourceRegenAmount { get; set; }
+    public uint ResourceRegenIntervalMs { get; set; }
+    public uint ResourceRegenDelayAfterSpendMs { get; set; }
+}
+
+public sealed class OwnedUnitAbilitySnapshot
+{
+    public uint AbilityId { get; set; }
+    public bool AutoCastByDefault { get; set; }
 }
 
 public sealed class PlayerTradeItemOffer
@@ -984,6 +1273,7 @@ public sealed class ShopItemSnapshot
     public uint ItemConfigId { get; set; }
     public ulong BuyPrice { get; set; }
     public ulong SellPrice { get; set; }
+    public uint PurchaseCount { get; set; }
 }
 
 public sealed class SkillCooldownSnapshot
@@ -992,11 +1282,20 @@ public sealed class SkillCooldownSnapshot
     public ulong CooldownEndAtMs { get; set; }
 }
 
+public sealed class SkillProficiencySnapshot
+{
+    public uint ProficiencyId { get; set; }
+    public uint Rank { get; set; }
+    public uint MaximumRank { get; set; }
+}
+
 public sealed class SkillTransferSnapshot
 {
     public ulong GlobalCooldownEndAtMs { get; set; }
     public List<SkillCooldownSnapshot> Cooldowns { get; set; } = new List<SkillCooldownSnapshot>();
     public List<ItemCooldownSnapshot> ItemCooldowns { get; set; } = new List<ItemCooldownSnapshot>();
+    public List<uint> KnownSkillIds { get; set; } = new List<uint>();
+    public List<SkillProficiencySnapshot> Proficiencies { get; set; } = new List<SkillProficiencySnapshot>();
 }
 
 public sealed class StarterDungeonCooldownSnapshot
@@ -1592,6 +1891,52 @@ public static class C2M_CastSkillCodec
     }
 }
 
+public static class C2M_CommandOwnedUnitCodec
+{
+    public static C2M_CommandOwnedUnit Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_CommandOwnedUnit();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.OwnedUnitId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.Command = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.TargetUnitId = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.AbilityId = reader.ReadUInt32();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_CommandOwnedUnit value)
+    {
+        var writer = new BinaryWriter();
+        if (value.OwnedUnitId != 0) writer.WriteUInt32(1, value.OwnedUnitId);
+        if (value.Command != 0) writer.WriteUInt32(2, value.Command);
+        if (value.TargetUnitId != 0) writer.WriteUInt32(3, value.TargetUnitId);
+        if (value.AbilityId != 0) writer.WriteUInt32(4, value.AbilityId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
 public static class C2M_CompleteQuestCodec
 {
     public static C2M_CompleteQuest Decode(byte[] payload)
@@ -1609,6 +1954,9 @@ public static class C2M_CompleteQuestCodec
                 case 2 when tag.WireType == 0:
                     value.NpcUnitId = reader.ReadUInt32();
                     break;
+                case 3 when tag.WireType == 0:
+                    value.RewardChoiceId = reader.ReadUInt32();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -1625,6 +1973,7 @@ public static class C2M_CompleteQuestCodec
         var writer = new BinaryWriter();
         if (value.QuestConfigId != 0) writer.WriteUInt32(1, value.QuestConfigId);
         if (value.NpcUnitId != 0) writer.WriteUInt32(2, value.NpcUnitId);
+        if (value.RewardChoiceId != 0) writer.WriteUInt32(3, value.RewardChoiceId);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -1747,6 +2096,48 @@ public static class C2M_InspectLootMonsterCodec
     {
         var writer = new BinaryWriter();
         if (value.MonsterId != 0) writer.WriteUInt32(1, value.MonsterId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2M_LearnTrainerSkillCodec
+{
+    public static C2M_LearnTrainerSkill Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_LearnTrainerSkill();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.NpcUnitId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.SkillConfigId = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 2:
+                    value.OperationId = reader.ReadString();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_LearnTrainerSkill value)
+    {
+        var writer = new BinaryWriter();
+        if (value.NpcUnitId != 0) writer.WriteUInt32(1, value.NpcUnitId);
+        if (value.SkillConfigId != 0) writer.WriteUInt32(2, value.SkillConfigId);
+        if (!string.IsNullOrEmpty(value.OperationId)) writer.WriteString(3, value.OperationId);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -1893,6 +2284,18 @@ public static class C2M_NavigateInputCodec
                 case 4 when tag.WireType == 0:
                     value.Sequence = reader.ReadUInt32();
                     break;
+                case 5 when tag.WireType == 0:
+                    value.HasPositionSnapshot = reader.ReadBool();
+                    break;
+                case 6 when tag.WireType == 5:
+                    value.PositionX = reader.ReadFloat();
+                    break;
+                case 7 when tag.WireType == 5:
+                    value.PositionY = reader.ReadFloat();
+                    break;
+                case 8 when tag.WireType == 5:
+                    value.PositionZ = reader.ReadFloat();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -1911,6 +2314,10 @@ public static class C2M_NavigateInputCodec
         if (value.Strafe != 0) writer.WriteSInt32(2, value.Strafe);
         if (value.Yaw != 0) writer.WriteFloat(3, value.Yaw);
         if (value.Sequence != 0) writer.WriteUInt32(4, value.Sequence);
+        if (value.HasPositionSnapshot) writer.WriteBool(5, value.HasPositionSnapshot);
+        if (value.PositionX != 0) writer.WriteFloat(6, value.PositionX);
+        if (value.PositionY != 0) writer.WriteFloat(7, value.PositionY);
+        if (value.PositionZ != 0) writer.WriteFloat(8, value.PositionZ);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -1996,6 +2403,98 @@ public static class C2M_OpenNpcShopCodec
     }
 }
 
+public static class C2M_ReleaseDeadPlayerCodec
+{
+    public static C2M_ReleaseDeadPlayer Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_ReleaseDeadPlayer();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.HasRecoveryPosition = reader.ReadBool();
+                    break;
+                case 2 when tag.WireType == 5:
+                    value.RecoveryX = reader.ReadFloat();
+                    break;
+                case 3 when tag.WireType == 5:
+                    value.RecoveryY = reader.ReadFloat();
+                    break;
+                case 4 when tag.WireType == 5:
+                    value.RecoveryZ = reader.ReadFloat();
+                    break;
+                case 5 when tag.WireType == 5:
+                    value.RecoveryYaw = reader.ReadFloat();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_ReleaseDeadPlayer value)
+    {
+        var writer = new BinaryWriter();
+        if (value.HasRecoveryPosition) writer.WriteBool(1, value.HasRecoveryPosition);
+        if (value.RecoveryX != 0) writer.WriteFloat(2, value.RecoveryX);
+        if (value.RecoveryY != 0) writer.WriteFloat(3, value.RecoveryY);
+        if (value.RecoveryZ != 0) writer.WriteFloat(4, value.RecoveryZ);
+        if (value.RecoveryYaw != 0) writer.WriteFloat(5, value.RecoveryYaw);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2M_RepairItemsCodec
+{
+    public static C2M_RepairItems Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_RepairItems();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.NpcUnitId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.ItemId = reader.ReadUInt64();
+                    break;
+                case 3 when tag.WireType == 2:
+                    value.OperationId = reader.ReadString();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_RepairItems value)
+    {
+        var writer = new BinaryWriter();
+        if (value.NpcUnitId != 0) writer.WriteUInt32(1, value.NpcUnitId);
+        if (value.ItemId != 0) writer.WriteUInt64(2, value.ItemId);
+        if (!string.IsNullOrEmpty(value.OperationId)) writer.WriteString(3, value.OperationId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
 public static class C2M_RequestPlayerTradeCodec
 {
     public static C2M_RequestPlayerTrade Decode(byte[] payload)
@@ -2063,6 +2562,36 @@ public static class C2M_RespondPlayerTradeCodec
         var writer = new BinaryWriter();
         if (!string.IsNullOrEmpty(value.TradeId)) writer.WriteString(1, value.TradeId);
         if (value.Accept) writer.WriteBool(2, value.Accept);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2M_RevivePlayerCodec
+{
+    public static C2M_RevivePlayer Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_RevivePlayer();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_RevivePlayer value)
+    {
+        var writer = new BinaryWriter();
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -2186,6 +2715,86 @@ public static class C2M_ToggleDemoDoorCodec
     }
 }
 
+public static class C2M_TriggerMonsterSignalCodec
+{
+    public static C2M_TriggerMonsterSignal Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_TriggerMonsterSignal();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.MonsterUnitId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.SignalId = reader.ReadUInt32();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_TriggerMonsterSignal value)
+    {
+        var writer = new BinaryWriter();
+        if (value.MonsterUnitId != 0) writer.WriteUInt32(1, value.MonsterUnitId);
+        if (value.SignalId != 0) writer.WriteUInt32(2, value.SignalId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2M_TriggerNpcInteractionCodec
+{
+    public static C2M_TriggerNpcInteraction Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_TriggerNpcInteraction();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.NpcUnitId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.Trigger = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.TriggerValue = reader.ReadUInt32();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_TriggerNpcInteraction value)
+    {
+        var writer = new BinaryWriter();
+        if (value.NpcUnitId != 0) writer.WriteUInt32(1, value.NpcUnitId);
+        if (value.Trigger != 0) writer.WriteUInt32(2, value.Trigger);
+        if (value.TriggerValue != 0) writer.WriteUInt32(3, value.TriggerValue);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
 public static class C2M_UpdatePlayerTradeOfferCodec
 {
     public static C2M_UpdatePlayerTradeOffer Decode(byte[] payload)
@@ -2226,6 +2835,44 @@ public static class C2M_UpdatePlayerTradeOfferCodec
         {
             writer.WriteMessage(3, item == null ? null : PlayerTradeItemOfferCodec.Encode(item));
         }
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2M_UseInteractableCodec
+{
+    public static C2M_UseInteractable Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_UseInteractable();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.InteractableUnitId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.OperationId = reader.ReadString();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_UseInteractable value)
+    {
+        var writer = new BinaryWriter();
+        if (value.InteractableUnitId != 0) writer.WriteUInt32(1, value.InteractableUnitId);
+        if (!string.IsNullOrEmpty(value.OperationId)) writer.WriteString(2, value.OperationId);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -2289,6 +2936,9 @@ public static class C2S_CreateCharacterCodec
                 case 3 when tag.WireType == 0:
                     value.PlayerConfigId = reader.ReadUInt32();
                     break;
+                case 4 when tag.WireType == 2:
+                    value.Extensions.Add(CharacterExtensionCodec.Decode(reader.ReadBytes()));
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -2306,6 +2956,10 @@ public static class C2S_CreateCharacterCodec
         if (!string.IsNullOrEmpty(value.Account)) writer.WriteString(1, value.Account);
         if (!string.IsNullOrEmpty(value.Name)) writer.WriteString(2, value.Name);
         if (value.PlayerConfigId != 0) writer.WriteUInt32(3, value.PlayerConfigId);
+        foreach (var item in value.Extensions)
+        {
+            writer.WriteMessage(4, item == null ? null : CharacterExtensionCodec.Encode(item));
+        }
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -2404,6 +3058,9 @@ public static class C2S_RegisterCodec
                 case 2 when tag.WireType == 2:
                     value.Password = reader.ReadString();
                     break;
+                case 3 when tag.WireType == 0:
+                    value.PlayerConfigId = reader.ReadUInt32();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -2420,6 +3077,7 @@ public static class C2S_RegisterCodec
         var writer = new BinaryWriter();
         if (!string.IsNullOrEmpty(value.Account)) writer.WriteString(1, value.Account);
         if (!string.IsNullOrEmpty(value.Password)) writer.WriteString(2, value.Password);
+        if (value.PlayerConfigId != 0) writer.WriteUInt32(3, value.PlayerConfigId);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -2466,6 +3124,12 @@ public static class CellMovementStateCodec
                 case 10 when tag.WireType == 0:
                     value.Facing = reader.ReadUInt32();
                     break;
+                case 11 when tag.WireType == 5:
+                    value.Y = reader.ReadFloat();
+                    break;
+                case 12 when tag.WireType == 5:
+                    value.Yaw = reader.ReadFloat();
+                    break;
                 default:
                     reader.Skip(tag.WireType);
                     break;
@@ -2487,6 +3151,46 @@ public static class CellMovementStateCodec
         if (value.MoveEndTick != 0) writer.WriteUInt32(8, value.MoveEndTick);
         if (value.Moving) writer.WriteBool(9, value.Moving);
         if (value.Facing != 0) writer.WriteUInt32(10, value.Facing);
+        if (value.Y != 0) writer.WriteFloat(11, value.Y);
+        if (value.Yaw != 0) writer.WriteFloat(12, value.Yaw);
+        return writer.ToArray();
+    }
+}
+
+public static class CharacterExtensionCodec
+{
+    public static CharacterExtension Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new CharacterExtension();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.Id = reader.ReadString();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.Version = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 2:
+                    value.Payload = reader.ReadBytes();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(CharacterExtension value)
+    {
+        var writer = new BinaryWriter();
+        if (!string.IsNullOrEmpty(value.Id)) writer.WriteString(1, value.Id);
+        if (value.Version != 0) writer.WriteUInt32(2, value.Version);
+        if (value.Payload != null && value.Payload.Length > 0) writer.WriteBytes(3, value.Payload);
         return writer.ToArray();
     }
 }
@@ -2514,6 +3218,9 @@ public static class CharacterSummaryCodec
                 case 4 when tag.WireType == 0:
                     value.Level = reader.ReadUInt32();
                     break;
+                case 5 when tag.WireType == 2:
+                    value.Extensions.Add(CharacterExtensionCodec.Decode(reader.ReadBytes()));
+                    break;
                 default:
                     reader.Skip(tag.WireType);
                     break;
@@ -2529,6 +3236,10 @@ public static class CharacterSummaryCodec
         if (!string.IsNullOrEmpty(value.Name)) writer.WriteString(2, value.Name);
         if (value.PlayerConfigId != 0) writer.WriteUInt32(3, value.PlayerConfigId);
         if (value.Level != 0) writer.WriteUInt32(4, value.Level);
+        foreach (var item in value.Extensions)
+        {
+            writer.WriteMessage(5, item == null ? null : CharacterExtensionCodec.Encode(item));
+        }
         return writer.ToArray();
     }
 }
@@ -2728,6 +3439,80 @@ public static class G2C_BuffRemovedCodec
     }
 }
 
+public static class G2C_CombatResultCodec
+{
+    public static G2C_CombatResult Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new G2C_CombatResult();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.ResultType = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.SourceUnitId = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.TargetUnitId = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.RequestedAmount = reader.ReadUInt64();
+                    break;
+                case 5 when tag.WireType == 0:
+                    value.EffectiveAmount = reader.ReadUInt64();
+                    break;
+                case 6 when tag.WireType == 0:
+                    value.AbsorbedAmount = reader.ReadUInt64();
+                    break;
+                case 7 when tag.WireType == 0:
+                    value.CurrentHp = reader.ReadUInt64();
+                    break;
+                case 8 when tag.WireType == 0:
+                    value.DamageSchool = reader.ReadUInt32();
+                    break;
+                case 9 when tag.WireType == 0:
+                    value.AbilityId = reader.ReadUInt32();
+                    break;
+                case 10 when tag.WireType == 0:
+                    value.Killed = reader.ReadBool();
+                    break;
+                case 11 when tag.WireType == 0:
+                    value.ServerTick = reader.ReadUInt32();
+                    break;
+                case 12 when tag.WireType == 0:
+                    value.PreventedReason = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(G2C_CombatResult value)
+    {
+        var writer = new BinaryWriter();
+        if (value.ResultType != 0) writer.WriteUInt32(1, value.ResultType);
+        if (value.SourceUnitId != 0) writer.WriteUInt32(2, value.SourceUnitId);
+        if (value.TargetUnitId != 0) writer.WriteUInt32(3, value.TargetUnitId);
+        if (value.RequestedAmount != 0) writer.WriteUInt64(4, value.RequestedAmount);
+        if (value.EffectiveAmount != 0) writer.WriteUInt64(5, value.EffectiveAmount);
+        if (value.AbsorbedAmount != 0) writer.WriteUInt64(6, value.AbsorbedAmount);
+        if (value.CurrentHp != 0) writer.WriteUInt64(7, value.CurrentHp);
+        if (value.DamageSchool != 0) writer.WriteUInt32(8, value.DamageSchool);
+        if (value.AbilityId != 0) writer.WriteUInt32(9, value.AbilityId);
+        if (value.Killed) writer.WriteBool(10, value.Killed);
+        if (value.ServerTick != 0) writer.WriteUInt32(11, value.ServerTick);
+        if (value.PreventedReason != 0) writer.WriteUInt32(12, value.PreventedReason);
+        return writer.ToArray();
+    }
+}
+
 public static class G2C_DemoDoorStateCodec
 {
     public static G2C_DemoDoorState Decode(byte[] payload)
@@ -2823,6 +3608,15 @@ public static class G2C_EnterMapCodec
                 case 18 when tag.WireType == 0:
                     value.StarterDungeonCooldownEndAtMs = reader.ReadUInt64();
                     break;
+                case 19 when tag.WireType == 0:
+                    value.KnownSkillIds.Add(reader.ReadUInt32());
+                    break;
+                case 20 when tag.WireType == 2:
+                    value.Numerics.Add(UnitNumericDeltaCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 21 when tag.WireType == 2:
+                    value.Proficiencies.Add(SkillProficiencySnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -2873,6 +3667,18 @@ public static class G2C_EnterMapCodec
         }
         if (value.Gold != 0) writer.WriteUInt64(17, value.Gold);
         if (value.StarterDungeonCooldownEndAtMs != 0) writer.WriteUInt64(18, value.StarterDungeonCooldownEndAtMs);
+        foreach (var item in value.KnownSkillIds)
+        {
+            writer.WriteUInt32(19, item, true);
+        }
+        foreach (var item in value.Numerics)
+        {
+            writer.WriteMessage(20, item == null ? null : UnitNumericDeltaCodec.Encode(item));
+        }
+        foreach (var item in value.Proficiencies)
+        {
+            writer.WriteMessage(21, item == null ? null : SkillProficiencySnapshotCodec.Encode(item));
+        }
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -3745,6 +4551,52 @@ public static class G2C_SkillProjectileCodec
     }
 }
 
+public static class G2C_UnitPresentationCodec
+{
+    public static G2C_UnitPresentation Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new G2C_UnitPresentation();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.PresentationType = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.SourceUnitId = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.TargetUnitId = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.PresentationId = reader.ReadUInt32();
+                    break;
+                case 5 when tag.WireType == 2:
+                    value.Text = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(G2C_UnitPresentation value)
+    {
+        var writer = new BinaryWriter();
+        if (value.PresentationType != 0) writer.WriteUInt32(1, value.PresentationType);
+        if (value.SourceUnitId != 0) writer.WriteUInt32(2, value.SourceUnitId);
+        if (value.TargetUnitId != 0) writer.WriteUInt32(3, value.TargetUnitId);
+        if (value.PresentationId != 0) writer.WriteUInt32(4, value.PresentationId);
+        if (!string.IsNullOrEmpty(value.Text)) writer.WriteString(5, value.Text);
+        return writer.ToArray();
+    }
+}
+
 public static class InventorySnapshotCodec
 {
     public static InventorySnapshot Decode(byte[] payload)
@@ -3841,6 +4693,15 @@ public static class ItemSnapshotCodec
                 case 6 when tag.WireType == 0:
                     value.Version = reader.ReadUInt32();
                     break;
+                case 7 when tag.WireType == 0:
+                    value.Durability = reader.ReadUInt32();
+                    break;
+                case 8 when tag.WireType == 0:
+                    value.MaxDurability = reader.ReadUInt32();
+                    break;
+                case 9 when tag.WireType == 0:
+                    value.PlacementId = reader.ReadUInt32();
+                    break;
                 default:
                     reader.Skip(tag.WireType);
                     break;
@@ -3858,6 +4719,9 @@ public static class ItemSnapshotCodec
         if (value.Quality != 0) writer.WriteUInt32(4, value.Quality);
         if (value.Level != 0) writer.WriteUInt32(5, value.Level);
         if (value.Version != 0) writer.WriteUInt32(6, value.Version);
+        if (value.Durability != 0) writer.WriteUInt32(7, value.Durability);
+        if (value.MaxDurability != 0) writer.WriteUInt32(8, value.MaxDurability);
+        if (value.PlacementId != 0) writer.WriteUInt32(9, value.PlacementId);
         return writer.ToArray();
     }
 }
@@ -3918,6 +4782,15 @@ public static class M2C_AcceptQuestCodec
                 case 1 when tag.WireType == 2:
                     value.Quest = QuestSnapshotCodec.Decode(reader.ReadBytes());
                     break;
+                case 2 when tag.WireType == 2:
+                    value.InventoryChanges.Add(ItemSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 3 when tag.WireType == 2:
+                    value.InventoryItems.Add(ItemSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 4 when tag.WireType == 2:
+                    value.BaseInventoryItems.Add(ItemSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -3939,6 +4812,18 @@ public static class M2C_AcceptQuestCodec
     {
         var writer = new BinaryWriter();
         if (value.Quest != null) writer.WriteMessage(1, QuestSnapshotCodec.Encode(value.Quest));
+        foreach (var item in value.InventoryChanges)
+        {
+            writer.WriteMessage(2, item == null ? null : ItemSnapshotCodec.Encode(item));
+        }
+        foreach (var item in value.InventoryItems)
+        {
+            writer.WriteMessage(3, item == null ? null : ItemSnapshotCodec.Encode(item));
+        }
+        foreach (var item in value.BaseInventoryItems)
+        {
+            writer.WriteMessage(4, item == null ? null : ItemSnapshotCodec.Encode(item));
+        }
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -4197,6 +5082,60 @@ public static class M2C_CastSkillCodec
     }
 }
 
+public static class M2C_CommandOwnedUnitCodec
+{
+    public static M2C_CommandOwnedUnit Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_CommandOwnedUnit();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.OwnedUnitId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.Command = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.Accepted = reader.ReadBool();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.AbilityId = reader.ReadUInt32();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_CommandOwnedUnit value)
+    {
+        var writer = new BinaryWriter();
+        if (value.OwnedUnitId != 0) writer.WriteUInt32(1, value.OwnedUnitId);
+        if (value.Command != 0) writer.WriteUInt32(2, value.Command);
+        if (value.Accepted) writer.WriteBool(3, value.Accepted);
+        if (value.AbilityId != 0) writer.WriteUInt32(4, value.AbilityId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
 public static class M2C_CompleteQuestCodec
 {
     public static M2C_CompleteQuest Decode(byte[] payload)
@@ -4213,6 +5152,36 @@ public static class M2C_CompleteQuestCodec
                     break;
                 case 2 when tag.WireType == 2:
                     value.RewardItems.Add(ItemSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.Gold = reader.ReadUInt64();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.GainedGold = reader.ReadUInt64();
+                    break;
+                case 5 when tag.WireType == 0:
+                    value.Level = reader.ReadUInt64();
+                    break;
+                case 6 when tag.WireType == 0:
+                    value.Experience = reader.ReadUInt64();
+                    break;
+                case 7 when tag.WireType == 0:
+                    value.GainedExperience = reader.ReadUInt64();
+                    break;
+                case 8 when tag.WireType == 0:
+                    value.LeveledUp = reader.ReadBool();
+                    break;
+                case 9 when tag.WireType == 0:
+                    value.SelectedRewardChoiceId = reader.ReadUInt32();
+                    break;
+                case 10 when tag.WireType == 2:
+                    value.InventoryItems.Add(ItemSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 11 when tag.WireType == 2:
+                    value.BaseInventoryItems.Add(ItemSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 12 when tag.WireType == 2:
+                    value.InventoryChanges.Add(ItemSnapshotCodec.Decode(reader.ReadBytes()));
                     break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
@@ -4238,6 +5207,25 @@ public static class M2C_CompleteQuestCodec
         foreach (var item in value.RewardItems)
         {
             writer.WriteMessage(2, item == null ? null : ItemSnapshotCodec.Encode(item));
+        }
+        if (value.Gold != 0) writer.WriteUInt64(3, value.Gold);
+        if (value.GainedGold != 0) writer.WriteUInt64(4, value.GainedGold);
+        if (value.Level != 0) writer.WriteUInt64(5, value.Level);
+        if (value.Experience != 0) writer.WriteUInt64(6, value.Experience);
+        if (value.GainedExperience != 0) writer.WriteUInt64(7, value.GainedExperience);
+        if (value.LeveledUp) writer.WriteBool(8, value.LeveledUp);
+        if (value.SelectedRewardChoiceId != 0) writer.WriteUInt32(9, value.SelectedRewardChoiceId);
+        foreach (var item in value.InventoryItems)
+        {
+            writer.WriteMessage(10, item == null ? null : ItemSnapshotCodec.Encode(item));
+        }
+        foreach (var item in value.BaseInventoryItems)
+        {
+            writer.WriteMessage(11, item == null ? null : ItemSnapshotCodec.Encode(item));
+        }
+        foreach (var item in value.InventoryChanges)
+        {
+            writer.WriteMessage(12, item == null ? null : ItemSnapshotCodec.Encode(item));
         }
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
@@ -4378,6 +5366,70 @@ public static class M2C_InspectLootMonsterCodec
         foreach (var item in value.Drops)
         {
             writer.WriteMessage(2, item == null ? null : LootDropSnapshotCodec.Encode(item));
+        }
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
+public static class M2C_LearnTrainerSkillCodec
+{
+    public static M2C_LearnTrainerSkill Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_LearnTrainerSkill();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.SkillConfigId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.Learned = reader.ReadBool();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.Gold = reader.ReadUInt64();
+                    break;
+                case 4 when tag.WireType == 2:
+                    value.Proficiencies.Add(SkillProficiencySnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 5 when tag.WireType == 0:
+                    value.LearnedSkillConfigIds.Add(reader.ReadUInt32());
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_LearnTrainerSkill value)
+    {
+        var writer = new BinaryWriter();
+        if (value.SkillConfigId != 0) writer.WriteUInt32(1, value.SkillConfigId);
+        if (value.Learned) writer.WriteBool(2, value.Learned);
+        if (value.Gold != 0) writer.WriteUInt64(3, value.Gold);
+        foreach (var item in value.Proficiencies)
+        {
+            writer.WriteMessage(4, item == null ? null : SkillProficiencySnapshotCodec.Encode(item));
+        }
+        foreach (var item in value.LearnedSkillConfigIds)
+        {
+            writer.WriteUInt32(5, item, true);
         }
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
@@ -4654,6 +5706,137 @@ public static class M2C_OpenNpcShopCodec
     }
 }
 
+public static class M2C_ReleaseDeadPlayerCodec
+{
+    public static M2C_ReleaseDeadPlayer Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_ReleaseDeadPlayer();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.Released = reader.ReadBool();
+                    break;
+                case 2 when tag.WireType == 5:
+                    value.X = reader.ReadFloat();
+                    break;
+                case 3 when tag.WireType == 5:
+                    value.Y = reader.ReadFloat();
+                    break;
+                case 4 when tag.WireType == 5:
+                    value.Z = reader.ReadFloat();
+                    break;
+                case 5 when tag.WireType == 5:
+                    value.Yaw = reader.ReadFloat();
+                    break;
+                case 6 when tag.WireType == 0:
+                    value.Health = reader.ReadUInt64();
+                    break;
+                case 7 when tag.WireType == 0:
+                    value.MaxHealth = reader.ReadUInt64();
+                    break;
+                case 8 when tag.WireType == 0:
+                    value.Mana = reader.ReadUInt64();
+                    break;
+                case 9 when tag.WireType == 0:
+                    value.MaxMana = reader.ReadUInt64();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_ReleaseDeadPlayer value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Released) writer.WriteBool(1, value.Released);
+        if (value.X != 0) writer.WriteFloat(2, value.X);
+        if (value.Y != 0) writer.WriteFloat(3, value.Y);
+        if (value.Z != 0) writer.WriteFloat(4, value.Z);
+        if (value.Yaw != 0) writer.WriteFloat(5, value.Yaw);
+        if (value.Health != 0) writer.WriteUInt64(6, value.Health);
+        if (value.MaxHealth != 0) writer.WriteUInt64(7, value.MaxHealth);
+        if (value.Mana != 0) writer.WriteUInt64(8, value.Mana);
+        if (value.MaxMana != 0) writer.WriteUInt64(9, value.MaxMana);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
+public static class M2C_RepairItemsCodec
+{
+    public static M2C_RepairItems Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_RepairItems();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.Cost = reader.ReadUInt64();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.Gold = reader.ReadUInt64();
+                    break;
+                case 3 when tag.WireType == 2:
+                    value.Items.Add(ItemSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 4 when tag.WireType == 2:
+                    value.InventoryRecovery = InventorySnapshotCodec.Decode(reader.ReadBytes());
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_RepairItems value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Cost != 0) writer.WriteUInt64(1, value.Cost);
+        if (value.Gold != 0) writer.WriteUInt64(2, value.Gold);
+        foreach (var item in value.Items)
+        {
+            writer.WriteMessage(3, item == null ? null : ItemSnapshotCodec.Encode(item));
+        }
+        if (value.InventoryRecovery != null) writer.WriteMessage(4, InventorySnapshotCodec.Encode(value.InventoryRecovery));
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
 public static class M2C_RequestPlayerTradeCodec
 {
     public static M2C_RequestPlayerTrade Decode(byte[] payload)
@@ -4731,6 +5914,80 @@ public static class M2C_RespondPlayerTradeCodec
     {
         var writer = new BinaryWriter();
         if (value.Trade != null) writer.WriteMessage(1, PlayerTradeSnapshotCodec.Encode(value.Trade));
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
+public static class M2C_RevivePlayerCodec
+{
+    public static M2C_RevivePlayer Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_RevivePlayer();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.Revived = reader.ReadBool();
+                    break;
+                case 2 when tag.WireType == 5:
+                    value.X = reader.ReadFloat();
+                    break;
+                case 3 when tag.WireType == 5:
+                    value.Y = reader.ReadFloat();
+                    break;
+                case 4 when tag.WireType == 5:
+                    value.Z = reader.ReadFloat();
+                    break;
+                case 5 when tag.WireType == 5:
+                    value.Yaw = reader.ReadFloat();
+                    break;
+                case 6 when tag.WireType == 0:
+                    value.Health = reader.ReadUInt64();
+                    break;
+                case 7 when tag.WireType == 0:
+                    value.MaxHealth = reader.ReadUInt64();
+                    break;
+                case 8 when tag.WireType == 0:
+                    value.Mana = reader.ReadUInt64();
+                    break;
+                case 9 when tag.WireType == 0:
+                    value.MaxMana = reader.ReadUInt64();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_RevivePlayer value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Revived) writer.WriteBool(1, value.Revived);
+        if (value.X != 0) writer.WriteFloat(2, value.X);
+        if (value.Y != 0) writer.WriteFloat(3, value.Y);
+        if (value.Z != 0) writer.WriteFloat(4, value.Z);
+        if (value.Yaw != 0) writer.WriteFloat(5, value.Yaw);
+        if (value.Health != 0) writer.WriteUInt64(6, value.Health);
+        if (value.MaxHealth != 0) writer.WriteUInt64(7, value.MaxHealth);
+        if (value.Mana != 0) writer.WriteUInt64(8, value.Mana);
+        if (value.MaxMana != 0) writer.WriteUInt64(9, value.MaxMana);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -4900,6 +6157,90 @@ public static class M2C_ToggleDemoDoorCodec
     }
 }
 
+public static class M2C_TriggerMonsterSignalCodec
+{
+    public static M2C_TriggerMonsterSignal Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_TriggerMonsterSignal();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.Accepted = reader.ReadBool();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_TriggerMonsterSignal value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Accepted) writer.WriteBool(1, value.Accepted);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
+public static class M2C_TriggerNpcInteractionCodec
+{
+    public static M2C_TriggerNpcInteraction Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_TriggerNpcInteraction();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.Accepted = reader.ReadBool();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_TriggerNpcInteraction value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Accepted) writer.WriteBool(1, value.Accepted);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
 public static class M2C_UpdatePlayerTradeOfferCodec
 {
     public static M2C_UpdatePlayerTradeOffer Decode(byte[] payload)
@@ -4935,6 +6276,73 @@ public static class M2C_UpdatePlayerTradeOfferCodec
     {
         var writer = new BinaryWriter();
         if (value.Trade != null) writer.WriteMessage(1, PlayerTradeSnapshotCodec.Encode(value.Trade));
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
+public static class M2C_UseInteractableCodec
+{
+    public static M2C_UseInteractable Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_UseInteractable();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.InteractableUnitId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.Items.Add(ItemSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 3 when tag.WireType == 2:
+                    value.Quests.Add(QuestSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.RespawnAtMs = reader.ReadUInt64();
+                    break;
+                case 5 when tag.WireType == 2:
+                    value.Proficiencies.Add(SkillProficiencySnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_UseInteractable value)
+    {
+        var writer = new BinaryWriter();
+        if (value.InteractableUnitId != 0) writer.WriteUInt32(1, value.InteractableUnitId);
+        foreach (var item in value.Items)
+        {
+            writer.WriteMessage(2, item == null ? null : ItemSnapshotCodec.Encode(item));
+        }
+        foreach (var item in value.Quests)
+        {
+            writer.WriteMessage(3, item == null ? null : QuestSnapshotCodec.Encode(item));
+        }
+        if (value.RespawnAtMs != 0) writer.WriteUInt64(4, value.RespawnAtMs);
+        foreach (var item in value.Proficiencies)
+        {
+            writer.WriteMessage(5, item == null ? null : SkillProficiencySnapshotCodec.Encode(item));
+        }
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -5065,6 +6473,66 @@ public static class MapEntitySnapshotCodec
                 case 18 when tag.WireType == 0:
                     value.ShopEnabled = reader.ReadBool();
                     break;
+                case 19 when tag.WireType == 0:
+                    value.PersistentId = reader.ReadUInt64();
+                    break;
+                case 20 when tag.WireType == 2:
+                    value.PresentationModelId = reader.ReadString();
+                    break;
+                case 21 when tag.WireType == 0:
+                    value.PresentationStateId = reader.ReadUInt32();
+                    break;
+                case 22 when tag.WireType == 0:
+                    value.OwnerUnitId = reader.ReadUInt32();
+                    break;
+                case 23 when tag.WireType == 0:
+                    value.OwnerPersistentId = reader.ReadUInt64();
+                    break;
+                case 24 when tag.WireType == 0:
+                    value.CreatedByAbilityId = reader.ReadUInt32();
+                    break;
+                case 25 when tag.WireType == 0:
+                    value.QuestStarterConfigIds.Add(reader.ReadUInt32());
+                    break;
+                case 26 when tag.WireType == 0:
+                    value.QuestEnderConfigIds.Add(reader.ReadUInt32());
+                    break;
+                case 27 when tag.WireType == 0:
+                    value.ShopItemConfigIds.Add(reader.ReadUInt32());
+                    break;
+                case 28 when tag.WireType == 0:
+                    value.TrainerId = reader.ReadUInt32();
+                    break;
+                case 29 when tag.WireType == 0:
+                    value.QuestEnabled = reader.ReadBool();
+                    break;
+                case 30 when tag.WireType == 0:
+                    value.ConversationEnabled = reader.ReadBool();
+                    break;
+                case 31 when tag.WireType == 0:
+                    value.TrainingEnabled = reader.ReadBool();
+                    break;
+                case 32 when tag.WireType == 0:
+                    value.RepairEnabled = reader.ReadBool();
+                    break;
+                case 33 when tag.WireType == 0:
+                    value.RecoveryEnabled = reader.ReadBool();
+                    break;
+                case 34 when tag.WireType == 2:
+                    value.PresentationLoadoutId = reader.ReadString();
+                    break;
+                case 35 when tag.WireType == 2:
+                    value.ExtensionCapabilities.Add(reader.ReadString());
+                    break;
+                case 36 when tag.WireType == 0:
+                    value.RuntimeProfileRevision = reader.ReadUInt32();
+                    break;
+                case 37 when tag.WireType == 0:
+                    value.OwnedUnitReaction = reader.ReadUInt32();
+                    break;
+                case 38 when tag.WireType == 0:
+                    value.AutoCastAbilityIds.Add(reader.ReadUInt32());
+                    break;
                 default:
                     reader.Skip(tag.WireType);
                     break;
@@ -5100,6 +6568,41 @@ public static class MapEntitySnapshotCodec
         if (value.ConfigId != 0) writer.WriteUInt32(16, value.ConfigId);
         if (!string.IsNullOrEmpty(value.DisplayName)) writer.WriteString(17, value.DisplayName);
         if (value.ShopEnabled) writer.WriteBool(18, value.ShopEnabled);
+        if (value.PersistentId != 0) writer.WriteUInt64(19, value.PersistentId);
+        if (!string.IsNullOrEmpty(value.PresentationModelId)) writer.WriteString(20, value.PresentationModelId);
+        if (value.PresentationStateId != 0) writer.WriteUInt32(21, value.PresentationStateId);
+        if (value.OwnerUnitId != 0) writer.WriteUInt32(22, value.OwnerUnitId);
+        if (value.OwnerPersistentId != 0) writer.WriteUInt64(23, value.OwnerPersistentId);
+        if (value.CreatedByAbilityId != 0) writer.WriteUInt32(24, value.CreatedByAbilityId);
+        foreach (var item in value.QuestStarterConfigIds)
+        {
+            writer.WriteUInt32(25, item, true);
+        }
+        foreach (var item in value.QuestEnderConfigIds)
+        {
+            writer.WriteUInt32(26, item, true);
+        }
+        foreach (var item in value.ShopItemConfigIds)
+        {
+            writer.WriteUInt32(27, item, true);
+        }
+        if (value.TrainerId != 0) writer.WriteUInt32(28, value.TrainerId);
+        if (value.QuestEnabled) writer.WriteBool(29, value.QuestEnabled);
+        if (value.ConversationEnabled) writer.WriteBool(30, value.ConversationEnabled);
+        if (value.TrainingEnabled) writer.WriteBool(31, value.TrainingEnabled);
+        if (value.RepairEnabled) writer.WriteBool(32, value.RepairEnabled);
+        if (value.RecoveryEnabled) writer.WriteBool(33, value.RecoveryEnabled);
+        if (!string.IsNullOrEmpty(value.PresentationLoadoutId)) writer.WriteString(34, value.PresentationLoadoutId);
+        foreach (var item in value.ExtensionCapabilities)
+        {
+            writer.WriteString(35, item, true);
+        }
+        if (value.RuntimeProfileRevision != 0) writer.WriteUInt32(36, value.RuntimeProfileRevision);
+        if (value.OwnedUnitReaction != 0) writer.WriteUInt32(37, value.OwnedUnitReaction);
+        foreach (var item in value.AutoCastAbilityIds)
+        {
+            writer.WriteUInt32(38, item, true);
+        }
         return writer.ToArray();
     }
 }
@@ -5192,6 +6695,168 @@ public static class NavigationPathPointCodec
         if (value.X != 0) writer.WriteFloat(1, value.X);
         if (value.Y != 0) writer.WriteFloat(2, value.Y);
         if (value.Z != 0) writer.WriteFloat(3, value.Z);
+        return writer.ToArray();
+    }
+}
+
+public static class OwnedSummonTransferSnapshotCodec
+{
+    public static OwnedSummonTransferSnapshot Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new OwnedSummonTransferSnapshot();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.OwnershipSlot = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.CreatedByAbilityId = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.DefinitionId = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 2:
+                    value.Name = reader.ReadString();
+                    break;
+                case 5 when tag.WireType == 2:
+                    value.ModelId = reader.ReadString();
+                    break;
+                case 6 when tag.WireType == 0:
+                    value.MaxHp = reader.ReadUInt32();
+                    break;
+                case 7 when tag.WireType == 0:
+                    value.MaxMp = reader.ReadUInt32();
+                    break;
+                case 8 when tag.WireType == 0:
+                    value.AttackDamage = reader.ReadUInt32();
+                    break;
+                case 9 when tag.WireType == 5:
+                    value.MoveSpeed = reader.ReadFloat();
+                    break;
+                case 10 when tag.WireType == 5:
+                    value.AttackRange = reader.ReadFloat();
+                    break;
+                case 11 when tag.WireType == 0:
+                    value.AttackIntervalMs = reader.ReadUInt32();
+                    break;
+                case 12 when tag.WireType == 0:
+                    value.AttackDamageSchool = reader.ReadUInt32();
+                    break;
+                case 13 when tag.WireType == 0:
+                    value.AttackAbilityId = reader.ReadUInt32();
+                    break;
+                case 14 when tag.WireType == 5:
+                    value.FollowDistance = reader.ReadFloat();
+                    break;
+                case 15 when tag.WireType == 5:
+                    value.TeleportDistance = reader.ReadFloat();
+                    break;
+                case 16 when tag.WireType == 0:
+                    value.AssistOwner = reader.ReadBool();
+                    break;
+                case 17 when tag.WireType == 0:
+                    value.InitialReaction = reader.ReadUInt32();
+                    break;
+                case 18 when tag.WireType == 5:
+                    value.AggressiveAcquireRange = reader.ReadFloat();
+                    break;
+                case 19 when tag.WireType == 0:
+                    value.Reaction = reader.ReadUInt32();
+                    break;
+                case 20 when tag.WireType == 2:
+                    value.Abilities.Add(OwnedUnitAbilitySnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 21 when tag.WireType == 0:
+                    value.AutoCastAbilityIds.Add(reader.ReadUInt32());
+                    break;
+                case 22 when tag.WireType == 0:
+                    value.ResourceRegenAmount = reader.ReadUInt32();
+                    break;
+                case 23 when tag.WireType == 0:
+                    value.ResourceRegenIntervalMs = reader.ReadUInt32();
+                    break;
+                case 24 when tag.WireType == 0:
+                    value.ResourceRegenDelayAfterSpendMs = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(OwnedSummonTransferSnapshot value)
+    {
+        var writer = new BinaryWriter();
+        if (value.OwnershipSlot != 0) writer.WriteUInt32(1, value.OwnershipSlot);
+        if (value.CreatedByAbilityId != 0) writer.WriteUInt32(2, value.CreatedByAbilityId);
+        if (value.DefinitionId != 0) writer.WriteUInt32(3, value.DefinitionId);
+        if (!string.IsNullOrEmpty(value.Name)) writer.WriteString(4, value.Name);
+        if (!string.IsNullOrEmpty(value.ModelId)) writer.WriteString(5, value.ModelId);
+        if (value.MaxHp != 0) writer.WriteUInt32(6, value.MaxHp);
+        if (value.MaxMp != 0) writer.WriteUInt32(7, value.MaxMp);
+        if (value.AttackDamage != 0) writer.WriteUInt32(8, value.AttackDamage);
+        if (value.MoveSpeed != 0) writer.WriteFloat(9, value.MoveSpeed);
+        if (value.AttackRange != 0) writer.WriteFloat(10, value.AttackRange);
+        if (value.AttackIntervalMs != 0) writer.WriteUInt32(11, value.AttackIntervalMs);
+        if (value.AttackDamageSchool != 0) writer.WriteUInt32(12, value.AttackDamageSchool);
+        if (value.AttackAbilityId != 0) writer.WriteUInt32(13, value.AttackAbilityId);
+        if (value.FollowDistance != 0) writer.WriteFloat(14, value.FollowDistance);
+        if (value.TeleportDistance != 0) writer.WriteFloat(15, value.TeleportDistance);
+        if (value.AssistOwner) writer.WriteBool(16, value.AssistOwner);
+        if (value.InitialReaction != 0) writer.WriteUInt32(17, value.InitialReaction);
+        if (value.AggressiveAcquireRange != 0) writer.WriteFloat(18, value.AggressiveAcquireRange);
+        if (value.Reaction != 0) writer.WriteUInt32(19, value.Reaction);
+        foreach (var item in value.Abilities)
+        {
+            writer.WriteMessage(20, item == null ? null : OwnedUnitAbilitySnapshotCodec.Encode(item));
+        }
+        foreach (var item in value.AutoCastAbilityIds)
+        {
+            writer.WriteUInt32(21, item, true);
+        }
+        if (value.ResourceRegenAmount != 0) writer.WriteUInt32(22, value.ResourceRegenAmount);
+        if (value.ResourceRegenIntervalMs != 0) writer.WriteUInt32(23, value.ResourceRegenIntervalMs);
+        if (value.ResourceRegenDelayAfterSpendMs != 0) writer.WriteUInt32(24, value.ResourceRegenDelayAfterSpendMs);
+        return writer.ToArray();
+    }
+}
+
+public static class OwnedUnitAbilitySnapshotCodec
+{
+    public static OwnedUnitAbilitySnapshot Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new OwnedUnitAbilitySnapshot();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.AbilityId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.AutoCastByDefault = reader.ReadBool();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(OwnedUnitAbilitySnapshot value)
+    {
+        var writer = new BinaryWriter();
+        if (value.AbilityId != 0) writer.WriteUInt32(1, value.AbilityId);
+        if (value.AutoCastByDefault) writer.WriteBool(2, value.AutoCastByDefault);
         return writer.ToArray();
     }
 }
@@ -5658,6 +7323,9 @@ public static class ShopItemSnapshotCodec
                 case 3 when tag.WireType == 0:
                     value.SellPrice = reader.ReadUInt64();
                     break;
+                case 4 when tag.WireType == 0:
+                    value.PurchaseCount = reader.ReadUInt32();
+                    break;
                 default:
                     reader.Skip(tag.WireType);
                     break;
@@ -5672,6 +7340,7 @@ public static class ShopItemSnapshotCodec
         if (value.ItemConfigId != 0) writer.WriteUInt32(1, value.ItemConfigId);
         if (value.BuyPrice != 0) writer.WriteUInt64(2, value.BuyPrice);
         if (value.SellPrice != 0) writer.WriteUInt64(3, value.SellPrice);
+        if (value.PurchaseCount != 0) writer.WriteUInt32(4, value.PurchaseCount);
         return writer.ToArray();
     }
 }
@@ -5710,6 +7379,44 @@ public static class SkillCooldownSnapshotCodec
     }
 }
 
+public static class SkillProficiencySnapshotCodec
+{
+    public static SkillProficiencySnapshot Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new SkillProficiencySnapshot();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.ProficiencyId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.Rank = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.MaximumRank = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(SkillProficiencySnapshot value)
+    {
+        var writer = new BinaryWriter();
+        if (value.ProficiencyId != 0) writer.WriteUInt32(1, value.ProficiencyId);
+        if (value.Rank != 0) writer.WriteUInt32(2, value.Rank);
+        if (value.MaximumRank != 0) writer.WriteUInt32(3, value.MaximumRank);
+        return writer.ToArray();
+    }
+}
+
 public static class SkillTransferSnapshotCodec
 {
     public static SkillTransferSnapshot Decode(byte[] payload)
@@ -5730,6 +7437,12 @@ public static class SkillTransferSnapshotCodec
                 case 3 when tag.WireType == 2:
                     value.ItemCooldowns.Add(ItemCooldownSnapshotCodec.Decode(reader.ReadBytes()));
                     break;
+                case 4 when tag.WireType == 0:
+                    value.KnownSkillIds.Add(reader.ReadUInt32());
+                    break;
+                case 5 when tag.WireType == 2:
+                    value.Proficiencies.Add(SkillProficiencySnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
                 default:
                     reader.Skip(tag.WireType);
                     break;
@@ -5749,6 +7462,14 @@ public static class SkillTransferSnapshotCodec
         foreach (var item in value.ItemCooldowns)
         {
             writer.WriteMessage(3, item == null ? null : ItemCooldownSnapshotCodec.Encode(item));
+        }
+        foreach (var item in value.KnownSkillIds)
+        {
+            writer.WriteUInt32(4, item, true);
+        }
+        foreach (var item in value.Proficiencies)
+        {
+            writer.WriteMessage(5, item == null ? null : SkillProficiencySnapshotCodec.Encode(item));
         }
         return writer.ToArray();
     }
@@ -5944,6 +7665,11 @@ public static class MapProtocol
         C2M_CastSkillCodec.Encode, M2C_CastSkillCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_CommandOwnedUnit, M2C_CommandOwnedUnit> CommandOwnedUnit = new(
+        "Map.CommandOwnedUnit", MsgCode.C2M_CommandOwnedUnit, MsgCode.M2C_CommandOwnedUnit,
+        C2M_CommandOwnedUnitCodec.Encode, M2C_CommandOwnedUnitCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2M_CompleteQuest, M2C_CompleteQuest> CompleteQuest = new(
         "Map.CompleteQuest", MsgCode.C2M_CompleteQuest, MsgCode.M2C_CompleteQuest,
         C2M_CompleteQuestCodec.Encode, M2C_CompleteQuestCodec.Decode,
@@ -5962,6 +7688,11 @@ public static class MapProtocol
     public static readonly RpcDescriptor<C2M_InspectLootMonster, M2C_InspectLootMonster> InspectLootMonster = new(
         "Map.InspectLootMonster", MsgCode.C2M_InspectLootMonster, MsgCode.M2C_InspectLootMonster,
         C2M_InspectLootMonsterCodec.Encode, M2C_InspectLootMonsterCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_LearnTrainerSkill, M2C_LearnTrainerSkill> LearnTrainerSkill = new(
+        "Map.LearnTrainerSkill", MsgCode.C2M_LearnTrainerSkill, MsgCode.M2C_LearnTrainerSkill,
+        C2M_LearnTrainerSkillCodec.Encode, M2C_LearnTrainerSkillCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2M_LootMonster, M2C_LootMonster> LootMonster = new(
@@ -5989,6 +7720,16 @@ public static class MapProtocol
         C2M_OpenNpcShopCodec.Encode, M2C_OpenNpcShopCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_ReleaseDeadPlayer, M2C_ReleaseDeadPlayer> ReleaseDeadPlayer = new(
+        "Map.ReleaseDeadPlayer", MsgCode.C2M_ReleaseDeadPlayer, MsgCode.M2C_ReleaseDeadPlayer,
+        C2M_ReleaseDeadPlayerCodec.Encode, M2C_ReleaseDeadPlayerCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_RepairItems, M2C_RepairItems> RepairItems = new(
+        "Map.RepairItems", MsgCode.C2M_RepairItems, MsgCode.M2C_RepairItems,
+        C2M_RepairItemsCodec.Encode, M2C_RepairItemsCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2M_RequestPlayerTrade, M2C_RequestPlayerTrade> RequestPlayerTrade = new(
         "Map.RequestPlayerTrade", MsgCode.C2M_RequestPlayerTrade, MsgCode.M2C_RequestPlayerTrade,
         C2M_RequestPlayerTradeCodec.Encode, M2C_RequestPlayerTradeCodec.Decode,
@@ -5997,6 +7738,11 @@ public static class MapProtocol
     public static readonly RpcDescriptor<C2M_RespondPlayerTrade, M2C_RespondPlayerTrade> RespondPlayerTrade = new(
         "Map.RespondPlayerTrade", MsgCode.C2M_RespondPlayerTrade, MsgCode.M2C_RespondPlayerTrade,
         C2M_RespondPlayerTradeCodec.Encode, M2C_RespondPlayerTradeCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_RevivePlayer, M2C_RevivePlayer> RevivePlayer = new(
+        "Map.RevivePlayer", MsgCode.C2M_RevivePlayer, MsgCode.M2C_RevivePlayer,
+        C2M_RevivePlayerCodec.Encode, M2C_RevivePlayerCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2M_SellItem, M2C_SellItem> SellItem = new(
@@ -6014,9 +7760,24 @@ public static class MapProtocol
         C2M_ToggleDemoDoorCodec.Encode, M2C_ToggleDemoDoorCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_TriggerMonsterSignal, M2C_TriggerMonsterSignal> TriggerMonsterSignal = new(
+        "Map.TriggerMonsterSignal", MsgCode.C2M_TriggerMonsterSignal, MsgCode.M2C_TriggerMonsterSignal,
+        C2M_TriggerMonsterSignalCodec.Encode, M2C_TriggerMonsterSignalCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_TriggerNpcInteraction, M2C_TriggerNpcInteraction> TriggerNpcInteraction = new(
+        "Map.TriggerNpcInteraction", MsgCode.C2M_TriggerNpcInteraction, MsgCode.M2C_TriggerNpcInteraction,
+        C2M_TriggerNpcInteractionCodec.Encode, M2C_TriggerNpcInteractionCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2M_UpdatePlayerTradeOffer, M2C_UpdatePlayerTradeOffer> UpdatePlayerTradeOffer = new(
         "Map.UpdatePlayerTradeOffer", MsgCode.C2M_UpdatePlayerTradeOffer, MsgCode.M2C_UpdatePlayerTradeOffer,
         C2M_UpdatePlayerTradeOfferCodec.Encode, M2C_UpdatePlayerTradeOfferCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_UseInteractable, M2C_UseInteractable> UseInteractable = new(
+        "Map.UseInteractable", MsgCode.C2M_UseInteractable, MsgCode.M2C_UseInteractable,
+        C2M_UseInteractableCodec.Encode, M2C_UseInteractableCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2M_UseItem, M2C_UseItem> UseItem = new(
@@ -6066,6 +7827,8 @@ public static class ClientMessages
         "Client.BuffDetail", MsgCode.G2C_BuffDetail, G2C_BuffDetailCodec.Encode, G2C_BuffDetailCodec.Decode);
     public static readonly MessageDescriptor<G2C_BuffRemoved> BuffRemoved = new(
         "Client.BuffRemoved", MsgCode.G2C_BuffRemoved, G2C_BuffRemovedCodec.Encode, G2C_BuffRemovedCodec.Decode);
+    public static readonly MessageDescriptor<G2C_CombatResult> CombatResult = new(
+        "Client.CombatResult", MsgCode.G2C_CombatResult, G2C_CombatResultCodec.Encode, G2C_CombatResultCodec.Decode);
     public static readonly MessageDescriptor<G2C_DemoDoorState> DemoDoorState = new(
         "Client.DemoDoorState", MsgCode.G2C_DemoDoorState, G2C_DemoDoorStateCodec.Encode, G2C_DemoDoorStateCodec.Decode);
     public static readonly MessageDescriptor<G2C_EntityEnter> EntityEnter = new(
@@ -6102,6 +7865,8 @@ public static class ClientMessages
         "Client.SkillImpact", MsgCode.G2C_SkillImpact, G2C_SkillImpactCodec.Encode, G2C_SkillImpactCodec.Decode);
     public static readonly MessageDescriptor<G2C_SkillProjectile> SkillProjectile = new(
         "Client.SkillProjectile", MsgCode.G2C_SkillProjectile, G2C_SkillProjectileCodec.Encode, G2C_SkillProjectileCodec.Decode);
+    public static readonly MessageDescriptor<G2C_UnitPresentation> UnitPresentation = new(
+        "Client.UnitPresentation", MsgCode.G2C_UnitPresentation, G2C_UnitPresentationCodec.Encode, G2C_UnitPresentationCodec.Decode);
 }
 
 public static class MapMessages
@@ -6142,6 +7907,8 @@ public sealed class MapClient
         socket.CallAsync(MapProtocol.CancelPlayerTrade, request, cancellationToken);
     public Task<M2C_CastSkill> CastSkillAsync(C2M_CastSkill request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.CastSkill, request, cancellationToken);
+    public Task<M2C_CommandOwnedUnit> CommandOwnedUnitAsync(C2M_CommandOwnedUnit request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.CommandOwnedUnit, request, cancellationToken);
     public Task<M2C_CompleteQuest> CompleteQuestAsync(C2M_CompleteQuest request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.CompleteQuest, request, cancellationToken);
     public Task<M2C_ConfirmPlayerTrade> ConfirmPlayerTradeAsync(C2M_ConfirmPlayerTrade request, CancellationToken cancellationToken = default) =>
@@ -6150,6 +7917,8 @@ public sealed class MapClient
         socket.CallAsync(MapProtocol.FindPath, request, cancellationToken);
     public Task<M2C_InspectLootMonster> InspectLootMonsterAsync(C2M_InspectLootMonster request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.InspectLootMonster, request, cancellationToken);
+    public Task<M2C_LearnTrainerSkill> LearnTrainerSkillAsync(C2M_LearnTrainerSkill request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.LearnTrainerSkill, request, cancellationToken);
     public Task<M2C_LootMonster> LootMonsterAsync(C2M_LootMonster request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.LootMonster, request, cancellationToken);
     public Task<M2C_MapProbe> ProbeAsync(C2M_MapProbe request, CancellationToken cancellationToken = default) =>
@@ -6160,18 +7929,30 @@ public sealed class MapClient
         socket.CallAsync(MapProtocol.NavigateTo, request, cancellationToken);
     public Task<M2C_OpenNpcShop> OpenNpcShopAsync(C2M_OpenNpcShop request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.OpenNpcShop, request, cancellationToken);
+    public Task<M2C_ReleaseDeadPlayer> ReleaseDeadPlayerAsync(C2M_ReleaseDeadPlayer request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.ReleaseDeadPlayer, request, cancellationToken);
+    public Task<M2C_RepairItems> RepairItemsAsync(C2M_RepairItems request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.RepairItems, request, cancellationToken);
     public Task<M2C_RequestPlayerTrade> RequestPlayerTradeAsync(C2M_RequestPlayerTrade request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.RequestPlayerTrade, request, cancellationToken);
     public Task<M2C_RespondPlayerTrade> RespondPlayerTradeAsync(C2M_RespondPlayerTrade request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.RespondPlayerTrade, request, cancellationToken);
+    public Task<M2C_RevivePlayer> RevivePlayerAsync(C2M_RevivePlayer request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.RevivePlayer, request, cancellationToken);
     public Task<M2C_SellItem> SellItemAsync(C2M_SellItem request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.SellItem, request, cancellationToken);
     public Task<M2C_ToggleAutoAttack> ToggleAutoAttackAsync(C2M_ToggleAutoAttack request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.ToggleAutoAttack, request, cancellationToken);
     public Task<M2C_ToggleDemoDoor> ToggleDemoDoorAsync(C2M_ToggleDemoDoor request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.ToggleDemoDoor, request, cancellationToken);
+    public Task<M2C_TriggerMonsterSignal> TriggerMonsterSignalAsync(C2M_TriggerMonsterSignal request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.TriggerMonsterSignal, request, cancellationToken);
+    public Task<M2C_TriggerNpcInteraction> TriggerNpcInteractionAsync(C2M_TriggerNpcInteraction request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.TriggerNpcInteraction, request, cancellationToken);
     public Task<M2C_UpdatePlayerTradeOffer> UpdatePlayerTradeOfferAsync(C2M_UpdatePlayerTradeOffer request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.UpdatePlayerTradeOffer, request, cancellationToken);
+    public Task<M2C_UseInteractable> UseInteractableAsync(C2M_UseInteractable request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.UseInteractable, request, cancellationToken);
     public Task<M2C_UseItem> UseItemAsync(C2M_UseItem request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.UseItem, request, cancellationToken);
     public Task MoveAsync(C2M_Move message, CancellationToken cancellationToken = default) =>

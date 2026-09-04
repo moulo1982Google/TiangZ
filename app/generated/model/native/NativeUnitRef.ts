@@ -24,6 +24,9 @@ export const NativeUnitField = {
   InputZ: 19,
   InputChanged: 20,
   Sequence: 21,
+  GridGoalCellX: 22,
+  GridGoalCellZ: 23,
+  GridGoalActive: 24,
 } as const;
 
 export type NativeUnitField = typeof NativeUnitField[keyof typeof NativeUnitField];
@@ -61,6 +64,9 @@ export interface NativeUnitCreateArgs {
   inputZ?: number;
   inputChanged?: number;
   sequence?: number;
+  gridGoalCellX?: number;
+  gridGoalCellZ?: number;
+  gridGoalActive?: number;
 }
 
 @component()
@@ -95,6 +101,9 @@ export class NativeUnitRef extends Component<[args: NativeUnitCreateArgs]> {
       args.inputZ ?? 0,
       args.inputChanged ?? 0,
       args.sequence ?? 0,
+      args.gridGoalCellX ?? 0,
+      args.gridGoalCellZ ?? 0,
+      args.gridGoalActive ?? 0,
     ]));
     NativeOps.TrackNativeRefCreated("Unit");
   }
@@ -253,6 +262,30 @@ export class NativeUnitRef extends Component<[args: NativeUnitCreateArgs]> {
 
   set sequence(value: number) {
     NativeOps.EntitySetNumber(this.Handle, 21, value);
+  }
+
+  get gridGoalCellX(): number {
+    return NativeOps.EntityGetNumber(this.Handle, 22);
+  }
+
+  set gridGoalCellX(value: number) {
+    NativeOps.EntitySetNumber(this.Handle, 22, value);
+  }
+
+  get gridGoalCellZ(): number {
+    return NativeOps.EntityGetNumber(this.Handle, 23);
+  }
+
+  set gridGoalCellZ(value: number) {
+    NativeOps.EntitySetNumber(this.Handle, 23, value);
+  }
+
+  get gridGoalActive(): number {
+    return NativeOps.EntityGetNumber(this.Handle, 24);
+  }
+
+  set gridGoalActive(value: number) {
+    NativeOps.EntitySetNumber(this.Handle, 24, value);
   }
   protected override OnDestroy(): void {
     if (this.nativeHandle === 0) return;

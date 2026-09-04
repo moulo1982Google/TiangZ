@@ -1,5 +1,4 @@
 import {
-  GameConfigs,
   MonsterUnit,
   NativeUnitRef,
   NumericComponent,
@@ -18,18 +17,36 @@ export class MonsterUnitSystem extends MonsterUnit {
     this.mapInstanceId = request.mapInstanceId;
     this.areaId = request.areaId;
     this.monsterConfigId = request.monsterConfigId;
+    this.monsterName = request.name;
+    this.monsterModelId = request.modelId;
+    this.monsterPresentationStateId = request.presentationStateId ?? 0;
+  }
+
+  /** 替换运行时模型，并为后续AOI观察者保留该状态。 / Replaces the runtime model while retaining it for future AOI observers. */
+  SetPresentationModel(modelId: string): void {
+    const value = modelId.trim();
+    if (!value) throw new Error("monster presentation model id must not be empty");
+    this.monsterModelId = value;
+  }
+
+  /** 为后续AOI观察者设置或清除持久动画状态。 / Sets or clears a persistent animation state for future AOI observers. */
+  SetPresentationState(presentationStateId: number): void {
+    if (!Number.isSafeInteger(presentationStateId) || presentationStateId < 0) {
+      throw new Error(`monster presentation state must not be negative: ${presentationStateId}`);
+    }
+    this.monsterPresentationStateId = presentationStateId;
   }
 
   /** 生成AOI进入和客户端渲染需要的怪物快照；不暴露Rust句柄。 / Builds the monster snapshot required by AOI entry and client rendering without exposing Native handles. */
   Snapshot(): MonsterSnapshot {
-    const config = GameConfigs.MonsterConfig.Get(this.monsterConfigId);
     const position = this.GetComponent(PositionComponent).snapshot();
     const native = this.GetComponent(NativeUnitRef);
     return {
       unitId: this.UnitId,
       monsterConfigId: this.monsterConfigId,
-      name: config.name,
-      modelId: config.modelId,
+      name: this.monsterName,
+      modelId: this.monsterModelId,
+      presentationStateId: this.monsterPresentationStateId,
       ...position,
       speedCellsPerSecond: native.speedCellsPerSecond,
       facing: native.facing,

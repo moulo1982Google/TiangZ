@@ -6,6 +6,10 @@ export interface AwakeMonsterUnit {
   readonly mapInstanceId: bigint;
   readonly areaId: number;
   readonly monsterConfigId: number;
+  readonly name: string;
+  readonly modelId: string;
+  /** Optional persistent presentation state selected by the content adapter. / 由内容适配器选择的可选持久表现状态。 */
+  readonly presentationStateId?: number;
 }
 
 export interface MonsterSnapshot {
@@ -13,6 +17,7 @@ export interface MonsterSnapshot {
   readonly monsterConfigId: number;
   readonly name: string;
   readonly modelId: string;
+  readonly presentationStateId: number;
   readonly x: number;
   readonly y: number;
   readonly z: number;
@@ -38,6 +43,10 @@ export class MonsterUnit extends Unit<[request: AwakeMonsterUnit]> {
   protected mapInstanceId = 0n;
   protected areaId = 0;
   protected monsterConfigId = 0;
+  protected monsterName = "";
+  protected monsterModelId = "";
+  /** 包含在晚加入AOI快照中的持久客户端动画状态。 / Persistent client-facing animation state included in late-join AOI snapshots. */
+  protected monsterPresentationStateId = 0;
 
   get MapId(): number {
     return this.mapId;

@@ -13,13 +13,24 @@ import { TimerSystem } from "../app/core/runtime/TimerSystem";
 import { actor, scene } from "../app/core/runtime/metadata";
 import type { NativeHostOpsApi } from "../app/generated/model/native/NativeOps";
 import { NativeUnitRef } from "../app/generated/model/native/NativeUnitRef";
-import { GameConfigRegistry, GameConfigs, SkillEffectTarget } from "../app/generated/model/config";
+import {
+  BuffConflictPolicy,
+  BuffRefreshStatePolicy,
+  BuffRefreshTickPolicy,
+  BuffStackScope,
+  GameConfigRegistry,
+  GameConfigs,
+  SkillEffectTarget,
+} from "../app/generated/model/config";
 import { ActionType } from "../app/model/mmorpg/action/ActionType";
 import { ActionFromConfig, ExecuteAction, ExecuteActionBatch } from "../app/hotfix/mmorpg/action/ActionExecutor";
 import { GetSkillDefinition } from "../app/hotfix/mmorpg/skill/SkillCatalog";
 import { BuffApplyStatus, BuffComponent } from "../app/model/mmorpg/buff/BuffComponent";
 import { Buff } from "../app/model/mmorpg/buff/Buff";
+import { BuffDefinitionProfileComponent } from "../app/model/mmorpg/buff/BuffDefinitionProfileComponent";
 import { CombatComponent } from "../app/model/mmorpg/combat/CombatComponent";
+import { MonsterComponent } from "../app/model/mmorpg/monster/MonsterComponent";
+import { MonsterUnit } from "../app/model/mmorpg/monster/MonsterUnit";
 import { NumericComponent } from "../app/model/mmorpg/numeric/NumericComponent";
 import { IsDerivedNumericType, NumericType } from "../app/model/mmorpg/numeric/NumericType";
 import { SkillCastPhase, SkillComponent } from "../app/model/mmorpg/skill/SkillComponent";
@@ -32,6 +43,7 @@ import {
   PlanItemUseTransaction,
 } from "../app/hotfix/mmorpg/item/ItemUseTransaction";
 import { QuestComponent } from "../app/model/mmorpg/quest/QuestComponent";
+import { QuestContentProfileComponent } from "../app/model/mmorpg/quest/QuestContentProfileComponent";
 import { QuestObjectiveType, QuestStatus } from "../app/generated/model/config";
 import { PlayerUnit } from "../app/model/mmorpg/map/PlayerUnit";
 import { PositionComponent } from "../app/model/mmorpg/map/PositionComponent";
@@ -115,7 +127,7 @@ async function main(): Promise<void> {
   HotfixSystem.Begin(testHotfixManifest());
   await import("../app/hotfix/mmorpg/numeric/NumericComponentSystem");
   await import("../app/hotfix/mmorpg/combat/CombatComponentSystem");
-  await import("../app/hotfix/mmorpg/buff/BuffSystem");
+  const { BuffSystem } = await import("../app/hotfix/mmorpg/buff/BuffSystem");
   await import("../app/hotfix/mmorpg/buff/BuffComponentSystem");
   await import("../app/hotfix/mmorpg/skill/SkillComponentSystem");
   await import("../app/hotfix/mmorpg/item/ItemSystem");
@@ -126,12 +138,131 @@ async function main(): Promise<void> {
   await import("../app/hotfix/mmorpg/progression/ProgressionComponentSystem");
   await import("../app/hotfix/mmorpg/map/PlayerUnitSystem");
   HotfixSystem.Commit();
+  verifyMonsterBuffDamageRouting(BuffSystem.prototype);
 
   const host = new ProcessHost("buff-action-self-test");
   const scene = host.spawnScene("buff", BuffTestScene);
+  const externalBuffDefinitions = scene.AddComponent(BuffDefinitionProfileComponent);
+  externalBuffDefinitions.Register("org.example.buff-content", [{
+    id: 9001,
+    name: "Tendon Rip Fixture",
+    description: "External movement debuff fixture.",
+    durationMs: 8_000,
+    tickIntervalMs: 0,
+    stackGroup: 9001,
+    stackScope: BuffStackScope.Target,
+    conflictPolicy: BuffConflictPolicy.Refresh,
+    conflictPriority: 0,
+    refreshSource: true,
+    refreshTickPolicy: BuffRefreshTickPolicy.KeepCadence,
+    refreshRuntimeState: BuffRefreshStatePolicy.Keep,
+    effectTags: [7_101],
+    addAction: { type: ActionType.ChangeNumeric, parameters: [30_003n, -25n] },
+    removeAction: { type: ActionType.ChangeNumeric, parameters: [30_003n, 25n] },
+  }, {
+    id: 9002,
+    name: "Coordinated Numeric Fixture",
+    description: "A game-neutral Buff that changes two independent Numeric values.",
+    durationMs: 8_000,
+    tickIntervalMs: 0,
+    stackGroup: 9002,
+    stackScope: BuffStackScope.Target,
+    conflictPolicy: BuffConflictPolicy.Refresh,
+    conflictPriority: 0,
+    refreshSource: true,
+    refreshTickPolicy: BuffRefreshTickPolicy.KeepCadence,
+    refreshRuntimeState: BuffRefreshStatePolicy.Keep,
+    effectTags: [7_102],
+    addAction: {
+      type: ActionType.ChangeNumericBatch,
+      parameters: [BigInt(NumericType.AttackAdd), 7n, BigInt(NumericType.MoveSpeedPct), -10n],
+    },
+    removeAction: {
+      type: ActionType.ChangeNumericBatch,
+      parameters: [BigInt(NumericType.AttackAdd), -7n, BigInt(NumericType.MoveSpeedPct), 10n],
+    },
+  }]);
+  assert.equal(externalBuffDefinitions.Count, 2);
+  assert.equal(Object.isFrozen(externalBuffDefinitions.TryGet(9001)?.addAction?.parameters), true);
+  assert.equal(Object.isFrozen(externalBuffDefinitions.TryGet(9001)?.effectTags), true);
+  externalBuffDefinitions.Seal();
+  assert.throws(
+    () => externalBuffDefinitions.Register("org.example.late", []),
+    /sealed/,
+  );
+  const questContent = scene.AddComponent(QuestContentProfileComponent);
+  questContent.Register("org.example.quest-content", [{
+    id: 730_001,
+    name: "Cull the Practice Beasts",
+    objectives: [{
+      id: 731_001,
+      objectiveType: QuestObjectiveType.KillMonster,
+      targetConfigId: 700_001,
+      requiredCount: 2,
+    }],
+    acceptActions: [],
+    rewardActions: [],
+    rewardChoices: [{
+      id: 1001,
+      actions: [{ type: ActionType.GrantItem, parameters: [1001n, 2n] }],
+    }, {
+      id: 1002,
+      actions: [{ type: ActionType.GrantItem, parameters: [1002n, 3n] }],
+    }],
+    rewardCurrency: 25,
+    rewardExperience: 1,
+    rewardExperienceByLevel: [{ playerLevel: 2, experience: 300 }],
+    autoAccept: false,
+    requiredQuestIds: [],
+    minimumLevel: 1,
+    eligiblePlayerConfigIds: [1],
+  }, {
+    id: 730_002,
+    name: "Deliver the Issued Potion",
+    objectives: [{
+      id: 731_002,
+      objectiveType: QuestObjectiveType.CollectItem,
+      targetConfigId: 1003,
+      requiredCount: 1,
+      consumeOnComplete: true,
+    }],
+    acceptActions: [{ type: ActionType.GrantItem, parameters: [1003n, 1n] }],
+    rewardActions: [],
+    autoAccept: false,
+    requiredQuestIds: [],
+    minimumLevel: 1,
+    eligiblePlayerConfigIds: [1],
+  }, {
+    id: 730_003,
+    name: "Wrong Player Template",
+    objectives: [],
+    acceptActions: [],
+    rewardActions: [],
+    autoAccept: false,
+    requiredQuestIds: [],
+    minimumLevel: 1,
+    eligiblePlayerConfigIds: [2],
+  }, {
+    id: 730_004,
+    name: "Observe the Practice Signal",
+    objectives: [{
+      id: 731_004,
+      objectiveType: QuestObjectiveType.ContentSignal,
+      targetConfigId: 880_001,
+      requiredCount: 1,
+    }],
+    acceptActions: [],
+    rewardActions: [],
+    autoAccept: false,
+    requiredQuestIds: [],
+    minimumLevel: 1,
+    eligiblePlayerConfigIds: [1],
+  }]);
+  questContent.Seal();
   const unit = scene.SpawnActor(1, BuffTestUnit, {
     account: "buff-test-1",
     characterId: 1n,
+    playerConfigId: 1,
     mapId: 1,
     mapInstanceId: 1n,
   });
@@ -145,10 +276,41 @@ async function main(): Promise<void> {
     [NumericType.CurrentMp]: 0n,
     [NumericType.MaxMpBase]: 100n,
     [NumericType.Level]: 1n,
+    [NumericType.Experience]: 0n,
     [NumericType.MoveSpeedBase]: 6_000n,
   });
   unit.AddComponent(CombatComponent);
   const buffs = unit.AddComponent(BuffComponent);
+  const externalSlow = buffs.AddBuff(9001, { sourceUnitId: unit.UnitId });
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.MoveSpeedPct], -25n);
+  assert.equal(buffs.RemoveBuff(externalSlow.Id as bigint, "fixture"), true);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.MoveSpeedPct], 0n);
+  const coordinated = buffs.AddBuff(9002, { sourceUnitId: unit.UnitId });
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.AttackAdd], 7n);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.MoveSpeedPct], -10n);
+  assert.equal(buffs.RemoveBuff(coordinated.Id as bigint, "fixture"), true);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.AttackAdd], 0n);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.MoveSpeedPct], 0n);
+  const taggedSlow = buffs.AddBuff(9001, { sourceUnitId: unit.UnitId });
+  const taggedNumeric = buffs.AddBuff(9002, { sourceUnitId: unit.UnitId });
+  const removedByTag = ExecuteAction(unit, {
+    type: ActionType.RemoveBuffsByEffectTags,
+    parameters: [7_101n, 7_102n],
+  });
+  assert.equal(removedByTag.changed, true);
+  assert.equal(removedByTag.value, 2n);
+  assert.equal(buffs.GetBuff(taggedSlow.Id as bigint), undefined);
+  assert.equal(buffs.GetBuff(taggedNumeric.Id as bigint), undefined);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.AttackAdd], 0n);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.MoveSpeedPct], 0n);
+  assert.throws(
+    () => ExecuteAction(unit, { type: ActionType.RemoveBuffsByEffectTags, parameters: [] }),
+    /expects one or more effect tags/,
+  );
+  assert.throws(
+    () => ActionFromConfig(ActionType.RemoveBuffsByEffectTags, [7_101, 7_101]),
+    /duplicate effect tags/,
+  );
   const items = unit.AddComponent(ItemComponent);
   unit.AddComponent(CurrencyComponent, 0n);
   assert.deepEqual(items.Snapshot(), []);
@@ -348,6 +510,63 @@ async function main(): Promise<void> {
   assert.equal(advancedProgress[0]?.questConfigId, 5004);
   assert.equal(advancedProgress[0]?.status, QuestStatus.ReadyToTurnIn);
 
+  assert.throws(() => quests.AcceptQuest(730_003), /rejected by BeforeAccept|unavailable to player config/);
+  const signalQuest = quests.AcceptQuest(730_004);
+  assert.equal(signalQuest.status, QuestStatus.InProgress);
+  const signalProgress = quests.ApplyProgress({
+    player: unit as never,
+    objectiveType: QuestObjectiveType.ContentSignal,
+    targetConfigId: 880_001,
+    count: 1,
+  });
+  assert.equal(signalProgress[0]?.questConfigId, 730_004);
+  assert.equal(signalProgress[0]?.status, QuestStatus.ReadyToTurnIn);
+  const externalQuest = quests.AcceptQuest(730_001);
+  assert.equal(externalQuest.status, QuestStatus.InProgress);
+  assert.deepEqual(quests.ApplyProgress({
+    player: unit as never,
+    objectiveType: QuestObjectiveType.KillMonster,
+    targetConfigId: 700_001,
+    count: 2,
+  }).map((state) => state.questConfigId), [730_001]);
+  const choiceRewardBaseCount = items.Snapshot().find((item) => item.configId === 1002)?.count ?? 0;
+  await assert.rejects(quests.CompleteQuest(730_001, 9999), /reward choice/);
+  assert.equal(unit.GetComponent(CurrencyComponent).Gold, 0n);
+  const externalReward = await quests.CompleteQuest(730_001, 1002);
+  assert.equal(externalReward.selectedRewardChoiceId, 1002);
+  assert.equal(externalReward.rewardItems[0]?.configId, 1002);
+  assert.equal(externalReward.rewardItems[0]?.count, choiceRewardBaseCount + 3);
+  assert.equal(externalReward.gold, 25n);
+  assert.equal(externalReward.gainedGold, 25n);
+  assert.equal(externalReward.level, 3n);
+  assert.equal(externalReward.experience, 300n);
+  assert.equal(externalReward.gainedExperience, 300n);
+  assert.equal(externalReward.leveledUp, true);
+  assert.equal(unit.GetComponent(CurrencyComponent).Gold, 25n);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.Level], 3n);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.Experience], 300n);
+  assert.deepEqual(externalReward.inventoryItems, items.Snapshot());
+  assert.equal(quests.HasCompletedQuest(730_001), true);
+  repository.loseNextTransactionAck = true;
+  await assert.rejects(
+    quests.AcceptQuestDurable(730_002),
+    /injected lost transaction ack/,
+  );
+  assert.equal(quests.Snapshot().some((quest) => quest.questConfigId === 730_002), false);
+  assert.equal(items.Snapshot().some((item) => item.configId === 1003), false);
+  const issuedAcceptance = await quests.AcceptQuestDurable(730_002);
+  assert.equal(issuedAcceptance.quest.status, QuestStatus.ReadyToTurnIn);
+  assert.equal(issuedAcceptance.inventoryChanges[0]?.configId, 1003);
+  assert.equal(items.Snapshot().find((item) => item.configId === 1003)?.count, 1);
+  assert.deepEqual(await quests.AcceptQuestDurable(730_002), issuedAcceptance);
+  assert.equal(items.Snapshot().find((item) => item.configId === 1003)?.count, 1);
+  const issuedItemReward = await quests.CompleteQuest(730_002);
+  assert.equal(items.Snapshot().some((item) => item.configId === 1003), false);
+  assert.equal(issuedItemReward.inventoryChanges.some(
+    (item) => item.configId === 1003 && item.count === 0,
+  ), true);
+  assert.deepEqual(issuedItemReward.inventoryItems, items.Snapshot());
+
   assert.equal(GameConfigs.BuffConfig.Get(2001).tickIntervalMs, 3_000);
   assert.equal(GameConfigs.BuffConfig.Get(2001).tickActionType, ActionType.Heal);
   const buff = buffs.AddBuff(2001);
@@ -371,6 +590,7 @@ async function main(): Promise<void> {
   const target = scene.SpawnActor(2, BuffTestUnit, {
     account: "buff-test-2",
     characterId: 2n,
+    playerConfigId: 1,
     mapId: 1,
     mapInstanceId: 1n,
   });
@@ -396,12 +616,13 @@ async function main(): Promise<void> {
   target.RestoreTransfer(transfer);
   assert.equal(target.GetComponent(NumericComponent)[NumericType.CurrentHp], 51n);
   assert.equal(targetBuffs.GetBuff(buff.Id as bigint)?.Id, buff.Id);
-  assert.deepEqual(targetQuests.CompletedQuestConfigIds(), [5001]);
+  assert.deepEqual(targetQuests.CompletedQuestConfigIds(), [5001, 730_001, 730_002]);
   assert.deepEqual(
     targetQuests.Snapshot().map((quest) => quest.questConfigId).sort((left, right) => left - right),
-    [5002, 5003, 5004, 5005],
+    [5002, 5003, 5004, 5005, 730_004],
   );
   assert.equal(targetQuests.Snapshot().find((quest) => quest.questConfigId === 5004)?.status, QuestStatus.ReadyToTurnIn);
+  assert.equal(targetQuests.Snapshot().find((quest) => quest.questConfigId === 730_004)?.status, QuestStatus.ReadyToTurnIn);
 
   // 背包耗尽最后一件道具后移除Item实体；快捷栏不绑定这个实例ID，后续同配置新实例仍可重新汇总。
   // Consuming the last item removes its child entity; the hotbar is not bound
@@ -522,6 +743,22 @@ async function main(): Promise<void> {
     /ChangeNumeric cannot target CurrentHp; use Heal or DealDamage/,
   );
   assert.throws(
+    () => ExecuteAction(unit, {
+      type: ActionType.ChangeNumericBatch,
+      parameters: [BigInt(NumericType.AttackAdd), 7n, BigInt(NumericType.CurrentHp), -1n],
+    }),
+    /ChangeNumericBatch cannot write CurrentHp; use Heal or DealDamage/,
+  );
+  assert.equal(numeric[NumericType.AttackAdd], 0n, "a rejected Numeric batch must not partially write");
+  assert.throws(
+    () => ActionFromConfig(ActionType.ChangeNumericBatch, [NumericType.AttackAdd, 7, NumericType.MoveSpeedPct]),
+    /ChangeNumericBatch expects one or more/,
+  );
+  assert.throws(
+    () => ActionFromConfig(ActionType.ChangeNumericBatch, [NumericType.AttackAdd, 7, NumericType.AttackAdd, 3]),
+    /duplicate NumericType/,
+  );
+  assert.throws(
     () => ActionFromConfig(ActionType.Max, []),
     /unsupported action type/,
   );
@@ -540,9 +777,15 @@ async function main(): Promise<void> {
   assert.equal(buffs.ApplyBuff(4005, { sourceUnitId: 12, sourceAbilityId: 3005, conflictPriority: 0 }).status, BuffApplyStatus.Rejected);
   assert.equal(buffs.ApplyBuff(4005, { sourceUnitId: 13, sourceAbilityId: 3005, conflictPriority: 2 }).status, BuffApplyStatus.Replaced);
   assert.equal(unit.GetComponent(NumericComponent)[NumericType.MaxHp], 700n);
+  unit.GetComponent(NumericComponent)[NumericType.CurrentHp] = 650n;
   const activeFortitude = buffs.GetBuffs().find((value) => value.ConfigId === 4005)!;
   buffs.RemoveBuff(activeFortitude.Id as bigint, "test-fortitude");
   assert.equal(unit.GetComponent(NumericComponent)[NumericType.MaxHp], 200n);
+  assert.equal(
+    unit.GetComponent(NumericComponent)[NumericType.CurrentHp],
+    200n,
+    "removing a maximum-health Buff left CurrentHp above its new cap",
+  );
 
   // HigherWins同级刷新必须清掉历史重复实例；否则低优先级残留会继续执行RemoveAction。
   // Equal-rank HigherWins refresh must remove legacy duplicates, otherwise a
@@ -603,6 +846,8 @@ async function main(): Promise<void> {
   // 跨地图保留已提交GCD/CD，但不恢复源地图活动读条。
   // Cross-map transfer keeps committed GCD/CD without restoring the source-map active cast.
   const skillNow = TimeSystem.Instance.ServerNow;
+  sourceSkill.ApplyCommittedLearnSkill(3_099);
+  sourceSkill.ApplyCommittedProficiency(77, 25, 75);
   const itemCooldown = sourceSkill.TryCommitItemCooldown(1001, 30_000, 1_000);
   assert.equal(itemCooldown.accepted, true);
   assert.equal(sourceSkill.TryCommitItemCooldown(1002, 30_000, 1_000).accepted, false);
@@ -621,6 +866,12 @@ async function main(): Promise<void> {
   assert.equal(targetSkill.State(3002).phase, SkillCastPhase.Idle);
   assert.equal(targetSkill.ReadyAt(3002), skillNow + 12_000);
   assert.equal(targetSkill.ItemReadyAt(1001), itemCooldown.itemCooldownEndAtMs);
+  assert.equal(targetSkill.KnowsSkill(3_099), true);
+  assert.deepEqual(targetSkill.Proficiency(77), {
+    proficiencyId: 77,
+    rank: 25,
+    maximumRank: 75,
+  });
   sourceSkill.Interrupt("test-transfer");
 
   // 引导状态和单技能排队只保存纯值；恢复技能本身是瞬发，持续效果由Buff负责。
@@ -674,6 +925,62 @@ async function main(): Promise<void> {
   host.Dispose();
   SingletonRegistry.DestroyAll();
   console.log("buff action self-test passed", { actionTypes: ActionType });
+}
+
+/** 持续伤害命中Monster时必须进入刷怪总管，不能只把Combat生命写成0。 / Periodic monster damage must enter the spawn owner instead of only writing Combat health to zero. */
+function verifyMonsterBuffDamageRouting(prototype: object): void {
+  const executePhase = (prototype as {
+    executePhase(
+      this: object,
+      action: { type: ActionType; parameters: readonly bigint[] },
+      phase: string,
+    ): {
+      damagePublishedByTargetBoundary?: boolean;
+      damage?: { killed: boolean; finalDamage: bigint };
+    };
+  }).executePhase;
+  const monster = Object.create(MonsterUnit.prototype) as MonsterUnit;
+  let routedSourceUnitId = 0;
+  let routedAbilityId = 0;
+  const fakeBuff = {
+    owner: monster,
+    configId: 4002,
+    sourceUnitId: 101,
+    sourceAbilityId: 3002,
+    DomainScene() {
+      return {
+        GetComponent(componentType: unknown) {
+          assert.equal(componentType, MonsterComponent);
+          return {
+            ApplyUnitDamage(target: MonsterUnit, request: { sourceUnitId?: number; abilityId?: number }) {
+              assert.equal(target, monster);
+              routedSourceUnitId = request.sourceUnitId ?? 0;
+              routedAbilityId = request.abilityId ?? 0;
+              return {
+                requestedDamage: 5n,
+                absorbedDamage: 0n,
+                finalDamage: 5n,
+                remainingHp: 0n,
+                killed: true,
+                absorptions: [],
+                damageSchool: 3,
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+  const result = executePhase.call(
+    fakeBuff,
+    { type: ActionType.DealDamage, parameters: [5n, 3n] },
+    "tick",
+  );
+  assert.equal(routedSourceUnitId, 101);
+  assert.equal(routedAbilityId, 3002);
+  assert.equal(result.damage?.killed, true);
+  assert.equal(result.damage?.finalDamage, 5n);
+  assert.equal(result.damagePublishedByTargetBoundary, true);
 }
 
 class ControllablePlayerRepository extends InMemoryPlayerRepository {

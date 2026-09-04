@@ -6,6 +6,9 @@ export interface AwakeItem {
   readonly quality?: number;
   readonly level?: number;
   readonly version?: number;
+  readonly durability?: number;
+  readonly maxDurability?: number;
+  readonly placementId?: number;
 }
 
 /** 道具的通用只读视图；网络层和持久化层可以各自投影它。 / Generic read-only item view; network and persistence layers may project it independently. */
@@ -17,6 +20,9 @@ export interface ItemView {
   readonly quality: number;
   readonly level: number;
   readonly version: number;
+  readonly durability: number;
+  readonly maxDurability: number;
+  readonly placementId: number;
 }
 
 /**
@@ -42,4 +48,7 @@ export interface ItemNativeData {
 @lifecycle({ awake: true, destroy: true })
 export class Item extends ChildEntity<[request: AwakeItem]> {
   protected native: ItemNativeData | undefined;
+  protected durabilityValue = 0;
+  protected maxDurabilityValue = 0;
+  protected placementIdValue = 0;
 }

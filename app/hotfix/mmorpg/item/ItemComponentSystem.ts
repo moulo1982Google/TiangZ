@@ -1,13 +1,16 @@
 import {
   GameErrCode,
-  GameConfigs,
   GlobalIdSystem,
   Item,
   ItemComponent,
   ItemEvents,
   type InventoryGrant,
   type InventoryGrantPlan,
+  type InventoryConsumeByConfig,
+  type InventoryExchangePlan,
   type InventoryReplacePlan,
+  type InventoryRepairPlan,
+  type InventorySeed,
   type InventoryConsumePlan,
   type ItemSnapshot,
   type ItemView,
@@ -33,6 +36,7 @@ import {
   type ItemUseTransactionReceipt,
 } from "./ItemUseTransaction";
 import { attachInventoryRecovery } from "./InventoryRecovery";
+import { RequireItemContentDefinition } from "./ItemContentResolver";
 
 const CLIENT_OPERATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/;
 
@@ -71,9 +75,8 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     }
     // 兼容旧版本曾保存的空堆叠；数量归零的Item在语义上已经不存在，恢复时直接丢弃。
     // Ignore legacy zero-count stacks; semantically they are already gone and must not block login.
-    for (const item of items) {
-      if (item.count > 0) this.CreateItemById(item.itemId, item);
-    }
+    const restored = this.validateInventorySnapshot(items.filter((item) => item.count > 0));
+    for (const item of restored) this.CreateItemById(item.itemId, item);
   }
 
   /** 消耗一件道具并返回不可覆盖事件所需快照。 / Consumes one item and returns the snapshot required by a non-coalescing event. */
@@ -107,7 +110,7 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
       if (current.count <= 0) {
         throw new RpcError(GameErrCode.ItemNotEnough, `item ${itemId} is empty`);
       }
-      const itemConfig = GameConfigs.ItemConfig.Get(current.configId);
+      const itemConfig = this.getItemConfig(current.configId);
       const vetoReason = unit.DomainScene().Events.Check(ItemEvents.BeforeUse, {
         unit,
         item: current,
@@ -325,9 +328,12 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
       itemId,
       configId,
       count,
-      quality: 0,
-      level: 1,
+      quality: config.quality,
+      level: config.level,
       version: 1,
+      durability: config.maxDurability ?? 0,
+      maxDurability: config.maxDurability ?? 0,
+      placementId: 0,
     });
   }
 
@@ -342,13 +348,141 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     }
     const config = this.getItemConfig(snapshot.configId);
     requireStackCount(snapshot.count, config.maxStack, snapshot.configId);
+    const placementId = snapshot.placementId ?? 0;
+    if (!Number.isSafeInteger(placementId) || placementId < 0) {
+      throw new Error(`item placement id must not be negative: ${placementId}`);
+    }
+    if (
+      placementId > 0 &&
+      this.GetChildren(Item).some((item) => item.placementId === placementId)
+    ) {
+      throw new Error(`duplicate item placement: ${placementId}`);
+    }
     return this.AddChild(Item, snapshot.itemId, {
       configId: snapshot.configId,
       count: snapshot.count,
       quality: snapshot.quality,
       level: snapshot.level,
       version: snapshot.version,
+      durability: snapshot.durability ?? snapshot.maxDurability ?? config.maxDurability ?? 0,
+      maxDurability: snapshot.maxDurability ?? config.maxDurability ?? 0,
+      placementId,
     });
+  }
+
+  /** 只为空的新聚合体创建精确物品实例；放置编号由外部模块解释。 / Seeds exact item instances only for an empty new aggregate; placement IDs are interpreted by the external module. */
+  SeedInitialItems(seeds: readonly InventorySeed[]): readonly ItemSnapshot[] {
+    if (this.GetChildren(Item).length > 0) throw new Error("initial items require an empty inventory");
+    if (!Array.isArray(seeds)) throw new Error("initial item seeds must be an array");
+    const placements = new Set<number>();
+    const validated = seeds.map((seed) => {
+      const config = this.getItemConfig(seed.configId);
+      requireStackCount(seed.count, config.maxStack, seed.configId);
+      const placementId = seed.placementId ?? 0;
+      if (!Number.isSafeInteger(placementId) || placementId < 0) {
+        throw new Error(`item placement id must not be negative: ${placementId}`);
+      }
+      if (placementId > 0 && placements.has(placementId)) {
+        throw new Error(`duplicate initial item placement: ${placementId}`);
+      }
+      if (placementId > 0) placements.add(placementId);
+      return { seed, config, placementId };
+    });
+    for (const { seed, config, placementId } of validated) {
+      const itemId = GlobalIdSystem.Instance.Next();
+      this.CreateItemById(itemId, {
+        itemId,
+        configId: seed.configId,
+        count: seed.count,
+        quality: config.quality,
+        level: config.level,
+        version: 1,
+        durability: config.maxDurability ?? 0,
+        maxDurability: config.maxDurability ?? 0,
+        placementId,
+      });
+    }
+    return this.Snapshot();
+  }
+
+  /** 在纯快照上规划单件或全部修理，不提前修改物品或金币。 / Plans one-item or repair-all changes on snapshots without mutating items or currency. */
+  PlanRepairItems(itemId: bigint = 0n): InventoryRepairPlan {
+    if (itemId < 0n) throw new Error(`repair item id must not be negative: ${itemId}`);
+    const baseItems = this.Snapshot();
+    if (itemId > 0n && !baseItems.some((item) => item.itemId === itemId)) {
+      throw new RpcError(GameErrCode.ItemNotFound, `item not found: ${itemId}`);
+    }
+    let cost = 0n;
+    const affectedItems: ItemSnapshot[] = [];
+    const nextItems = baseItems.map((item) => {
+      if (itemId > 0n && item.itemId !== itemId) return item;
+      const maxDurability = item.maxDurability ?? 0;
+      const durability = item.durability ?? maxDurability;
+      if (maxDurability === 0 || durability >= maxDurability) return item;
+      const lostDurability = maxDurability - durability;
+      const config = this.getItemConfig(item.configId);
+      const rawCost = BigInt(lostDurability) * BigInt(config.repairCostPerMillion ?? 0) / 1_000_000n;
+      cost += rawCost > 0n ? rawCost : 1n;
+      const next = {
+        ...item,
+        durability: maxDurability,
+        version: item.version + 1,
+      };
+      affectedItems.push(next);
+      return next;
+    });
+    return {
+      baseItems,
+      nextItems: sortSnapshots(nextItems),
+      affectedItems: sortSnapshots(affectedItems),
+      cost,
+    };
+  }
+
+  /** 提交已经持久化的修理计划，并拒绝任何过期背包基线。 / Commits a persisted repair plan and rejects any stale inventory baseline. */
+  CommitRepairPlan(plan: InventoryRepairPlan): readonly ItemSnapshot[] {
+    if (!snapshotArraysEqual(this.Snapshot(), plan.baseItems)) {
+      throw new Error("inventory repair plan is stale");
+    }
+    for (const expected of plan.affectedItems) {
+      const item = this.requireItem(expected.itemId);
+      const before = item.Snapshot();
+      if (
+        before.configId !== expected.configId ||
+        before.count !== expected.count ||
+        before.quality !== expected.quality ||
+        before.level !== expected.level ||
+        (before.maxDurability ?? 0) !== (expected.maxDurability ?? 0) ||
+        (before.placementId ?? 0) !== (expected.placementId ?? 0) ||
+        expected.durability !== expected.maxDurability ||
+        expected.version !== before.version + 1
+      ) {
+        throw new Error(`inventory repair plan has invalid transition: ${expected.itemId}`);
+      }
+      const committed = item.SetDurability(expected.durability ?? 0);
+      if (!snapshotEqual(committed, expected)) {
+        throw new Error(`inventory repair plan commit mismatch: ${expected.itemId}`);
+      }
+    }
+    if (!snapshotArraysEqual(this.Snapshot(), plan.nextItems)) {
+      throw new Error("inventory repair plan final snapshot mismatch");
+    }
+    return plan.affectedItems.map((item) => ({ ...item }));
+  }
+
+  /** 对所有已放置耐久物品应用确定性千分比损耗；0 表示模块未启用该规则。 / Applies deterministic permille wear to every placed durable item; zero means the module disabled the policy. */
+  LosePlacedDurability(lossPermille: number): readonly ItemSnapshot[] {
+    if (!Number.isSafeInteger(lossPermille) || lossPermille < 0 || lossPermille > 1_000) {
+      throw new Error(`durability loss must be 0..1000 permille: ${lossPermille}`);
+    }
+    if (lossPermille === 0) return [];
+    const affected: ItemSnapshot[] = [];
+    for (const item of this.GetChildren(Item)) {
+      if (item.placementId === 0 || item.maxDurability === 0 || item.durability === 0) continue;
+      const loss = Math.max(1, Math.floor(item.maxDurability * lossPermille / 1_000));
+      affected.push(item.SetDurability(Math.max(0, item.durability - loss)));
+    }
+    return sortSnapshots(affected);
   }
 
   /**
@@ -408,7 +542,11 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
       const config = this.getItemConfig(configId);
       let remaining = count;
       const stacks = [...working.values()]
-        .filter((item) => item.configId === configId && item.count < config.maxStack)
+        .filter((item) => (
+          item.configId === configId &&
+          (item.placementId ?? 0) === 0 &&
+          item.count < config.maxStack
+        ))
         .sort(compareSnapshots);
 
       for (const item of stacks) {
@@ -430,9 +568,12 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
           itemId,
           configId,
           count: amount,
-          quality: 0,
-          level: 1,
+          quality: config.quality,
+          level: config.level,
           version: 1,
+          durability: config.maxDurability ?? 0,
+          maxDurability: config.maxDurability ?? 0,
+          placementId: 0,
         };
         working.set(itemId, next);
         affected.set(itemId, next);
@@ -574,6 +715,7 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
   private validateInventorySnapshot(items: readonly ItemSnapshot[]): ItemSnapshot[] {
     const sorted = sortSnapshots(items);
     let previousId = 0n;
+    const placements = new Set<number>();
     for (const item of sorted) {
       requireGlobalId(item.itemId, "itemId");
       if (item.itemId === previousId) throw new Error(`duplicate item id in inventory snapshot: ${item.itemId}`);
@@ -583,6 +725,22 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
       if (!Number.isSafeInteger(item.version) || item.version <= 0) {
         throw new Error(`item version must be a positive safe integer: ${item.itemId}`);
       }
+      const maxDurability = item.maxDurability ?? config.maxDurability ?? 0;
+      const durability = item.durability ?? maxDurability;
+      const placementId = item.placementId ?? 0;
+      if (
+        !Number.isSafeInteger(maxDurability) || maxDurability < 0 ||
+        !Number.isSafeInteger(durability) || durability < 0 || durability > maxDurability
+      ) {
+        throw new Error(`item durability is invalid: ${item.itemId}`);
+      }
+      if (!Number.isSafeInteger(placementId) || placementId < 0) {
+        throw new Error(`item placement is invalid: ${item.itemId}`);
+      }
+      if (placementId > 0 && placements.has(placementId)) {
+        throw new Error(`duplicate item placement: ${placementId}`);
+      }
+      if (placementId > 0) placements.add(placementId);
     }
     return sorted;
   }
@@ -603,11 +761,99 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     return item;
   }
 
-  private getItemConfig(configId: number): import("#tiangz/model").ItemConfigData {
-    if (!Number.isSafeInteger(configId) || configId <= 0) {
-      throw new Error(`invalid item config id: ${configId}`);
+  private getItemConfig(configId: number): Readonly<import("#tiangz/model").ItemContentDefinition> {
+    return RequireItemContentDefinition(this.GetParent<PlayerUnit>(), configId);
+  }
+
+  /** 把目标物品上交与奖励规划为一次确定性背包替换。 / Plans objective-item delivery and rewards as one deterministic inventory replacement. */
+  PlanInventoryExchange(
+    consumes: readonly InventoryConsumeByConfig[],
+    grants: readonly InventoryGrant[],
+  ): InventoryExchangePlan {
+    const baseItems = this.Snapshot();
+    const baseById = new Map(baseItems.map((item) => [item.itemId, item]));
+    const working = new Map(baseItems.map((item) => [item.itemId, { ...item }]));
+    const consumeCounts = consolidateInventoryCounts(consumes, "consume");
+    const grantCounts = consolidateInventoryCounts(grants, "grant");
+
+    for (const [configId, count] of [...consumeCounts].sort(([left], [right]) => left - right)) {
+      this.getItemConfig(configId);
+      const stacks = [...working.values()]
+        .filter((item) => item.configId === configId)
+        .sort(compareSnapshots);
+      const available = stacks.reduce((total, item) => total + item.count, 0);
+      if (available < count) {
+        throw new RpcError(
+          GameErrCode.ItemNotEnough,
+          `item config ${configId} requires ${count}, available ${available}`,
+        );
+      }
+      let remaining = count;
+      for (const item of stacks) {
+        if (remaining === 0) break;
+        const removed = Math.min(item.count, remaining);
+        remaining -= removed;
+        const nextCount = item.count - removed;
+        if (nextCount === 0) working.delete(item.itemId);
+        else working.set(item.itemId, { ...item, count: nextCount });
+      }
     }
-    return GameConfigs.ItemConfig.Get(configId);
+
+    for (const [configId, count] of [...grantCounts].sort(([left], [right]) => left - right)) {
+      const config = this.getItemConfig(configId);
+      let remaining = count;
+      const stacks = [...working.values()]
+        .filter((item) => (
+          item.configId === configId &&
+          (item.placementId ?? 0) === 0 &&
+          item.count < config.maxStack
+        ))
+        .sort(compareSnapshots);
+      for (const item of stacks) {
+        if (remaining === 0) break;
+        const added = Math.min(config.maxStack - item.count, remaining);
+        remaining -= added;
+        working.set(item.itemId, { ...item, count: item.count + added });
+      }
+      while (remaining > 0) {
+        const amount = Math.min(config.maxStack, remaining);
+        remaining -= amount;
+        const itemId = GlobalIdSystem.Instance.Next();
+        working.set(itemId, {
+          itemId,
+          configId,
+          count: amount,
+          quality: config.quality,
+          level: config.level,
+          version: 1,
+          durability: config.maxDurability ?? 0,
+          maxDurability: config.maxDurability ?? 0,
+          placementId: 0,
+        });
+      }
+    }
+
+    const nextItems = sortSnapshots([...working.values()].map((item) => {
+      const base = baseById.get(item.itemId);
+      return base && base.count !== item.count
+        ? { ...item, version: base.version + 1 }
+        : item;
+    }));
+    const nextById = new Map(nextItems.map((item) => [item.itemId, item]));
+    const affectedItems = sortSnapshots([
+      ...baseItems
+        .filter((item) => !nextById.has(item.itemId))
+        .map((item) => ({ ...item, count: 0, version: item.version + 1 })),
+      ...nextItems.filter((item) => {
+        const base = baseById.get(item.itemId);
+        return !base || !snapshotEqual(base, item);
+      }),
+    ]);
+    const grantedItems = nextItems.filter((item) => {
+      const base = baseById.get(item.itemId);
+      return item.count > (base?.count ?? 0);
+    });
+    return { baseItems, nextItems, affectedItems, grantedItems };
   }
 }
 
@@ -665,7 +911,30 @@ function snapshotEqual(left: ItemSnapshot, right: ItemSnapshot): boolean {
     left.count === right.count &&
     left.quality === right.quality &&
     left.level === right.level &&
-    left.version === right.version;
+    left.version === right.version &&
+    (left.durability ?? 0) === (right.durability ?? 0) &&
+    (left.maxDurability ?? 0) === (right.maxDurability ?? 0) &&
+    (left.placementId ?? 0) === (right.placementId ?? 0);
+}
+
+function consolidateInventoryCounts(
+  entries: readonly { readonly configId: number; readonly count: number }[],
+  operation: "consume" | "grant",
+): Map<number, number> {
+  if (!Array.isArray(entries)) throw new Error(`inventory ${operation} entries must be an array`);
+  const result = new Map<number, number>();
+  for (const entry of entries) {
+    if (!Number.isSafeInteger(entry.configId) || entry.configId <= 0) {
+      throw new Error(`inventory ${operation} config id must be positive`);
+    }
+    requirePositiveCount(entry.count);
+    const total = (result.get(entry.configId) ?? 0) + entry.count;
+    if (!Number.isSafeInteger(total)) {
+      throw new Error(`inventory ${operation} count exceeds safe integer: ${entry.configId}`);
+    }
+    result.set(entry.configId, total);
+  }
+  return result;
 }
 
 function requireStackCount(count: number, maxStack: number, configId: number): void {

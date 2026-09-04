@@ -50,4 +50,10 @@ entity Unit extends Entity {
   inputChanged: u32 = 0;
   @hot
   sequence: u32 = 0;
+  @hot
+  gridGoalCellX: i32 = 0;
+  @hot
+  gridGoalCellZ: i32 = 0;
+  @hot
+  gridGoalActive: u32 = 0;
 }

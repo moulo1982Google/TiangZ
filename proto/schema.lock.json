@@ -806,6 +806,20 @@
           "type": "uint32",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 11,
+          "name": "y",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 12,
+          "name": "yaw",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -890,6 +904,27 @@
         {
           "number": 6,
           "name": "version",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "durability",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "max_durability",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "placement_id",
           "type": "uint32",
           "repeated": false,
           "synthetic": false
@@ -1063,6 +1098,146 @@
           "type": "bool",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 19,
+          "name": "persistent_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 20,
+          "name": "presentation_model_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 21,
+          "name": "presentation_state_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 22,
+          "name": "owner_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 23,
+          "name": "owner_persistent_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 24,
+          "name": "created_by_ability_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 25,
+          "name": "quest_starter_config_ids",
+          "type": "uint32",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 26,
+          "name": "quest_ender_config_ids",
+          "type": "uint32",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 27,
+          "name": "shop_item_config_ids",
+          "type": "uint32",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 28,
+          "name": "trainer_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 29,
+          "name": "quest_enabled",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 30,
+          "name": "conversation_enabled",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 31,
+          "name": "training_enabled",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 32,
+          "name": "repair_enabled",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 33,
+          "name": "recovery_enabled",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 34,
+          "name": "presentation_loadout_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 35,
+          "name": "extension_capabilities",
+          "type": "string",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 36,
+          "name": "runtime_profile_revision",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 37,
+          "name": "owned_unit_reaction",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 38,
+          "name": "auto_cast_ability_ids",
+          "type": "uint32",
+          "repeated": true,
+          "synthetic": false
         }
       ]
     },
@@ -1147,6 +1322,204 @@
           "number": 3,
           "name": "z",
           "type": "float",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/DataDefine_CS_50001.proto#OwnedSummonTransferSnapshot",
+      "name": "OwnedSummonTransferSnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "ownership_slot",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "created_by_ability_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "definition_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "model_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "max_hp",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "max_mp",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "attack_damage",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "move_speed",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 10,
+          "name": "attack_range",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 11,
+          "name": "attack_interval_ms",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 12,
+          "name": "attack_damage_school",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 13,
+          "name": "attack_ability_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 14,
+          "name": "follow_distance",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 15,
+          "name": "teleport_distance",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 16,
+          "name": "assist_owner",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 17,
+          "name": "initial_reaction",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 18,
+          "name": "aggressive_acquire_range",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 19,
+          "name": "reaction",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 20,
+          "name": "abilities",
+          "type": "OwnedUnitAbilitySnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 21,
+          "name": "auto_cast_ability_ids",
+          "type": "uint32",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 22,
+          "name": "resource_regen_amount",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 23,
+          "name": "resource_regen_interval_ms",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 24,
+          "name": "resource_regen_delay_after_spend_ms",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/DataDefine_CS_50001.proto#OwnedUnitAbilitySnapshot",
+      "name": "OwnedUnitAbilitySnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "ability_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "auto_cast_by_default",
+          "type": "bool",
           "repeated": false,
           "synthetic": false
         }
@@ -1365,6 +1738,13 @@
           "type": "uint64",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "purchase_count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -1385,6 +1765,35 @@
           "number": 2,
           "name": "cooldown_end_at_ms",
           "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/DataDefine_CS_50001.proto#SkillProficiencySnapshot",
+      "name": "SkillProficiencySnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "proficiency_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "rank",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "maximum_rank",
+          "type": "uint32",
           "repeated": false,
           "synthetic": false
         }
@@ -1414,6 +1823,20 @@
           "number": 3,
           "name": "item_cooldowns",
           "type": "ItemCooldownSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "known_skill_ids",
+          "type": "uint32",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "proficiencies",
+          "type": "SkillProficiencySnapshot",
           "repeated": true,
           "synthetic": false
         }
@@ -1698,6 +2121,20 @@
           "synthetic": false
         },
         {
+          "number": 14,
+          "name": "gate_epoch",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 15,
+          "name": "player_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -1791,6 +2228,84 @@
           "synthetic": false
         },
         {
+          "number": 7,
+          "name": "gate_epoch",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#G2M_RebindPlayerGate",
+      "name": "G2M_RebindPlayerGate",
+      "base": "IActorRequest",
+      "response": "M2G_RebindPlayerGate",
+      "fields": [
+        {
+          "number": 1,
+          "name": "account",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "expected_gate_name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "next_gate_name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "expected_gate_epoch",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "expected_location_revision",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "operation_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -1836,6 +2351,13 @@
         {
           "number": 5,
           "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "gate_epoch",
           "type": "uint64",
           "repeated": false,
           "synthetic": false
@@ -1894,6 +2416,42 @@
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#G2S_ProbeGate",
+      "name": "G2S_ProbeGate",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "gate_name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
           "repeated": false,
           "synthetic": true
         }
@@ -1996,6 +2554,42 @@
     {
       "key": "proto/InnerMessage_S_20001.proto#L2S_LockPlayerLocation",
       "name": "L2S_LockPlayerLocation",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "location",
+          "type": "PlayerLocationSnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#L2S_RebindPlayerGate",
+      "name": "L2S_RebindPlayerGate",
       "base": "IResponse",
       "response": null,
       "fields": [
@@ -2564,6 +3158,27 @@
           "synthetic": false
         },
         {
+          "number": 18,
+          "name": "known_skill_ids",
+          "type": "uint32",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 19,
+          "name": "numerics",
+          "type": "UnitNumericDelta",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 20,
+          "name": "proficiencies",
+          "type": "SkillProficiencySnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -2745,6 +3360,56 @@
       ]
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#M2G_RebindPlayerGate",
+      "name": "M2G_RebindPlayerGate",
+      "base": "IActorResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "gate_name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "gate_epoch",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "location_revision",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#M2G_SecondEnterMap",
       "name": "M2G_SecondEnterMap",
       "base": "IActorResponse",
@@ -2853,6 +3518,27 @@
           "name": "starter_dungeon_cooldown_end_at_ms",
           "type": "uint64",
           "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 16,
+          "name": "known_skill_ids",
+          "type": "uint32",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 17,
+          "name": "numerics",
+          "type": "UnitNumericDelta",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 18,
+          "name": "proficiencies",
+          "type": "SkillProficiencySnapshot",
+          "repeated": true,
           "synthetic": false
         },
         {
@@ -3015,6 +3701,27 @@
           "name": "starter_dungeon_cooldown_end_at_ms",
           "type": "uint64",
           "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 20,
+          "name": "known_skill_ids",
+          "type": "uint32",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 21,
+          "name": "numerics",
+          "type": "UnitNumericDelta",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 22,
+          "name": "proficiencies",
+          "type": "SkillProficiencySnapshot",
+          "repeated": true,
           "synthetic": false
         },
         {
@@ -3760,6 +4467,13 @@
           "type": "uint64",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "gate_epoch",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -3842,6 +4556,13 @@
         {
           "number": 11,
           "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 12,
+          "name": "gate_epoch",
           "type": "uint64",
           "repeated": false,
           "synthetic": false
@@ -4042,6 +4763,27 @@
           "type": "StarterDungeonCooldownSnapshot",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 30,
+          "name": "gate_epoch",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 31,
+          "name": "player_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 32,
+          "name": "owned_summons",
+          "type": "OwnedSummonTransferSnapshot",
+          "repeated": true,
+          "synthetic": false
         }
       ]
     },
@@ -4064,6 +4806,13 @@
           "type": "bytes",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "delivery_class",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -4079,6 +4828,35 @@
           "type": "ClientBroadcastBatchItem",
           "repeated": true,
           "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "delivery_class",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2G_ProbeGate",
+      "name": "S2G_ProbeGate",
+      "base": "IRequest",
+      "response": "G2S_ProbeGate",
+      "fields": [
+        {
+          "number": 1,
+          "name": "requester",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
         }
       ]
     },
@@ -4181,6 +4959,13 @@
           "synthetic": false
         },
         {
+          "number": 10,
+          "name": "gate_epoch",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -4240,6 +5025,91 @@
       ]
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#S2L_RebindPlayerGate",
+      "name": "S2L_RebindPlayerGate",
+      "base": "IRequest",
+      "response": "L2S_RebindPlayerGate",
+      "fields": [
+        {
+          "number": 1,
+          "name": "unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "expected_actor_instance_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "expected_revision",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "expected_gate_name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "next_gate_name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "expected_gate_epoch",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "operation_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "map_host_name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 10,
+          "name": "owner_generation",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#S2L_RecoverPlayerLocations",
       "name": "S2L_RecoverPlayerLocations",
       "base": "IRequest",
@@ -4285,6 +5155,20 @@
           "number": 1,
           "name": "instance",
           "type": "MapInstanceSnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "owner_generation",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "lease_timeout_ms",
+          "type": "uint32",
           "repeated": false,
           "synthetic": false
         },
@@ -4367,6 +5251,13 @@
           "synthetic": false
         },
         {
+          "number": 10,
+          "name": "gate_epoch",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -4392,6 +5283,13 @@
           "number": 2,
           "name": "expected_map_host_name",
           "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "expected_owner_generation",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },
@@ -5020,6 +5918,49 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_CommandOwnedUnit",
+      "name": "C2M_CommandOwnedUnit",
+      "base": "IActorLocationRequest",
+      "response": "M2C_CommandOwnedUnit",
+      "fields": [
+        {
+          "number": 1,
+          "name": "owned_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "command",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "target_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "ability_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_CompleteQuest",
       "name": "C2M_CompleteQuest",
       "base": "IActorLocationRequest",
@@ -5035,6 +5976,13 @@
         {
           "number": 2,
           "name": "npc_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "reward_choice_id",
           "type": "uint32",
           "repeated": false,
           "synthetic": false
@@ -5137,6 +6085,42 @@
           "number": 1,
           "name": "monster_id",
           "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_LearnTrainerSkill",
+      "name": "C2M_LearnTrainerSkill",
+      "base": "IActorLocationRequest",
+      "response": "M2C_LearnTrainerSkill",
+      "fields": [
+        {
+          "number": 1,
+          "name": "npc_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "skill_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "operation_id",
+          "type": "string",
           "repeated": false,
           "synthetic": false
         },
@@ -5278,6 +6262,34 @@
           "synthetic": false
         },
         {
+          "number": 5,
+          "name": "has_position_snapshot",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "position_x",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "position_y",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "position_z",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -5352,6 +6364,92 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_ReleaseDeadPlayer",
+      "name": "C2M_ReleaseDeadPlayer",
+      "base": "IActorLocationRequest",
+      "response": "M2C_ReleaseDeadPlayer",
+      "fields": [
+        {
+          "number": 1,
+          "name": "has_recovery_position",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "recovery_x",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "recovery_y",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "recovery_z",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "recovery_yaw",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_RepairItems",
+      "name": "C2M_RepairItems",
+      "base": "IActorLocationRequest",
+      "response": "M2C_RepairItems",
+      "fields": [
+        {
+          "number": 1,
+          "name": "npc_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "item_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "operation_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_RequestPlayerTrade",
       "name": "C2M_RequestPlayerTrade",
       "base": "IActorLocationRequest",
@@ -5393,6 +6491,21 @@
           "repeated": false,
           "synthetic": false
         },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_RevivePlayer",
+      "name": "C2M_RevivePlayer",
+      "base": "IActorLocationRequest",
+      "response": "M2C_RevivePlayer",
+      "fields": [
         {
           "number": 90,
           "name": "rpc_id",
@@ -5497,6 +6610,71 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_TriggerMonsterSignal",
+      "name": "C2M_TriggerMonsterSignal",
+      "base": "IActorLocationRequest",
+      "response": "M2C_TriggerMonsterSignal",
+      "fields": [
+        {
+          "number": 1,
+          "name": "monster_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "signal_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_TriggerNpcInteraction",
+      "name": "C2M_TriggerNpcInteraction",
+      "base": "IActorLocationRequest",
+      "response": "M2C_TriggerNpcInteraction",
+      "fields": [
+        {
+          "number": 1,
+          "name": "npc_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "trigger",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "trigger_value",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_UpdatePlayerTradeOffer",
       "name": "C2M_UpdatePlayerTradeOffer",
       "base": "IActorLocationRequest",
@@ -5521,6 +6699,35 @@
           "name": "items",
           "type": "PlayerTradeItemOffer",
           "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_UseInteractable",
+      "name": "C2M_UseInteractable",
+      "base": "IActorLocationRequest",
+      "response": "M2C_UseInteractable",
+      "fields": [
+        {
+          "number": 1,
+          "name": "interactable_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "operation_id",
+          "type": "string",
+          "repeated": false,
           "synthetic": false
         },
         {
@@ -5586,6 +6793,13 @@
           "name": "player_config_id",
           "type": "uint32",
           "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "extensions",
+          "type": "CharacterExtension",
+          "repeated": true,
           "synthetic": false
         },
         {
@@ -5676,11 +6890,47 @@
           "synthetic": false
         },
         {
+          "number": 3,
+          "name": "player_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
           "repeated": false,
           "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#CharacterExtension",
+      "name": "CharacterExtension",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "version",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "payload",
+          "type": "bytes",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -5716,6 +6966,13 @@
           "name": "level",
           "type": "uint32",
           "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "extensions",
+          "type": "CharacterExtension",
+          "repeated": true,
           "synthetic": false
         }
       ]
@@ -5852,6 +7109,98 @@
         {
           "number": 3,
           "name": "revision",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_CombatResult",
+      "name": "G2C_CombatResult",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "result_type",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "source_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "target_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "requested_amount",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "effective_amount",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "absorbed_amount",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "current_hp",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "damage_school",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "ability_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 10,
+          "name": "killed",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 11,
+          "name": "server_tick",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 12,
+          "name": "prevented_reason",
           "type": "uint32",
           "repeated": false,
           "synthetic": false
@@ -6003,6 +7352,27 @@
           "name": "starter_dungeon_cooldown_end_at_ms",
           "type": "uint64",
           "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 19,
+          "name": "known_skill_ids",
+          "type": "uint32",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 20,
+          "name": "numerics",
+          "type": "UnitNumericDelta",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 21,
+          "name": "proficiencies",
+          "type": "SkillProficiencySnapshot",
+          "repeated": true,
           "synthetic": false
         },
         {
@@ -6729,6 +8099,49 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_UnitPresentation",
+      "name": "G2C_UnitPresentation",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "presentation_type",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "source_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "target_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "presentation_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "text",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_AcceptQuest",
       "name": "M2C_AcceptQuest",
       "base": "IActorLocationResponse",
@@ -6739,6 +8152,27 @@
           "name": "quest",
           "type": "QuestSnapshot",
           "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "inventory_changes",
+          "type": "ItemSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "inventory_items",
+          "type": "ItemSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "base_inventory_items",
+          "type": "ItemSnapshot",
+          "repeated": true,
           "synthetic": false
         },
         {
@@ -7049,6 +8483,63 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_CommandOwnedUnit",
+      "name": "M2C_CommandOwnedUnit",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "owned_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "command",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "accepted",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "ability_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_CompleteQuest",
       "name": "M2C_CompleteQuest",
       "base": "IActorLocationResponse",
@@ -7064,6 +8555,76 @@
         {
           "number": 2,
           "name": "reward_items",
+          "type": "ItemSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "gained_gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "level",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "experience",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "gained_experience",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "leveled_up",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "selected_reward_choice_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 10,
+          "name": "inventory_items",
+          "type": "ItemSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 11,
+          "name": "base_inventory_items",
+          "type": "ItemSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 12,
+          "name": "inventory_changes",
           "type": "ItemSnapshot",
           "repeated": true,
           "synthetic": false
@@ -7187,6 +8748,70 @@
           "number": 2,
           "name": "drops",
           "type": "LootDropSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_LearnTrainerSkill",
+      "name": "M2C_LearnTrainerSkill",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "skill_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "learned",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "proficiencies",
+          "type": "SkillProficiencySnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "learned_skill_config_ids",
+          "type": "uint32",
           "repeated": true,
           "synthetic": false
         },
@@ -7464,6 +9089,155 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_ReleaseDeadPlayer",
+      "name": "M2C_ReleaseDeadPlayer",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "released",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "x",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "y",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "z",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "yaw",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "health",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "max_health",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "mana",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "max_mana",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_RepairItems",
+      "name": "M2C_RepairItems",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "cost",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "items",
+          "type": "ItemSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "inventory_recovery",
+          "type": "InventorySnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_RequestPlayerTrade",
       "name": "M2C_RequestPlayerTrade",
       "base": "IActorLocationResponse",
@@ -7509,6 +9283,98 @@
           "number": 1,
           "name": "trade",
           "type": "PlayerTradeSnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_RevivePlayer",
+      "name": "M2C_RevivePlayer",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "revived",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "x",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "y",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "z",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "yaw",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "health",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "max_health",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "mana",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "max_mana",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },
@@ -7707,6 +9573,78 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_TriggerMonsterSignal",
+      "name": "M2C_TriggerMonsterSignal",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "accepted",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_TriggerNpcInteraction",
+      "name": "M2C_TriggerNpcInteraction",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "accepted",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_UpdatePlayerTradeOffer",
       "name": "M2C_UpdatePlayerTradeOffer",
       "base": "IActorLocationResponse",
@@ -7717,6 +9655,70 @@
           "name": "trade",
           "type": "PlayerTradeSnapshot",
           "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_UseInteractable",
+      "name": "M2C_UseInteractable",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "interactable_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "items",
+          "type": "ItemSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "quests",
+          "type": "QuestSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "respawn_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "proficiencies",
+          "type": "SkillProficiencySnapshot",
+          "repeated": true,
           "synthetic": false
         },
         {

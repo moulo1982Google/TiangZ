@@ -110,7 +110,7 @@
       "name": "map_2",
       "sceneType": "MapHost",
       "acceptDynamicMaps": true,
-      "staticMapIds": [2, 100],
+      "staticMapIds": [2, 100, 201],
       "innerIp": "127.0.0.1",
       "bindIp": "0.0.0.0",
       "port": 17302,

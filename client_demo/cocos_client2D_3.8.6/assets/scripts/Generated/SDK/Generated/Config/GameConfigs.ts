@@ -16,6 +16,13 @@ const RAW_DATA: Record<string, unknown> = {
       "grid_size_cells": 15,
       "enter_range_grids": 7,
       "detach_range_grids": 9
+    },
+    {
+      "id": 3,
+      "name": "Large World AOI",
+      "grid_size_cells": 15,
+      "enter_range_grids": 15,
+      "detach_range_grids": 17
     }
   ],
   "game_tbaoisynctierconfig": [
@@ -41,6 +48,18 @@ const RAW_DATA: Record<string, unknown> = {
       "id": 4,
       "aoi_config_id": 2,
       "range_grids": 9,
+      "sync_hz": 5
+    },
+    {
+      "id": 5,
+      "aoi_config_id": 3,
+      "range_grids": 5,
+      "sync_hz": 20
+    },
+    {
+      "id": 6,
+      "aoi_config_id": 3,
+      "range_grids": 17,
       "sync_hz": 5
     }
   ],
@@ -323,6 +342,22 @@ const RAW_DATA: Record<string, unknown> = {
       "navigation_asset": "navigation/maps/demo_3d/generated/navigation.bin",
       "navigation_version": "demo-3d-v2",
       "navigation_hash": "1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421"
+    },
+    {
+      "id": 201,
+      "name": "WoW335 血精灵新手区",
+      "spatial_mode": 1,
+      "width_cells": 720,
+      "depth_cells": 1200,
+      "cell_size_meters": 1,
+      "spawn_x": 0,
+      "spawn_y": 0,
+      "spawn_z": 0,
+      "spawn_yaw": 0,
+      "aoi_config_id": 3,
+      "navigation_asset": "",
+      "navigation_version": "",
+      "navigation_hash": ""
     }
   ],
   "game_tbmonsterconfig": [
@@ -575,7 +610,7 @@ export type SkillConfig = game.SkillConfig;
 export type QuestConfig = game.QuestConfig;
 export type QuestObjectiveConfig = game.QuestObjectiveConfig;
 
-export const GameConfigFingerprint = "d9b36f10850c91a91b8f9db1c31ab8a801a362c76ffe465f8598df18e01d63eb";
+export const GameConfigFingerprint = "f71315d85a9c120fb7cb6471ce08959eb058d851d5c486ec43943f34ea41adc6";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),

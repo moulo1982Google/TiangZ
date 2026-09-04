@@ -6,6 +6,7 @@ import type { GatePlayerRoute } from "./GatePlayerRoute";
 export class GateSession extends Session {
   account = "";
   characterId = 0n;
+  playerConfigId = 0;
   token = "";
   route: GatePlayerRoute | null = null;
   needsSecondEnter = false;
@@ -14,6 +15,7 @@ export class GateSession extends Session {
   BindLogin(account: string, token: string, route: GatePlayerRoute): void {
     this.account = account;
     this.characterId = route.characterId;
+    this.playerConfigId = route.playerConfigId;
     this.token = token;
     this.route = route;
     this.needsSecondEnter = route.map !== undefined;
@@ -28,6 +30,7 @@ export class GateSession extends Session {
   Invalidate(): void {
     this.account = "";
     this.characterId = 0n;
+    this.playerConfigId = 0;
     this.token = "";
     this.route = null;
     this.needsSecondEnter = false;

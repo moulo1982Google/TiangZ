@@ -4,13 +4,18 @@ import type { DamageRequest, DamageResult, M2C_AttackMonster, M2C_InspectLootMon
 
 declare module "../../../model/mmorpg/monster/MonsterComponent" {
   interface MonsterComponent {
+    ActivateSpawn(spawnId: number): void;
+    TriggerContentSignal(source: PlayerUnit, monsterId: number, signalId: number): boolean;
+    DeactivateSpawn(spawnId: number): void;
     Update10Hz(): void;
     Update5Hz(): void;
     Update1Hz(): void;
+    CanPlayerAttack(player: PlayerUnit, monster: MonsterUnit): boolean;
     Attack(attacker: PlayerUnit, monsterId: number): M2C_AttackMonster;
     InspectLootMonster(player: PlayerUnit, monsterId: number): M2C_InspectLootMonster;
     LootMonster(player: PlayerUnit, monsterId: number, operationId: string, dropId: number, lootAll: boolean): Promise<M2C_LootMonster>;
     ApplyPlayerDamage(attacker: PlayerUnit, monster: MonsterUnit, request: DamageRequest): DamageResult;
+    ApplyUnitDamage(monster: MonsterUnit, request: DamageRequest): DamageResult;
     AddThreat(monster: MonsterUnit, source: PlayerUnit, amount: bigint): void;
   }
 }

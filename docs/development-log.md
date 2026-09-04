@@ -7,6 +7,44 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-30：自动攻击就绪重试语义
+
+- 真实移动目标验收发现：10Hz桶在每次短暂超距或背向时重置完整武器间隔，目标持续游走会使玩家永远无法命中。对照AzerothCore同版本实现后，TiangZ改为激活且目标存活时持续推进武器计时；计时到点但命中窗口无效时保持就绪并按10Hz重试，只有成功命中、显式取消或技能策略等明确中断才开启或清除一轮计时。
+- `monster_behavior_self_test`新增移动目标回归：先在无效命中窗口推进到就绪，再恢复窗口，断言首个100ms战斗帧立即命中且下一轮从命中时刻开始。该语义属于中立MMORPG战斗调度，不包含协议、职业、法术或地图知识。
+
+## 2026-08-29：外置地图怪物内容目录
+
+- 新增MMORPG地图级`MonsterContentProfileComponent`。外置模块可在`MapScene`发布前，以稳定所有者ID原子登记中立怪物模板和固定刷点；完整内容包可由唯一所有者替换演示冷刷点，目录在所有装配器完成后冻结。该组件不认识具体游戏、数据库表或编号，也不拥有运行态Unit。
+- `MonsterComponent`把Luban冷配置和外置目录规范化为同一种刷怪槽，继续统一负责AOI、战斗、死亡、尸体与重生；刷新周期改为刷点属性，使共享模板可以拥有不同刷新槽。中立Training Dummy夹具覆盖冻结、重复ID、跨所有者引用、替换冲突和失败不发布。
+- 修复外置怪物第一次进入AOI时仍按外部定义ID回查Luban冷表的问题。`MonsterUnit`在创建时冻结中立名称与模型ID，快照只读取实体展示资料和实时Position/Numeric；Actor回归用不存在于冷表的外部ID覆盖该边界。
+- 具体内容的来源读取、坐标变换、筛选规则、内容指纹和客户端投影仍属于外置游戏包。主工程只补足“批量生成的地图内容如何进入现有MMORPG运行时”的通用边界，不包含任何外部世界库schema或领域数据。
+
+## 2026-08-29：外置技能资料与怪物延迟伤害死亡边界
+
+- 新增MMORPG地图级`SkillDefinitionProfileComponent`：外置模块可以登记模块私有、只读技能定义，但不能覆盖Luban冷配置或另一个模块；现有`SkillMapComponent`继续拥有目标、距离、CD、Action和权威结算。中立模块自测覆盖冻结、所有权冲突和无效资料原子拒绝。
+- 怪物伤害统一增加`ApplyUnitDamage`入口。Buff Tick等延迟伤害会重新解析仍在线的来源玩家，复用仇恨、掉落归属、任务、尸体和刷怪槽语义；来源已经离开时也会完成死亡和重生，不再出现“客户端看到0血、刷怪槽却未释放”。Buff自测明确断言持续伤害进入怪物总管且不会重复广播伤害。
+- 具体职业技能仍不进入TiangZ：`org.tiangz.wow335`模块使用该边界登记自己的英勇打击与人类种族技能，TiangZ主工程没有WoW法术号、职业或客户端动作栏知识。
+
+## 2026-08-28：外置模块自定义 Hotfix 入口组合修复
+
+- 带外置模块运行正式 Hotfix 操作验收时，发现 `--hotfix-entry` 过去会直接替代生成入口，导致模块 Hotfix loader 缺失；第二代 generation 因完整绑定校验而被安全拒绝，旧 generation 未受影响。
+- 构建器现在始终生成最外层组合入口：自定义主入口与全部已安装模块 loader 一并导入。中立模块构建测试新增自定义入口回归，带 `org.tiangz.wow335` 的正式 Hotfix apply/rollback、Inspector 重绑、候选哈希和错误令牌验收均通过。
+
+## 2026-08-28：外置游戏模块 v1
+
+- 借鉴AzerothCore独立模块目录、构建期发现、统一loader和Hook扩展思路，增加严格`tiangz.module.json`：模块ID、SemVer、TiangZ版本窗口、依赖DAG、capability与Model/Hotfix入口均在执行代码前校验，重复ID、缺失依赖、循环、未知字段和路径逃逸直接失败。
+- Stable Core新增`defineGameModule`、不可变模块Model导出桥和强类型Entity装配器；具体模块通过显式`modelExports/requiredSystems`登记，Hotfix使用`#tiangz/module`取得本模块Model，不允许深层导入。模块仍使用Scene/Entity/Component生命周期和现有Handler/Event，不增加无类型全局Hook或模块级业务状态。
+- 构建器按稳定拓扑序组合模块到同一Model/Hotfix双Bundle，并把规范模块图SHA-256写入冻结契约和运维状态。模块集合、manifest或Model变化会使Hotfix-only构建与Runtime候选校验失败；已有行为变化继续走Process级排空、预检、原子提交和回滚。
+- `tools/fixtures/game-modules/greeting`是不含MMORPG概念的中立夹具；自动测试覆盖依赖排序、图指纹确定性、循环/重复/版本/路径拒绝、Stable API登记、必需System、模块边界、双Bundle组合以及模块图变化拒绝。v1尚未装配模块自有proto、Native、Data Pack或DB迁移，也不支持运行期增删模块。
+- 模块源码入口必须位于声明根内，源码树禁止内部符号链接；SemVer补齐预发布标识符顺序与build metadata规则，模块图同时冻结引擎窗口和声明根。模块Model导出只接受显式数据属性，并递归冻结数组/普通对象桥。
+- 新增通用`entityExtensionHandler/applyEntityExtensions`：外部Hotfix以强类型、稳定ID和确定顺序给未发布Entity装配模块Component，异步、重复装配和Handler实例状态均被拒绝；中立fixture与MMORPG `PlayerUnit`工厂共同证明该能力不包含具体游戏规则。
+- 每个模块由自己的`tsconfig.json`独立类型检查；`TIANGZ_MODULES_DIR`贯通目录工具、普通/Hotfix构建和开发宿主，`npm run dev`会监听外部模块Hotfix源码。模块Model、manifest和装配集合变化仍需停止并完整重启。
+
+## 2026-08-28：外部协议网关复用稳定角色身份
+
+- `MapEntitySnapshot`新增跨会话稳定的`persistent_id`：玩家由`PlayerUnit.CharacterId`提供，临时怪物和NPC保持`0`。`unit_id`仍只负责当前运行实例寻址；外部协议网关不得自行生成或持有玩家稳定身份。
+- 完整刷新 TypeScript、C++、Cocos、Pixi 与 Unreal SDK 生成物和协议指纹；协议往返测试覆盖超过 JavaScript 安全整数的`uint64`，Starter all-in-one/split-process验收断言AOI owner的`persistent_id`等于登录选中的`CharacterId`。
+
 ## 2026-08-28：外网 R4 审计与长稳验收加固
 
 - `overnight-20260828-0700-r4` 实际运行 6 小时 33 分：500 游戏玩家、100 DBProxy 正确性玩家以及 12/12 个故障动作都完成。DBProxy 最终逐玩家、revision、交易账本、Outbox、backlog 与 cache-repair 对账全部通过，故障后队列归零；健康窗口内游戏移动、Probe 和业务传输也无错误。

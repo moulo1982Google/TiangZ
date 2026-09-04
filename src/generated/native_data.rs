@@ -42,6 +42,9 @@ pub struct UnitData {
     pub input_z: i8,
     pub input_changed: u32,
     pub sequence: u32,
+    pub grid_goal_cell_x: i32,
+    pub grid_goal_cell_z: i32,
+    pub grid_goal_active: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +67,9 @@ pub struct UnitHotData {
     pub input_z: i8,
     pub input_changed: u32,
     pub sequence: u32,
+    pub grid_goal_cell_x: i32,
+    pub grid_goal_cell_z: i32,
+    pub grid_goal_active: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -104,6 +110,9 @@ impl From<UnitData> for UnitSplitData {
                 input_z: value.input_z,
                 input_changed: value.input_changed,
                 sequence: value.sequence,
+                grid_goal_cell_x: value.grid_goal_cell_x,
+                grid_goal_cell_z: value.grid_goal_cell_z,
+                grid_goal_active: value.grid_goal_active,
             },
             cold: UnitColdData {
                 __dirty_mask: value.__dirty_mask,
@@ -140,6 +149,9 @@ pub fn get_unit_split_number(hot: &UnitHotData, cold: &UnitColdData, field: u32)
         19 => Some(hot.input_z as f64),
         20 => Some(hot.input_changed as f64),
         21 => Some(hot.sequence as f64),
+        22 => Some(hot.grid_goal_cell_x as f64),
+        23 => Some(hot.grid_goal_cell_z as f64),
+        24 => Some(hot.grid_goal_active as f64),
         _ => None,
     }
 }
@@ -381,6 +393,42 @@ pub fn set_unit_split_number(
             hot.sequence = converted;
             Ok(())
         }
+        22 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < i32::MIN as f64
+                || number > i32::MAX as f64
+            {
+                return Err("native Unit field gridGoalCellX must be i32");
+            }
+            let converted = number as i32;
+            hot.grid_goal_cell_x = converted;
+            Ok(())
+        }
+        23 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < i32::MIN as f64
+                || number > i32::MAX as f64
+            {
+                return Err("native Unit field gridGoalCellZ must be i32");
+            }
+            let converted = number as i32;
+            hot.grid_goal_cell_z = converted;
+            Ok(())
+        }
+        24 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < 0.0
+                || number > u32::MAX as f64
+            {
+                return Err("native Unit field gridGoalActive must be u32");
+            }
+            let converted = number as u32;
+            hot.grid_goal_active = converted;
+            Ok(())
+        }
         _ => Err("unknown native Unit field"),
     }
 }
@@ -563,6 +611,9 @@ pub const UNIT_FIELD_INPUT_X: u32 = 18;
 pub const UNIT_FIELD_INPUT_Z: u32 = 19;
 pub const UNIT_FIELD_INPUT_CHANGED: u32 = 20;
 pub const UNIT_FIELD_SEQUENCE: u32 = 21;
+pub const UNIT_FIELD_GRID_GOAL_CELL_X: u32 = 22;
+pub const UNIT_FIELD_GRID_GOAL_CELL_Z: u32 = 23;
+pub const UNIT_FIELD_GRID_GOAL_ACTIVE: u32 = 24;
 pub const UNIT_MEMBER_X: u32 = 1;
 pub const UNIT_MEMBER_Y: u32 = 2;
 pub const UNIT_MEMBER_Z: u32 = 3;
@@ -593,6 +644,9 @@ pub fn get_unit_number(value: &UnitData, field: u32) -> Option<f64> {
         19 => Some(value.input_z as f64),
         20 => Some(value.input_changed as f64),
         21 => Some(value.sequence as f64),
+        22 => Some(value.grid_goal_cell_x as f64),
+        23 => Some(value.grid_goal_cell_z as f64),
+        24 => Some(value.grid_goal_active as f64),
         _ => None,
     }
 }
@@ -828,6 +882,42 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             value.sequence = converted;
             Ok(())
         }
+        22 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < i32::MIN as f64
+                || number > i32::MAX as f64
+            {
+                return Err("native Unit field gridGoalCellX must be i32");
+            }
+            let converted = number as i32;
+            value.grid_goal_cell_x = converted;
+            Ok(())
+        }
+        23 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < i32::MIN as f64
+                || number > i32::MAX as f64
+            {
+                return Err("native Unit field gridGoalCellZ must be i32");
+            }
+            let converted = number as i32;
+            value.grid_goal_cell_z = converted;
+            Ok(())
+        }
+        24 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < 0.0
+                || number > u32::MAX as f64
+            {
+                return Err("native Unit field gridGoalActive must be u32");
+            }
+            let converted = number as u32;
+            value.grid_goal_active = converted;
+            Ok(())
+        }
         _ => Err("unknown native Unit field"),
     }
 }
@@ -1011,7 +1101,7 @@ impl NativeEntityData {
 pub fn create_entity(type_id: u32, values: &[f64]) -> Result<NativeEntityData, &'static str> {
     match type_id {
         ENTITY_TYPE_UNIT => {
-            if values.len() != 21 {
+            if values.len() != 24 {
                 return Err("native Unit create value count mismatch");
             }
             if read_u32(values, 0)? == 0 || read_u32(values, 1)? == 0 {
@@ -1044,6 +1134,9 @@ pub fn create_entity(type_id: u32, values: &[f64]) -> Result<NativeEntityData, &
                 input_z: read_i8(values, 18)?,
                 input_changed: read_u32(values, 19)?,
                 sequence: read_u32(values, 20)?,
+                grid_goal_cell_x: read_i32(values, 21)?,
+                grid_goal_cell_z: read_i32(values, 22)?,
+                grid_goal_active: read_u32(values, 23)?,
             }))
         }
         ENTITY_TYPE_ITEM => {

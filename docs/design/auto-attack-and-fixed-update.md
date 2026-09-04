@@ -5,7 +5,7 @@
 这部分只解决两个问题：
 
 1. 地图上有很多玩家和怪物时，不为每个对象创建一个Timer或Update目标。
-2. 平A保持“激活意图”和“当前读条”两个概念，靠近目标后从零读条，离开后清零而不是恢复旧进度。
+2. 平A保持“激活意图”和“武器计时”两个概念；计时到点但命中窗口暂时无效时保持就绪，避免移动目标反复重置完整武器间隔。
 
 它不是完整战斗框架，也不提前加入技能、Buff、掉落或动态避障；当前只提供最小的伤害仇恨入口。
 
@@ -72,18 +72,18 @@ app/hotfix/mmorpg/combat/CombatComponentSystem.ts
 
 ```text
 Inactive  未激活
-Waiting   已激活，但距离/朝向暂不满足
-Swinging  正在从零推进一轮读条
+Waiting   已激活，尚未开始本轮武器计时
+Swinging  武器计时推进中，或到点后等待有效命中窗口
 ```
 
 关键规则：
 
 - `enabled`表示玩家仍想攻击目标，不代表当前一定在读条。
-- 目标必须存活、属于当前MapScene、距离不超过`PlayerConfig.attack_range`。
-- 目标必须在角色前方120°内，即目标方向与角色Yaw差值不超过60°。
-- 距离或朝向不满足时，只调用`ResetAutoAttackSwing()`，保留`enabled`，并把读条起点清为0。
-- 再次满足条件时调用`BeginAutoAttackSwing(now)`，不能复用旧起点。
-- 读条完成时，10Hz桶再次检查条件，然后才调用`MonsterComponent.Attack`。
+- 目标必须存活并属于当前MapScene，否则关闭本次自动攻击意图。
+- 命中窗口要求距离不超过`PlayerConfig.attack_range`，且目标位于角色前方120°内，即目标方向与角色Yaw差值不超过60°。
+- 激活且目标仍存活时调用`BeginAutoAttackSwing(now)`开始本轮武器计时；距离和朝向不阻止计时推进。
+- 武器计时到点时，10Hz桶检查距离和朝向；暂时不满足则保留原起点并在下一帧重试，不重新等待完整武器间隔。
+- 成功调用`MonsterComponent.Attack`后才用当前时间开始下一轮；施法策略等显式中断仍可调用`ResetAutoAttackSwing()`。
 - 目标死亡后关闭自动攻击；如果只是移动离开范围，仍保持自动攻击激活。
 - 玩家死亡时也显式关闭自动攻击并推送`Inactive`，避免客户端把最后一次读条状态误显示成仍在攻击。
 - 平A状态不进入Entity Transfer快照，跨地图后必须重新激活。
@@ -99,8 +99,8 @@ C2M_ToggleAutoAttack
 
 每个10Hz桶
   -> MonsterComponentSystem.TickPlayerAutoAttacks
-  -> CanAutoAttack (距离 + 前方120°)
-  -> CombatComponent.BeginAutoAttackSwing / ResetAutoAttackSwing
+  -> CombatComponent.BeginAutoAttackSwing
+  -> 到点后CanAutoAttack (距离 + 前方120°)，失败则下个10Hz帧重试
   -> MonsterComponent.Attack
   -> Rust Numeric dirty
   -> FrameFlush/AOI广播 Numeric Delta

@@ -106,6 +106,7 @@ export class MapView {
           ...enterMap.entities,
           {
             unitId: enterMap.unitId,
+            persistentId: 0n,
             account: enterMap.account,
             x: enterMap.x,
             y: enterMap.y,
