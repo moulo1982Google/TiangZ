@@ -1,9 +1,10 @@
 import { readU16BE } from "../protocol/binary";
 import type { TraceContextValue } from "../telemetry/TraceContext";
 import { TraceContextFromCarrier } from "../telemetry/TraceContext";
+import { InternalFrameMsgCode, TraceEnvelopeLayout } from "./InternalFrameProtocol";
 
-export const TraceEnvelopeMsgCode = 29_996;
-export const TraceEnvelopeHeaderBytes = 27;
+export const TraceEnvelopeMsgCode = InternalFrameMsgCode.Trace;
+export const TraceEnvelopeHeaderBytes = TraceEnvelopeLayout.headerBytes;
 
 export interface TraceEnvelope {
   readonly context: TraceContextValue;
@@ -20,10 +21,10 @@ export function encodeTraceEnvelope(
   const spanId = decodeHex(context.spanId, 8, "spanId");
   const result = new Uint8Array(TraceEnvelopeHeaderBytes + frame.byteLength);
   const view = new DataView(result.buffer);
-  view.setUint16(0, TraceEnvelopeMsgCode, false);
-  result.set(traceId, 2);
-  result.set(spanId, 18);
-  result[26] = context.sampled ? 1 : 0;
+  view.setUint16(TraceEnvelopeLayout.msgCodeOffset, TraceEnvelopeMsgCode, false);
+  result.set(traceId, TraceEnvelopeLayout.traceIdOffset);
+  result.set(spanId, TraceEnvelopeLayout.spanIdOffset);
+  result[TraceEnvelopeLayout.flagsOffset] = context.sampled ? 1 : 0;
   result.set(frame, TraceEnvelopeHeaderBytes);
   return result;
 }
@@ -32,15 +33,15 @@ export function encodeTraceEnvelope(
 export function decodeTraceEnvelope(frame: Uint8Array): TraceEnvelope {
   if (
     frame.byteLength < TraceEnvelopeHeaderBytes + 2 ||
-    readU16BE(frame, 0) !== TraceEnvelopeMsgCode
+    readU16BE(frame, TraceEnvelopeLayout.msgCodeOffset) !== TraceEnvelopeMsgCode
   ) {
     throw new Error("invalid trace envelope header");
   }
-  if ((frame[26] & 0xfe) !== 0) throw new Error("invalid trace envelope flags");
-  const traceId = encodeHex(frame.subarray(2, 18));
-  const spanId = encodeHex(frame.subarray(18, 26));
+  if ((frame[TraceEnvelopeLayout.flagsOffset] & 0xfe) !== 0) throw new Error("invalid trace envelope flags");
+  const traceId = encodeHex(frame.subarray(TraceEnvelopeLayout.traceIdOffset, TraceEnvelopeLayout.spanIdOffset));
+  const spanId = encodeHex(frame.subarray(TraceEnvelopeLayout.spanIdOffset, TraceEnvelopeLayout.flagsOffset));
   return {
-    context: TraceContextFromCarrier(traceId, spanId, frame[26] === 1),
+    context: TraceContextFromCarrier(traceId, spanId, frame[TraceEnvelopeLayout.flagsOffset] === 1),
     frame: frame.subarray(TraceEnvelopeHeaderBytes),
   };
 }

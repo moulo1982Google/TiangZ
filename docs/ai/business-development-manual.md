@@ -257,7 +257,7 @@ await flow.enterGame(account, 1, () => {}, created.character.characterId);
 - Developer Tools 会把 `@systemFor`、`@hotfixFor`、网络 Handler 和 Scene Event Handler 中的字段、构造函数、静态块与静态方法直接标为错误（`tiangz.hotfix.instance-state`）。行为类只承载可热更方法；缓存、TimerId、索引和其他长期状态必须放到 Model 的 Entity/Component，日常修改先运行 `npm run verify:fast`。
 - Model不手写“System未安装”的抛错空壳。codegen从System公开方法生成`app/generated/bootstrap/systems/*.d.ts`，调用方仍直接写`unit.Move()`或`component.UseItem()`。
 - System公开方法必须显式写参数和返回类型。只改方法体可热更；修改公开签名会改变Model声明，必须完整构建并重启。
-- `Awake/OnDestroy/Deserialize`都是可选能力。需要Hotfix承担某个生命周期时，Model使用`@lifecycle({ awake: true, destroy: true, deserialize: true })`只声明实际需要的项，System提供实现；未声明的钩子不要求空实现。Reload不重跑现有对象的`Awake`；新对象使用新版本Awake，现有对象后续方法和销毁使用当前generation。
+- `Awake/OnDestroy/Deserialize`都是可选能力。需要Hotfix承担某个生命周期时，Model使用`@lifecycle({ awake: true, destroy: true, deserialize: true })`只声明实际需要的项，System提供实现；未声明的钩子不要求空实现。`Awake/OnDestroy/Deserialize/CaptureTransfer/RestoreTransfer`都必须同步，既不能写`async`，也不能由普通函数返回Promise。`verify:runtime-contracts`在构建期检查，Hotfix提交在任何prototype或Handler变更前再次预检候选，运行时检查只是兜底。Reload不重跑现有对象的`Awake`；新对象使用新版本Awake，现有对象后续方法和销毁使用当前generation。
 - `@transferable()`是迁移能力的唯一声明，同时要求Model自身或对应System提供同步`CaptureTransfer/RestoreTransfer`，不再重复写`transfer: true`。codegen缺方法会直接失败，Hotfix候选缺少Model已声明的方法会整包拒绝并保留旧generation。
 - Model绝对不能在线热更，不设计字段migration。`npm run build:hotfix`拒绝时，说明这次改动已经越过行为边界，不能规避检查。
 - `npm run build:hotfix`生成`dist/hotfix-candidates/<hash>`不可变候选，不覆盖当前Bundle。在Watcher终端输入`reload <候选目录>`才会触发每个Process独立校验和提交；禁止手工覆盖`dist/hotfix.js`。
@@ -905,7 +905,7 @@ const attack = numeric[NumericType.Attack]; // 玩家由AttackBase=5n推导得�
 
 Numeric不再内置100ms回血Timer。需要回血、Buff或其他周期规则时，由对应业务Component显式创建Timer；玩家创建时设置`AttackBase`，怪物创建时根据配置设置`AttackBase`，普通攻击统一读取最终的`NumericType.Attack`。当前不增加Armor字段，伤害是多少就扣多少CurrentHp。
 
-Component和Actor业务Timer必须传方法名，不能传匿名闭包。触发时框架从当前prototype解析方法，因此现有Timer会自然进入新Hotfix generation；Timer仍随owner销毁自动取消。
+Component和Actor业务Timer必须传方法名字面量，不能传匿名闭包或运行时拼接的字符串。触发时框架从当前prototype解析方法，因此现有Timer会自然进入新Hotfix generation；Timer仍随owner销毁自动取消。`verify:runtime-contracts`会用TypeScript AST和类型信息检查目标方法存在、参数可赋值以及`onCancelled(args, context)`形状；Timer回调本身仍允许`MaybePromise<void>`，不要把同步生命周期约束误套到Timer。
 
 需要区分正常结束与主动打断时，保存返回的`TimerId`并声明取消方法：
 
@@ -922,7 +922,7 @@ this.CancelTimer(this.castTimerId, "player-moved");
 
 正常到期只调用`FinishCast(args)`；主动取消只调用一次`CancelCast(args, context)`。Owner销毁属于生命周期清理，不回调业务取消方法。不要把`TimerId`写入数据库。
 
-Developer Tools会检查Timer方法名和取消回调是否存在、取消回调是否接收`(args, context)`、同步/Veto Event Handler是否错误声明`async`，以及持久化Snapshot是否错误声明`InstanceId/TimerId`。命令面板可执行“TiangZ：运行 Runtime Foundation 自测”，其结果与`npm run test:runtime-foundation`一致。
+Developer Tools和仓库级`verify:runtime-contracts`会检查Timer方法名和取消回调是否存在、取消回调是否接收`(args, context)`、同步/Veto Event Handler及保留生命周期是否错误声明`async`或返回Promise，以及持久化Snapshot是否错误声明`InstanceId/TimerId`。命令面板可执行“TiangZ：运行 Runtime Foundation 自测”，其结果与`npm run test:runtime-foundation`一致。
 
 逐固定帧逻辑实现同步`Update()`，帧末复制实现`FrameFlush()`。不要在Update中创建未等待的异步任务：
 
@@ -1094,6 +1094,8 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 正式环境先把完整`dist/hotfix-candidates/<hash>`原子发布到目标机器，再执行`npm run hotfix -- plan`预览；确认后用`apply`提交，用`status`核对generation与active/previous候选，必要时用`rollback`重新提交previous候选。目标Process必须显式配置`process.lifecycle.hotfixOperations.authTokenEnv`，实际令牌只放环境变量。管理路由仅允许本机Bearer鉴权访问，不能加入公网反向代理。CLI可用重复`--target`选择Process，并在同机多目标部分失败时补偿回滚本次成功目标；跨机器尚无Prepare/Commit，不能宣称全局原子。每次操作必须保留operationId与`temp/hotfix-operations/audit.jsonl`审计，但禁止记录令牌。
 
+`check`、`verify:quick`和`verify`由统一测试矩阵按顺序执行各隔离步骤，但某一步失败后仍继续运行后续步骤，终端最后汇总所有失败。每次运行都会写`dist/test-results/<profile>.json`和JUnit XML；CI应读取报告，而不是只截取第一个错误。40个纯TypeScript进程内自测均导出`main`并由Vitest一一包装，测试文件使用fork、模块隔离和文件并行；依赖`game_config/generated`的用例由`globalSetup`统一运行codegen。`test:unit:coverage`覆盖整个`app/core/**/*.ts`并执行仓库基线门槛；真实端口、子进程、codegen、Cargo、Runtime和故障注入继续使用各自隔离验收，不为了覆盖率数字塞进同一进程。
+
 | 修改类型 | 最少验证 |
 |---|---|
 | 纯TS业务Component/Handler | `npm run typecheck`和对应自测 |
@@ -1106,6 +1108,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 | 状态复制/广播 | `npm run test:map-broadcast`、相关性能基准 |
 | 客户端SDK | `npm run test:client-sdk`、`npm run test:client-sdk-distribution`、Cocos/Pixi typecheck |
 | Scene部署或跨进程调用 | `npm run test:runtime` |
+| 生命周期或拥有者Timer契约 | `npm run verify:runtime-contracts`、`npm run test:runtime-contract-verifier`和完整`npm run verify` |
 | mailbox、背压、生命周期 | 完整`npm run verify` |
 | 外置游戏模块manifest、组合或边界 | `npm run modules:validate`、`npm run modules:typecheck`、`npm run test:game-modules`、`npm run verify:hotfix-boundary` |
 | RPC、Actor路由或生命周期 | `npm run test:rpc-actor-correctness`和完整`npm run verify` |
@@ -1176,7 +1179,7 @@ Handler
 接口必须按数据等级选择：
 
 - `LoadSnapshot`：登录、恢复或接管时读取权威记录；`None`表示记录不存在。
-- `SaveSnapshot`：调用方需要等待PostgreSQL提交的普通快照；网络失败时保留原`request_id`重试。`SaveMultiSnapshot`只批量独立记录，不提供跨记录业务原子性；DBProxy可以在同一连接分片内合并一次数据库commit和缓存往返，Revision/幂等冲突仍逐条返回。关键背包、货币和交易不能为了批量性能改走这个入口。
+- `SaveSnapshot`：调用方需要等待PostgreSQL提交的普通快照；只有`StorageUnavailable`允许有限重试，并保留原`request_id`。Repository使用25ms起步、200ms封顶的墙钟指数full jitter，Revision冲突和业务错误立即返回；不得在业务、SDK和Transport外层叠加另一套重试。`SaveMultiSnapshot`只批量独立记录，不提供跨记录业务原子性；DBProxy可以在同一连接分片内合并一次数据库commit和缓存往返，Revision/幂等冲突仍逐条返回。关键背包、货币和交易不能为了批量性能改走这个入口。
 - `EnqueueSnapshot`：只用于位置、普通任务进度等允许小范围回退的数据；成功只表示Redis AOF backlog接收，不代表PostgreSQL已落库。
 - `ApplyTransaction`：用于Wallet、Inventory、Reward、Trade等关键单记录事务；必须携带原`operation_id`、期望Revision、提交后的完整Payload和可重试业务结果。
 

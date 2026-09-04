@@ -17,6 +17,7 @@ import "../../../app/hotfix/mmorpg/movement/DirectionalMovementProfileComponentS
 import "../../../app/hotfix/mmorpg/npc/NpcComponentSystem";
 import "../../../app/hotfix/mmorpg/npc/NpcUnitSystem";
 import "../../../app/hotfix/mmorpg/numeric/NumericComponentSystem";
+import "../../../app/hotfix/mmorpg/numeric/NumericRegenerationComponentSystem";
 import "../../../app/hotfix/mmorpg/progression/ProgressionComponentSystem";
 import "../../../app/hotfix/mmorpg/quest/QuestComponentSystem";
 import "../../../app/hotfix/mmorpg/quest/QuestSystem";

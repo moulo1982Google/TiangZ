@@ -10,6 +10,8 @@ const root = path.resolve(path.dirname(scriptFile), "..");
 const protoDir = path.join(root, "proto");
 const opcodeLockFile = path.join(protoDir, "opcode.lock.json");
 const schemaLockFile = path.join(protoDir, "schema.lock.json");
+const internalFrameProtocolFile = path.join(root, "app", "core", "process", "InternalFrameProtocol.ts");
+const internalFrameMsgCodes = await readInternalFrameMsgCodes(internalFrameProtocolFile);
 const generatedModelDir = path.join(root, "app", "generated", "model");
 const generatedServerProtocolDir = path.join(generatedModelDir, "server");
 const obsoleteAppClientProtocolDir = path.join(generatedModelDir, "client");
@@ -157,10 +159,36 @@ async function main() {
   await recordGenerator(root, {
     id: "proto",
     command: "npm run codegen:proto",
-    contentInputs: [scriptFile, configFile, opcodeLockFile, schemaLockFile, ...protoFiles],
+    contentInputs: [
+      scriptFile,
+      configFile,
+      opcodeLockFile,
+      schemaLockFile,
+      internalFrameProtocolFile,
+      ...protoFiles,
+    ],
     outputs: await collectGeneratedFiles(outputRoots),
     outputRoots,
   });
+}
+
+async function readInternalFrameMsgCodes(file) {
+  const source = await readFile(file, "utf8");
+  const declaration = /export const InternalFrameMsgCode = Object\.freeze\(\{([\s\S]*?)\}\s+as const\);/.exec(source);
+  if (!declaration) throw new Error("InternalFrameMsgCode declaration is missing or malformed");
+  const result = new Map();
+  for (const match of declaration[1].matchAll(/^\s*([A-Za-z][A-Za-z0-9]*):\s*([0-9][0-9_]*),?\s*$/gm)) {
+    const name = match[1];
+    const value = Number(match[2].replaceAll("_", ""));
+    if (!Number.isInteger(value) || value < 0 || value > 0xffff) {
+      throw new Error(`invalid Core internal msgcode: ${name}=${match[2]}`);
+    }
+    const previous = result.get(value);
+    if (previous) throw new Error(`duplicate Core internal msgcode ${value}: ${previous} and ${name}`);
+    result.set(value, name);
+  }
+  if (result.size === 0) throw new Error("InternalFrameMsgCode declaration is empty");
+  return result;
 }
 
 function resolveCppClientSdk(config) {
@@ -1431,8 +1459,9 @@ function validateProtocol(protocol, label, allowUnknownFieldTypes = false) {
       );
     }
     seenCodes.set(entry.value, entry.name);
-    if (entry.value === 29_999) {
-      throw new Error(`${label}: msgcode 29999 is reserved for ActorLocation routing`);
+    const internalOwner = internalFrameMsgCodes.get(entry.value);
+    if (internalOwner) {
+      throw new Error(`${label}: msgcode ${entry.value} is reserved for Core internal ${internalOwner}`);
     }
   }
 

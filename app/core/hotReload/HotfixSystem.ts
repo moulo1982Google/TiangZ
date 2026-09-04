@@ -7,6 +7,14 @@ import {
 type AnyCtor = abstract new (...args: any[]) => object;
 type ConcreteCtor = new (...args: any[]) => object;
 
+const SYNCHRONOUS_HOOK_METHODS = [
+  "Awake",
+  "OnDestroy",
+  "Deserialize",
+  "CaptureTransfer",
+  "RestoreTransfer",
+] as const;
+
 interface MethodCandidate {
   readonly target: AnyCtor;
   readonly implementation: ConcreteCtor;
@@ -145,6 +153,7 @@ export class HotfixSystem {
     const bindingUndo: BindingUndo<object>[] = [];
 
     try {
+      for (const candidate of staging.methods) validateSynchronousCandidateHooks(candidate);
       validateCompleteBindings(staging, this.bindingStores, this.generation > 0);
       const requiredTargets = new Set(this.requiredTypes);
       for (const [target, installed] of this.installedTypes) {
@@ -439,6 +448,25 @@ function validateRequiredLifecycle(candidate: MethodCandidate): void {
   }
 }
 
+/**
+ * 在修改活动prototype之前拒绝候选类自己声明的异步同步钩子。
+ * 这里只能识别运行时仍保留AsyncFunction身份的方法；构建期类型检查负责覆盖普通函数返回Promise。
+ *
+ * Rejects asynchronous synchronous hooks owned by a candidate before any
+ * active prototype is changed. Runtime identity catches AsyncFunction values;
+ * the build-time type check also catches ordinary functions returning Promises.
+ */
+function validateSynchronousCandidateHooks(candidate: MethodCandidate): void {
+  for (const method of SYNCHRONOUS_HOOK_METHODS) {
+    const descriptor = Object.getOwnPropertyDescriptor(candidate.implementation.prototype, method);
+    if (!descriptor) continue;
+    if (typeof descriptor.value !== "function") {
+      throw new Error(`lifecycle hook must be a method: ${candidate.target.name}.${method}`);
+    }
+    validateSynchronousFunction(candidate.target, method, descriptor.value);
+  }
+}
+
 function validateLifecycleMethod(
   candidate: MethodCandidate,
   method: string,
@@ -455,11 +483,14 @@ function validateLifecycleMethod(
       `required lifecycle method is missing: ${candidate.target.name}.${method}`,
     );
   }
-  if (descriptor.value.constructor?.name === "AsyncFunction") {
-    throw new Error(
-      `lifecycle method must be synchronous: ${candidate.target.name}.${method}`,
-    );
-  }
+  validateSynchronousFunction(candidate.target, method, descriptor.value);
+}
+
+function validateSynchronousFunction(target: AnyCtor, method: string, value: Function): void {
+  if (value.constructor?.name !== "AsyncFunction") return;
+  throw new Error(
+    `lifecycle method must be synchronous: ${target.name}.${method}`,
+  );
 }
 
 function snapshotInstalled(

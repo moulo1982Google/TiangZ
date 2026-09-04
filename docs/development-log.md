@@ -7,6 +7,13 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-09-05：框架可靠性复审 P0-P2 落地
+
+- 同步生命周期新增TypeScript AST门、Hotfix提交前无副作用预检和运行时拒绝观察；`async`以及普通函数返回Promise都会在进入活动generation前失败。DBProxy普通快照只在`StorageUnavailable`下复用同一requestId，以25ms起步、200ms封顶的墙钟指数full jitter有限重试。
+- `check/verify:quick/verify`改由统一矩阵运行器调度，单项失败后继续收集完整结果，并输出JSON与JUnit。40个TypeScript进程内自测全部改为导出`main`并由一一对应的Vitest包装器执行；6个依赖游戏配置的用例由`globalSetup`在并行worker启动前串行生成配置，并用跨进程文件锁避免重复生成竞态。Vitest保持`pool: "forks"`、`isolate: true`并开启文件并行；端口、子进程、Cargo和故障测试继续隔离。
+- 拥有者Timer的方法名、参数和取消回调进入带负例夹具的AST检查。ActorLocation、Batch和Trace内部msgcode及布局集中登记，业务协议生成拒绝碰撞，golden、截断和500轮确定性随机往返测试守住格式。Scene Event继续严格匹配构造器，基类监听不隐式作用于子类。完整矩阵还发现并补齐反转Hotfix候选漏装的`NumericRegenerationComponentSystem`，避免测试夹具因必需System集合漂移而产生假失败。
+- 本轮`npm run verify:release`最终完整通过（full 9/9、quick 23/23、check 15/15），Stable Core API仍为187个导出且API表面哈希未变；实现依赖图新增内部信封布局后已审查并更新锁。Vitest 44个文件共52项通过，覆盖范围为整个`app/core/**/*.ts`：statements 73.98%、branches 64.38%、functions 79.70%、lines 76.23%。矩阵结果保存在`dist/test-results/<profile>.json/.xml`，报告命令使用稳定脚本名，不泄露或依赖本机npm安装路径。
+
 ## 2026-08-30：自动攻击就绪重试语义
 
 - 真实移动目标验收发现：10Hz桶在每次短暂超距或背向时重置完整武器间隔，目标持续游走会使玩家永远无法命中。对照AzerothCore同版本实现后，TiangZ改为激活且目标存活时持续推进武器计时；计时到点但命中窗口无效时保持就绪并按10Hz重试，只有成功命中、显式取消或技能策略等明确中断才开启或清除一轮计时。

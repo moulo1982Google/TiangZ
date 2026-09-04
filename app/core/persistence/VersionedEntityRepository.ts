@@ -7,6 +7,8 @@ import {
 import { HostDbProxyTransport, IsHostDbProxyAvailable } from "./HostDbProxyTransport";
 
 const SAVE_ATTEMPTS = 3;
+const SAVE_RETRY_BASE_DELAY_MS = 25;
+const SAVE_RETRY_MAX_DELAY_MS = 200;
 let repositoryInstanceSequence = 0;
 
 /** `.native`生成Codec所遵循的稳定契约；DBProxy不会看到TEntity或TSnapshot。 / Stable contract for `.native` codecs; DBProxy never sees TEntity or TSnapshot. */
@@ -97,10 +99,29 @@ implements VersionedEntityRepository<TSnapshot, TEntity> {
       } catch (error) {
         if (attempt === SAVE_ATTEMPTS || !(error instanceof DbProxyRemoteError) || error.code !== DbProxyErrorCode.StorageUnavailable) throw error;
         // 提交结果不明确时只能复用同一requestId；更换ID可能重复覆盖。 / Ambiguous commits must retry the same requestId.
+        await waitBeforeStorageRetry(attempt);
       }
     }
     throw new Error("unreachable DBProxy entity save retry state");
   }
+}
+
+/** 使用墙钟指数退避与full jitter，避免同一故障窗口内的Entity同步重试。 / Uses wall-clock exponential backoff with full jitter so Entities do not retry in lockstep during one outage. */
+async function waitBeforeStorageRetry(failedAttempt: number): Promise<void> {
+  const ceiling = Math.min(
+    SAVE_RETRY_MAX_DELAY_MS,
+    SAVE_RETRY_BASE_DELAY_MS * (2 ** Math.max(0, failedAttempt - 1)),
+  );
+  const delayMs = Math.floor(Math.random() * (ceiling + 1));
+  if (delayMs === 0) return;
+  const hostSleep = (globalThis as unknown as {
+    __hostSleep?: (milliseconds: number) => Promise<void>;
+  }).__hostSleep;
+  if (hostSleep) {
+    await hostSleep(delayMs);
+    return;
+  }
+  await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
 }
 
 interface InMemoryVersionedEntityRecord {

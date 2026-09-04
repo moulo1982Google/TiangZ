@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import {
   EvaluateMonsterBehavior,
   type MonsterBehaviorAction,
@@ -78,7 +79,6 @@ assertAction("attack cooldown holds position", "hold", EvaluateMonsterBehavior({
   canAttack: false,
 }));
 
-void main();
 
 function assertAction(name: string, expected: MonsterBehaviorAction, actual: MonsterBehaviorAction): void {
   if (actual !== expected) throw new Error(`${name}: expected ${expected}, got ${actual}`);
@@ -98,7 +98,7 @@ interface FakeCombatState {
   AddMonster(monsterUnitId: number, nowMs: number): void;
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   verifyExternalMapAndSpawnProfiles();
   verifyAmbientMovementContentAndPlanning();
   verifyContentBehaviorRules();
@@ -1583,3 +1583,5 @@ function testHotfixManifest(): HotfixManifest {
     buildMode: "demo",
   };
 }
+
+runSelfTest(main);

@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import {
   DbProxyClient,
@@ -51,9 +52,8 @@ import { SkillComponent } from "../app/model/mmorpg/skill/SkillComponent";
 import { ProgressionComponent } from "../app/model/mmorpg/progression/ProgressionComponent";
 import { NativeItemPersistenceCodec } from "../app/generated/model/native/NativeItemPersistence";
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   await testSuccessfulSaveIsIdempotent();
   await testUnchangedPeriodicSnapshotSkipsWrites();
   await testSaveFailureIsVisibleAndIdempotent();
@@ -498,3 +498,5 @@ function createSaveData(account: string): PlayerSaveData {
     reason: "codec",
   };
 }
+
+runSelfTest(main);

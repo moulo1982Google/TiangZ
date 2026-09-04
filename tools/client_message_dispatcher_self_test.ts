@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import {
   ClientMessageDispatcher,
@@ -66,7 +67,7 @@ class FakeMessageSource implements ClientMessageSource {
   }
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const source = new FakeMessageSource();
   const context: ProbeContext = { values: [] };
   const errors: unknown[] = [];
@@ -94,7 +95,4 @@ async function main(): Promise<void> {
   console.log("client message dispatcher self-test passed");
 }
 
-void main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+runSelfTest(main);

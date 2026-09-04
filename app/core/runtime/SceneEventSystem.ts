@@ -77,7 +77,11 @@ export function defineVetoEvent<TEvent, TReason extends number>(
   return Object.freeze({ name: requireEventName(name), mode: "veto", allow });
 }
 
-/** 注册同步Hotfix监听器；返回Promise属于契约错误。 / Registers a synchronous Hotfix listener; returning a Promise violates the contract. */
+/**
+ * 注册只匹配该精确Scene构造器的同步Hotfix监听器；子类Scene不会继承监听器，返回Promise属于契约错误。
+ * Registers a synchronous Hotfix listener for this exact Scene constructor;
+ * derived Scenes do not inherit it, and returning a Promise violates the contract.
+ */
 export function syncEventHandler<TScene extends Scene, TEvent>(
   sceneCtor: SceneClass<TScene>,
   descriptor: SyncEventDescriptor<TEvent>,
@@ -94,7 +98,11 @@ export function syncEventHandler<TScene extends Scene, TEvent>(
   };
 }
 
-/** 注册同步否决监听器；监听器必须只读检查并返回错误码，不得返回Promise或产生副作用。 / Registers a synchronous veto listener that performs read-only checks and returns an error code without Promises or side effects. */
+/**
+ * 注册只匹配该精确Scene构造器的同步否决监听器；子类Scene不会继承，且监听器不得返回Promise或产生副作用。
+ * Registers a synchronous veto listener for this exact Scene constructor;
+ * derived Scenes do not inherit it, and handlers must remain read-only and synchronous.
+ */
 export function vetoEventHandler<TScene extends Scene, TEvent, TReason extends number>(
   sceneCtor: SceneClass<TScene>,
   descriptor: VetoEventDescriptor<TEvent, TReason>,

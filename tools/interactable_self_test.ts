@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 
 import {
@@ -32,9 +33,8 @@ const SHRINE_OBJECTIVE_ID = 834_521;
 const CHEST_ITEM_ID = 774;
 const CHEST_LOOT_TABLE_ID = 91_227;
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const { InitializeGameSingletons } = await import("../app/core/runtime/Game");
   const { HotfixSystem } = await import("../app/core/hotReload/HotfixSystem");
   const { SingletonRegistry } = await import("../app/core/runtime/Singleton");
@@ -661,3 +661,5 @@ function testHotfixManifest() {
     buildMode: "demo" as const,
   };
 }
+
+runSelfTest(main);

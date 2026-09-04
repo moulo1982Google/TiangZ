@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -26,7 +27,7 @@ import {
 } from "../app/hotfix/bench/MapCapacityLayout";
 
 /** 验证Luban配置的查询、分端裁剪、引用解析和只读约束。 / Verifies Luban lookup, target filtering, references, and immutability. */
-function main(): void {
+export function main(): void {
   const generated = path.resolve("game_config/generated");
   const manifestJson = readFileSync(
     path.join(generated, "game-config.manifest.json"),
@@ -423,4 +424,4 @@ function main(): void {
   console.log("game config self-test passed");
 }
 
-main();
+runSelfTest(main);

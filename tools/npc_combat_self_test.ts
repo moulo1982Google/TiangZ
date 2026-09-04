@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 
 import { HotfixSystem } from "../app/core/hotReload/HotfixSystem";
@@ -47,9 +48,8 @@ implements SyncSceneEventHandler<NpcCombatTestScene, NpcCombatActionRequestedEve
   }
 }
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   InitializeGameSingletons(
     { fixedUpdateMs: 50, maxCatchUpSteps: 2 },
     { originServerId: 46, workerId: 1 },
@@ -238,17 +238,18 @@ async function main(): Promise<void> {
   player.AddComponent(CombatStateComponent);
   aoi.Attach(player, 0, true, true);
 
+  const frameBase = TimeSystem.Instance.FrameTime;
   initialCombatNpc.GetComponent(NumericComponent)[NumericType.CurrentMp] = 2n;
-  TimeSystem.Instance.__update(100, 100);
+  TimeSystem.Instance.__update(frameBase + 100, 100);
   npcs.Update5Hz();
-  TimeSystem.Instance.__update(5_099, 5_099);
+  TimeSystem.Instance.__update(frameBase + 5_099, 5_099);
   npcs.Update5Hz();
   assert.equal(initialCombatNpc.GetComponent(NumericComponent)[NumericType.CurrentMp], 2n);
-  TimeSystem.Instance.__update(5_100, 5_100);
+  TimeSystem.Instance.__update(frameBase + 5_100, 5_100);
   npcs.Update5Hz();
   assert.equal(initialCombatNpc.GetComponent(NumericComponent)[NumericType.CurrentMp], 5n);
 
-  TimeSystem.Instance.__update(6_000, 6_000);
+  TimeSystem.Instance.__update(frameBase + 6_000, 6_000);
   assert.equal(npcs.CanPlayerAttack(player, initialCombatNpc), true);
   const first = npcs.Attack(player, initialCombatNpc);
   assert.equal(first.finalDamage, 7n);
@@ -263,12 +264,12 @@ async function main(): Promise<void> {
   assert.equal(player.GetComponent(CombatStateComponent).IsInCombat(), false);
   assert.equal(npcs.CanPlayerAttack(player, initialCombatNpc), false);
 
-  TimeSystem.Instance.__update(16_001, 16_001);
+  TimeSystem.Instance.__update(frameBase + 16_001, 16_001);
   npcs.Update1Hz();
   assert.equal(npcs.Get(2_102), undefined, "expired corpse must leave the Unit and AOI indexes");
   assert.ok(npcs.Get(2_101), "service-only NPC must not enter the corpse lifecycle");
 
-  TimeSystem.Instance.__update(18_000, 18_000);
+  TimeSystem.Instance.__update(frameBase + 18_000, 18_000);
   npcs.Update1Hz();
   const respawned = npcs.Get(2_102);
   assert.ok(respawned);
@@ -435,3 +436,5 @@ function testHotfixManifest(): HotfixManifest {
     buildMode: "demo",
   };
 }
+
+runSelfTest(main);

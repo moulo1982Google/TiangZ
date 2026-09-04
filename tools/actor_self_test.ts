@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -48,9 +49,8 @@ import {
 import type { HotfixManifest } from "../app/core/hotReload/contracts";
 import { GameConfigRegistry } from "../app/generated/model/config";
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const gameConfigDirectory = path.resolve("game_config/generated");
   GameConfigRegistry.Install(
     readFileSync(path.join(gameConfigDirectory, "game-config.manifest.json"), "utf8"),
@@ -958,3 +958,5 @@ function testReconnectStormKeepsLatestLocation(): void {
     /unbind before rebind/,
   );
 }
+
+runSelfTest(main);

@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 
 import {
@@ -15,9 +16,8 @@ interface CardCatalog {
   }[];
 }
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   defineGameModule({ id: "org.example.cards", version: "1.0.0" });
   sealGameModules([{ id: "org.example.cards", version: "1.0.0" }]);
   await acceptsAndFreezesNeutralDataPacks();
@@ -106,3 +106,5 @@ function pack(id: string, hashCharacter: string, cardId: number): RuntimeDataPac
     },
   };
 }
+
+runSelfTest(main);

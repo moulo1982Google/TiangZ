@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -19,9 +20,8 @@ import type {
 } from "../app/model/mmorpg/persistence/PlayerRepository";
 import type { NpcShopComponentSystem } from "../app/hotfix/mmorpg/shop/NpcShopComponentSystem";
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const manifestJson = readFileSync(
     path.resolve("game_config/generated/game-config.manifest.json"),
     "utf8",
@@ -329,3 +329,5 @@ function testHotfixManifest() {
     buildMode: "demo" as const,
   };
 }
+
+runSelfTest(main);

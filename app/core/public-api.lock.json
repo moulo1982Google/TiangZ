@@ -1315,7 +1315,7 @@
       ]
     }
   ],
-  "declarationGraphHash": "1a2a537a559235270a55b893734b7d3d037a751df251e4ae9ffb041f2b5137fd",
+  "declarationGraphHash": "3d9a4312fb463eb4753180a7fa21ea4f40ece43499f863e8cfbda5b9d39950b1",
   "declarationGraph": [
     {
       "path": "core/async.d.ts",
@@ -1383,11 +1383,15 @@
     },
     {
       "path": "core/process/ActorLocation.d.ts",
-      "declaration": "import type { SceneConfig } from \"./types\";\nexport declare const ActorLocationEnvelopeMsgCode = 29999;\nexport declare const ActorLocationEnvelopeHeaderBytes = 22;\nexport declare const ActorLocationBatchEnvelopeMsgCode = 29997;\nexport interface ActorLocationTarget {\ninstanceId: number;\nscene: SceneConfig;\nfenceToken?: bigint;\n}\nexport interface ActorLocationEnvelope {\ninstanceId: number;\nframe: Uint8Array;\nrpcId?: number;\nfenceToken?: bigint;\n}\nexport interface ActorLocationBatchEntry {\nreadonly instanceId: number;\nreadonly frame: Uint8Array;\nreadonly fenceToken?: bigint;\n}\nexport declare class ActorLocationDirectory {\nprivate readonly targetsByConnection;\nbindConnection(connectionId: number, target: ActorLocationTarget): void;\nunbindConnection(connectionId: number): void;\nresolveConnection(connectionId: number): ActorLocationTarget | undefined;\n}\nexport declare function encodeActorLocationEnvelope(envelope: ActorLocationEnvelope): Uint8Array;\nexport declare function decodeActorLocationEnvelope(frame: Uint8Array): ActorLocationEnvelope;\nexport declare function readActorLocationInstanceId(frame: Uint8Array): number;\nexport declare function encodeActorLocationBatchEnvelope(entries: readonly ActorLocationBatchEntry[]): Uint8Array;\nexport declare function forEachActorLocationBatchEntry(batch: Uint8Array, visit: (entry: ActorLocationBatchEntry) => void): void;\nexport declare function extractFrameRpcId(frame: Uint8Array): number | undefined;\nexport declare function rewriteFrameRpcId(frame: Uint8Array, rpcId: number): Uint8Array;"
+      "declaration": "import type { SceneConfig } from \"./types\";\nexport declare const ActorLocationEnvelopeMsgCode: 29999;\nexport declare const ActorLocationEnvelopeHeaderBytes: 22;\nexport declare const ActorLocationBatchEnvelopeMsgCode: 29997;\nexport interface ActorLocationTarget {\ninstanceId: number;\nscene: SceneConfig;\nfenceToken?: bigint;\n}\nexport interface ActorLocationEnvelope {\ninstanceId: number;\nframe: Uint8Array;\nrpcId?: number;\nfenceToken?: bigint;\n}\nexport interface ActorLocationBatchEntry {\nreadonly instanceId: number;\nreadonly frame: Uint8Array;\nreadonly fenceToken?: bigint;\n}\nexport declare class ActorLocationDirectory {\nprivate readonly targetsByConnection;\nbindConnection(connectionId: number, target: ActorLocationTarget): void;\nunbindConnection(connectionId: number): void;\nresolveConnection(connectionId: number): ActorLocationTarget | undefined;\n}\nexport declare function encodeActorLocationEnvelope(envelope: ActorLocationEnvelope): Uint8Array;\nexport declare function decodeActorLocationEnvelope(frame: Uint8Array): ActorLocationEnvelope;\nexport declare function readActorLocationInstanceId(frame: Uint8Array): number;\nexport declare function encodeActorLocationBatchEnvelope(entries: readonly ActorLocationBatchEntry[]): Uint8Array;\nexport declare function forEachActorLocationBatchEntry(batch: Uint8Array, visit: (entry: ActorLocationBatchEntry) => void): void;\nexport declare function extractFrameRpcId(frame: Uint8Array): number | undefined;\nexport declare function rewriteFrameRpcId(frame: Uint8Array, rpcId: number): Uint8Array;"
     },
     {
       "path": "core/process/HostSceneTransport.d.ts",
       "declaration": "import type { SceneConfig } from \"./types\";\nexport declare function callRemoteScene(source: SceneConfig, target: SceneConfig, frame: Uint8Array, timeoutMs: number): Promise<Uint8Array>;\nexport declare function sendRemoteScene(source: SceneConfig, target: SceneConfig, frame: Uint8Array, timeoutMs: number): void;\nexport declare function sleepHost(ms: number): Promise<void>;\nexport declare function flushHostSceneOperations(): void;\nexport declare function completeHostSceneOperation(id: number, succeeded: boolean, payload: Uint8Array): void;\nexport declare function cancelHostSceneOperations(reason?: string): void;"
+    },
+    {
+      "path": "core/process/InternalFrameProtocol.d.ts",
+      "declaration": "export declare const InternalFrameMsgCode: Readonly<{\nreadonly Trace: 29996;\nreadonly ActorLocationBatch: 29997;\nreadonly ActorLocation: 29999;\n}>;\nexport declare const ActorLocationEnvelopeLayout: Readonly<{\nreadonly msgCodeOffset: 0;\nreadonly instanceIdOffset: 2;\nreadonly rpcIdOffset: 10;\nreadonly fenceTokenOffset: 14;\nreadonly headerBytes: 22;\n}>;\nexport declare const ActorLocationBatchEnvelopeLayout: Readonly<{\nreadonly msgCodeOffset: 0;\nreadonly countOffset: 2;\nreadonly headerBytes: 6;\nreadonly entry: Readonly<{\ninstanceIdOffset: 0;\nfenceTokenOffset: 8;\nframeLengthOffset: 16;\nheaderBytes: 20;\n}>;\n}>;\nexport declare const TraceEnvelopeLayout: Readonly<{\nreadonly msgCodeOffset: 0;\nreadonly traceIdOffset: 2;\nreadonly spanIdOffset: 18;\nreadonly flagsOffset: 26;\nreadonly headerBytes: 27;\n}>;"
     },
     {
       "path": "core/process/SceneMessageHelper.d.ts",
@@ -1395,7 +1399,7 @@
     },
     {
       "path": "core/process/TraceEnvelope.d.ts",
-      "declaration": "import type { TraceContextValue } from \"../telemetry/TraceContext\";\nexport declare const TraceEnvelopeMsgCode = 29996;\nexport declare const TraceEnvelopeHeaderBytes = 27;\nexport interface TraceEnvelope {\nreadonly context: TraceContextValue;\nreadonly frame: Uint8Array;\n}\nexport declare function encodeTraceEnvelope(frame: Uint8Array, context: TraceContextValue): Uint8Array;\nexport declare function decodeTraceEnvelope(frame: Uint8Array): TraceEnvelope;"
+      "declaration": "import type { TraceContextValue } from \"../telemetry/TraceContext\";\nexport declare const TraceEnvelopeMsgCode: 29996;\nexport declare const TraceEnvelopeHeaderBytes: 27;\nexport interface TraceEnvelope {\nreadonly context: TraceContextValue;\nreadonly frame: Uint8Array;\n}\nexport declare function encodeTraceEnvelope(frame: Uint8Array, context: TraceContextValue): Uint8Array;\nexport declare function decodeTraceEnvelope(frame: Uint8Array): TraceEnvelope;"
     },
     {
       "path": "core/process/context.d.ts",

@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import {
   BroadcastHub,
@@ -97,7 +98,7 @@ const multiGateAudience: BroadcastAudience = {
   ],
 };
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   await testLogicalAudienceSetOperations();
   await testClientBroadcastHidesPhysicalRoutes();
   await testBuffAudienceProjectionDoesNotLeakDetails();
@@ -966,7 +967,4 @@ async function settlePromises(): Promise<void> {
   await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
-void main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+runSelfTest(main);

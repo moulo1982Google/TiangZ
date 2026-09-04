@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import { isPromiseLike } from "../app/core/async";
 import { BinaryReader, BinaryWriter } from "../app/core/protocol/binary";
@@ -40,9 +41,8 @@ import {
   MapProtocol,
 } from "../app/generated/model/server/demo/protocol/rpcs";
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   testGeneratedScalarCodec();
   testCharacterExtensionRoundTrip();
   testOwnedSummonTransferCodec();
@@ -679,3 +679,5 @@ function frame(msgcode: number, payload: Uint8Array): Uint8Array {
   result.set(payload, 2);
   return result;
 }
+
+runSelfTest(main);

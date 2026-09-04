@@ -218,7 +218,7 @@ Login使用带最终avalanche混合的Rendezvous Hash排列Gate候选。所有Lo
 
 Component用于组合状态和领域能力。创建Entity时由Factory决定挂载哪些Component，运行时通过`AddComponent/GetComponent/RemoveComponent`管理。Handler不必依赖单一Component，可以协调玩家身上的多个Component。
 
-生命周期采用“默认可选，声明后强约束”。稳定Model通过`@lifecycle({ awake, destroy, deserialize })`声明对应Hotfix System必须实现的业务钩子；未声明项不要求空方法。迁移继续以`@transferable()`作为唯一能力标记，并要求同步`CaptureTransfer/RestoreTransfer`。`codegen:scenes`在构建期检查声明与System实现，Hotfix提交前再次检查候选prototype；缺失或异步生命周期会拒绝整个候选并保留旧generation，Core继承到的空`Awake/OnDestroy`不能冒充业务实现。
+生命周期采用“默认可选，声明后强约束”。稳定Model通过`@lifecycle({ awake, destroy, deserialize })`声明对应Hotfix System必须实现的业务钩子；未声明项不要求空方法。迁移继续以`@transferable()`作为唯一能力标记，并要求同步`CaptureTransfer/RestoreTransfer`。`codegen:scenes`在构建期检查声明与System实现；`verify:runtime-contracts`还会拒绝所有保留生命周期名上的`async`或Promise返回类型。Hotfix提交会在修改活动prototype和Handler槽之前预检候选自己的`Awake/OnDestroy/Deserialize/CaptureTransfer/RestoreTransfer`，缺失或异步实现会拒绝整个候选并保留旧generation；运行时返回值检查只作为最后兜底，并会观察意外Promise的拒绝，避免未处理拒绝丢失诊断。Core继承到的空`Awake/OnDestroy`不能冒充业务实现。
 
 推荐业务链路是：
 
@@ -282,8 +282,9 @@ TiangZ Developer Tools `v0.15.0`把可机械判断的部分固化到不依赖VS 
 - 所有者Timer返回唯一`TimerId`，支持原样业务参数和主动取消方法；取消至多通知一次，Owner销毁时静默清理。
 - `FrameTime`是不可持久化单调时间；活动时间和跨重启截止时间使用`ServerNow`及deadline helper。业务需要协议时间戳时调用`TimerSystem.ServerTime()`取得当前Unix毫秒；框架不再提供容易被误解为Entity Component的`TimerComponent`别名。
 - `Scene.Locks`提供`Scene InstanceId + domain + key`的本Process FIFO协程锁，不是分布式锁；跨Process先路由到唯一所有者。无竞争锁必须同步进入回调，保证第一个`await`前建立的传送屏障等状态不会被后续unordered消息抢跑。
-- Developer Tools会检查StartMachine实际部署集合中的`process.identity`、Timer方法名与取消回调、同步/Veto Scene Event契约，以及`InstanceId/TimerId`误入持久化结构；这些规则与Runtime Foundation自测共同守住业务侧用法。
-- `Scene.Events`只处理当前Scene的同步通知和同步否决链；框架不提供异步Event。`SyncEvent`用于事后通知，失败只记录；`VetoEvent`用于操作前只读检查，按`order/id`稳定排序并返回第一个非零错误码。监听器是Hotfix稳定绑定，不为每个Entity动态注册闭包。跨Scene必须使用Message/RPC。
+- Developer Tools会检查StartMachine实际部署集合中的`process.identity`、Timer方法名与取消回调、同步/Veto Scene Event契约，以及`InstanceId/TimerId`误入持久化结构；仓库级`verify:runtime-contracts`进一步用TypeScript类型信息检查拥有者Timer的方法名字面量、目标存在性、参数和`onCancelled`签名。这些规则与Runtime Foundation自测共同守住业务侧用法。
+- 纯TypeScript进程内自测统一由Vitest的fork池执行，保持每文件模块隔离并允许文件并行；依赖生成游戏配置的用例在worker启动前由带跨进程锁的`globalSetup`完成codegen。覆盖率范围是完整`app/core/**/*.ts`，不是只统计本轮改动文件；端口、子进程、Cargo、Runtime与故障注入仍由统一矩阵中的隔离步骤验收。
+- `Scene.Events`只处理当前Scene的同步通知和同步否决链；框架不提供异步Event。`SyncEvent`用于事后通知，失败只记录；`VetoEvent`用于操作前只读检查，按`order/id`稳定排序并返回第一个非零错误码。监听器按`scene.constructor === registeredConstructor`精确匹配，给基类登记不会作用于子类；若未来需要继承语义，必须显式设计去重、顺序和Veto行为。监听器是Hotfix稳定绑定，不为每个Entity动态注册闭包。跨Scene必须使用Message/RPC。
 - `Scene.Tasks.Spawn`只承载调用方明确不等待的有界短任务：每个Scene最多256个在途任务，超过10秒仍未结束会记录一次告警；错误统一记录，ProcessHost聚合入口Scene和动态MapScene的在途任务并阻止Hotfix提交，Scene销毁更新TiangZ轻量`signal.aborted/reason`。它不依赖浏览器`AbortController`，也不能替代Veto、Timer、事务、ordered mailbox或需要结果的RPC；永久任务会持续占用容量并永久阻塞Hotfix。
 
 `await`只释放当前异步调用，不会让JavaScript获得多线程并行。是否允许同一业务目标重入，由目标mailbox决定。
@@ -663,6 +664,8 @@ Cocos3D的尸体窗口必须持续显示掉落行和领取结果，领取后使�
 ## DBProxy就绪边界
 
 配置了`process.persistence.dbProxy`的Process必须在进入ready前预连接完整DBProxy池；首选Endpoint不可用但备用可用时允许启动，全部Endpoint不可用时启动失败并交给监督器重试。禁止把惰性首连延迟暴露给第一个玩家RPC，也不能仅靠扩大客户端超时掩盖错误ready。
+
+`DbProxyEntityRepository.SaveSnapshot`只对`StorageUnavailable`执行有限重试，始终复用第一次生成的`requestId`，重试间使用25ms起步、200ms封顶的墙钟指数退避和full jitter。Revision冲突及其他业务错误不重试；SDK、Transport和Repository不得再叠加无界重试。游戏Timer或可暂停的帧时钟不能承担存储退避，否则停帧会制造同步重试风暴。
 
 ## 随机游走节奏
 

@@ -136,6 +136,8 @@ if (reason !== 0) throw new RpcError(reason, "item use vetoed");
 
 两类Handler都禁止`async`、Promise和I/O。Veto Handler还必须只读，不能在检查过程中扣道具、加Buff或改Numeric，否则后续监听器否决时会留下半完成状态。监听器使用跨generation稳定的`id`，Hotfix原子替换实现；不要让每个玩家动态注册闭包。模块是否生效由监听器读取事件中的Unit/Component状态决定。
 
+事件监听器按注册时的Scene构造器精确匹配：给基类Scene注册的监听器不会自动处理子类Scene事件。需要共享行为时应显式给每个具体Scene注册；未来若引入继承匹配，必须同时定义基类/子类监听器的去重、顺序和Veto短路语义，不能静默改变现有默认行为。
+
 ## Scene后台任务
 
 调用方明确不等待结果、也不依赖完成时间的短异步工作使用`scene.Tasks.Spawn`：

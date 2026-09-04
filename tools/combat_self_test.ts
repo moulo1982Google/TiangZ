@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import { Entity, Scene } from "../app/core/runtime/entities";
 import { HotfixSystem } from "../app/core/hotReload/HotfixSystem";
@@ -23,9 +24,8 @@ interface TestOwner {
   TryGetComponent<T>(ctor: new (...args: any[]) => T): T | undefined;
 }
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   HotfixSystem.Begin(testHotfixManifest());
   const { CombatComponentSystem } = await import(
     "../app/hotfix/mmorpg/combat/CombatComponentSystem"
@@ -246,3 +246,5 @@ function testHotfixManifest(): HotfixManifest {
     buildMode: "demo",
   };
 }
+
+runSelfTest(main);

@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import { Actor, Component, Scene } from "../app/core/runtime/entities";
 import { Game, InitializeGameSingletons } from "../app/core/runtime/Game";
@@ -84,7 +85,7 @@ class CounterComponent extends Component implements IUpdate, IUpdate10Hz, IUpdat
   }
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   SingletonRegistry.DestroyAll();
   InitializeGameSingletons({ fixedUpdateMs: 50, maxCatchUpSteps: 2 });
 
@@ -173,7 +174,4 @@ async function main(): Promise<void> {
   console.log("game update self-test passed");
 }
 
-void main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+runSelfTest(main);

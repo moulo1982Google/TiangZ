@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 
 import {
@@ -75,7 +76,7 @@ const Push = defineMessage<{ value: number }>({
   },
 });
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   try {
     testBuffStateProjectionAndTombstone();
     const socket = new RpcSocket(endpoint);
@@ -196,7 +197,4 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
   }
 }
 
-void main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+runSelfTest(main);

@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -63,9 +64,8 @@ class BuffTestScene extends Scene {}
 @actor({ mailbox: "ordered" })
 class BuffTestUnit extends PlayerUnit {}
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   InitializeGameSingletons(
     { fixedUpdateMs: 50, maxCatchUpSteps: 2 },
     { originServerId: 11, workerId: 2 },
@@ -1047,3 +1047,5 @@ function testHotfixManifest(): HotfixManifest {
     buildMode: "demo",
   };
 }
+
+runSelfTest(main);

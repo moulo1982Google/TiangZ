@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import { ProcessHost } from "../app/core/runtime/host";
 import {
@@ -101,9 +102,8 @@ class CascadingChildrenComponent extends Component {
   }
 }
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   testFailedBootstrapRollback();
   InitializeGameSingletons(
     { fixedUpdateMs: 50, maxCatchUpSteps: 2 },
@@ -320,3 +320,5 @@ function testSceneDisposeCascadesOwnedEntities(): void {
   assert.equal(host.Root.Get(childInstanceId), undefined);
   assert.throws(() => child.AssertAlive(), /entity is disposed/);
 }
+
+runSelfTest(main);

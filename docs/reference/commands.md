@@ -96,6 +96,7 @@ npm run hotfix -- rollback --startup configs/<env>/StartMachine.json --target ma
 | `npm run check` | TS、协议、Actor、客户端SDK和Cocos静态检查 |
 | `npm run verify:fast` | 日常快速检查：Scene/System生成入口、TypeScript类型、Hotfix边界和领域依赖；不启动Runtime、不执行Rust构建 |
 | `npm run verify:quick` | 生成物、注释、架构规则、协议锁、TS与Rust快速质量门 |
+| `npm run verify:runtime-contracts` | 静态检查同步生命周期与拥有者Timer字符串目标、参数及取消回调契约 |
 | `npm run test:gate-reconnect` | Gate连接替换、重连宽限、心跳时间和稳定选Gate自测 |
 | `npm run test:location` | Location revision/operation状态机、重启恢复批次与Proto迁移策略自测 |
 | `npm run test:gate-timeout-runtime` | 等待真实30秒宽限并验收Map最终下线；不进入快速质量门 |
@@ -106,6 +107,8 @@ npm run hotfix -- rollback --startup configs/<env>/StartMachine.json --target ma
 | `npm run verify:hotfix-boundary` | 检查Model/Hotfix依赖方向及Hotfix类没有字段、构造和静态初始化 |
 | `npm run verify:dependency-policy` | 校验依赖漏洞例外的负责人、原因和到期日期 |
 
+`check`、`verify:quick`和`verify`使用统一矩阵运行器。某一步失败不会截断后续步骤，最终退出码仍为失败，并在`dist/test-results/check|quick|full.json`和同名`.xml`中输出完整结果、耗时与JUnit报告。
+
 版本、Stable API和协议锁在开发阶段不作为失败门禁。`npm run verify:version`只提示版本副本差异，`npm run verify:core-api`和`npm run test:protocol-locks`仍执行边界与自测，但允许契约迭代。开发CI和本地可以运行`npm run verify:locks:warn`，它会执行同一组锁检查并只报告漂移，不阻塞开发；准备发布时运行`npm run verify:release`，它会设置`TIANGZ_LOCK_VERSIONS=1`并强制比较项目版本、`public-api.lock.json`以及opcode/schema锁；运行时Protocol Fingerprint始终必须匹配。
 
 ## 功能与稳定性测试
@@ -115,6 +118,11 @@ npm run hotfix -- rollback --startup configs/<env>/StartMachine.json --target ma
 | 命令 | 用途 |
 | --- | --- |
 | `npm run test:protocol-locks` | 验证协议锁能拦截字段增删、改号、改型、继承和RPC关联变化 |
+| `npm run test:unit` | 运行无端口、无子进程的Vitest Core单元测试 |
+| `npm run test:legacy` | 一次运行全部40个已迁移的TypeScript进程内自测 |
+| `npm run test:unit:typecheck` | 独立类型检查Vitest测试源码 |
+| `npm run test:unit:coverage` | 运行全部Vitest用例，统计完整`app/core/**/*.ts`并输出V8摘要与`dist/coverage/unit`机器报告 |
+| `npm run test:runtime-contract-verifier` | 用故意违规夹具验证生命周期与Timer静态检查不会假通过 |
 | `npm run test:runtime` | 单Process与拆分Process真实Runtime smoke |
 | `npm run test:rpc-actor-correctness` | RPC回绕、timeout、停机取消和Actor生命周期专项测试 |
 | `npm run test:fault-injection` | Process退出、Inner断线、慢客户端、过载、异常、非法帧、重连和保存失败矩阵 |

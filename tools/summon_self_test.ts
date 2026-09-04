@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 
 import { HotfixSystem } from "../app/core/hotReload/HotfixSystem";
@@ -38,9 +39,8 @@ import {
 @scene({ sceneType: "SummonTest" })
 class SummonTestScene extends Scene {}
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   InitializeGameSingletons(
     { fixedUpdateMs: 50, maxCatchUpSteps: 2 },
     { originServerId: 41, workerId: 2 },
@@ -527,3 +527,5 @@ function testHotfixManifest(): HotfixManifest {
     buildMode: "demo",
   };
 }
+
+runSelfTest(main);

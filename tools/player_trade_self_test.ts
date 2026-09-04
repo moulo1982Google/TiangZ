@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -18,9 +19,8 @@ import {
 } from "../app/model/mmorpg/persistence/PlayerRepository";
 import { ProjectPlayerDomainData } from "../app/model/mmorpg/persistence/PlayerPersistenceCodec";
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const manifest = readFileSync(path.resolve("game_config/generated/game-config.manifest.json"), "utf8");
   const data = readFileSync(path.resolve("game_config/generated/server.json"), "utf8");
   GameConfigRegistry.Install(manifest, data);
@@ -216,3 +216,5 @@ function saveData(
     reason,
   };
 }
+
+runSelfTest(main);

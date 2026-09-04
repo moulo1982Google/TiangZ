@@ -82,6 +82,8 @@ export class LoginComponentSystem extends LoginComponent {
 
 System在第一代安装后成为必需项。后续候选漏掉任意必需System，整次提交都会被拒绝并保留旧generation，不能让生命周期悄悄退回Model基类的空实现。Reload不会给现有对象重跑`Awake`；新对象使用新System的`Awake`，现有对象的普通方法和未来`OnDestroy`使用当前generation。
 
+同步生命周期不只检查`async`语法。仓库静态门会拒绝`Awake/OnDestroy/Deserialize/CaptureTransfer/RestoreTransfer`的Promise返回类型；`Commit()`在安装任何prototype描述符或切换Handler槽之前遍历全部候选方法并拒绝异步保留钩子。运行时返回值检查仍保留为纵深防御，并观察意外Promise的拒绝以留下日志，但不能把它当作撤销已经开始的异步副作用。
+
 实现类禁止声明：
 
 - 实例字段和字段初始化器；

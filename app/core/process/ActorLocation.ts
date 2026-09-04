@@ -1,11 +1,14 @@
 import { BinaryReader, readU16BE } from "../protocol/binary";
 import type { SceneConfig } from "./types";
+import {
+  ActorLocationBatchEnvelopeLayout,
+  ActorLocationEnvelopeLayout,
+  InternalFrameMsgCode,
+} from "./InternalFrameProtocol";
 
-export const ActorLocationEnvelopeMsgCode = 29_999;
-export const ActorLocationEnvelopeHeaderBytes = 22;
-export const ActorLocationBatchEnvelopeMsgCode = 29_997;
-const ActorLocationBatchEnvelopeHeaderBytes = 6;
-const ActorLocationBatchEntryHeaderBytes = 20;
+export const ActorLocationEnvelopeMsgCode = InternalFrameMsgCode.ActorLocation;
+export const ActorLocationEnvelopeHeaderBytes = ActorLocationEnvelopeLayout.headerBytes;
+export const ActorLocationBatchEnvelopeMsgCode = InternalFrameMsgCode.ActorLocationBatch;
 const MaxActorLocationBatchEntries = 4096;
 const MaxActorLocationBatchBytes = 1024 * 1024;
 
@@ -82,10 +85,10 @@ export function encodeActorLocationEnvelope(
 
   const result = new Uint8Array(ActorLocationEnvelopeHeaderBytes + envelope.frame.length);
   const view = new DataView(result.buffer);
-  view.setUint16(0, ActorLocationEnvelopeMsgCode, false);
-  view.setBigUint64(2, BigInt(envelope.instanceId), true);
-  view.setUint32(10, rpcId, true);
-  view.setBigUint64(14, fenceToken, true);
+  view.setUint16(ActorLocationEnvelopeLayout.msgCodeOffset, ActorLocationEnvelopeMsgCode, false);
+  view.setBigUint64(ActorLocationEnvelopeLayout.instanceIdOffset, BigInt(envelope.instanceId), true);
+  view.setUint32(ActorLocationEnvelopeLayout.rpcIdOffset, rpcId, true);
+  view.setBigUint64(ActorLocationEnvelopeLayout.fenceTokenOffset, fenceToken, true);
   result.set(envelope.frame, ActorLocationEnvelopeHeaderBytes);
   return result;
 }
@@ -94,8 +97,8 @@ export function encodeActorLocationEnvelope(
 export function decodeActorLocationEnvelope(frame: Uint8Array): ActorLocationEnvelope {
   const instanceId = readActorLocationInstanceId(frame);
   const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
-  const rpcId = view.getUint32(10, true);
-  const fenceToken = view.getBigUint64(14, true);
+  const rpcId = view.getUint32(ActorLocationEnvelopeLayout.rpcIdOffset, true);
+  const fenceToken = view.getBigUint64(ActorLocationEnvelopeLayout.fenceTokenOffset, true);
   return {
     instanceId,
     frame: frame.subarray(ActorLocationEnvelopeHeaderBytes),
@@ -108,12 +111,12 @@ export function decodeActorLocationEnvelope(frame: Uint8Array): ActorLocationEnv
 export function readActorLocationInstanceId(frame: Uint8Array): number {
   if (
     frame.length < ActorLocationEnvelopeHeaderBytes + 2 ||
-    readU16BE(frame, 0) !== ActorLocationEnvelopeMsgCode
+    readU16BE(frame, ActorLocationEnvelopeLayout.msgCodeOffset) !== ActorLocationEnvelopeMsgCode
   ) {
     throw new Error("invalid actor location envelope header");
   }
   const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
-  const rawInstanceId = view.getBigUint64(2, true);
+  const rawInstanceId = view.getBigUint64(ActorLocationEnvelopeLayout.instanceIdOffset, true);
   if (rawInstanceId === 0n || rawInstanceId > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new Error(`invalid actor instanceId: ${rawInstanceId}`);
   }
@@ -127,10 +130,10 @@ export function encodeActorLocationBatchEnvelope(
   if (entries.length === 0 || entries.length > MaxActorLocationBatchEntries) {
     throw new Error(`invalid actor location batch entry count: ${entries.length}`);
   }
-  let byteLength = ActorLocationBatchEnvelopeHeaderBytes;
+  let byteLength = ActorLocationBatchEnvelopeLayout.headerBytes;
   for (const entry of entries) {
     requireActorLocationBatchEntry(entry);
-    byteLength += ActorLocationBatchEntryHeaderBytes + entry.frame.byteLength;
+    byteLength += ActorLocationBatchEnvelopeLayout.entry.headerBytes + entry.frame.byteLength;
     if (byteLength > MaxActorLocationBatchBytes) {
       throw new Error(`actor location batch exceeds ${MaxActorLocationBatchBytes} bytes`);
     }
@@ -138,14 +141,14 @@ export function encodeActorLocationBatchEnvelope(
 
   const result = new Uint8Array(byteLength);
   const view = new DataView(result.buffer);
-  view.setUint16(0, ActorLocationBatchEnvelopeMsgCode, false);
-  view.setUint32(2, entries.length, true);
-  let offset = ActorLocationBatchEnvelopeHeaderBytes;
+  view.setUint16(ActorLocationBatchEnvelopeLayout.msgCodeOffset, ActorLocationBatchEnvelopeMsgCode, false);
+  view.setUint32(ActorLocationBatchEnvelopeLayout.countOffset, entries.length, true);
+  let offset = ActorLocationBatchEnvelopeLayout.headerBytes;
   for (const entry of entries) {
-    view.setBigUint64(offset, BigInt(entry.instanceId), true);
-    view.setBigUint64(offset + 8, requireFenceToken(entry.fenceToken), true);
-    view.setUint32(offset + 16, entry.frame.byteLength, true);
-    offset += ActorLocationBatchEntryHeaderBytes;
+    view.setBigUint64(offset + ActorLocationBatchEnvelopeLayout.entry.instanceIdOffset, BigInt(entry.instanceId), true);
+    view.setBigUint64(offset + ActorLocationBatchEnvelopeLayout.entry.fenceTokenOffset, requireFenceToken(entry.fenceToken), true);
+    view.setUint32(offset + ActorLocationBatchEnvelopeLayout.entry.frameLengthOffset, entry.frame.byteLength, true);
+    offset += ActorLocationBatchEnvelopeLayout.entry.headerBytes;
     result.set(entry.frame, offset);
     offset += entry.frame.byteLength;
   }
@@ -158,8 +161,8 @@ export function forEachActorLocationBatchEntry(
   visit: (entry: ActorLocationBatchEntry) => void,
 ): void {
   if (
-    batch.byteLength < ActorLocationBatchEnvelopeHeaderBytes ||
-    readU16BE(batch, 0) !== ActorLocationBatchEnvelopeMsgCode
+    batch.byteLength < ActorLocationBatchEnvelopeLayout.headerBytes ||
+    readU16BE(batch, ActorLocationBatchEnvelopeLayout.msgCodeOffset) !== ActorLocationBatchEnvelopeMsgCode
   ) {
     throw new Error("invalid actor location batch envelope header");
   }
@@ -167,19 +170,19 @@ export function forEachActorLocationBatchEntry(
     throw new Error(`actor location batch exceeds ${MaxActorLocationBatchBytes} bytes`);
   }
   const view = new DataView(batch.buffer, batch.byteOffset, batch.byteLength);
-  const count = view.getUint32(2, true);
+  const count = view.getUint32(ActorLocationBatchEnvelopeLayout.countOffset, true);
   if (count === 0 || count > MaxActorLocationBatchEntries) {
     throw new Error(`invalid actor location batch entry count: ${count}`);
   }
-  let offset = ActorLocationBatchEnvelopeHeaderBytes;
+  let offset = ActorLocationBatchEnvelopeLayout.headerBytes;
   for (let index = 0; index < count; index += 1) {
-    if (offset + ActorLocationBatchEntryHeaderBytes > batch.byteLength) {
+    if (offset + ActorLocationBatchEnvelopeLayout.entry.headerBytes > batch.byteLength) {
       throw new Error(`actor location batch entry ${index} header is truncated`);
     }
-    const rawInstanceId = view.getBigUint64(offset, true);
-    const fenceToken = view.getBigUint64(offset + 8, true);
-    const frameLength = view.getUint32(offset + 16, true);
-    offset += ActorLocationBatchEntryHeaderBytes;
+    const rawInstanceId = view.getBigUint64(offset + ActorLocationBatchEnvelopeLayout.entry.instanceIdOffset, true);
+    const fenceToken = view.getBigUint64(offset + ActorLocationBatchEnvelopeLayout.entry.fenceTokenOffset, true);
+    const frameLength = view.getUint32(offset + ActorLocationBatchEnvelopeLayout.entry.frameLengthOffset, true);
+    offset += ActorLocationBatchEnvelopeLayout.entry.headerBytes;
     if (rawInstanceId === 0n || rawInstanceId > BigInt(Number.MAX_SAFE_INTEGER)) {
       throw new Error(`invalid actor location batch instanceId: ${rawInstanceId}`);
     }

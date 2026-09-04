@@ -397,7 +397,7 @@
         "native_data/mmorpg/Item.native": "b8115687e4b6919be0dc310fe9833f05f4506e644dd214999acbca68a9233e40",
         "native_data/mmorpg/MapOps.native": "7003fa578c7bf49a0517c0b08cd8dabc78d5c8369931a5abf81af092a5f68d3b",
         "native_data/mmorpg/Unit.native": "727df50b194ce207e0b59b43cf74180773d173a9608147b11e9c64d8731a4429",
-        "package.json": "54fe582208cf79a785ba166d0bf538ea5e71fda4b95eed37a0a74daba951fa0b",
+        "package.json": "2e749c3266b3289ceb78f4cf9ac4790d424d9832f1e50c4b7ca696305bbf3b58",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "2d2a900111ec146a98db232cf9dd5f61efcb0f8ade3dcdba21ffd0fa06b11a0b"
       },
@@ -434,6 +434,7 @@
     "proto": {
       "command": "npm run codegen:proto",
       "contentInputs": {
+        "app/core/process/InternalFrameProtocol.ts": "8fde04d87a5d858a7d8549cdc5388ab1c560e8f743c5978075374c3810e253b6",
         "codegen.config.json": "e83f410fa579e69cfcdf71f10e32482c07ee46cb4d62d0e4fa43bda8656727bf",
         "proto/BenchInner_S_25001.proto": "ed3190c3d98c9e6b72bcdd14a8b752e041ae1195fa0f40cdd2889baabd3c1fbb",
         "proto/BenchMessage_C_15001.proto": "b8ec4d8c56bb8417331616f222c5ef071002f4553b74abc1120a293270c05b74",
@@ -443,7 +444,7 @@
         "proto/OuterMessage_C_10001.proto": "2fcf70e3d8ddc9ec9bb576c8768d656f235dd2169c66db54a4c3a3ed9d0112cb",
         "proto/schema.lock.json": "1e070c49ff2bddbadf10551a4f80deade8c67faff4f6ea12e1ee33cb73015f0b",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
-        "tools/codegen_proto.mjs": "bb50a210ea5f905f7ffb67010df8763672e8b32b151d233b5228f4d82f5704cf"
+        "tools/codegen_proto.mjs": "832948af1e5df0f80373fe18102fe0bd137d6806ba94d9b60f0924b2e48fbb0a"
       },
       "selections": [],
       "outputs": {

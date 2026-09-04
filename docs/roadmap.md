@@ -2,15 +2,17 @@
 
 ## 2026-09-04 框架可靠性复审后续优先级
 
-本轮只记录决策，不代表对应实现已经完成。执行时保持小步提交，不把进程级、网络级和故障验收强行迁入单元测试框架。
+状态：P0-P2 已于 2026-09-05 完成。进程级、网络级和故障验收继续保留在隔离的集成测试中，不强行迁入单元测试框架。
 
 1. **P0：同步生命周期的 async 契约前置校验。** 构建期检查 `Awake`、`OnDestroy`、`Deserialize`、`CaptureTransfer`、`RestoreTransfer` 不得声明为 `async` 或返回 Promise；`HotfixSystem.Commit()` 在修改活动 prototype 前对所有候选实现做同类预检，现有运行时 Promise 检查继续作为兜底。仅检查 `AsyncFunction` 不足以覆盖普通函数返回 Promise的情况。
 2. **P0：DBProxy 保存重试退避。** `StorageUnavailable` 继续复用同一 `requestId`，在有限重试之间增加墙钟指数退避和 full jitter；避免 Repository、SDK和Transport多层叠加重试，并以可注入延迟/随机源做确定性测试。
-3. **P1：统一测试调度与覆盖率基线。** 先让独立测试失败后继续执行并汇总结果、耗时和机器可读报告，再把纯TypeScript、进程内自测逐步迁入 Vitest；端口、子进程、codegen、Cargo和故障测试保留为隔离的集成验收。覆盖率先记录基线，再按模块递增门槛。
+3. **P1：统一测试调度与覆盖率基线。** 独立测试失败后继续执行并汇总结果、耗时和机器可读报告；40个纯TypeScript进程内自测已全部迁入Vitest，配置依赖由带跨进程锁的`globalSetup`准备。端口、子进程、codegen、Cargo和故障测试保留为隔离的集成验收。覆盖率覆盖整个`app/core`并以当前实测基线设门槛，后续按模块递增。
 4. **P1：Timer字符串契约静态校验。** 使用现有TypeScript AST工具校验 `NewOnceTimer`、`NewRepeatedTimer` 和 `onCancelled` 的字面量方法名、候选System方法存在性及参数形状。Timer回调当前允许 `MaybePromise<void>`，不得错误地限制为同步方法。
 5. **P2：Core内部二进制信封加固。** 统一保留ActorLocation、batch和Trace等内部msgcode，消除encode/decode两侧裸offset，增加golden vector、截断/边界和随机round-trip测试。内部路由信封不默认并入业务protobuf codegen，除非格式数量或跨语言消费者继续增长。
 6. **P2：SceneEvent精确类型语义文档化。** 明确监听器只匹配 `scene.constructor` 完全相同的Scene，不继承匹配，并增加基类/子类行为测试；未来如有真实需求，通过显式选项设计继承、去重、顺序和veto语义，不静默改变默认行为。
 7. **观察项：GameModuleSystem真实消费者验证。** 当前保持实验性，不继续扩展抽象，也不为证明框架而硬拆MMORPG代码；首个独立模块接入时，把构建、Model导出、Hotfix装配、调试和发布过程作为API人体工学验收，再决定是否调整接口。
+
+本轮结果：同步生命周期增加 AST 与 Hotfix 提交前双重预检，`Component.__dispose()`即使拒绝异步`OnDestroy`也会在`finally`解除父引用；普通快照重试增加同一 requestId 下的墙钟指数 full jitter。40个存量TypeScript自测和12个新增回归用例统一进入Vitest，保持fork隔离并开启文件并行；V8覆盖率覆盖完整`app/core`，统一矩阵输出不中途停止的JSON/JUnit报告。Timer字符串契约进入构建检查并带负例自测；内部ActorLocation/Batch/Trace信封集中登记msgcode与布局并补齐golden、截断和随机往返测试；Scene Event的精确构造器匹配已文档化并有基类/子类回归。发布锁门禁已由`npm run verify:release`完整通过。GameModuleSystem仍只是观察项，不因本轮可靠性工作扩大能力。
 
 ## 2026-08-24 日志与分布式追踪
 

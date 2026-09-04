@@ -1,11 +1,11 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import type { SceneConfig } from "../app/core/process/types";
 import { GatePlayerRoute } from "../app/model/mmorpg/gate/GatePlayerRoute";
 import { SelectStickyGate } from "../app/model/mmorpg/login/GateSelector";
 
-void main();
 
-function main(): void {
+export function main(): void {
   testConnectionReplacementAndGrace();
   testStickyGateSelection();
   testStickyGateDistribution();
@@ -96,3 +96,5 @@ function testStickyGateDistribution(): void {
 function scene(name: string, port: number): SceneConfig {
   return { name, sceneType: "Gate", innerIp: "127.0.0.1", port };
 }
+
+runSelfTest(main);

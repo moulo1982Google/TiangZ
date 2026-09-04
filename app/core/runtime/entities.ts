@@ -267,17 +267,12 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     }
     this.awoken = true;
     const result = this.Awake(...args) as unknown;
-    if (isPromiseLike(result)) {
-      void Promise.resolve(result).catch((error) => {
-        CoreLogger.error("async component Awake failed", {
-          component: this.constructor.name,
-          error,
-        });
-      });
-      throw new Error(
-        `component Awake must be synchronous: ${this.constructor.name}`,
-      );
-    }
+    requireSynchronousResult(
+      result,
+      `component Awake must be synchronous: ${this.constructor.name}`,
+      "async component Awake continued after rejection",
+      { component: this.constructor.name },
+    );
     UpdateSystem.TryRegister(this);
   }
 
@@ -293,17 +288,12 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     }
     this.deserialized = true;
     const result = candidate.Deserialize.call(this) as unknown;
-    if (isPromiseLike(result)) {
-      void Promise.resolve(result).catch((error) => {
-        CoreLogger.error("async component Deserialize failed", {
-          component: this.constructor.name,
-          error,
-        });
-      });
-      throw new Error(
-        `component Deserialize must be synchronous: ${this.constructor.name}`,
-      );
-    }
+    requireSynchronousResult(
+      result,
+      `component Deserialize must be synchronous: ${this.constructor.name}`,
+      "async component Deserialize continued after rejection",
+      { component: this.constructor.name },
+    );
   }
 
   __dispose(): void {
@@ -322,18 +312,39 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
       this.children.delete(child.Id);
       this.DomainScene<Scene>().__despawnChild(this, child);
     }
-    this.OnDestroy();
-    this.parent = undefined;
+    try {
+      const result = this.OnDestroy() as unknown;
+      requireSynchronousResult(
+        result,
+        `component OnDestroy must be synchronous: ${this.constructor.name}`,
+        "async component OnDestroy continued after rejection",
+        { component: this.constructor.name },
+      );
+    } finally {
+      this.parent = undefined;
+    }
   }
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   return (
-    typeof value === "object" &&
-    value !== null &&
+    ((typeof value === "object" && value !== null) || typeof value === "function") &&
     "then" in value &&
     typeof value.then === "function"
   );
+}
+
+function requireSynchronousResult(
+  result: unknown,
+  contractError: string,
+  continuationError: string,
+  fields: Readonly<Record<string, unknown>>,
+): void {
+  if (!isPromiseLike(result)) return;
+  void Promise.resolve(result).catch((error) => {
+    CoreLogger.error(continuationError, { ...fields, error });
+  });
+  throw new Error(contractError);
 }
 
 /** 按名字调用所有者当前prototype上的Timer方法，使长期Timer跟随Hotfix切换。 / Invokes the named timer method from the owner's current prototype so long-lived timers follow Hotfix switches. */
@@ -513,9 +524,12 @@ export abstract class Entity {
       if (!isTransferableComponent(ctor)) continue;
       const transferable = requireTransferContract(component);
       const state = transferable.CaptureTransfer();
-      if (isPromiseLike(state)) {
-        throw new Error(`component transfer capture must be synchronous: ${ctor.name}`);
-      }
+      requireSynchronousResult(
+        state,
+        `component transfer capture must be synchronous: ${ctor.name}`,
+        "async component transfer capture continued after rejection",
+        { component: ctor.name },
+      );
       states.set(ctor as ComponentCtor, state);
     }
     return { components: states };
@@ -541,9 +555,12 @@ export abstract class Entity {
         throw new Error(`transfer target component is not transferable: ${ctor.name}`);
       }
       const result = requireTransferContract(component).RestoreTransfer(state) as unknown;
-      if (isPromiseLike(result)) {
-        throw new Error(`component transfer restore must be synchronous: ${ctor.name}`);
-      }
+      requireSynchronousResult(
+        result,
+        `component transfer restore must be synchronous: ${ctor.name}`,
+        "async component transfer restore continued after rejection",
+        { component: ctor.name },
+      );
       restored.push(component);
     }
     for (const component of restored) component.__deserialize();
@@ -602,7 +619,13 @@ export abstract class Entity {
     this.components.clear();
 
     try {
-      this.OnDestroy();
+      const result = this.OnDestroy() as unknown;
+      requireSynchronousResult(
+        result,
+        `entity OnDestroy must be synchronous: ${this.constructor.name}`,
+        "async entity OnDestroy continued after rejection",
+        { entity: this.constructor.name },
+      );
     } catch (error) {
       firstError ??= error;
     }

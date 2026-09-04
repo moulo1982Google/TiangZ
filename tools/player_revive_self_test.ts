@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -14,9 +15,8 @@ import { NumericComponent } from "../app/model/mmorpg/numeric/NumericComponent";
 import { NumericType } from "../app/model/mmorpg/numeric/NumericType";
 import { SkillComponent } from "../app/model/mmorpg/skill/SkillComponent";
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const gameConfigDirectory = path.resolve("game_config/generated");
   GameConfigRegistry.Install(
     readFileSync(path.join(gameConfigDirectory, "game-config.manifest.json"), "utf8"),
@@ -175,3 +175,5 @@ function testHotfixManifest(): HotfixManifest {
     buildMode: "demo",
   };
 }
+
+runSelfTest(main);

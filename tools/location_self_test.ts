@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import { LocationDirectory } from "../app/core/public";
 import { LocationComponent } from "../app/model/mmorpg/location/LocationComponent";
@@ -5,9 +6,8 @@ import { MapInstanceDirectoryComponent } from "../app/model/mmorpg/location/MapI
 import { MapMessages } from "../app/generated/model/server/demo/protocol/messageDescriptors";
 import { MapProtocol } from "../app/generated/model/server/demo/protocol/rpcs";
 
-void main();
 
-function main(): void {
+export function main(): void {
   testLocationCasAndIdempotency();
   testOwnerRecovery();
   testGeneratedTransferPolicies();
@@ -213,3 +213,5 @@ function testGeneratedTransferPolicies(): void {
   assert.equal(MapProtocol.Probe.duringTransfer, "reject");
   assert.equal(MapMessages.Move.duringTransfer, "drop");
 }
+
+runSelfTest(main);

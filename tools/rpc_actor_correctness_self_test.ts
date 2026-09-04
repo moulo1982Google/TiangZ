@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 
 interface Deferred<T> {
@@ -6,9 +7,8 @@ interface Deferred<T> {
   reject(reason: unknown): void;
 }
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   let submitted = new Uint8Array(0);
   const host = globalThis as typeof globalThis & {
     __hostRegisterSceneRoute: () => number;
@@ -157,3 +157,5 @@ function deferred<T>(): Deferred<T> {
   });
   return { promise, resolve, reject };
 }
+
+runSelfTest(main);

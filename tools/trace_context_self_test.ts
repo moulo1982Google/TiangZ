@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 
 type PromiseHook = (promise: Promise<unknown>, parent?: Promise<unknown>) => void;
@@ -37,9 +38,8 @@ Object.assign(globalThis, {
   },
 });
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const trace = await import("../app/core/telemetry/TraceContext");
   const envelope = await import("../app/core/process/TraceEnvelope");
 
@@ -94,3 +94,5 @@ async function main(): Promise<void> {
 
   console.log("trace context self test passed");
 }
+
+runSelfTest(main);

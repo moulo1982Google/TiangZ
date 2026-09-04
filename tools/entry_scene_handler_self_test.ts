@@ -1,3 +1,4 @@
+import { runSelfTest } from "./self_test_entry";
 import assert from "node:assert/strict";
 import {
   defineMessage,
@@ -316,9 +317,8 @@ class ReadHandler implements SceneRpcHandler<
   }
 }
 
-void main();
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   testComponentContainer();
   testDuplicateHandlerGuard();
   await testLocalSceneSendFastPath();
@@ -740,3 +740,5 @@ function outboundPrioritySceneConfig() {
     port: 0,
   };
 }
+
+runSelfTest(main);
