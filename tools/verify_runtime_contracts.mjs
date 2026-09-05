@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import ts from "typescript";
+import { findMissingSelfTestWrappers } from "./verify_self_test_wrappers.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const root = path.resolve(path.dirname(scriptFile), "..");
@@ -28,7 +29,7 @@ if (parsed.errors.length > 0) {
 const program = ts.createProgram(parsed.fileNames, parsed.options);
 const checker = program.getTypeChecker();
 const timerCancelledContextType = findNamedType("TimerCancelledContext");
-const failures = [];
+const failures = await findMissingSelfTestWrappers(root);
 
 for (const sourceFile of program.getSourceFiles()) {
   const relativeToScanRoot = path.relative(scanRoot, sourceFile.fileName);

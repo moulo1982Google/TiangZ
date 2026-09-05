@@ -7,6 +7,12 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-09-05：测试迁移遗漏守卫与配置缓存
+
+- `verify:runtime-contracts`新增同名包装检查，新增`tools/*_self_test.ts`但遗漏`tests/legacy/*.test.ts`时明确失败；共享`self_test_entry.ts`不匹配自测命名，另用独立临时目录验证缺失和补齐路径。
+- Vitest `globalSetup`在原生成锁内增加SHA-256内容缓存，覆盖配置文件集合及二进制内容、生成器、Luban工具链与完整输出。配置增删改、输出损坏或缺失会重新生成，生成失败或生成期间输入变化不会缓存；显式codegen仍完整执行。分支覆盖率阈值保持60%。
+- 专项类型检查、包装遗漏负例、缓存失效回归与`test:combat`缓存命中均通过。首次完整发布验收在TypeScript契约检查遇到Node `Zone Allocation failed`并中断；该步骤单独复核通过后，以`VITEST_MAX_WORKERS=2`、`CARGO_BUILD_JOBS=2`重跑`npm run verify:release`，退出码0，full 9/9、quick 23/23、check 15/15全部通过，耗时492.5秒。Vitest为45文件、54用例，Core分支覆盖率64.38%；版本、协议和Core API严格门禁保持启用，未调整锁文件。完整本机日志为`temp/verify-release-test-followup-retry.log`，矩阵报告为`dist/test-results/full.json`。
+
 ## 2026-09-05：框架可靠性复审 P0-P2 落地
 
 - 同步生命周期新增TypeScript AST门、Hotfix提交前无副作用预检和运行时拒绝观察；`async`以及普通函数返回Promise都会在进入活动generation前失败。DBProxy普通快照只在`StorageUnavailable`下复用同一requestId，以25ms起步、200ms封顶的墙钟指数full jitter有限重试。

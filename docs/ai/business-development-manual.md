@@ -1096,6 +1096,8 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 `check`、`verify:quick`和`verify`由统一测试矩阵按顺序执行各隔离步骤，但某一步失败后仍继续运行后续步骤，终端最后汇总所有失败。每次运行都会写`dist/test-results/<profile>.json`和JUnit XML；CI应读取报告，而不是只截取第一个错误。40个纯TypeScript进程内自测均导出`main`并由Vitest一一包装，测试文件使用fork、模块隔离和文件并行；依赖`game_config/generated`的用例由`globalSetup`统一运行codegen。`test:unit:coverage`覆盖整个`app/core/**/*.ts`并执行仓库基线门槛；真实端口、子进程、codegen、Cargo、Runtime和故障注入继续使用各自隔离验收，不为了覆盖率数字塞进同一进程。
 
+新增`tools/*_self_test.ts`必须同时添加同名`tests/legacy/*.test.ts`包装，`verify:runtime-contracts`会拒绝遗漏；`self_test_entry.ts`是共享入口辅助，不属于此命名集合。`globalSetup`在生成锁内校验输入与输出的SHA-256指纹：未变时复用，配置增删改、生成器或Luban工具链变化、输出缺失或损坏都会重新生成；缓存仅保存在`temp/vitest-game-config-cache.json`。显式`npm run codegen`仍完整执行。Core分支覆盖率门槛保持60%，增加代码时应同步补齐重要分支测试。内存紧张的开发机可在当前终端设置`VITEST_MAX_WORKERS=2`和`CARGO_BUILD_JOBS=2`后运行发布门禁；这只限制构建与测试并发，不关闭文件隔离或跳过验收。
+
 | 修改类型 | 最少验证 |
 |---|---|
 | 纯TS业务Component/Handler | `npm run typecheck`和对应自测 |

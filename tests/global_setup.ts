@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdir, open, stat, unlink, type FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { ensureGameConfig } from "./support/game_config_cache";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const lockFile = path.join(root, "temp", "vitest-game-config.lock");
@@ -11,14 +12,17 @@ export default async function setup(): Promise<void> {
   await mkdir(path.dirname(lockFile), { recursive: true });
   const lock = await acquireGenerationLock();
   try {
-    const result = spawnSync(process.execPath, ["tools/codegen_game_config.mjs"], {
-      cwd: root,
-      env: process.env,
-      stdio: "inherit",
+    const state = await ensureGameConfig(root, () => {
+      const result = spawnSync(process.execPath, ["tools/codegen_game_config.mjs"], {
+        cwd: root,
+        env: process.env,
+        stdio: "inherit",
+      });
+      if (result.status !== 0) {
+        throw result.error ?? new Error(`game config codegen failed with exit code ${result.status ?? 1}`);
+      }
     });
-    if (result.status !== 0) {
-      throw result.error ?? new Error(`game config codegen failed with exit code ${result.status ?? 1}`);
-    }
+    console.log(`[vitest:game-config] ${state}`);
   } finally {
     await lock.close();
     await unlink(lockFile).catch(() => undefined);

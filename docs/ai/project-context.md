@@ -287,6 +287,8 @@ TiangZ Developer Tools `v0.15.0`把可机械判断的部分固化到不依赖VS 
 - `Scene.Events`只处理当前Scene的同步通知和同步否决链；框架不提供异步Event。`SyncEvent`用于事后通知，失败只记录；`VetoEvent`用于操作前只读检查，按`order/id`稳定排序并返回第一个非零错误码。监听器按`scene.constructor === registeredConstructor`精确匹配，给基类登记不会作用于子类；若未来需要继承语义，必须显式设计去重、顺序和Veto行为。监听器是Hotfix稳定绑定，不为每个Entity动态注册闭包。跨Scene必须使用Message/RPC。
 - `Scene.Tasks.Spawn`只承载调用方明确不等待的有界短任务：每个Scene最多256个在途任务，超过10秒仍未结束会记录一次告警；错误统一记录，ProcessHost聚合入口Scene和动态MapScene的在途任务并阻止Hotfix提交，Scene销毁更新TiangZ轻量`signal.aborted/reason`。它不依赖浏览器`AbortController`，也不能替代Veto、Timer、事务、ordered mailbox或需要结果的RPC；永久任务会持续占用容量并永久阻塞Hotfix。
 
+`verify:runtime-contracts`同时检查`tools/*_self_test.ts`都有同名Vitest包装。测试配置生成缓存位于`temp`，在生成锁内比较配置源、生成器、Luban工具链和完整输出的内容指纹；只有全部未变才跳过Luban，显式codegen仍完整生成。
+
 `await`只释放当前异步调用，不会让JavaScript获得多线程并行。是否允许同一业务目标重入，由目标mailbox决定。
 
 所有Entity均具有业务`Id`和本次生命周期`InstanceId`。永久Item等实体使用`GlobalId bigint`；数据库保存`Id`并丢弃`InstanceId`。`GlobalId`编码永久`originServerId`，同服并发Process由`workerId`隔离；Watcher在整套StartMachine启动前拒绝重复组合。完整语义见[运行时基础能力](../design/runtime-foundations.md)。
