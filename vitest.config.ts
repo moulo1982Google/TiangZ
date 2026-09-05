@@ -20,6 +20,8 @@ export default defineConfig({
     pool: "forks",
     isolate: true,
     testTimeout: 30_000,
+    /** 复用磁盘转换缓存，避免每次重跑都让oxc重新转换全部模块并抬高峰值内存。 / Reuses the on-disk transform cache so oxc does not re-transform every module and spike peak memory on each run. */
+    fsModuleCache: true,
     coverage: {
       provider: "v8",
       include: ["app/core/**/*.ts"],

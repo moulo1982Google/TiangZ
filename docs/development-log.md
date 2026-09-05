@@ -12,6 +12,8 @@
 - `verify:runtime-contracts`新增同名包装检查，新增`tools/*_self_test.ts`但遗漏`tests/legacy/*.test.ts`时明确失败；共享`self_test_entry.ts`不匹配自测命名，另用独立临时目录验证缺失和补齐路径。
 - Vitest `globalSetup`在原生成锁内增加SHA-256内容缓存，覆盖配置文件集合及二进制内容、生成器、Luban工具链与完整输出。配置增删改、输出损坏或缺失会重新生成，生成失败或生成期间输入变化不会缓存；显式codegen仍完整执行。分支覆盖率阈值保持60%。
 - 专项类型检查、包装遗漏负例、缓存失效回归与`test:combat`缓存命中均通过。首次完整发布验收在TypeScript契约检查遇到Node `Zone Allocation failed`并中断；该步骤单独复核通过后，以`VITEST_MAX_WORKERS=2`、`CARGO_BUILD_JOBS=2`重跑`npm run verify:release`，退出码0，full 9/9、quick 23/23、check 15/15全部通过，耗时492.5秒。Vitest为45文件、54用例，Core分支覆盖率64.38%；版本、协议和Core API严格门禁保持启用，未调整锁文件。完整本机日志为`temp/verify-release-test-followup-retry.log`，矩阵报告为`dist/test-results/full.json`。
+- Vitest启用`fsModuleCache`，把oxc转换结果持久化到`node_modules/.vitest-cache`，避免每次重跑重新转换全部模块并抬高峰值内存。热缓存下单次覆盖率运行从10.46秒降到8.81秒，转换耗时占比从40%降到33%；用例与覆盖率不变，仍为45文件、54用例、Core分支覆盖率64.38%。
+- 该选项修复了深层嵌套调用下的转换阶段内存中断：此前`npm run verify:release`会在`test:unit:coverage`以`memory allocation of 196608 bytes failed`失败（同一步骤单独运行或直接运行`check` profile均通过）。启用后在不设置`VITEST_MAX_WORKERS`与`CARGO_BUILD_JOBS`的默认并发下重跑，退出码0，full 9/9、quick 23/23、check 15/15全部通过，耗时576.9秒；版本、协议和Core API严格门禁保持启用，未调整锁文件。
 
 ## 2026-09-05：框架可靠性复审 P0-P2 落地
 
