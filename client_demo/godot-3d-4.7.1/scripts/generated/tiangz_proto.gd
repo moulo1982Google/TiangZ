@@ -8,6 +8,7 @@ extends RefCounted
 const C2G_ENTER_MAP := 10010
 const C2G_ENTER_STARTER_DUNGEON := 10066
 const C2G_LOGIN_GATE := 10008
+const C2G_LOGOUT_CHARACTER := 10106
 const C2G_MAP_SNAPSHOT_READY := 10029
 const C2G_PING := 10024
 const C2M_ACCEPT_QUEST := 10052
@@ -61,6 +62,7 @@ const G2C_ENTITY_NUMERIC := 10017
 const G2C_ENTITY_STATE := 10018
 const G2C_ITEM_CHANGED := 10021
 const G2C_LOGIN_GATE := 10009
+const G2C_LOGOUT_CHARACTER := 10107
 const G2C_MAP_READY := 10012
 const G2C_MAP_SNAPSHOT_READY := 10030
 const G2C_PING := 10031
@@ -533,6 +535,32 @@ static func decode_c2g_login_gate(payload: PackedByteArray) -> Dictionary:
 				else:
 					reader.skip(tag.wire)
 			3:
+				if tag.wire == 0:
+					result["character_id"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_c2g_logout_character(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("character_id"):
+		varint_field(result, 1, int(value["character_id"]))
+	return result
+
+static func decode_c2g_logout_character(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"character_id": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
 				if tag.wire == 0:
 					result["character_id"] = reader.uint64()
 				else:
@@ -1830,11 +1858,13 @@ static func encode_c2s_register(value: Dictionary) -> PackedByteArray:
 		string_field(result, 2, String(value["password"]))
 	if value.has("player_config_id"):
 		varint_field(result, 3, int(value["player_config_id"]))
+	if value.has("skip_initial_character"):
+		bool_field(result, 4, bool(value["skip_initial_character"]))
 	return result
 
 static func decode_c2s_register(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"account": "", "password": "", "player_config_id": 0}
+	var result := {"account": "", "password": "", "player_config_id": 0, "skip_initial_character": false}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -1851,6 +1881,11 @@ static func decode_c2s_register(payload: PackedByteArray) -> Dictionary:
 			3:
 				if tag.wire == 0:
 					result["player_config_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			4:
+				if tag.wire == 0:
+					result["skip_initial_character"] = reader.boolean()
 				else:
 					reader.skip(tag.wire)
 			90:
@@ -2751,6 +2786,49 @@ static func decode_g2c_login_gate(payload: PackedByteArray) -> Dictionary:
 			2:
 				if tag.wire == 0:
 					result["character_id"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			91:
+				if tag.wire == 0:
+					result["error"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			92:
+				if tag.wire == 2:
+					result["message"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_g2c_logout_character(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("character_id"):
+		varint_field(result, 1, int(value["character_id"]))
+	if value.has("released"):
+		bool_field(result, 2, bool(value["released"]))
+	return result
+
+static func decode_g2c_logout_character(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"character_id": 0, "released": false}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["character_id"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["released"] = reader.boolean()
 				else:
 					reader.skip(tag.wire)
 			90:

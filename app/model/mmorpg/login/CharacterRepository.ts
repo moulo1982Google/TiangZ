@@ -66,7 +66,7 @@ export interface CharacterRepository {
   Register(
     account: string,
     credential: AccountCredential,
-    character: CharacterRecord,
+    character?: CharacterRecord,
   ): MaybePromise<CharacterCatalogLoadResult>;
   Create(account: string, character: CharacterRecord): MaybePromise<CharacterCatalogLoadResult>;
 }
@@ -98,11 +98,11 @@ export class InMemoryCharacterRepository implements CharacterRepository {
   Register(
     account: string,
     credential: AccountCredential,
-    character: CharacterRecord,
+    character?: CharacterRecord,
   ): CharacterCatalogLoadResult {
     validateAccount(account);
     validateCredential(credential);
-    validateCharacter(character);
+    if (character !== undefined) validateCharacter(character);
     const current = this.records.get(account);
     if (current && !isLegacyCredential(current.data.credential)) {
       throw new CharacterAccountAlreadyExistsError(account);
@@ -110,9 +110,7 @@ export class InMemoryCharacterRepository implements CharacterRepository {
     const data: CharacterCatalog = {
       account,
       credential: { ...credential },
-      characters: current && current.data.characters.length > 0
-        ? [...current.data.characters, { ...character }]
-        : [{ ...character }],
+      characters: [...(current?.data.characters ?? []), ...(character ? [character] : [])],
     };
     const revision = (current?.revision ?? 0n) + 1n;
     this.records.set(account, { data: cloneCatalog(data), revision });
@@ -179,11 +177,11 @@ export class DbProxyCharacterRepository implements CharacterRepository {
   async Register(
     account: string,
     credential: AccountCredential,
-    character: CharacterRecord,
+    character?: CharacterRecord,
   ): Promise<CharacterCatalogLoadResult> {
     validateAccount(account);
     validateCredential(credential);
-    validateCharacter(character);
+    if (character !== undefined) validateCharacter(character);
     for (let attempt = 1; attempt <= SAVE_ATTEMPTS; attempt += 1) {
       const current = await this.Load(account);
       if (current && !isLegacyCredential(current.data.credential)) {
@@ -192,9 +190,7 @@ export class DbProxyCharacterRepository implements CharacterRepository {
       const data: CharacterCatalog = {
         account,
         credential: { ...credential },
-        characters: current && current.data.characters.length > 0
-          ? [...current.data.characters, { ...character }]
-          : [{ ...character }],
+        characters: [...(current?.data.characters ?? []), ...(character ? [character] : [])],
       };
       try {
         const result = await this.client.Save(this.buildWrite(data, current?.revision ?? 0n));

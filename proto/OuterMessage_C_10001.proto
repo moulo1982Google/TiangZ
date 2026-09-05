@@ -67,12 +67,14 @@ message C2S_Register // IRequest
   string password = 2;
   // Optional initial player template. Existing clients omit it and keep template 1.
   optional uint32 player_config_id = 3;
+  // Register credentials only; omitted/false preserves the legacy starter character.
+  optional bool skip_initial_character = 4;
 }
 
 message S2C_Register // IResponse
 {
   string account = 1;
-  CharacterSummary character = 2;
+  optional CharacterSummary character = 2;
 }
 
 //ResponseType S2C_CreateCharacter
@@ -999,4 +1001,19 @@ message G2C_Ping // IResponse
 {
   // Gate生成响应时的Unix毫秒时间。
   int64 server_time = 1;
+}
+
+//ResponseType G2C_LogoutCharacter
+// @ets.msg protocol=Gate method=LogoutCharacter
+message C2G_LogoutCharacter // IRequest
+{
+  // Must match the character owned by this physical connection.
+  uint64 character_id = 1;
+}
+
+message G2C_LogoutCharacter // IResponse
+{
+  uint64 character_id = 1;
+  // True only after authoritative offline/save acknowledgement and route release.
+  bool released = 2;
 }

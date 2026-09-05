@@ -35,6 +35,9 @@ export class GatePlayerRoute {
   state: GatePlayerRouteState = "online";
   actorState: GateActorRouteState = "active";
   map?: GatePlayerMapLocation;
+  offlineReason?: string;
+  nextOfflineRetryAtMs = 0;
+  private offlineRetryAttempts = 0;
 
   constructor(
     account: string,
@@ -72,16 +75,16 @@ export class GatePlayerRoute {
 
   /** 仅分离当前连接；旧连接迟到的 close 事件不会影响新连接。 / Detaches only the current connection so a stale close cannot affect its replacement. */
   Detach(connectionId: number, nowMs: number): boolean {
-    if (this.connectionId !== connectionId || this.state === "removing") return false;
+    if (this.connectionId !== connectionId) return false;
     this.connectionId = undefined;
     this.disconnectedAtMs = nowMs;
-    this.state = "disconnected";
+    if (this.state !== "removing") this.state = "disconnected";
     return true;
   }
 
   /** 记录客户端入站活动；只有当前连接能够为玩家续期。 / Records inbound activity; only the current connection may renew liveness. */
   TouchReceive(connectionId: number, nowMs: number): void {
-    if (this.connectionId === connectionId && this.state === "online") {
+    if (this.connectionId === connectionId && this.state !== "disconnected") {
       this.lastReceiveTimeMs = nowMs;
     }
   }
@@ -132,6 +135,12 @@ export class GatePlayerRoute {
     if (this.state === "removing") return false;
     this.state = "removing";
     return true;
+  }
+
+  /** 失败重试按墙钟有界退避；不释放所有权，也不延长在线活跃期。 / Backs off failed retries on wall-clock time without releasing ownership or renewing online activity. */
+  DeferOfflineRetry(nowMs: number): void {
+    this.offlineRetryAttempts = Math.min(this.offlineRetryAttempts + 1, 6);
+    this.nextOfflineRetryAtMs = nowMs + Math.min(30_000, 1_000 * 2 ** (this.offlineRetryAttempts - 1));
   }
 
   /** 判断在线连接是否已停止向 Gate 发送数据。 / Reports whether an online connection has stopped sending data. */

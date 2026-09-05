@@ -5848,6 +5848,132 @@ export const S2G_ClientBroadcastBatchCodec = {
   },
 };
 
+export interface G2M_QueryPlayerOffline extends IRequest {
+  rpcId?: number;
+  account: string;
+  characterId: bigint;
+  unitId: number;
+  actorInstanceId: number;
+  mapId: number;
+  mapInstanceId: bigint;
+  gateName: string;
+  gateEpoch: bigint;
+}
+
+export const G2M_QueryPlayerOfflineCodec = {
+  decode(payload: Uint8Array): G2M_QueryPlayerOffline {
+    const reader = new BinaryReader(payload);
+    const value: G2M_QueryPlayerOffline = {
+      account: "",
+      characterId: 0n,
+      unitId: 0,
+      actorInstanceId: 0,
+      mapId: 0,
+      mapInstanceId: 0n,
+      gateName: "",
+      gateEpoch: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.account = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.unitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.actorInstanceId = reader.uint32();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.mapId = reader.uint32();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 0) {
+        value.mapInstanceId = reader.uint64();
+      }
+      else if (tag.fieldNo === 7 && tag.wireType === 2) {
+        value.gateName = reader.string();
+      }
+      else if (tag.fieldNo === 8 && tag.wireType === 0) {
+        value.gateEpoch = reader.uint64();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2M_QueryPlayerOffline): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.account !== undefined) writer.string(1, value.account);
+    if (value.characterId !== undefined) writer.uint64(2, value.characterId);
+    if (value.unitId !== undefined) writer.uint32(3, value.unitId);
+    if (value.actorInstanceId !== undefined) writer.uint32(4, value.actorInstanceId);
+    if (value.mapId !== undefined) writer.uint32(5, value.mapId);
+    if (value.mapInstanceId !== undefined) writer.uint64(6, value.mapInstanceId);
+    if (value.gateName !== undefined) writer.string(7, value.gateName);
+    if (value.gateEpoch !== undefined) writer.uint64(8, value.gateEpoch);
+    return writer.finish();
+  },
+};
+
+export interface M2G_QueryPlayerOffline extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  unitId: number;
+  completed: boolean;
+}
+
+export const M2G_QueryPlayerOfflineCodec = {
+  decode(payload: Uint8Array): M2G_QueryPlayerOffline {
+    const reader = new BinaryReader(payload);
+    const value: M2G_QueryPlayerOffline = {
+      unitId: 0,
+      completed: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.unitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.completed = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2G_QueryPlayerOffline): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.unitId !== undefined) writer.uint32(1, value.unitId);
+    if (value.completed !== undefined) writer.bool(2, value.completed);
+    return writer.finish();
+  },
+};
+
 export interface C2S_GetLoginServiceAddr extends IRequest {
   rpcId?: number;
   account?: string;
@@ -6172,6 +6298,7 @@ export interface C2S_Register extends IRequest {
   account: string;
   password: string;
   playerConfigId?: number;
+  skipInitialCharacter?: boolean;
 }
 
 export const C2S_RegisterCodec = {
@@ -6195,6 +6322,9 @@ export const C2S_RegisterCodec = {
       else if (tag.fieldNo === 3 && tag.wireType === 0) {
         value.playerConfigId = reader.uint32();
       }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.skipInitialCharacter = reader.bool();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -6208,6 +6338,7 @@ export const C2S_RegisterCodec = {
     if (value.account !== undefined) writer.string(1, value.account);
     if (value.password !== undefined) writer.string(2, value.password);
     if (value.playerConfigId !== undefined) writer.uint32(3, value.playerConfigId);
+    if (value.skipInitialCharacter !== undefined) writer.bool(4, value.skipInitialCharacter);
     return writer.finish();
   },
 };
@@ -6217,7 +6348,7 @@ export interface S2C_Register extends IResponse {
   error?: number;
   rpcId?: number;
   account: string;
-  character: CharacterSummary;
+  character?: CharacterSummary;
 }
 
 export const S2C_RegisterCodec = {
@@ -6225,7 +6356,6 @@ export const S2C_RegisterCodec = {
     const reader = new BinaryReader(payload);
     const value: S2C_Register = {
       account: "",
-      character: CharacterSummaryCodec.decode(new Uint8Array(0)),
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -11121,6 +11251,90 @@ export const G2C_PingCodec = {
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.serverTime !== undefined) writer.int64(1, value.serverTime);
+    return writer.finish();
+  },
+};
+
+export interface C2G_LogoutCharacter extends IRequest {
+  rpcId?: number;
+  characterId: bigint;
+}
+
+export const C2G_LogoutCharacterCodec = {
+  decode(payload: Uint8Array): C2G_LogoutCharacter {
+    const reader = new BinaryReader(payload);
+    const value: C2G_LogoutCharacter = {
+      characterId: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2G_LogoutCharacter): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.characterId !== undefined) writer.uint64(1, value.characterId);
+    return writer.finish();
+  },
+};
+
+export interface G2C_LogoutCharacter extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  characterId: bigint;
+  released: boolean;
+}
+
+export const G2C_LogoutCharacterCodec = {
+  decode(payload: Uint8Array): G2C_LogoutCharacter {
+    const reader = new BinaryReader(payload);
+    const value: G2C_LogoutCharacter = {
+      characterId: 0n,
+      released: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.released = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_LogoutCharacter): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.characterId !== undefined) writer.uint64(1, value.characterId);
+    if (value.released !== undefined) writer.bool(2, value.released);
     return writer.finish();
   },
 };

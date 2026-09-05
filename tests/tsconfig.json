@@ -5,5 +5,5 @@
     "rootDir": "..",
     "types": ["node", "vitest"]
   },
-  "include": ["unit/**/*.test.ts", "global_setup.ts", "../vitest.config.ts"]
+  "include": ["unit/**/*.test.ts", "global_setup.ts", "../vitest.config.ts", "../app/generated/bootstrap/systems/**/*.d.ts"]
 }

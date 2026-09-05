@@ -20,6 +20,7 @@ export {
   LoginMgrProtocol,
   LoginProtocol,
   MapProtocol,
+  MapHostLifecycleProtocol,
   MapTransferProtocol,
   MapInstanceProtocol,
   DynamicMapProtocol,

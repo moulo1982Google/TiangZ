@@ -1874,6 +1874,9 @@ export class MapComponent extends Component<[
     }
 
     await this.MarkPlayerOffline(unit, message.reason || "client-timeout");
+    this.players.RecordOffline({ account: message.account, characterId: message.characterId,
+      unitId: unit.UnitId, actorInstanceId: unit.InstanceId, mapId: this.mapId,
+      mapInstanceId: this.mapInstanceId, gateName: message.gateName, gateEpoch: message.gateEpoch });
     this.ScheduleOfflineCleanup(unit);
     this.logger.info("player left map after Gate timeout", {
       account: message.account,
@@ -2075,7 +2078,8 @@ export class MapComponent extends Component<[
     const unitId = unit.UnitId;
     try {
       await unit.Offline(reason);
-      await this.location.Remove({ unitId, operationId });
+      const removed = await this.location.Remove({ unitId, operationId });
+      if (!removed.removed) throw new Error(`Location did not confirm offline removal for unit ${unitId}`);
     } catch (error) {
       await this.location.Unlock({ unitId: unit.UnitId, operationId }).catch(() => undefined);
       throw error;

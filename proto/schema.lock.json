@@ -2244,6 +2244,77 @@
       ]
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#G2M_QueryPlayerOffline",
+      "name": "G2M_QueryPlayerOffline",
+      "base": "IRequest",
+      "response": "M2G_QueryPlayerOffline",
+      "fields": [
+        {
+          "number": 1,
+          "name": "account",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "actor_instance_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "map_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "map_instance_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "gate_name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "gate_epoch",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#G2M_RebindPlayerGate",
       "name": "G2M_RebindPlayerGate",
       "base": "IActorRequest",
@@ -3332,6 +3403,49 @@
         {
           "number": 2,
           "name": "removed",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2G_QueryPlayerOffline",
+      "name": "M2G_QueryPlayerOffline",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "completed",
           "type": "bool",
           "repeated": false,
           "synthetic": false
@@ -5736,6 +5850,28 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2G_LogoutCharacter",
+      "name": "C2G_LogoutCharacter",
+      "base": "IRequest",
+      "response": "G2C_LogoutCharacter",
+      "fields": [
+        {
+          "number": 1,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2G_MapSnapshotReady",
       "name": "C2G_MapSnapshotReady",
       "base": "IRequest",
@@ -6897,6 +7033,13 @@
           "synthetic": false
         },
         {
+          "number": 4,
+          "name": "skip_initial_character",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -7591,6 +7734,49 @@
           "number": 2,
           "name": "character_id",
           "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_LogoutCharacter",
+      "name": "G2C_LogoutCharacter",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "released",
+          "type": "bool",
           "repeated": false,
           "synthetic": false
         },

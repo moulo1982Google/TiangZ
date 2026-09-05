@@ -328,7 +328,7 @@ export class PlayerPersistenceComponent extends Component<[
     }
   }
 
-  /** 断线、踢下线和停机只执行一次最终Flush，重复调用共享Promise。 / Disconnect, kick, and shutdown execute one final flush and share its Promise. */
+  /** 并发最终Flush共享Promise；失败清除缓存以允许恢复后重试，成功不重复保存。 / Concurrent final flushes share one Promise; failures clear the cache for recovery retries while successful saves remain memoized. */
   SaveOnOffline(reason: string): Promise<void> {
     if (this.finalSavePromise) return this.finalSavePromise;
     const player = this.GetParent<PlayerUnit>();
@@ -339,6 +339,9 @@ export class PlayerPersistenceComponent extends Component<[
         reason,
         revisions: revisionLog(this.revisions),
       });
+    }).catch((error) => {
+      this.finalSavePromise = undefined;
+      throw error;
     });
     return this.finalSavePromise;
   }

@@ -19,6 +19,11 @@ import {
   type C2G_EnterStarterDungeon,
   type C2G_MapSnapshotReady,
   type C2G_LoginGate,
+  type C2G_LogoutCharacter,
+  type G2C_LogoutCharacter,
+  type M2G_PlayerOffline,
+  type G2M_QueryPlayerOffline,
+  type M2G_QueryPlayerOffline,
   type G2C_EnterMap,
   type G2C_EnterStarterDungeon,
   type G2C_MapSnapshotReady,
@@ -51,7 +56,7 @@ import {
   ClientMessages,
   GateMessages,
 } from "../../../generated/model/server/demo/protocol/messageDescriptors";
-import { GateProtocol, MapProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
+import { GateProtocol, MapProtocol, MapHostLifecycleProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
 import { GameConfigs } from "../../../generated/model/config";
 import { GatePlayerRoute, type GatePlayerMapLocation } from "../gate/GatePlayerRoute";
 import { IsGateReachable } from "../gate/GateHealth";
@@ -189,11 +194,11 @@ export class GateScene extends EntryScene {
       this.connectionIdsByUnitId.delete(unitId);
     }
 
-    this.logger.info("client connection entered reconnect grace", {
+    this.logger.info(route.state === "removing" ? "offline recovery connection detached" : "client connection entered reconnect grace", {
       account: route.account,
       unitId: route.map?.unitId,
       connectionId,
-      graceMs: GATE_RECONNECT_GRACE_MS,
+      graceMs: route.state === "removing" ? 0 : GATE_RECONNECT_GRACE_MS,
     });
   }
 
@@ -242,6 +247,35 @@ export class GateScene extends EntryScene {
         () => this.LoginGateLocked(session, request),
         { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
       ),
+    );
+  }
+
+  /** 等待权威下线确认后释放角色；失败保留移除状态，当前连接可重试，不能放行切角。 / Releases a character only after authoritative offline acknowledgement; failure retains removing ownership for same-connection retry and blocks character switching. */
+  async LogoutCharacter(session: GateSession, request: C2G_LogoutCharacter): Promise<G2C_LogoutCharacter> {
+    return this.Locks.RunExclusive(
+      GATE_CONNECTION_LOCK,
+      session.ConnectionId,
+      () => this.RunPlayerTransaction(session, async () => {
+        const route = session.route;
+        if (!route || request.characterId <= 0n || request.characterId !== route.characterId ||
+            session.characterId !== route.characterId || route.connectionId !== session.ConnectionId ||
+            this.routesByAccount.get(session.account) !== route ||
+            this.routesByConnection.get(session.ConnectionId) !== route) {
+          throw new RpcError(GameErrCode.GateSessionRequired, "logout requires the current character connection");
+        }
+        if (!route.map) {
+          // Gate重启后的空缓存不代表地图角色已经离线。 / An empty Gate cache after restart does not prove the map character is offline.
+          const owner = await this.location.Resolve({ unitId: 0, account: "", characterId: route.characterId });
+          if (owner.found) {
+            throw new RpcError(GameErrCode.GateSessionRequired, "character must recover its map before logout");
+          }
+        }
+        route.BeginRemoving();
+        this.actorLocations.unbindConnection(session.ConnectionId);
+        await this.FinalOffline(route, "character-logout");
+        session.Invalidate();
+        return { characterId: request.characterId, released: true };
+      }),
     );
   }
 
@@ -847,11 +881,16 @@ export class GateScene extends EntryScene {
     }
   }
 
-  /** Timer入口：处理无入站消息和物理断线两类超时；出站流量不会为玩家续期。 / Timer entrypoint for receive timeout and reconnect-grace expiry; outbound traffic never renews liveness. */
+  /** Timer入口：处理入站超时、断线宽限和待完成离线重试；出站流量不会续期。 / Timer entrypoint for receive timeout, reconnect grace and pending offline retries; outbound traffic never renews liveness. */
   protected SweepClientTimeouts(): void {
     const now = TimeSystem.Instance.FrameTime;
     for (const route of [...this.routesByAccount.values()]) {
-      if (route.IsReceiveTimedOut(now, GATE_CLIENT_TIMEOUT_MS)) {
+      if (route.state === "removing") {
+        if (Date.now() >= route.nextOfflineRetryAtMs &&
+            (route.connectionId === undefined || now - route.lastReceiveTimeMs >= GATE_CLIENT_TIMEOUT_MS)) {
+          this.QueueFinalOffline(route, route.offlineReason ?? "client-reconnect-timeout");
+        }
+      } else if (route.IsReceiveTimedOut(now, GATE_CLIENT_TIMEOUT_MS)) {
         this.QueueFinalOffline(route, "client-heartbeat-timeout");
       } else if (route.IsReconnectExpired(now, GATE_RECONNECT_GRACE_MS)) {
         this.QueueFinalOffline(route, "client-reconnect-timeout");
@@ -1092,8 +1131,14 @@ export class GateScene extends EntryScene {
         const stillExpired = reason === "client-heartbeat-timeout"
           ? route.IsReceiveTimedOut(now, GATE_CLIENT_TIMEOUT_MS)
           : route.IsReconnectExpired(now, GATE_RECONNECT_GRACE_MS);
-        if (!stillExpired || !route.BeginRemoving()) return;
+        if (route.state === "removing") {
+          if (Date.now() < route.nextOfflineRetryAtMs ||
+              (route.connectionId !== undefined && now - route.lastReceiveTimeMs < GATE_CLIENT_TIMEOUT_MS)) return;
+        } else {
+          if (!stillExpired || !route.BeginRemoving()) return;
+        }
         const connectionId = route.connectionId;
+        if (connectionId !== undefined) this.actorLocations.unbindConnection(connectionId);
         if (connectionId !== undefined && !this.disconnecting.has(connectionId)) {
           this.disconnecting.add(connectionId);
           this.disconnectClient(connectionId);
@@ -1112,8 +1157,10 @@ export class GateScene extends EntryScene {
     });
   }
 
+  /** 只有Actor确认或严格匹配的宿主回执才能释放；任何失败保留路由并安排退避。 / Releases only on Actor acknowledgement or an exact host receipt; all failures retain ownership and back off. */
   private async FinalOffline(route: GatePlayerRoute, reason: string): Promise<void> {
     const location = route.map;
+    route.offlineReason ??= reason;
     try {
       if (location) {
         const request: G2M_PlayerOffline = {
@@ -1125,27 +1172,33 @@ export class GateScene extends EntryScene {
           gateEpoch: location.gateEpoch,
           reason,
         };
-        await this.scenes.callActor(
-          {
-            scene: location.mapHost,
-            instanceId: location.actorInstanceId,
-            fenceToken: location.gateEpoch,
-          },
-          MapProtocol.PlayerOffline,
-          request,
-          { timeoutMs: 5_000 },
-        );
+        try {
+          const response = await this.scenes.callActor<G2M_PlayerOffline, M2G_PlayerOffline>(
+            { scene: location.mapHost, instanceId: location.actorInstanceId, fenceToken: location.gateEpoch },
+            MapProtocol.PlayerOffline, request, { timeoutMs: 5_000 },
+          );
+          if (!response.removed || response.unitId !== location.unitId) {
+            throw new RpcError(GameErrCode.GateSessionRequired, "invalid player offline acknowledgement");
+          }
+        } catch (error) {
+          // Actor可已销毁；只向原宿主查询完整旧身份的成功证据。 / The Actor may be disposed; query only its original host for full old-identity evidence.
+          const receipt = await this.scenes.call<G2M_QueryPlayerOffline, M2G_QueryPlayerOffline>(
+            location.mapHost, MapHostLifecycleProtocol.QueryPlayerOffline,
+            { account: route.account, characterId: route.characterId, unitId: location.unitId,
+              actorInstanceId: location.actorInstanceId, mapId: location.mapId,
+              mapInstanceId: location.mapInstanceId, gateName: this.self.name, gateEpoch: location.gateEpoch },
+            { timeoutMs: 5_000 },
+          ).catch(() => undefined);
+          if (!receipt?.completed || receipt.unitId !== location.unitId) throw error;
+        }
+      } else {
+        const owner = await this.location.Resolve({ unitId: 0, account: "", characterId: route.characterId });
+        if (owner.found) throw new RpcError(GameErrCode.GateSessionRequired, "character must recover its map before logout");
       }
-    } catch (error) {
-      this.logger.error("map player offline failed", {
-        account: route.account,
-        unitId: location?.unitId,
-        mapService: location?.mapService,
-        reason,
-        error,
-      });
-    } finally {
       this.RemoveRoute(route);
+    } catch (error) {
+      route.DeferOfflineRetry(Date.now());
+      throw error;
     }
   }
 

@@ -64,6 +64,8 @@ export const InnerMessage = {
   S2L_RecoverPlayerLocations: 20039,
   L2S_RecoverPlayerLocations: 20040,
   S2G_ClientBroadcastBatch: 20051,
+  G2M_QueryPlayerOffline: 20070,
+  M2G_QueryPlayerOffline: 20071,
 } as const;
 
 export const OuterMessage = {
@@ -169,6 +171,8 @@ export const OuterMessage = {
   G2C_UnitPresentation: 10093,
   C2G_Ping: 10024,
   G2C_Ping: 10031,
+  C2G_LogoutCharacter: 10106,
+  G2C_LogoutCharacter: 10107,
 } as const;
 
 export const MsgCode = {

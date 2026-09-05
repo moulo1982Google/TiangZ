@@ -6,7 +6,17 @@
 
 仓库中的代码、文档和性能报告必须可跨机器使用：命令使用仓库相对路径或显式环境变量，性能报告写入前把仓库内绝对路径转换为相对路径。`npm run verify:no-local-traces`扫描Git候选文件并拒绝本机盘符、个人Home目录和私网IP；第三方Unity模板及Windows路径解析夹具只能使用精确文件级白名单，禁止扩大为目录级忽略。
 
-更新时间：2026-09-03。
+更新时间：2026-09-05。
+
+## 账号注册与角色目录
+
+退出请求遇到 Gate 未绑定地图时，必须查询 Location；存在权威角色时要求先恢复地图会话，不能把 Gate 重启后的空缓存当作角色已离线。查询失败保持原所有权，不确认释放。
+
+登录领域的 `C2S_Register.skip_initial_character` 可显式建立仅含凭据的空角色目录；缺省/false 保留同名初始角色行为。`S2C_Register.character` 因此可缺省。空目录正确密码登录返回空列表、`selected_character_id=0` 与空令牌，不访问角色 Location、不授权进入 Gate；显式选择不存在角色仍失败。账号名与角色名的游戏特定校验属于外置模块，不进入 Core。原有目录不被自动清理或改名，持久化仍使用同一版本化目录与 CAS。
+
+`Gate.LogoutCharacter` 验证当前连接与 CharacterId，在连接锁/账号锁内暂停 Actor 转发，等待 Map 的最终保存及 Location 移除确认，再释放路由并失效 Session。普通断线仍保留重连宽限期。失败保留 removing 所有权，当前连接可以重试；失败的最终保存 Promise 不永久缓存。
+
+MapHost 的 `PlayerDirectoryComponent` 在保存和 Location 移除成功后保留最多 10000 条、10 分钟有效的离线回执。`MapHostLifecycle.QueryPlayerOffline` 只读匹配 account、characterId、Unit、Actor、地图实例和 Gate epoch；Actor 响应丢失时 Gate 可恢复正向确认，不以 Location 缺失推断成功。removing 路由在断线后保持移除状态，由既有 Gate 扫描器按 1/2/4/8/16/30 秒墙钟退避重试；在线客户端可自行重试，超过入站活动超时则关闭连接进入恢复。普通超时下线同样必须等待确认，不再在 finally 中无条件释放。回执为宿主内存中的有界证据，不是持久化事务日志；MapHost 重启、回执过期/驱逐或 Location.Remove 自身的确认丢失仍可能阻止自动收敛，不能报告为已经安全保存。
 
 ## 普通Entity持久化生成
 

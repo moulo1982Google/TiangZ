@@ -87,6 +87,11 @@
       "code": 20019
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#G2M_QueryPlayerOffline",
+      "name": "G2M_QueryPlayerOffline",
+      "code": 20070
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#G2M_RebindPlayerGate",
       "name": "G2M_RebindPlayerGate",
       "code": 20064
@@ -215,6 +220,11 @@
       "key": "proto/InnerMessage_S_20001.proto#M2G_PlayerOffline",
       "name": "M2G_PlayerOffline",
       "code": 20020
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2G_QueryPlayerOffline",
+      "name": "M2G_QueryPlayerOffline",
+      "code": 20071
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#M2G_RebindPlayerGate",
@@ -415,6 +425,11 @@
       "key": "proto/OuterMessage_C_10001.proto#C2G_LoginGate",
       "name": "C2G_LoginGate",
       "code": 10008
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2G_LogoutCharacter",
+      "name": "C2G_LogoutCharacter",
+      "code": 10106
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#C2G_MapSnapshotReady",
@@ -685,6 +700,11 @@
       "key": "proto/OuterMessage_C_10001.proto#G2C_LoginGate",
       "name": "G2C_LoginGate",
       "code": 10009
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_LogoutCharacter",
+      "name": "G2C_LogoutCharacter",
+      "code": 10107
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#G2C_MapReady",

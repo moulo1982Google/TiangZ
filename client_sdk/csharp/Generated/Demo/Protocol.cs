@@ -12,7 +12,7 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "3abe02c247604c1bc417f8d33c75da28c5236e733f242d46224667cb720b3a33";
+    public const string Value = "d81f5d0df9da28762ce855bb4d0677b18f96ea35698dd0f610f02597337b2c1e";
 }
 
 public static class MsgCode
@@ -20,6 +20,7 @@ public static class MsgCode
     public const ushort C2G_EnterMap = 10010;
     public const ushort C2G_EnterStarterDungeon = 10066;
     public const ushort C2G_LoginGate = 10008;
+    public const ushort C2G_LogoutCharacter = 10106;
     public const ushort C2G_MapSnapshotReady = 10029;
     public const ushort C2G_Ping = 10024;
     public const ushort C2M_AcceptQuest = 10052;
@@ -73,6 +74,7 @@ public static class MsgCode
     public const ushort G2C_EntityState = 10018;
     public const ushort G2C_ItemChanged = 10021;
     public const ushort G2C_LoginGate = 10009;
+    public const ushort G2C_LogoutCharacter = 10107;
     public const ushort G2C_MapReady = 10012;
     public const ushort G2C_MapSnapshotReady = 10030;
     public const ushort G2C_Ping = 10031;
@@ -178,6 +180,12 @@ public sealed class C2G_LoginGate : IRpcRequest
 {
     public string? Account { get; set; }
     public string? Token { get; set; }
+    public ulong CharacterId { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2G_LogoutCharacter : IRpcRequest
+{
     public ulong CharacterId { get; set; }
     public uint RpcId { get; set; }
 }
@@ -449,6 +457,7 @@ public sealed class C2S_Register : IRpcRequest
     public string? Account { get; set; }
     public string? Password { get; set; }
     public uint PlayerConfigId { get; set; }
+    public bool SkipInitialCharacter { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -619,6 +628,15 @@ public sealed class G2C_LoginGate : IRpcResponse
 {
     public string? Account { get; set; }
     public ulong CharacterId { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class G2C_LogoutCharacter : IRpcResponse
+{
+    public ulong CharacterId { get; set; }
+    public bool Released { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -1632,6 +1650,40 @@ public static class C2G_LoginGateCodec
         if (!string.IsNullOrEmpty(value.Account)) writer.WriteString(1, value.Account);
         if (!string.IsNullOrEmpty(value.Token)) writer.WriteString(2, value.Token);
         if (value.CharacterId != 0) writer.WriteUInt64(3, value.CharacterId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2G_LogoutCharacterCodec
+{
+    public static C2G_LogoutCharacter Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2G_LogoutCharacter();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.CharacterId = reader.ReadUInt64();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2G_LogoutCharacter value)
+    {
+        var writer = new BinaryWriter();
+        if (value.CharacterId != 0) writer.WriteUInt64(1, value.CharacterId);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -3061,6 +3113,9 @@ public static class C2S_RegisterCodec
                 case 3 when tag.WireType == 0:
                     value.PlayerConfigId = reader.ReadUInt32();
                     break;
+                case 4 when tag.WireType == 0:
+                    value.SkipInitialCharacter = reader.ReadBool();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -3078,6 +3133,7 @@ public static class C2S_RegisterCodec
         if (!string.IsNullOrEmpty(value.Account)) writer.WriteString(1, value.Account);
         if (!string.IsNullOrEmpty(value.Password)) writer.WriteString(2, value.Password);
         if (value.PlayerConfigId != 0) writer.WriteUInt32(3, value.PlayerConfigId);
+        if (value.SkipInitialCharacter) writer.WriteBool(4, value.SkipInitialCharacter);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -4009,6 +4065,52 @@ public static class G2C_LoginGateCodec
         var writer = new BinaryWriter();
         if (!string.IsNullOrEmpty(value.Account)) writer.WriteString(1, value.Account);
         if (value.CharacterId != 0) writer.WriteUInt64(2, value.CharacterId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
+public static class G2C_LogoutCharacterCodec
+{
+    public static G2C_LogoutCharacter Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new G2C_LogoutCharacter();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.CharacterId = reader.ReadUInt64();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.Released = reader.ReadBool();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(G2C_LogoutCharacter value)
+    {
+        var writer = new BinaryWriter();
+        if (value.CharacterId != 0) writer.WriteUInt64(1, value.CharacterId);
+        if (value.Released) writer.WriteBool(2, value.Released);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -7626,6 +7728,11 @@ public static class GateProtocol
         C2G_LoginGateCodec.Encode, G2C_LoginGateCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2G_LogoutCharacter, G2C_LogoutCharacter> LogoutCharacter = new(
+        "Gate.LogoutCharacter", MsgCode.C2G_LogoutCharacter, MsgCode.G2C_LogoutCharacter,
+        C2G_LogoutCharacterCodec.Encode, G2C_LogoutCharacterCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2G_MapSnapshotReady, G2C_MapSnapshotReady> MapSnapshotReady = new(
         "Gate.MapSnapshotReady", MsgCode.C2G_MapSnapshotReady, MsgCode.G2C_MapSnapshotReady,
         C2G_MapSnapshotReadyCodec.Encode, G2C_MapSnapshotReadyCodec.Decode,
@@ -7886,6 +7993,8 @@ public sealed class GateClient
         socket.CallAsync(GateProtocol.EnterStarterDungeon, request, cancellationToken);
     public Task<G2C_LoginGate> LoginGateAsync(C2G_LoginGate request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(GateProtocol.LoginGate, request, cancellationToken);
+    public Task<G2C_LogoutCharacter> LogoutCharacterAsync(C2G_LogoutCharacter request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(GateProtocol.LogoutCharacter, request, cancellationToken);
     public Task<G2C_MapSnapshotReady> MapSnapshotReadyAsync(C2G_MapSnapshotReady request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(GateProtocol.MapSnapshotReady, request, cancellationToken);
     public Task<G2C_Ping> PingAsync(C2G_Ping request, CancellationToken cancellationToken = default) =>

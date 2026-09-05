@@ -7,6 +7,8 @@ import {
   C2G_EnterStarterDungeonCodec,
   C2G_LoginGate,
   C2G_LoginGateCodec,
+  C2G_LogoutCharacter,
+  C2G_LogoutCharacterCodec,
   C2G_MapSnapshotReady,
   C2G_MapSnapshotReadyCodec,
   C2G_Ping,
@@ -83,6 +85,8 @@ import {
   G2C_EnterStarterDungeonCodec,
   G2C_LoginGate,
   G2C_LoginGateCodec,
+  G2C_LogoutCharacter,
+  G2C_LogoutCharacterCodec,
   G2C_MapSnapshotReady,
   G2C_MapSnapshotReadyCodec,
   G2C_Ping,
@@ -95,6 +99,8 @@ import {
   G2M_InitialSnapshotCodec,
   G2M_PlayerOffline,
   G2M_PlayerOfflineCodec,
+  G2M_QueryPlayerOffline,
+  G2M_QueryPlayerOfflineCodec,
   G2M_RebindPlayerGate,
   G2M_RebindPlayerGateCodec,
   G2M_SecondEnterMap,
@@ -195,6 +201,8 @@ import {
   M2G_InitialSnapshotCodec,
   M2G_PlayerOffline,
   M2G_PlayerOfflineCodec,
+  M2G_QueryPlayerOffline,
+  M2G_QueryPlayerOfflineCodec,
   M2G_RebindPlayerGate,
   M2G_RebindPlayerGateCodec,
   M2G_SecondEnterMap,
@@ -632,6 +640,13 @@ export const GateProtocol = {
     requestCodec: C2G_PingCodec,
     responseCodec: G2C_PingCodec,
   }),
+  LogoutCharacter: defineRpc<C2G_LogoutCharacter, G2C_LogoutCharacter>({
+    name: "Gate.LogoutCharacter",
+    requestCode: MsgCode.C2G_LogoutCharacter,
+    responseCode: MsgCode.G2C_LogoutCharacter,
+    requestCodec: C2G_LogoutCharacterCodec,
+    responseCodec: G2C_LogoutCharacterCodec,
+  }),
 };
 
 export const MapInstanceProtocol = {
@@ -803,6 +818,16 @@ export const LocationProtocol = {
   }),
 };
 
+export const MapHostLifecycleProtocol = {
+  QueryPlayerOffline: defineRpc<G2M_QueryPlayerOffline, M2G_QueryPlayerOffline>({
+    name: "MapHostLifecycle.QueryPlayerOffline",
+    requestCode: MsgCode.G2M_QueryPlayerOffline,
+    responseCode: MsgCode.M2G_QueryPlayerOffline,
+    requestCodec: G2M_QueryPlayerOfflineCodec,
+    responseCodec: M2G_QueryPlayerOfflineCodec,
+  }),
+};
+
 export const LoginMgrProtocol = {
   GetLoginServiceAddr: defineRpc<C2S_GetLoginServiceAddr, S2C_GetLoginServiceAddr>({
     name: "LoginMgr.GetLoginServiceAddr",
@@ -868,6 +893,7 @@ export const AllRpcDescriptors = [
   LocationProtocol.Unlock,
   LocationProtocol.Remove,
   LocationProtocol.RecoverOwner,
+  MapHostLifecycleProtocol.QueryPlayerOffline,
   LoginMgrProtocol.GetLoginServiceAddr,
   LoginProtocol.Login,
   LoginProtocol.Register,
@@ -906,4 +932,5 @@ export const AllRpcDescriptors = [
   MapProtocol.CastSkill,
   MapProtocol.LearnTrainerSkill,
   GateProtocol.Ping,
+  GateProtocol.LogoutCharacter,
 ] as const;

@@ -47,15 +47,15 @@ export class LoginComponentSystem extends LoginComponent {
     const password = requirePassword(request.password);
 
     const catalog = await this.characterRepository.Load(account);
-    if (!catalog || catalog.data.characters.length === 0 || catalog.data.credential.hash.length === 0) {
+    if (!catalog || catalog.data.credential.hash.length === 0) {
       throw new RpcError(GameErrCode.AccountNotRegistered, "用户未注册");
     }
     if (!VerifyPassword(account, password, catalog.data.credential)) {
       throw new RpcError(GameErrCode.PasswordInvalid, "密码错误");
     }
-    const selectedCharacterId = request.characterId ?? catalog.data.characters[0].characterId;
+    const selectedCharacterId = request.characterId ?? catalog.data.characters[0]?.characterId ?? 0n;
     const selected = catalog.data.characters.find((character) => character.characterId === selectedCharacterId);
-    if (!selected) {
+    if (!selected && (request.characterId !== undefined || catalog.data.characters.length > 0)) {
       throw new RpcError(GameErrCode.CharacterNotFound, `character not found: ${selectedCharacterId}`);
     }
     const loginCount = (this.loginCounts.get(account) ?? 0) + 1;
@@ -66,13 +66,13 @@ export class LoginComponentSystem extends LoginComponent {
       account,
       service: this.processId,
       loginCount,
-      token: EncodeLoginToken({
+      token: selected ? EncodeLoginToken({
         processId: this.processId,
         account,
         loginCount,
         characterId: selected.characterId,
         playerConfigId: selected.playerConfigId,
-      }),
+      }) : "",
       gateName: gate.name,
       gateIp: gate.outerIp ?? gate.innerIp,
       gatePort: gate.outerPort ?? gate.port,
@@ -81,11 +81,11 @@ export class LoginComponentSystem extends LoginComponent {
     };
   }
 
-  /** 注册账号并用调用方选择的中立玩家模板创建同名初始角色；密码只以摘要形式进入账号目录。 / Registers an account and creates its same-name starter character from the requested neutral player template; only a digest is stored. */
+  /** 注册凭据；调用方可显式跳过初始角色，默认仍创建同名角色。 / Registers credentials with an opt-in empty catalog; the default still creates a same-name character. */
   async Register(request: C2S_Register): Promise<S2C_Register> {
     const account = normalizeAccount(request.account);
     const password = requirePassword(request.password);
-    const character = this.newCharacter(
+    const character = request.skipInitialCharacter ? undefined : this.newCharacter(
       account,
       account,
       this.resolvePlayerConfigId(request.playerConfigId),
@@ -98,7 +98,7 @@ export class LoginComponentSystem extends LoginComponent {
       ));
       return {
         account,
-        character: toSummary(created.data.characters.find((item) => item.characterId === character.characterId) ?? character),
+        ...(character ? { character: toSummary(created.data.characters.find((item) => item.characterId === character.characterId) ?? character) } : {}),
       };
     } catch (error) {
       if (error instanceof CharacterAccountAlreadyExistsError) {

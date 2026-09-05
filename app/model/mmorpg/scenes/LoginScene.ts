@@ -55,6 +55,8 @@ export class LoginScene extends EntryScene {
       request.account.trim(),
       () => this.login.Login(request),
     );
+    // 空目录只完成账号认证，不查询角色Location或要求在线Gate。 / Empty catalogs authenticate only, without resolving character ownership or requiring a live Gate.
+    if (response.selectedCharacterId === 0n) return response;
     const gate = await this.SelectHealthyGate(response.account, response.selectedCharacterId);
     const routed = {
       ...response,

@@ -3,6 +3,7 @@ import "../../hotfix/mmorpg/dungeon/handlers/StarterDungeonBossKilledHandler";
 import "../../hotfix/mmorpg/gate/handlers/C2G_EnterMapHandler";
 import "../../hotfix/mmorpg/gate/handlers/C2G_EnterStarterDungeonHandler";
 import "../../hotfix/mmorpg/gate/handlers/C2G_LoginGateHandler";
+import "../../hotfix/mmorpg/gate/handlers/C2G_LogoutCharacterHandler";
 import "../../hotfix/mmorpg/gate/handlers/C2G_MapSnapshotReadyHandler";
 import "../../hotfix/mmorpg/gate/handlers/C2G_PingHandler";
 import "../../hotfix/mmorpg/item/handlers/BeforeUseItemVetoHandlers";
@@ -45,6 +46,7 @@ import "../../hotfix/mmorpg/mapHost/handlers/G2M_ClaimStarterDungeonEntryHandler
 import "../../hotfix/mmorpg/mapHost/handlers/G2M_EnterMapHandler";
 import "../../hotfix/mmorpg/mapHost/handlers/G2M_InitialSnapshotHandler";
 import "../../hotfix/mmorpg/mapHost/handlers/G2M_PlayerOfflineHandler";
+import "../../hotfix/mmorpg/mapHost/handlers/G2M_QueryPlayerOfflineHandler";
 import "../../hotfix/mmorpg/mapHost/handlers/G2M_RebindPlayerGateHandler";
 import "../../hotfix/mmorpg/mapHost/handlers/G2M_SecondEnterMapHandler";
 import "../../hotfix/mmorpg/mapHost/handlers/G2M_TransferPlayerHandler";

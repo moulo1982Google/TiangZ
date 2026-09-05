@@ -1,8 +1,20 @@
 import { Component } from "../../../core/public";
 import { PlayerUnit } from "../map/PlayerUnit";
+import { PlayerOfflineReceipts, type PlayerOfflineIdentity } from "./PlayerOfflineReceipts";
 
 export class PlayerDirectoryComponent extends Component {
   private readonly playersByCharacterId = new Map<bigint, PlayerUnit>();
+  private readonly offlineReceipts = new PlayerOfflineReceipts();
+
+  /** 地图提交成功后留下宿主级证据，Actor或动态地图销毁不删除回执。 / Records host-level evidence after map commit, surviving Actor or dynamic-map disposal. */
+  RecordOffline(identity: PlayerOfflineIdentity): void {
+    this.offlineReceipts.Record(identity, Date.now());
+  }
+
+  /** 只读恢复成功确认；宿主重启或回执缺失时拒绝推断成功。 / Recovers positive acknowledgement read-only; host restart or missing evidence never implies success. */
+  HasCompletedOffline(identity: PlayerOfflineIdentity): boolean {
+    return this.offlineReceipts.Has(identity, Date.now());
+  }
 
   /** 添加角色重连索引；普通Actor分发仍必须使用InstanceId。 / Adds a character reconnect index; ordinary Actor dispatch still uses InstanceId. */
   Add(unit: PlayerUnit): void {
