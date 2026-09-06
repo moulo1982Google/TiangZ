@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
+import { recentGameEvents, recoveryBaseline, evaluateBusinessRecovery } from "./business_recovery.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -112,8 +113,13 @@ async function run() {
     writeEvent({ type: "action_started", action: planned, actionIndex: state.actionIndex });
     try {
       await assertBaselineHealthy();
+      const gameEvents = path.resolve(options.runDir, "../game/game-events.jsonl");
+      const baseline = recoveryBaseline(recentGameEvents(gameEvents));
       await executeAction(planned);
       await assertBaselineHealthy();
+      const infrastructureRecoveredAt = Date.now();
+      writeEvent({ type: "infrastructure_recovered", action: planned, actionIndex: state.actionIndex });
+      await waitBusinessRecovery(gameEvents, baseline, infrastructureRecoveredAt);
       writeEvent({ type: "action_passed", action: planned, actionIndex: state.actionIndex });
       state.passedActions += 1;
     } catch (error) {
@@ -144,6 +150,20 @@ async function run() {
     passedActions: state.passedActions,
     failedActions: state.failedActions,
   });
+}
+
+async function waitBusinessRecovery(file, baseline, recoveredAfterMs) {
+  const deadline = Date.now() + 15 * 60_000;
+  let evidence;
+  while (!stopping && Date.now() < deadline) {
+    evidence = evaluateBusinessRecovery(recentGameEvents(file), baseline, recoveredAfterMs);
+    if (evidence.passed) {
+      writeEvent({ type: "business_recovered", elapsedMs: Date.now() - recoveredAfterMs, ...evidence });
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, 5_000));
+  }
+  throw new Error(`same-player business recovery not proven: ${evidence?.reason ?? "stopped"}`);
 }
 
 function plannedAction(state) {

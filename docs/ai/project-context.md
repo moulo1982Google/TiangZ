@@ -8,6 +8,18 @@
 
 更新时间：2026-09-05。
 
+## 2026-09 Location 恢复竞态与本机验证
+
+重复 MapHost 故障下，Gate 的断线超时清理与主动退出必须区分：主动退出仍要求 Actor 保存成功或匹配离线回执；已断开的超时会话，只有原宿主明确返回 `ActorLocationNotFound`、离线回执查询正常但未完成且 UnitId 匹配、Location 按 CharacterId 确认无主，才回收孤立 Gate 路由，供后续登录从持久化状态恢复。这不代表崩溃前未确认的最终保存成功。任何网络/存储错误、Location 不可用、仍有权威实例或活连接均不能走此分支。Core 的缺失 Actor mailbox 统一使用已有错误码 1012，不通过解析错误文本判断。
+
+Location 的 `RecoverOwner` 仅在首次认识 MapHost 代次（包括 Location 重启）或合法所有者换代时重建缺失路由。同代周期重报只能确认已有记录，不能将成功下线删除的 Actor 路由重新注册；新增玩家继续显式 `Register`。该规则在权威端判断，覆盖已经发送但迟到的恢复快照，不依赖 Timer 恰好先后执行，也不增加永久玩家墓碑。冲突批次必须先完整校验，重复 Unit/角色拒绝整批。
+
+Rust 压测客户端在等待 Gate 登录回执前启动统一 Push 分发，RPC 截止时间不因推送续期。故障判定拆分基础设施恢复和原账号业务恢复；替换卡住账号不能算恢复。精确回归与低内存本机演练见[本机故障验证](../testing/local-fault-validation.md)。模型/运行时修复需重启部署；不热更 Model，不修改正在运行的远程七天版本。
+
+## 通用提交本地集成
+
+本地集成分支新增 DBProxy CommitRecords：快照 CAS、只追加事实、Outbox 和幂等回执一次提交。交易计划及金币平衡检查在 MMORPG Hotfix，通用 Host 不理解交易 payload。PlayerRepository 多记录请求可选带 effects，旧单记录与 WoW335 VersionedEntityRepository 保持原契约。当前只为在线玩家交易追加审计与事件，未新增持久托管状态机；DBProxy 旧 Trade API 暂留兼容。相邻 DBProxy 的本地 npm/Cargo 依赖需在发布前替换为正式固定提交；远程七天演练仍使用原版本。部署先升级全部服务/worker，再启用新写入，详见[通用持久化集成](../design/generic-persistence-integration.md)。
+
 ## 账号注册与角色目录
 
 退出请求遇到 Gate 未绑定地图时，必须查询 Location；存在权威角色时要求先恢复地图会话，不能把 Gate 重启后的空缓存当作角色已离线。查询失败保持原所有权，不确认释放。
@@ -722,6 +734,10 @@ NPC 与怪物类名只表达基础身份，不是互斥的玩法能力标签。�
 ### Unit 数值脉冲恢复（2026-09-04）
 
 `NumericRegenerationComponent` 是 MMORPG 层的来源中立 Unit 能力：定义只包含当前值/上限的 Numeric 编号、结算间隔、检测到数值下降后的延迟，以及二选一的固定 `amount` 或动态 `amountNumericType`。动态数值来自同一 Unit 的 Numeric，适合等级成长在重算 Numeric 后立即改变后续脉冲，无须重建组件。组件只保存每个 Unit 的观察值与下一结算时刻，不创建 Timer，也不理解 mana、战斗状态、职业、宠物或协议。Monster、战斗 NPC、SummonedUnit 与 PlayerUnit 由各自已有的固定更新桶调用同一个 `Tick`；回巢等领域动作直接重置数值后调用 `ResetSchedule`。具体游戏的恢复公式必须在外置模块构建期投影成配置，不能回填到该组件。
+
+### 玩家普通快照的结果未知恢复（2026-09-06）
+
+本机 PG 停机复现了 SaveMulti 已提交但 ACK 超时、下次定时保存换 requestId 导致 revision 永久冲突。`PlayerPersistenceComponent` 现保存最多五条未确认领域请求（原始数据、时间、期望版本和幂等标识），先确认原请求，再捕获新状态；部分成功仅保留未确认条目。新业务事务先确认挂起快照，跨图 CaptureTransfer 在仍有未确认快照时拒绝。`PlayerDomainSaveWrite.snapshotRequest` 是可选重试元数据，不改存档/协议格式；DbProxyPlayerRepository 在进程与仓库实例命名空间内复用它。不能把未知结果当失败后重新生成请求，也不能把旧 ACK 当成最新数据已持久化。WoW335 的领域扩展存档格式不变；数据库故障期间的跨图拒绝是刻意的安全行为。
 
 ### 可交互物的不透明动作
 

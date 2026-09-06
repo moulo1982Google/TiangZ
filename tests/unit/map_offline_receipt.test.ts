@@ -6,12 +6,13 @@ function fixture() {
   const map = Object.create(MapComponent.prototype) as MapComponent;
   const record = vi.fn();
   const cleanup = vi.fn();
+  const remove = vi.fn();
   const offline = vi.fn().mockResolvedValue(undefined);
   Object.defineProperties(map, {
     requirePlayer: { value: vi.fn() },
     MarkPlayerOffline: { value: offline },
     ScheduleOfflineCleanup: { value: cleanup },
-    players: { value: { RecordOffline: record } },
+    players: { value: { RecordOffline: record, Remove: remove } },
     mapId: { value: 1 }, mapInstanceId: { value: 1n },
     logger: { value: { info: vi.fn(), warn: vi.fn() } },
   });
@@ -19,7 +20,7 @@ function fixture() {
     MapId: 1, MatchesGate: vi.fn().mockReturnValue(true) } as unknown as PlayerUnit;
   const request = { account: "ACCOUNT42", characterId: 7n, unitId: 100, mapId: 1,
     gateName: "gate", gateEpoch: 1n, reason: "character-logout" };
-  return { map, unit, request, record, cleanup, offline };
+  return { map, unit, request, record, cleanup, offline, remove };
 }
 
 describe("map offline evidence publication", () => {
@@ -50,11 +51,14 @@ describe("map offline evidence publication", () => {
     const pending = f.map.PlayerOffline(f.unit, f.request);
     expect(f.record).not.toHaveBeenCalled();
     expect(f.cleanup).not.toHaveBeenCalled();
+    expect(f.remove).not.toHaveBeenCalled();
     finish();
     expect((await pending).removed).toBe(true);
     expect(f.record).toHaveBeenCalledWith({ account: "ACCOUNT42", characterId: 7n, unitId: 100,
       actorInstanceId: 200, mapId: 1, mapInstanceId: 1n, gateName: "gate", gateEpoch: 1n });
     expect(f.record.mock.invocationCallOrder[0]).toBeLessThan(f.cleanup.mock.invocationCallOrder[0]);
+    expect(f.remove).toHaveBeenCalledWith(f.unit);
+    expect(f.remove.mock.invocationCallOrder[0]).toBeLessThan(f.cleanup.mock.invocationCallOrder[0]);
   });
 
   test("save or Location failure cannot publish a receipt or dispose the Actor", async () => {
@@ -63,6 +67,7 @@ describe("map offline evidence publication", () => {
     await expect(f.map.PlayerOffline(f.unit, f.request)).rejects.toThrow("offline failed");
     expect(f.record).not.toHaveBeenCalled();
     expect(f.cleanup).not.toHaveBeenCalled();
+    expect(f.remove).not.toHaveBeenCalled();
   });
 
   test("mismatched character never starts persistence or publishes evidence", async () => {

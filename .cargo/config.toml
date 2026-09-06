@@ -1,0 +1,8 @@
+# Local cross-repository integration branch. Replace with published revisions before release.
+[build]
+jobs = 1
+
+[patch."https://github.com/moulo1982Google/TiangZ-DBProxy.git"]
+tiangz-dbproxy-client = { path = "../TiangZ-DBProxy/crates/dbproxy-client" }
+tiangz-dbproxy-core = { path = "../TiangZ-DBProxy/crates/dbproxy-core" }
+tiangz-dbproxy-protocol = { path = "../TiangZ-DBProxy/crates/dbproxy-protocol" }

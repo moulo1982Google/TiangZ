@@ -1,4 +1,5 @@
 import { Component, component, isPromiseLike, transferable, type ITransfer } from "../../../core/public";
+import { CloneDbProxyCommitEffects, type DbProxyCommitEffects } from "@tiangz/dbproxy-sdk";
 import { BuffComponent } from "../buff/BuffComponent";
 import { ItemComponent } from "../item/ItemComponent";
 import type { PlayerUnit } from "../map/PlayerUnit";
@@ -14,6 +15,7 @@ import {
   type PlayerMultiTransactionReceipt,
   type PlayerMultiTransactionResult,
   type PlayerDomainSaveData,
+  type PlayerDomainSaveWrite,
   type PlayerPersistenceDomain,
   type PlayerPersistenceExtension,
   type PlayerPersistenceExtensionState,
@@ -29,6 +31,7 @@ export const PLAYER_PERIODIC_SNAPSHOT_INTERVAL_MS = 30_000;
 const PLAYER_PERIODIC_RETRY_MS = 5_000;
 const MAX_PERSISTENCE_EXTENSION_ID_LENGTH = 128;
 const MAX_PERSISTENCE_EXTENSION_PAYLOAD_BYTES = 1_048_576;
+let snapshotRequestSequence = 0;
 
 export interface PlayerSaveOverrides {
   readonly numerics?: PlayerSaveData["player"]["numerics"];
@@ -64,6 +67,7 @@ export class PlayerPersistenceComponent extends Component<[
   private nextPeriodicSaveAtMs = 0;
   private readonly uncertainOperations = new Set<string>();
   private readonly committedPayloads = new Map<PlayerPersistenceDomain, Uint8Array>();
+  private pendingSnapshots: readonly PlayerDomainSaveWrite[] = [];
   private readonly persistenceExtensions = new Map<string, PlayerPersistenceExtension>();
   private pendingPersistenceExtensions = new Map<string, PlayerPersistenceExtensionState>();
 
@@ -85,6 +89,7 @@ export class PlayerPersistenceComponent extends Component<[
   }
 
   CaptureTransfer(): PlayerPersistenceRevisions {
+    if (this.pendingSnapshots.length > 0) throw new Error("cannot transfer with an unresolved player snapshot");
     return this.Revisions;
   }
 
@@ -202,6 +207,7 @@ export class PlayerPersistenceComponent extends Component<[
     result: Uint8Array,
   ): Promise<PlayerTransactionResult> {
     this.requireTransactionIdentity(data);
+    await this.FlushPendingSnapshots();
     const normalizedDomains = normalizeDomains(domains);
     try {
       const records = normalizedDomains.map((domain) => ({
@@ -247,8 +253,10 @@ export class PlayerPersistenceComponent extends Component<[
     operationId: string,
     participants: readonly PlayerMultiTransactionParticipant[],
     result: Uint8Array,
+    effects?: DbProxyCommitEffects,
   ): Promise<PlayerMultiTransactionResult> {
     const normalized = normalizeParticipants(participants);
+    for (const participant of normalized) await participant.persistence.FlushPendingSnapshots();
     const records = normalized.flatMap((participant) => {
       participant.persistence.requireTransactionIdentity(participant.data);
       if (participant.persistence.repository !== this.repository) {
@@ -265,6 +273,7 @@ export class PlayerPersistenceComponent extends Component<[
         operationId,
         records,
         result: result.slice(),
+        effects: effects ? CloneDbProxyCommitEffects(effects) : undefined,
       }));
       for (const participant of normalized) {
         participant.persistence.applyCommittedRevisions(committed.revisions);
@@ -347,37 +356,52 @@ export class PlayerPersistenceComponent extends Component<[
   }
 
   private async SaveSnapshot(reason: string): Promise<void> {
+    // 先确认原快照，再捕获新状态；超时不能丢失幂等ID，也不能把旧ACK误认为新状态已保存。
+    // Resolve the original snapshot before capturing new state; an old ACK cannot confirm newer bytes.
+    await this.FlushPendingSnapshots();
     const data = this.Capture(reason);
     const candidates = PLAYER_PERSISTENCE_DOMAINS.map((domain) => ({
       domain,
       data: ProjectPlayerDomainData(data, domain),
     })).filter((candidate) => !this.isCommittedPayload(candidate.domain, candidate.data));
     if (candidates.length === 0) return;
-    const outcomes = await Promise.resolve(this.repository.SaveDomains(
-      candidates.map(({ domain, data: domainData }) => ({
-        domain,
-        data: domainData,
-        expectedRevision: this.revisions[domain],
-      })),
-    ));
-    const candidatesByDomain = new Map(candidates.map((candidate) => [candidate.domain, candidate.data]));
+    this.pendingSnapshots = candidates.map(({ domain, data: domainData }) => ({
+      domain, data: domainData, expectedRevision: this.revisions[domain],
+      snapshotRequest: { id: nextSnapshotRequestId(), updatedAtUnixMs: BigInt(Date.now()) },
+    }));
+    await this.FlushPendingSnapshots();
+  }
+
+  private async FlushPendingSnapshots(): Promise<void> {
+    if (this.pendingSnapshots.length === 0) return;
+    const pending = this.pendingSnapshots;
+    const outcomes = await Promise.resolve(this.repository.SaveDomains(pending));
+    const candidatesByDomain = new Map(pending.map(candidate => [candidate.domain, candidate]));
     const seen = new Set<PlayerPersistenceDomain>();
-    const failures: { domain: PlayerPersistenceDomain; error: unknown }[] = [];
+    // 先验证整份回执；坏响应不允许部分推进本地版本。 / Validate the whole receipt before advancing any local revision.
     for (const outcome of outcomes) {
       const domain = outcome.ok ? outcome.result.domain : outcome.domain;
       if (seen.has(domain)) throw new Error(`player batch save returned duplicate domain: ${domain}`);
+      const candidate = candidatesByDomain.get(domain);
+      if (!candidate) throw new Error(`player batch save returned unexpected domain: ${domain}`);
+      if (outcome.ok && outcome.result.revision !== candidate.expectedRevision + 1n) {
+        throw new Error(`player batch save returned invalid revision: ${domain}`);
+      }
       seen.add(domain);
+    }
+    if (seen.size !== pending.length) {
+      throw new Error(`player batch save returned ${seen.size}/${pending.length} dirty domains`);
+    }
+    const failures: { domain: PlayerPersistenceDomain; error: unknown }[] = [];
+    for (const outcome of outcomes) {
+      const domain = outcome.ok ? outcome.result.domain : outcome.domain;
       if (outcome.ok) {
         this.revisions[domain] = outcome.result.revision;
-        const committed = candidatesByDomain.get(domain);
-        if (!committed) throw new Error(`player batch save returned unexpected domain: ${domain}`);
-        this.rememberCommittedPayload(domain, committed);
+        this.rememberCommittedPayload(domain, candidatesByDomain.get(domain)!.data);
       }
       else failures.push({ domain, error: outcome.error });
     }
-    if (seen.size !== candidates.length) {
-      throw new Error(`player batch save returned ${seen.size}/${candidates.length} dirty domains`);
-    }
+    this.pendingSnapshots = pending.filter(candidate => failures.some(failure => failure.domain === candidate.domain));
     if (failures.length > 0) {
       const detail = failures.map((failure) => `${failure.domain}: ${errorMessage(failure.error)}`).join("; ");
       throw new Error(`player batch save failed after applying successful revisions: ${detail}`);
@@ -407,6 +431,12 @@ export class PlayerPersistenceComponent extends Component<[
       throw new Error(`player transaction identity mismatch: ${data.player.account}/${data.player.characterId} != ${player.Account}/${player.CharacterId}`);
     }
   }
+}
+
+function nextSnapshotRequestId(): string {
+  snapshotRequestSequence += 1;
+  if (!Number.isSafeInteger(snapshotRequestSequence)) throw new Error("player snapshot sequence exhausted");
+  return `snapshot:${snapshotRequestSequence}`;
 }
 
 function validatePersistenceExtension(extension: PlayerPersistenceExtension): void {

@@ -10,6 +10,7 @@ import {
 } from "#tiangz/model";
 import {
   DecodePlayerTradeReceipt,
+  BuildPlayerTradeEffects,
   EncodePlayerTradeReceipt,
   PlanPlayerTrade,
 } from "../app/hotfix/mmorpg/trade/PlayerTradeTransaction";
@@ -64,6 +65,7 @@ export async function main(): Promise<void> {
   const resultBytes = EncodePlayerTradeReceipt(receipt);
   const write = {
     operationId: "player-trade:9001",
+    effects: BuildPlayerTradeEffects(receipt),
     records: [
       {
         domain: "wallet",
@@ -101,6 +103,8 @@ export async function main(): Promise<void> {
     result: resultBytes,
   } as const;
   const applied = repository.ApplyMultiTransaction(write);
+  assert.throws(() => repository.ApplyMultiTransaction({ ...write, effects: undefined }), /effect conflict/);
+  assert.throws(() => BuildPlayerTradeEffects({ ...receipt, requester: { ...receipt.requester, gold: receipt.requester.gold + 1n } }), /not balanced/);
   assert.equal(applied.disposition, "applied");
   assert.deepEqual(applied.revisions, [
     { characterId: 101n, domain: "inventory", revision: 2n },

@@ -64,6 +64,7 @@ export class LocationComponent extends Component {
   private resolves = 0;
   private mutations = 0;
   private lostMapFallbacks = 0;
+  private suppressedRecoveryEntries = 0;
   private mapInstances: MapInstanceDirectoryComponent | null = null;
 
   /** 绑定同LocationScene的地图实例目录，使玩家路由响应可携带动态MapHost地址。 / Binds the colocated map-instance directory so player routes carry dynamic MapHost endpoints. */
@@ -269,10 +270,13 @@ export class LocationComponent extends Component {
   /**
    * Location进程重启后，由仍持有权威Unit的MapHost批量重建目录。
    * 恢复不会覆盖已存在的不同记录，也不会把moving/removing事务强行改回active。
+   * 同代重报不能重新创建已删除条目；新玩家必须显式Register，避免迟到快照复活离线Actor。
    *
    * Rebuilds the directory from authoritative Units still owned by one MapHost
    * after a Location restart. Recovery never overwrites a conflicting record
    * or forces an in-flight moving/removing transaction back to active.
+   * Only the first report of an owner generation rebuilds absent entries;
+   * subsequent reports cannot resurrect deleted Actors. New entry uses Register.
    */
   RecoverOwner(request: S2L_RecoverPlayerLocations): L2S_RecoverPlayerLocations {
     if (!request.ownerName) this.fail("location recovery owner is required");
@@ -283,11 +287,13 @@ export class LocationComponent extends Component {
       this.fail(`stale location recovery generation for ${request.ownerName}`);
     }
     const ownerReplaced = activeGeneration !== undefined && request.ownerGeneration > activeGeneration;
+    const canRebuild = activeGeneration === undefined || ownerReplaced;
 
     const pending: PlayerLocationRecovery[] = [];
     const unitIds = new Set<number>();
     const characterIds = new Set<bigint>();
     let unchanged = 0;
+    let suppressed = 0;
 
     // 先完整校验，再写入，避免一个坏条目造成半批恢复。
     // Validate the whole batch before mutation so one bad entry cannot cause a partial restore.
@@ -297,12 +303,14 @@ export class LocationComponent extends Component {
       if (location.mapHostName !== request.ownerName) {
         this.fail(`location recovery owner mismatch: ${location.mapHostName}`);
       }
-      if (!unitIds.add(location.unitId)) {
+      if (unitIds.has(location.unitId)) {
         this.fail(`duplicate recovery unit: ${location.unitId}`);
       }
-      if (!characterIds.add(location.characterId)) {
+      if (characterIds.has(location.characterId)) {
         this.fail(`duplicate recovery character: ${location.characterId}`);
       }
+      unitIds.add(location.unitId);
+      characterIds.add(location.characterId);
 
       const characterUnitId = this.unitIdByCharacterId.get(location.characterId);
       const characterRecord = characterUnitId === undefined
@@ -316,7 +324,8 @@ export class LocationComponent extends Component {
       const existing = this.directory.Resolve(location.unitId);
       const value = valueOf(location);
       if (!existing || (ownerReplaced && existing.value.mapHostName === request.ownerName)) {
-        pending.push(location);
+        if (canRebuild) pending.push(location);
+        else suppressed += 1;
       } else if (sameValue(existing.value, value)) {
         unchanged += 1;
       } else {
@@ -333,6 +342,7 @@ export class LocationComponent extends Component {
       this.addAccountIndex(location.account, location.unitId);
     }
     this.mutations += pending.length;
+    this.suppressedRecoveryEntries += suppressed;
     return response(request.rpcId, {
       recovered: pending.length,
       unchanged,
@@ -359,12 +369,14 @@ export class LocationComponent extends Component {
         mutations_total: this.mutations,
         conflicts_total: this.conflicts,
         lost_map_fallbacks_total: this.lostMapFallbacks,
+        recovery_suppressed_entries_total: this.suppressedRecoveryEntries,
       },
       kinds: {
         resolves_total: "counter",
         mutations_total: "counter",
         conflicts_total: "counter",
         lost_map_fallbacks_total: "counter",
+        recovery_suppressed_entries_total: "counter",
       },
     };
   }

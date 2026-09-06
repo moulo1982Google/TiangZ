@@ -25,6 +25,7 @@ import {
 } from "#tiangz/model";
 import {
   DecodePlayerTradeReceipt,
+  BuildPlayerTradeEffects,
   EncodePlayerTradeReceipt,
   PlanPlayerTrade,
   type PlayerTradeReceipt,
@@ -324,6 +325,7 @@ export class PlayerTradeComponentSystem extends PlayerTradeComponent {
             { persistence: targetPersistence, data: targetData, domains: ["inventory", "wallet"] },
           ],
           encoded,
+          BuildPlayerTradeEffects(receipt),
         );
         durable = DecodePlayerTradeReceipt(committed.result);
       } catch (error) {

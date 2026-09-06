@@ -1,4 +1,5 @@
 import {
+  type DbProxyRecordCommit,
   DbProxyErrorCode,
   DbProxyRemoteError,
   type DbProxyBatchSnapshotEnqueueResult,
@@ -131,6 +132,7 @@ interface HostLoadMultiTransactionResponse {
 }
 
 interface HostDbProxyApi {
+  commitRecords?(request: DbProxyRecordCommit): Promise<HostMultiTransactionResponse>;
   load(namespace: string, key: string): Promise<HostLoadResponse>;
   loadMulti(records: readonly DbProxyRecordKey[]): Promise<HostLoadMultiResponse>;
   save(request: {
@@ -347,6 +349,18 @@ export class HostDbProxyTransport implements DbProxyTransport {
         record: { namespace: record.namespace, key: record.key },
         newRevision: parseUint64(record.newRevision, "multiTransactionRecord.newRevision"),
       })),
+      result: Uint8Array.from(response.result),
+    };
+  }
+
+  /** 将通用事务效果交给宿主；旧宿主明确拒绝，不降级丢弃效果。 / Sends all effects to the host, rejecting unsupported hosts without fallback. */
+  async commitRecords(write: DbProxyRecordCommit): Promise<DbProxyMultiTransactionalWriteResult> {
+    if (!this.host.commitRecords) throw new Error("Rust Host does not support CommitRecords");
+    const response = await this.host.commitRecords(write);
+    throwRemoteError(response.error);
+    return {
+      disposition: requireDisposition(response.disposition),
+      records: response.records.map(r => ({ record: { namespace: r.namespace, key: r.key }, newRevision: parseUint64(r.newRevision, "commit.newRevision") })),
       result: Uint8Array.from(response.result),
     };
   }

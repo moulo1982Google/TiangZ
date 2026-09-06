@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import { GateScene } from "../../app/model/mmorpg/scenes/GateScene";
 import { GateSession } from "../../app/model/mmorpg/gate/GateSession";
 import { GatePlayerRoute } from "../../app/model/mmorpg/gate/GatePlayerRoute";
-import { TimeSystem } from "../../app/core/public";
+import { TimeSystem, RpcError, SystemErrCode } from "../../app/core/public";
 
 function fixture() {
   const route = new GatePlayerRoute("ACCOUNT42", 7n, 1, "gate", 10, 1000);
@@ -34,6 +34,30 @@ function fixture() {
 }
 
 describe("explicit character logout", () => {
+  test("disconnected timeout route recovers only after explicit missing Actor and authoritative absence", async () => {
+    const f = fixture();
+    f.route.BeginRemoving();
+    f.route.Detach(10, 2000);
+    f.callActor.mockRejectedValue(new RpcError(SystemErrCode.ActorLocationNotFound, "missing actor"));
+    await (f.scene as any).FinalOffline(f.route, "client-reconnect-timeout");
+    expect(f.routes.size).toBe(0);
+    expect(f.resolve).toHaveBeenCalledWith({ unitId: 0, account: "", characterId: 7n });
+  });
+
+  test("orphan recovery cannot bypass live ownership, unavailable authority, host errors or explicit logout", async () => {
+    for (const kind of ["owned", "location-down", "host-down", "invalid-receipt", "connected", "explicit", "storage"]) {
+      const f = fixture();
+      f.route.BeginRemoving();
+      if (kind !== "connected") f.route.Detach(10, 2000);
+      f.callActor.mockRejectedValue(new RpcError(kind === "storage" ? SystemErrCode.HandlerFailed : SystemErrCode.ActorLocationNotFound, "not confirmed"));
+      if (kind === "owned") f.resolve.mockResolvedValue({ found: true });
+      if (kind === "location-down") f.resolve.mockRejectedValue(new Error("Location unavailable"));
+      if (kind === "host-down") f.call.mockRejectedValue(new Error("host unavailable"));
+      if (kind === "invalid-receipt") f.call.mockResolvedValue({ unitId: 101, completed: false });
+      await expect((f.scene as any).FinalOffline(f.route, kind === "explicit" ? "character-logout" : "client-reconnect-timeout")).rejects.toThrow();
+      expect(f.routes.size).toBe(1);
+    }
+  });
   test("an active retry connection renews liveness without reviving a removing route", () => {
     const f = fixture();
     f.route.BeginRemoving();

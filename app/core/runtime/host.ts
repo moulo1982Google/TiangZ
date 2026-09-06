@@ -1,4 +1,6 @@
 import { ActorContext, SceneContext } from "./contexts";
+import { RpcError } from "../protocol/RpcError";
+import { SystemErrCode } from "../protocol/SystemErrCode";
 import { isPromiseLike, type MaybePromise } from "../async";
 import { ChildEntity, isActorRuntimeEntity } from "./entities";
 import type {
@@ -483,7 +485,7 @@ export class ProcessHost {
   ): MaybePromise<T> {
     const actor = this.actorsByInstanceId.get(instanceId);
     if (!actor || this.Root.Get(instanceId) !== actor.instance) {
-      return Promise.reject(new Error(`actor instance not found: ${instanceId}`));
+      return Promise.reject(new RpcError(SystemErrCode.ActorLocationNotFound, `actor instance not found: ${instanceId}`));
     }
 
     if (actor.mailBox.MailboxType === "unordered") {
@@ -539,7 +541,7 @@ export class ProcessHost {
   ): MaybePromise<void> {
     const actor = this.actorsByInstanceId.get(instanceId);
     if (!actor || this.Root.Get(instanceId) !== actor.instance) {
-      return Promise.reject(new Error(`actor instance not found: ${instanceId}`));
+      return Promise.reject(new RpcError(SystemErrCode.ActorLocationNotFound, `actor instance not found: ${instanceId}`));
     }
 
     if (actor.mailBox.MailboxType === "unordered") {
@@ -587,7 +589,7 @@ export class ProcessHost {
   private requireActorRuntime(instanceId: InstanceId): ActorRuntime {
     const actor = this.actorsByInstanceId.get(instanceId);
     if (!actor || this.Root.Get(instanceId) !== actor.instance) {
-      throw new Error(`actor instance not found: ${instanceId}`);
+      throw new RpcError(SystemErrCode.ActorLocationNotFound, `actor instance not found: ${instanceId}`);
     }
     return actor;
   }

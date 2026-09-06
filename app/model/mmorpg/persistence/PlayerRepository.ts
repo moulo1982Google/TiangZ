@@ -1,4 +1,5 @@
 import type { MaybePromise } from "../../../core/public";
+import { CloneDbProxyCommitEffects, type DbProxyCommitEffects, type DbProxyAppendRecord, type DbProxyOutboxEvent } from "@tiangz/dbproxy-sdk";
 import type { ItemSnapshot } from "../../../generated/model/server/demo/protocol/messages";
 import type { ActionDefinition } from "../action/ActionType";
 import type { BuffTransferState } from "../buff/Buff";
@@ -153,6 +154,8 @@ export interface PlayerDomainSaveWrite {
   readonly domain: PlayerPersistenceDomain;
   readonly data: PlayerDomainSaveData;
   readonly expectedRevision: bigint;
+  /** 跨调用重试必须保留同一标识、时间与数据；省略时只保证单次调用内幂等。 / Preserve identity, time and data across retries; omission scopes idempotency to one call. */
+  readonly snapshotRequest?: { readonly id: string; readonly updatedAtUnixMs: bigint };
 }
 
 export type PlayerDomainSaveOutcome =
@@ -167,6 +170,7 @@ export interface PlayerTransactionRecordWrite {
 
 /** 一次事务可以覆盖同一玩家或多个玩家的若干领域记录。 / One transaction may cover domain records from one or several players. */
 export interface PlayerTransactionWrite {
+  readonly effects?: DbProxyCommitEffects;
   readonly operationId: string;
   readonly records: readonly PlayerTransactionRecordWrite[];
   readonly result: Uint8Array;
@@ -222,6 +226,7 @@ interface InMemoryRecord {
 }
 
 interface InMemoryTransactionRecord {
+  readonly effects: string;
   readonly keys: readonly string[];
   readonly expectedRevisions: readonly bigint[];
   readonly payloads: readonly Uint8Array[];
@@ -231,6 +236,8 @@ interface InMemoryTransactionRecord {
 
 /** 非DBProxy演示与单元测试使用的领域化版本Repository。 / Domain-versioned Repository used by non-DBProxy demos and unit tests. */
 export class InMemoryPlayerRepository implements PlayerRepository {
+  private readonly appendRecords = new Map<string, DbProxyAppendRecord>();
+  private readonly outboxEvents = new Map<string, DbProxyOutboxEvent>();
   private readonly records = new Map<string, InMemoryRecord>();
   private readonly saveCounts = new Map<string, number>();
   private readonly transactions = new Map<string, InMemoryTransactionRecord>();
@@ -296,12 +303,16 @@ export class InMemoryPlayerRepository implements PlayerRepository {
 
   ApplyTransaction(write: PlayerTransactionWrite): PlayerTransactionResult {
     requireOperationId(write.operationId);
+    const effects = CloneDbProxyCommitEffects(write.effects ?? { appends: [], outboxEvents: [] });
+    if (write.effects && write.records.length < 2) throw new Error("player effects require a multi-record transaction");
+    const effectFingerprint = JSON.stringify(effects, (_key, value: unknown) => typeof value === "bigint" ? value.toString() : value);
     const records = normalizeTransactionRecords(write.records);
     const keys = records.map((record) => recordKey(CharacterIdOfDomainData(record.domain, record.data), record.domain));
     const payloads = records.map((record) => EncodePlayerDomainData(record.domain, record.data));
     const expectedRevisions = records.map((record) => record.expectedRevision);
     const existing = this.transactions.get(write.operationId);
     if (existing) {
+      if (existing.effects !== effectFingerprint) throw new Error(`player transaction effect conflict: ${write.operationId}`);
       if (!stringArraysEqual(existing.keys, keys) || !bigintArraysEqual(existing.expectedRevisions, expectedRevisions) || !byteArraysEqual(existing.payloads, payloads) || !bytesEqual(existing.result, write.result)) {
         throw new Error(`player transaction operation conflict: ${write.operationId}`);
       }
@@ -319,18 +330,27 @@ export class InMemoryPlayerRepository implements PlayerRepository {
       revision: record.expectedRevision + 1n,
     }));
     const now = BigInt(Date.now());
+    for (const append of effects.appends) {
+      if (this.appendRecords.has(JSON.stringify(append.record))) throw new Error("append record already exists");
+    }
+    for (const event of effects.outboxEvents) {
+      if (this.outboxEvents.has(event.eventId)) throw new Error("outbox event already exists");
+    }
     records.forEach((record, index) => this.records.set(keys[index], {
       data: ClonePlayerDomainData(record.domain, record.data),
       revision: revisions[index].revision,
       updatedAtUnixMs: now,
     }));
     this.transactions.set(write.operationId, {
+      effects: effectFingerprint,
       keys,
       expectedRevisions,
       payloads: payloads.map((payload) => payload.slice()),
       result: write.result.slice(),
       revisions: cloneRevisions(revisions),
     });
+    for (const append of effects.appends) this.appendRecords.set(JSON.stringify(append.record), append);
+    for (const event of effects.outboxEvents) this.outboxEvents.set(event.eventId, event);
     return { disposition: "applied", revisions, result: write.result.slice() };
   }
 

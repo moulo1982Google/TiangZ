@@ -211,6 +211,7 @@ struct Options {
     source_ip: Option<IpAddr>,
     manager_port: u16,
     map_id: u32,
+    recover_from_map: Option<u32>,
     players: usize,
     setup_concurrency: usize,
     map_entry_concurrency: Option<usize>,
@@ -276,6 +277,7 @@ struct PlayerConnection {
     business_item_id: u64,
     spatial_mode: SpatialMode,
     entered_map_id: u32,
+    initial_entered_map_id: u32,
     entered_map_instance_id: u64,
 }
 
@@ -414,6 +416,7 @@ struct PlayerResult {
     business_transport_errors: u64,
     spatial_mode: Option<SpatialMode>,
     entered_map_id: u32,
+    initial_entered_map_id: u32,
     entered_map_instance_id: u64,
 }
 
@@ -773,6 +776,11 @@ async fn main() -> Result<()> {
         "targetMapId": options.map_id,
         "enteredMapId": entered_map_id,
         "enteredMapInstanceId": entered_map_instance_id,
+        "mapRecovery": {
+            "safeMapId": options.recover_from_map,
+            "fallbackPlayers": results.iter().filter(|r| r.initial_entered_map_id != r.entered_map_id).count(),
+            "reenteredPlayers": results.iter().filter(|r| r.initial_entered_map_id != r.entered_map_id && r.entered_map_id == options.map_id).count(),
+        },
         "accountMode": if options.reuse_accounts { "stable-reuse" } else { "ephemeral" },
         "measurementStartedAtUnixMs": started_at_unix_ms,
         "measurementEndedAtUnixMs": started_at_unix_ms + options.duration.as_millis() as u64,
@@ -939,23 +947,32 @@ async fn prepare_player(
     .await
     .context("gate connect timed out")??;
     stream.set_nodelay(true)?;
-    let (mut reader, mut writer) = stream.into_split();
+    let (reader, mut writer) = stream.into_split();
 
     let mut gate_login = Vec::with_capacity(account.len() + login.token.len() + 16);
     push_string(&mut gate_login, 1, account);
     push_string(&mut gate_login, 2, &login.token);
     write_frame(&mut writer, &encode_rpc(LOGIN_GATE_REQ, 2, &gate_login)?).await?;
-    let response = read_frame_timeout(&mut reader, options.timeout).await?;
-    decode_message(&response, LOGIN_GATE_RESP, Some(2)).context("LoginGate RPC failed")?;
-
     let placement_layout = options.spawn_layout.placement_code();
     let player_index = u32::try_from(index).context("player index exceeds uint32")?;
-    Ok(start_gate_connection(
-        reader,
-        writer,
-        player_index,
-        placement_layout,
-    ))
+    let mut connection = start_gate_connection(reader, writer, player_index, placement_layout);
+    if let Err(error) = await_gate_login(&mut connection, options.timeout).await {
+        connection.reader_task.abort();
+        connection.writer_task.abort();
+        return Err(error);
+    }
+    Ok(connection)
+}
+
+/// 登录期间也使用统一分发器处理推送；推送不能延长RPC的整体截止时间。
+/// Uses the normal push dispatcher during login without extending the RPC deadline.
+async fn await_gate_login(
+    connection: &mut PreparedPlayerConnection,
+    timeout: Duration,
+) -> Result<()> {
+    let response = receive_gate_frame(&mut connection.frame_rx, timeout, "LoginGate").await?;
+    decode_message(&response, LOGIN_GATE_RESP, Some(2)).context("LoginGate RPC failed")?;
+    Ok(())
 }
 
 async fn login_player(
@@ -1018,123 +1035,164 @@ async fn enter_player(
         player_index,
         placement_layout,
     } = prepared;
-    let mut enter_map = Vec::with_capacity(16);
-    let (enter_request_code, enter_response_code, unit_id_field) =
-        if let Some(layout) = placement_layout {
-            push_uint32(&mut enter_map, 1, options.map_id);
-            push_uint32(&mut enter_map, 2, player_index);
-            push_uint32(&mut enter_map, 3, layout);
-            push_uint32(&mut enter_map, 4, options.entry_sync_mode.code());
-            (MAP_CAPACITY_ENTER_REQ, MAP_CAPACITY_ENTER_RESP, 1)
-        } else {
-            push_uint32(&mut enter_map, 1, options.map_id);
-            (ENTER_MAP_REQ, ENTER_MAP_RESP, 4)
-        };
-    send_client_frame(&writer_tx, encode_rpc(enter_request_code, 3, &enter_map)?).await?;
-    let mut received_response = false;
-    let mut received_ready = false;
-    let mut inline_snapshot = false;
-    let mut unit_id = 0;
-    let mut business_item_id = 0_u64;
-    let mut spatial_mode = placement_layout.map(|_| SpatialMode::Grid2d);
-    let mut entered_map_id = placement_layout.map(|_| options.map_id).unwrap_or_default();
-    let mut entered_map_instance_id = placement_layout
-        .map(|_| u64::from(options.map_id))
-        .unwrap_or_default();
-    while !received_response || !received_ready {
-        let frame = receive_gate_frame(&mut frame_rx, options.timeout, "EnterMap").await?;
-        let msgcode = frame_msgcode(&frame)?;
-        match msgcode {
-            code if code == enter_response_code => {
-                let response = decode_message(&frame, enter_response_code, Some(3))
-                    .context("EnterMap RPC failed")?;
-                unit_id = response.u32(unit_id_field)?;
-                if placement_layout.is_some() {
-                    business_item_id = response.u64(4);
-                } else {
-                    entered_map_id = response.u32(3)?;
-                    entered_map_instance_id = response.u64(11);
-                    spatial_mode = Some(SpatialMode::parse(response.u32(12)?)?);
-                    business_item_id = find_item_id_by_config(&frame, 9, 1001)?.unwrap_or(0);
+    // 重登可先回安全地图；只允许显式指定的回退地图，随后在同一连接上重进一次目标地图。
+    // A reconnect may land on the configured safe map; allow exactly one same-session reentry.
+    let mut next_rpc_id = 3;
+    let mut initial_entered_map_id = 0;
+    let mut reentry_attempted = false;
+    loop {
+        let mut enter_map = Vec::with_capacity(16);
+        let (enter_request_code, enter_response_code, unit_id_field) =
+            if let Some(layout) = placement_layout {
+                push_uint32(&mut enter_map, 1, options.map_id);
+                push_uint32(&mut enter_map, 2, player_index);
+                push_uint32(&mut enter_map, 3, layout);
+                push_uint32(&mut enter_map, 4, options.entry_sync_mode.code());
+                (MAP_CAPACITY_ENTER_REQ, MAP_CAPACITY_ENTER_RESP, 1)
+            } else {
+                push_uint32(&mut enter_map, 1, options.map_id);
+                (ENTER_MAP_REQ, ENTER_MAP_RESP, 4)
+            };
+        send_client_frame(
+            &writer_tx,
+            encode_rpc(enter_request_code, next_rpc_id, &enter_map)?,
+        )
+        .await?;
+        let mut received_response = false;
+        let mut received_ready = false;
+        let mut inline_snapshot = false;
+        let mut unit_id = 0;
+        let mut business_item_id = 0_u64;
+        let mut spatial_mode = placement_layout.map(|_| SpatialMode::Grid2d);
+        let mut entered_map_id = placement_layout.map(|_| options.map_id).unwrap_or_default();
+        let mut entered_map_instance_id = placement_layout
+            .map(|_| u64::from(options.map_id))
+            .unwrap_or_default();
+        while !received_response || !received_ready {
+            let frame = receive_gate_frame(&mut frame_rx, options.timeout, "EnterMap").await?;
+            let msgcode = frame_msgcode(&frame)?;
+            match msgcode {
+                code if code == enter_response_code => {
+                    let response = decode_message(&frame, enter_response_code, Some(next_rpc_id))
+                        .context("EnterMap RPC failed")?;
+                    unit_id = response.u32(unit_id_field)?;
+                    if placement_layout.is_some() {
+                        business_item_id = response.u64(4);
+                    } else {
+                        entered_map_id = response.u32(3)?;
+                        entered_map_instance_id = response.u64(11);
+                        spatial_mode = Some(SpatialMode::parse(response.u32(12)?)?);
+                        business_item_id = find_item_id_by_config(&frame, 9, 1001)?.unwrap_or(0);
+                    }
+                    inline_snapshot =
+                        placement_layout.is_none() && count_length_delimited_field(&frame, 7)? > 0;
+                    received_response = true;
                 }
-                inline_snapshot =
-                    placement_layout.is_none() && count_length_delimited_field(&frame, 7)? > 0;
-                received_response = true;
+                MAP_READY => received_ready = true,
+                _ => {}
             }
-            MAP_READY => received_ready = true,
-            _ => {}
         }
-    }
-    if unit_id == 0 {
-        bail!("EnterMap returned an invalid unitId");
-    }
-    if entered_map_id == 0 || entered_map_instance_id == 0 {
-        bail!("EnterMap returned an invalid map identity");
-    }
-    let spatial_mode = spatial_mode.context("EnterMap did not return a spatial mode")?;
-    own_unit_id.store(unit_id, Ordering::Release);
-    let mut next_rpc_id = 4;
-    if options.entry_sync_mode.includes_new_observer_snapshot() && !inline_snapshot {
-        let mut ready = Vec::with_capacity(8);
-        push_uint32(&mut ready, 1, unit_id);
-        send_client_frame(
-            &writer_tx,
-            encode_rpc(MAP_SNAPSHOT_READY_REQ, next_rpc_id, &ready)?,
-        )
-        .await?;
-        loop {
-            let frame =
-                receive_gate_frame(&mut frame_rx, options.timeout, "MapSnapshotReady").await?;
-            if frame_msgcode(&frame)? != MAP_SNAPSHOT_READY_RESP {
+        if unit_id == 0 {
+            bail!("EnterMap returned an invalid unitId");
+        }
+        if entered_map_id == 0 || entered_map_instance_id == 0 {
+            bail!("EnterMap returned an invalid map identity");
+        }
+        let spatial_mode = spatial_mode.context("EnterMap did not return a spatial mode")?;
+        own_unit_id.store(unit_id, Ordering::Release);
+        next_rpc_id += 1;
+        if options.entry_sync_mode.includes_new_observer_snapshot() && !inline_snapshot {
+            let mut ready = Vec::with_capacity(8);
+            push_uint32(&mut ready, 1, unit_id);
+            send_client_frame(
+                &writer_tx,
+                encode_rpc(MAP_SNAPSHOT_READY_REQ, next_rpc_id, &ready)?,
+            )
+            .await?;
+            loop {
+                let frame =
+                    receive_gate_frame(&mut frame_rx, options.timeout, "MapSnapshotReady").await?;
+                if frame_msgcode(&frame)? != MAP_SNAPSHOT_READY_RESP {
+                    continue;
+                }
+                decode_message(&frame, MAP_SNAPSHOT_READY_RESP, Some(next_rpc_id))
+                    .context("MapSnapshotReady RPC failed")?;
+                break;
+            }
+            next_rpc_id += 1;
+        }
+        if initial_entered_map_id == 0 {
+            initial_entered_map_id = entered_map_id;
+        }
+        if let Some(safe_map) = options.recover_from_map {
+            if entered_map_id != options.map_id {
+                if reentry_attempted
+                    || placement_layout.is_some()
+                    || entered_map_id != safe_map
+                    || entered_map_instance_id != u64::from(safe_map)
+                {
+                    bail!(
+                        "map recovery failed: requested {}, initial {}, actual {} instance {}",
+                        options.map_id,
+                        initial_entered_map_id,
+                        entered_map_id,
+                        entered_map_instance_id
+                    );
+                }
+                println!(
+                    "MAP_SAFE_FALLBACK {}",
+                    json!({"playerIndex":player_index,"safeMapId":entered_map_id,"targetMapId":options.map_id})
+                );
+                reentry_attempted = true;
                 continue;
             }
-            decode_message(&frame, MAP_SNAPSHOT_READY_RESP, Some(next_rpc_id))
-                .context("MapSnapshotReady RPC failed")?;
-            break;
-        }
-        next_rpc_id += 1;
-    }
-    if let Some(layout) = placement_layout {
-        let mut placement = Vec::with_capacity(8);
-        push_uint32(&mut placement, 1, player_index);
-        push_uint32(&mut placement, 2, layout);
-        send_client_frame(
-            &writer_tx,
-            encode_rpc(MAP_CAPACITY_PLACE_REQ, next_rpc_id, &placement)?,
-        )
-        .await?;
-        loop {
-            let frame =
-                receive_gate_frame(&mut frame_rx, options.timeout, "MapCapacityPlace").await?;
-            if frame_msgcode(&frame)? != MAP_CAPACITY_PLACE_RESP {
-                continue;
+            if entered_map_instance_id != u64::from(options.map_id) {
+                bail!("map recovery returned an unexpected target instance");
             }
-            let response = decode_message(&frame, MAP_CAPACITY_PLACE_RESP, Some(next_rpc_id))
-                .context("MapCapacityPlace RPC failed")?;
-            if response.u32(1)? != player_index {
-                bail!("map capacity placement index mismatch");
-            }
-            break;
         }
-        next_rpc_id += 1;
-    }
+        if let Some(layout) = placement_layout {
+            let mut placement = Vec::with_capacity(8);
+            push_uint32(&mut placement, 1, player_index);
+            push_uint32(&mut placement, 2, layout);
+            send_client_frame(
+                &writer_tx,
+                encode_rpc(MAP_CAPACITY_PLACE_REQ, next_rpc_id, &placement)?,
+            )
+            .await?;
+            loop {
+                let frame =
+                    receive_gate_frame(&mut frame_rx, options.timeout, "MapCapacityPlace").await?;
+                if frame_msgcode(&frame)? != MAP_CAPACITY_PLACE_RESP {
+                    continue;
+                }
+                let response = decode_message(&frame, MAP_CAPACITY_PLACE_RESP, Some(next_rpc_id))
+                    .context("MapCapacityPlace RPC failed")?;
+                if response.u32(1)? != player_index {
+                    bail!("map capacity placement index mismatch");
+                }
+                break;
+            }
+            next_rpc_id += 1;
+        }
 
-    Ok(PlayerConnection {
-        frame_rx,
-        reader_task,
-        writer_tx,
-        writer_task,
-        entity_move_pushes,
-        grid_move_ack_rx,
-        state_pushes,
-        next_rpc_id,
-        unit_id,
-        player_index,
-        business_item_id,
-        spatial_mode,
-        entered_map_id,
-        entered_map_instance_id,
-    })
+        return Ok(PlayerConnection {
+            frame_rx,
+            reader_task,
+            writer_tx,
+            writer_task,
+            entity_move_pushes,
+            grid_move_ack_rx,
+            state_pushes,
+            next_rpc_id,
+            unit_id,
+            player_index,
+            business_item_id,
+            spatial_mode,
+            entered_map_id,
+            initial_entered_map_id,
+            entered_map_instance_id,
+        });
+    }
 }
 
 fn start_gate_connection(
@@ -1225,7 +1283,8 @@ fn start_gate_connection(
                             .item_bytes
                             .fetch_add(frame.len() as u64, Ordering::Relaxed);
                     }
-                    Ok(ENTER_MAP_RESP)
+                    Ok(LOGIN_GATE_RESP)
+                    | Ok(ENTER_MAP_RESP)
                     | Ok(MAP_CAPACITY_ENTER_RESP)
                     | Ok(MAP_READY)
                     | Ok(MAP_SNAPSHOT_READY_RESP)
@@ -1299,9 +1358,11 @@ async fn run_player(
         spatial_mode,
         entered_map_id,
         entered_map_instance_id,
+        initial_entered_map_id,
     } = player;
     result.spatial_mode = Some(spatial_mode);
     result.entered_map_id = entered_map_id;
+    result.initial_entered_map_id = initial_entered_map_id;
     result.entered_map_instance_id = entered_map_instance_id;
     let mut pushes_at_measurement_start = None;
     let mut state_pushes_at_measurement_start = None;
@@ -1313,6 +1374,7 @@ async fn run_player(
     let mut probe_sequence = 0_u32;
     let mut state_sync_sequence = 0_u32;
     let mut business_sequence = 0_u32;
+    let mut reported_rpc_errors = 0_u8;
     let mut business_operation = player_index;
     let mut move_sequence = options.movement_sequence_base;
     let probe_interval =
@@ -1581,6 +1643,20 @@ async fn run_player(
             .with_context(|| format!("unknown response rpcId {rpc_id}"))?;
         let response_error = response.u32(91)?;
         if response_error != 0 {
+            if reported_rpc_errors < 2 && !is_business_error_code(response_error) {
+                reported_rpc_errors += 1;
+                eprintln!(
+                    "RPC_ERROR {}",
+                    rpc_error_diagnostic(
+                        player_index,
+                        rpc_id,
+                        msgcode,
+                        response_error,
+                        request.started_at.elapsed(),
+                        response.strings.get(&92).map(String::as_str),
+                    )
+                );
+            }
             // 错误响应可能没有业务序号，必须先按错误码分类再做正常响应校验。
             // Error responses may omit the business sequence, so classify them before normal response validation.
             match request.kind {
@@ -2085,15 +2161,6 @@ fn packet(frame: &[u8]) -> Result<Vec<u8>> {
     Ok(packet)
 }
 
-async fn read_frame_timeout(
-    reader: &mut tokio::net::tcp::OwnedReadHalf,
-    timeout: Duration,
-) -> Result<Vec<u8>> {
-    tokio::time::timeout(timeout, read_frame(reader))
-        .await
-        .context("response timed out")?
-}
-
 async fn read_frame(reader: &mut tokio::net::tcp::OwnedReadHalf) -> Result<Vec<u8>> {
     let length = reader.read_u32().await? as usize;
     read_frame_body(reader, length).await
@@ -2220,6 +2287,26 @@ fn decode_message(
 /// Runtime/RPC failures must remain visible as transport failures.
 fn is_business_error_code(code: u32) -> bool {
     code >= 10_000
+}
+
+/// 只记录有限的RPC失败现场，不记录账号字段和请求载荷；每玩家最多两条，由调用处限额。
+/// Bounded RPC evidence omits account fields/request payloads; the caller limits it to two per player.
+fn rpc_error_diagnostic(
+    player_index: u32,
+    rpc_id: u32,
+    response_code: u16,
+    error_code: u32,
+    elapsed: Duration,
+    detail: Option<&str>,
+) -> serde_json::Value {
+    json!({
+        "playerIndex": player_index,
+        "rpcId": rpc_id,
+        "responseCode": response_code,
+        "errorCode": error_code,
+        "elapsedMs": elapsed.as_millis(),
+        "detail": detail.unwrap_or_default().chars().take(256).collect::<String>(),
+    })
 }
 
 /// 解码RPC但保留业务错误字段，供业务压测区分“业务拒绝”和“传输失败”。
@@ -2582,6 +2669,11 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
         manager_port: u16::try_from(number("manager-port", 7000)?)
             .context("manager port exceeds uint16")?,
         map_id: u32::try_from(number("map-id", 1)?).context("map id exceeds uint32")?,
+        recover_from_map: values
+            .get("recover-from-map")
+            .map(|s| s.parse::<u32>())
+            .transpose()
+            .context("invalid --recover-from-map")?,
         players,
         setup_concurrency,
         map_entry_concurrency,
@@ -2660,6 +2752,221 @@ fn to_base36(mut value: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rpc_failure_evidence_preserves_identity_and_bounds_unicode_detail() {
+        let detail = "超时".repeat(300);
+        let evidence = rpc_error_diagnostic(
+            7,
+            42,
+            MAP_PROBE_RESP,
+            1006,
+            Duration::from_millis(5001),
+            Some(&detail),
+        );
+        assert_eq!(evidence["rpcId"], 42);
+        assert_eq!(evidence["errorCode"], 1006);
+        assert_eq!(evidence["elapsedMs"], 5001);
+        assert_eq!(evidence["detail"].as_str().unwrap().chars().count(), 256);
+        assert!(evidence.get("account").is_none());
+        assert_eq!(
+            rpc_error_diagnostic(0, 1, MAP_PROBE_RESP, 1006, Duration::ZERO, None)["detail"],
+            ""
+        );
+    }
+
+    #[tokio::test]
+    async fn map_recovery_reenters_same_connection_once_and_rejects_wrong_maps() {
+        for (maps, passes) in [
+            (vec![100], true),
+            (vec![1, 100], true),
+            (vec![2], false),
+            (vec![1, 1], false),
+        ] {
+            let (connection, server) = login_fixture().await;
+            let (mut server_reader, mut server) = server.into_split();
+            let reader_abort = connection.reader_task.abort_handle();
+            let writer_abort = connection.writer_task.abort_handle();
+            let initial = maps[0];
+            let fixture = tokio::spawn(async move {
+                for (index, map) in maps.into_iter().enumerate() {
+                    let rpc = 3 + index as u32 * 2;
+                    let request = read_frame(&mut server_reader).await.unwrap();
+                    assert_eq!(
+                        decode_message(&request, ENTER_MAP_REQ, Some(rpc))
+                            .unwrap()
+                            .u32(1)
+                            .unwrap(),
+                        100
+                    );
+                    let mut fields = Vec::new();
+                    push_uint32(&mut fields, 3, map);
+                    push_uint32(&mut fields, 4, 42 + index as u32);
+                    push_uint64(&mut fields, 11, u64::from(map));
+                    push_uint32(&mut fields, 12, if map == 100 { 2 } else { 1 });
+                    server
+                        .write_all(
+                            &packet(&encode_rpc(ENTER_MAP_RESP, rpc, &fields).unwrap()).unwrap(),
+                        )
+                        .await
+                        .unwrap();
+                    server
+                        .write_all(&packet(&MAP_READY.to_be_bytes()).unwrap())
+                        .await
+                        .unwrap();
+                    let ready = read_frame(&mut server_reader).await.unwrap();
+                    decode_message(&ready, MAP_SNAPSHOT_READY_REQ, Some(rpc + 1)).unwrap();
+                    server
+                        .write_all(
+                            &packet(&encode_rpc(MAP_SNAPSHOT_READY_RESP, rpc + 1, &[]).unwrap())
+                                .unwrap(),
+                        )
+                        .await
+                        .unwrap();
+                }
+            });
+            let options = parse_options(
+                ["--map-id", "100", "--recover-from-map", "1"]
+                    .map(String::from)
+                    .to_vec(),
+            )
+            .unwrap();
+            let result =
+                tokio::time::timeout(Duration::from_secs(3), enter_player(&options, connection))
+                    .await
+                    .unwrap();
+            assert_eq!(result.is_ok(), passes, "{:?}", result.as_ref().err());
+            if let Ok(player) = result {
+                assert_eq!(player.initial_entered_map_id, initial);
+                assert_eq!(player.entered_map_id, 100);
+                assert_eq!(player.entered_map_instance_id, 100);
+                assert!(matches!(player.spatial_mode, SpatialMode::Navmesh3d));
+                assert_eq!(player.unit_id, if initial == 1 { 43 } else { 42 });
+                assert_eq!(player.next_rpc_id, if initial == 1 { 7 } else { 5 });
+            }
+            reader_abort.abort();
+            writer_abort.abort();
+            fixture.await.unwrap();
+        }
+    }
+
+    async fn login_fixture() -> (PreparedPlayerConnection, TcpStream) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+        let (reader, writer) = client.into_split();
+        (start_gate_connection(reader, writer, 0, None), server)
+    }
+
+    fn stop_login_fixture(connection: PreparedPlayerConnection) {
+        connection.reader_task.abort();
+        connection.writer_task.abort();
+    }
+
+    #[tokio::test]
+    async fn gate_login_dispatches_pushes_before_and_after_its_response() {
+        let (mut connection, mut server) = login_fixture().await;
+        for code in [
+            ENTITY_MOVE,
+            ENTITY_NAVIGATE,
+            ENTITY_NUMERIC,
+            ENTITY_STATE,
+            ITEM_CHANGED,
+        ] {
+            server
+                .write_all(&packet(&code.to_be_bytes()).unwrap())
+                .await
+                .unwrap();
+        }
+        server
+            .write_all(&packet(&encode_rpc(LOGIN_GATE_RESP, 2, &[]).unwrap()).unwrap())
+            .await
+            .unwrap();
+        server
+            .write_all(&packet(&encode_rpc(ENTER_MAP_RESP, 3, &[]).unwrap()).unwrap())
+            .await
+            .unwrap();
+        await_gate_login(&mut connection, Duration::from_secs(2))
+            .await
+            .unwrap();
+        assert_eq!(connection.entity_move_pushes.load(Ordering::Relaxed), 2);
+        assert_eq!(
+            connection
+                .state_pushes
+                .numeric_frames
+                .load(Ordering::Relaxed),
+            1
+        );
+        assert_eq!(
+            connection.state_pushes.item_frames.load(Ordering::Relaxed),
+            1
+        );
+        let next = receive_gate_frame(&mut connection.frame_rx, Duration::from_secs(2), "entry")
+            .await
+            .unwrap();
+        decode_message(&next, ENTER_MAP_RESP, Some(3)).unwrap();
+        stop_login_fixture(connection);
+    }
+
+    #[tokio::test]
+    async fn gate_login_rejects_wrong_rpc_remote_error_and_eof() {
+        for mode in 0..3 {
+            let (mut connection, mut server) = login_fixture().await;
+            if mode != 2 {
+                let mut fields = Vec::new();
+                if mode == 1 {
+                    push_uint32(&mut fields, 91, 1005);
+                }
+                let rpc = if mode == 0 { 99 } else { 2 };
+                server
+                    .write_all(
+                        &packet(&encode_rpc(LOGIN_GATE_RESP, rpc, &fields).unwrap()).unwrap(),
+                    )
+                    .await
+                    .unwrap();
+            }
+            drop(server);
+            assert!(
+                await_gate_login(&mut connection, Duration::from_secs(2))
+                    .await
+                    .is_err()
+            );
+            stop_login_fixture(connection);
+        }
+    }
+
+    #[tokio::test]
+    async fn gate_login_push_flood_cannot_extend_deadline() {
+        let (mut connection, mut server) = login_fixture().await;
+        let sender = tokio::spawn(async move {
+            loop {
+                if server
+                    .write_all(&packet(&ENTITY_NAVIGATE.to_be_bytes()).unwrap())
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        });
+        let result = tokio::time::timeout(
+            Duration::from_secs(2),
+            await_gate_login(&mut connection, Duration::from_millis(50)),
+        )
+        .await
+        .unwrap();
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("LoginGate timed out")
+        );
+        sender.abort();
+        stop_login_fixture(connection);
+    }
 
     #[test]
     fn counts_top_level_repeated_messages() {

@@ -1877,6 +1877,9 @@ export class MapComponent extends Component<[
     this.players.RecordOffline({ account: message.account, characterId: message.characterId,
       unitId: unit.UnitId, actorInstanceId: unit.InstanceId, mapId: this.mapId,
       mapInstanceId: this.mapInstanceId, gateName: message.gateName, gateEpoch: message.gateEpoch });
+    // 只延迟Actor销毁，不延迟权威玩家索引的撤销；下一次恢复报告不得包含已离线玩家。
+    // Defer Actor disposal, not authority-index removal: future recovery reports exclude this player.
+    this.players.Remove(unit);
     this.ScheduleOfflineCleanup(unit);
     this.logger.info("player left map after Gate timeout", {
       account: message.account,

@@ -1,5 +1,19 @@
 # TiangZ AI 业务开发手册
 
+## 下线与路由恢复的交错
+
+成功删除 Location 后，即使 Actor 延迟到下一帧销毁，已捕获的周期恢复快照也不能重新发布它。`RecoverOwner` 不是任意缺失记录的 upsert：首次 MapHost 代次可重建，已知同代的缺失记录保持缺失；新入场必须走显式 `Register`。不要通过缩短 Timer、忽略 ActorNotFound 或超时后无条件清理 Location 掩盖竞态。
+
+保存失败、回执未知和旧代次必须失败关闭；已有离线回执仅对完整 Actor/角色/Gate 身份有效。故障测试必须使用故障前同一批账号重连并操作，不能只看 `/ready`，也不能用更换账号代次冒充恢复。本机演练显式许可、内存保护和版本冻结要求见[本机故障验证](../testing/local-fault-validation.md)。
+
+## 通用提交与业务效果
+
+普通玩家批量快照在超时后必须保留原始待确认请求，包括标识、时间、内容、期望版本；恢复时先用同一请求确认结果，再捕获新数据。`PlayerPersistenceComponent` 最多保留五条未确认领域，不把旧快照回执当作最新状态已保存；事务提交先确认这些快照，跨图不得丢弃它们。`PlayerDomainSaveWrite.snapshotRequest` 由标准实现处理，外置模块无需更改自身持久化扩展格式。自定义远程 Repository 如接受该元数据，必须保证跨调用幂等，不能每次创建新 ID。
+
+需要把多记录变化、追加审计事实、通知意图一次保存时，使用 DBProxy CommitRecords。PlayerPersistenceComponent.ApplyMultiTransaction 的可选 effects 会随资产事务提交；事实内容、事件主题和状态迁移由领域生成，Core/DBProxy 只保证唯一性、CAS、幂等与原子性。不要在保存后另发一条 Outbox 写请求，也不要在不支持 CommitRecords 的旧 Host 上丢弃 effects 回退。
+
+当前玩家交易在 MMORPG Hotfix 根据同一计划生成完整审计与事件；跨游戏重复语义经真实消费者验证后才抽到 domains，WoW 专属规则仍留外置模块。旧交易回执缺少事件时间时保持历史未知值，不在恢复时重算新时间。本地依赖、旧 SDK 兼容、发布顺序和验收限制见[通用持久化集成](../design/generic-persistence-integration.md)。
+
 本文面向承担TiangZ业务需求的AI和开发者。目标是用已有Scene、Session、Unit、Component、协议、状态复制和Client SDK完成业务，不把普通需求升级成框架或Rust Runtime改造。
 
 维护契约：任何架构、目录边界、数据所有权、协议语义或业务开发流程的设计变更，都必须同时更新本文和[AI项目上下文](project-context.md)。设计改动未同步这两份文档，视为尚未完成。
@@ -7,6 +21,8 @@
 业务代码、教程、测试结果和工具脚本不得写死开发者的仓库目录、软件安装盘符或私网IP。仓库内文件使用相对路径；外部工具通过环境变量或命令行参数定位；性能报告由公共清洗器把仓库内路径转换为相对路径。提交前运行`npm run verify:no-local-traces`，不要通过新增宽泛白名单绕过门禁。
 
 ## 默认立场
+
+不要把超时后的孤立 Gate 会话恢复当作主动登出成功：主动退出必须有保存回执。后台断线清理仅在连接已断、宿主明确报告旧 Actor 不存在、离线回执查询可达且 UnitId 匹配但无成功回执、Location 按角色确认无主时释放 Gate 本地路由；下一次登录重新读取持久化数据。查询超时、数据库失败、仍有所有者或尚在线时保留路由重试，不能凭错误字符串或一次网络故障释放角色。
 
 显式退出不能绕过地图恢复：Gate 本地没有地图路由时仍检查 Location；如果角色仍有权威实例，客户端应先完成重连进图，再请求退出。只有确认无权威实例的未进图角色才允许直接释放 Gate 认证路由。
 

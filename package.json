@@ -14,7 +14,7 @@
     "#tiangz/model": "./app/model/public.ts"
   },
   "dependencies": {
-    "@tiangz/dbproxy-sdk": "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git#main"
+    "@tiangz/dbproxy-sdk": "file:../TiangZ-DBProxy"
   },
   "scripts": {
     "clean": "node tools/clean_project.mjs",

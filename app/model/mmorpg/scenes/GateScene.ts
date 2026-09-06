@@ -1157,7 +1157,7 @@ export class GateScene extends EntryScene {
     });
   }
 
-  /** 只有Actor确认或严格匹配的宿主回执才能释放；任何失败保留路由并安排退避。 / Releases only on Actor acknowledgement or an exact host receipt; all failures retain ownership and back off. */
+  /** 主动下线必须确认保存；断线超时仅在宿主明确缺失Actor且Location无主时回收孤立Gate路由。 / Explicit logout requires save evidence; disconnected timeouts may reclaim an orphan only after confirmed Actor absence and no Location owner. */
   private async FinalOffline(route: GatePlayerRoute, reason: string): Promise<void> {
     const location = route.map;
     route.offlineReason ??= reason;
@@ -1189,7 +1189,21 @@ export class GateScene extends EntryScene {
               mapInstanceId: location.mapInstanceId, gateName: this.self.name, gateEpoch: location.gateEpoch },
             { timeoutMs: 5_000 },
           ).catch(() => undefined);
-          if (!receipt?.completed || receipt.unitId !== location.unitId) throw error;
+          if (!receipt?.completed || receipt.unitId !== location.unitId) {
+            // 这不是保存成功回执；崩溃后只清理孤立会话，让下次登录从持久化状态恢复。
+            // This is not a save receipt: reclaim only the orphan session for durable-state recovery.
+            const orphanTimeout = (reason === "client-reconnect-timeout" || reason === "client-heartbeat-timeout") &&
+              route.connectionId === undefined && error instanceof RpcError &&
+              error.code === SystemErrCode.ActorLocationNotFound && receipt?.completed === false &&
+              receipt.unitId === location.unitId;
+            if (!orphanTimeout) throw error;
+            const owner = await this.location.Resolve({ unitId: 0, account: "", characterId: route.characterId });
+            if (owner.found) throw error;
+            this.logger.info("reclaimed orphan Gate route after confirmed Actor loss", {
+              account: route.account, characterId: route.characterId.toString(),
+              actorInstanceId: location.actorInstanceId, mapHost: location.mapService,
+            });
+          }
         }
       } else {
         const owner = await this.location.Resolve({ unitId: 0, account: "", characterId: route.characterId });

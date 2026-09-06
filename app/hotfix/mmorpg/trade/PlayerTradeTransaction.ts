@@ -19,6 +19,7 @@ export interface PlayerTradeParticipantPlan {
 }
 
 export interface PlayerTradeReceipt {
+  readonly occurredAtUnixMs?: bigint;
   readonly version: typeof TRADE_RECEIPT_VERSION;
   readonly tradeId: string;
   readonly requester: PlayerTradeParticipantPlan;
@@ -67,6 +68,7 @@ export function PlanPlayerTrade(
   return {
     version: TRADE_RECEIPT_VERSION,
     tradeId,
+    occurredAtUnixMs: BigInt(Date.now()),
     requester: {
       characterId: requesterCharacterId,
       baseGold: requesterGold,
@@ -185,6 +187,19 @@ function receiveItems(
     });
   }
   return sortItems([...working.values()]);
+}
+
+/** 从同一交易计划生成不可变审计和通知；规则留在领域，效果随资产原子提交。 / Derives audit and notification from the same trade plan for atomic persistence. */
+export function BuildPlayerTradeEffects(receipt: PlayerTradeReceipt) {
+  const debit = receipt.requester.gold - receipt.requester.baseGold;
+  const credit = receipt.target.gold - receipt.target.baseGold;
+  if (debit + credit !== 0n) throw new Error("player trade gold changes are not balanced");
+  const payload = EncodePlayerTradeReceipt(receipt);
+  const occurredAtUnixMs = receipt.occurredAtUnixMs ?? 0n;
+  return {
+    appends: [{ record: { namespace: "player.trade.audit", key: receipt.tradeId }, schema: "player.trade.receipt", schemaVersion: TRADE_RECEIPT_VERSION, payload, occurredAtUnixMs }],
+    outboxEvents: [{ eventId: `${receipt.tradeId}:settled`, topic: "player.trade.settled", partitionKey: receipt.tradeId, payload, occurredAtUnixMs }],
+  };
 }
 
 function resolveColdItem(itemConfigId: number): Pick<Readonly<ItemContentDefinition>, "maxStack" | "sellPrice"> {

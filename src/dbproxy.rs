@@ -197,17 +197,37 @@ impl ClientObserver for DbProxyClientMetrics {
             Ordering::Relaxed,
         );
         if outcome != ClientRequestOutcome::Success {
-            self.request_failures[endpoint_index].fetch_add(1, Ordering::Relaxed);
-            tracing::debug!(
+            if let Some(failure_count) =
+                record_request_failure(&self.request_failures[endpoint_index])
+            {
+                tracing::warn!(
+                    target: "tiangz::dbproxy",
+                    endpoint = %self.endpoints[endpoint_index],
+                    operation,
+                    ?outcome,
+                    failure_count,
+                    duration_ms = elapsed.as_secs_f64() * 1000.0,
+                    "DBProxy client request attempt failed (bounded diagnostic)"
+                );
+            } else {
+                tracing::debug!(
                 target: "tiangz::dbproxy",
                 endpoint = %self.endpoints[endpoint_index],
                 operation,
                 ?outcome,
                 duration_ms = elapsed.as_secs_f64() * 1000.0,
                 "DBProxy client request attempt failed"
-            );
+                );
+            }
         }
     }
+}
+
+/// 保留所有失败计数，但每端点仅额外告警前八次；不记录令牌或请求载荷。
+/// Counts every failure but warns only eight times per endpoint, without tokens or payloads.
+fn record_request_failure(counter: &AtomicU64) -> Option<u64> {
+    let previous = counter.fetch_add(1, Ordering::Relaxed);
+    (previous < 8).then(|| previous + 1)
 }
 
 impl DbProxyBridge {
@@ -889,6 +909,94 @@ async fn op_host_dbproxy_apply_multi_transaction(
     Ok(response)
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct HostOutboxInput {
+    event_id: String,
+    topic: String,
+    partition_key: String,
+    payload: Vec<u8>,
+    occurred_at_unix_ms: String,
+}
+
+/// 原子提交通用记录、事实和事件，不解释领域字节。
+/// Commits opaque records and effects without interpreting domain data.
+#[op2]
+#[serde]
+async fn op_host_dbproxy_commit_records(
+    #[string] operation_id: String,
+    #[string] writes_json: String,
+    #[string] appends_json: String,
+    #[string] events_json: String,
+    #[buffer] operation_result: JsBuffer,
+) -> std::result::Result<HostMultiTransactionResponse, JsErrorBox> {
+    let request = MultiRecordTransactionalWrite {
+        operation_id,
+        writes: parse_multi_record_writes(&writes_json)?,
+        result: operation_result.to_vec(),
+    };
+    let appends = if appends_json == "[]" {
+        Vec::new()
+    } else {
+        parse_multi_record_writes(&appends_json)?
+            .into_iter()
+            .map(|w| tiangz_dbproxy_core::AppendRecord {
+                record: w.record,
+                schema: w.schema,
+                schema_version: w.schema_version,
+                payload: w.payload,
+                occurred_at_unix_ms: w.updated_at_unix_ms,
+            })
+            .collect()
+    };
+    let events: Vec<HostOutboxInput> =
+        serde_json::from_str(&events_json).map_err(|e| JsErrorBox::type_error(e.to_string()))?;
+    if events.len() > tiangz_dbproxy_protocol::MAX_OUTBOX_EVENTS {
+        return Err(JsErrorBox::range_error("too many commit events"));
+    }
+    let outbox_events = events
+        .into_iter()
+        .map(|e| {
+            Ok(tiangz_dbproxy_core::OutboxEvent {
+                event_id: e.event_id,
+                topic: e.topic,
+                partition_key: e.partition_key,
+                payload: e.payload,
+                occurred_at_unix_ms: parse_u64(&e.occurred_at_unix_ms, "occurredAtUnixMs")?,
+            })
+        })
+        .collect::<std::result::Result<Vec<_>, JsErrorBox>>()?;
+    let effects = tiangz_dbproxy_core::CommitEffects {
+        appends,
+        outbox_events,
+    };
+    let result = bridge()?
+        .execute(move |pool| {
+            let request = request.clone();
+            let effects = effects.clone();
+            async move { pool.commit_records(request, effects).await }
+        })
+        .await;
+    let response = match result {
+        Ok(MultiRecordTransactionalWriteOutcome::Applied { records, result }) => {
+            multi_transaction_response("applied", records, result)
+        }
+        Ok(MultiRecordTransactionalWriteOutcome::Duplicate { records, result }) => {
+            multi_transaction_response("duplicate", records, result)
+        }
+        Err(error) => HostMultiTransactionResponse {
+            disposition: None,
+            records: Vec::new(),
+            result: Vec::new(),
+            error: Some(error.into()),
+        },
+    };
+    if response.error.is_none() {
+        maybe_drop_test_response("multi-transaction")?;
+    }
+    Ok(response)
+}
+
 #[op2]
 #[serde]
 async fn op_host_dbproxy_load_multi_transaction(
@@ -1083,6 +1191,7 @@ deno_core::extension!(
         op_host_dbproxy_apply_transaction,
         op_host_dbproxy_load_transaction,
         op_host_dbproxy_apply_multi_transaction,
+        op_host_dbproxy_commit_records,
         op_host_dbproxy_load_multi_transaction,
     ],
 );
@@ -1158,6 +1267,13 @@ pub const BOOTSTRAP_SOURCE: &str = r#"
       }))), "writes"),
       bytes(request.result, "result"),
     ),
+    commitRecords: (request) => core.ops.op_host_dbproxy_commit_records(
+      text(request.operationId, "operationId"),
+      JSON.stringify(request.writes.map(w => ({ ...w, expectedRevision: String(w.expectedRevision), updatedAtUnixMs: String(w.updatedAtUnixMs), payload: Array.from(bytes(w.payload, "payload")) }))),
+      JSON.stringify(request.appends.map(a => ({ record: a.record, schema: a.schema, schemaVersion: a.schemaVersion, expectedRevision: "0", updatedAtUnixMs: String(a.occurredAtUnixMs), payload: Array.from(bytes(a.payload, "payload")) }))),
+      JSON.stringify(request.outboxEvents.map(e => ({ ...e, occurredAtUnixMs: String(e.occurredAtUnixMs), payload: Array.from(bytes(e.payload, "payload")) }))),
+      bytes(request.result, "result"),
+    ),
     loadMultiTransaction: (operationId, records) => core.ops.op_host_dbproxy_load_multi_transaction(
       text(operationId, "operationId"),
       text(JSON.stringify(records), "records"),
@@ -1169,6 +1285,18 @@ pub const BOOTSTRAP_SOURCE: &str = r#"
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn request_failure_diagnostics_are_bounded_without_dropping_metrics() {
+        let failures = AtomicU64::new(0);
+        for count in 1..=8 {
+            assert_eq!(record_request_failure(&failures), Some(count));
+        }
+        for _ in 0..100 {
+            assert_eq!(record_request_failure(&failures), None);
+        }
+        assert_eq!(failures.load(Ordering::Relaxed), 108);
+    }
 
     #[test]
     fn reconnectable_errors_exclude_remote_business_rejections() {

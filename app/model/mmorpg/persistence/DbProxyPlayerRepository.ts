@@ -40,6 +40,7 @@ import {
 
 const PLAYER_NAMESPACE = "player";
 const SAVE_ATTEMPTS = 3;
+let repositoryInstanceSequence = 0;
 
 /** 领域化玩家Repository：业务拥有Payload，DBProxy拥有每个领域的revision、幂等和可靠存储。 / Domain-aware player Repository: business owns payloads while DBProxy owns per-domain revisions, idempotency, and durable storage. */
 export class DbProxyPlayerRepository implements PlayerRepository {
@@ -49,7 +50,7 @@ export class DbProxyPlayerRepository implements PlayerRepository {
 
   constructor(processName: string, client = new DbProxyClient(new HostDbProxyTransport())) {
     this.client = client;
-    this.requestPrefix = `${processName}:player-domain:${Date.now().toString(36)}`;
+    this.requestPrefix = `${processName}:player-domain:${Date.now().toString(36)}:${++repositoryInstanceSequence}`;
   }
 
   async Load(characterId: bigint): Promise<PlayerLoadResult | undefined> {
@@ -115,7 +116,7 @@ export class DbProxyPlayerRepository implements PlayerRepository {
   ): Promise<readonly PlayerDomainSaveOutcome[]> {
     const requests = writes.map((write) => toDbSnapshotWrite(
       write,
-      this.NextRequestId(write.domain),
+      write.snapshotRequest ? `${this.requestPrefix}:${write.snapshotRequest.id}` : this.NextRequestId(write.domain),
     ));
     const outcomes = await retryBatchStorageUnavailable(() => this.client.SaveMulti(requests));
     return outcomes.map((outcome, index) => {
@@ -145,6 +146,7 @@ export class DbProxyPlayerRepository implements PlayerRepository {
   /** 一条记录走单记录事务，多条记录走DBProxy多记录事务；两条路径共享相同领域回执。 / Uses a single-record transaction for one record and a DBProxy multi-record transaction otherwise, with one domain receipt shape. */
   async ApplyTransaction(write: PlayerTransactionWrite): Promise<PlayerTransactionResult> {
     const records = normalizeWrites(write.records);
+    if (write.effects && records.length < 2) throw new Error("player effects require a multi-record transaction");
     if (records.length === 1) {
       const entry = records[0];
       const characterId = CharacterIdOfDomainData(entry.domain, entry.data);
@@ -165,7 +167,8 @@ export class DbProxyPlayerRepository implements PlayerRepository {
       writes: records.map(toDbWrite),
       result: write.result.slice(),
     };
-    const committed = await retryStorageUnavailable(() => this.client.ApplyMultiTransaction(request));
+    const commit = write.effects ? { ...request, ...write.effects } : undefined;
+    const committed = await retryStorageUnavailable(() => commit ? this.client.CommitRecords(commit) : this.client.ApplyMultiTransaction(request));
     return {
       disposition: committed.disposition,
       revisions: committed.records.map((record) => fromDbRevision(record.record.key, record.newRevision)),
@@ -257,7 +260,7 @@ function toDbSnapshotWrite(
     schemaVersion: PLAYER_DOMAIN_SCHEMA_VERSION,
     payload: EncodePlayerDomainData(entry.domain, entry.data),
     expectedRevision: entry.expectedRevision,
-    updatedAtUnixMs: BigInt(Date.now()),
+    updatedAtUnixMs: entry.snapshotRequest?.updatedAtUnixMs ?? BigInt(Date.now()),
   };
 }
 
