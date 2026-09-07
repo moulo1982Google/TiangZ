@@ -1287,13 +1287,17 @@ function navigationInput(
   directionSeed: number,
   sequence: number,
   turnStride: number,
-): { forward: number; strafe: number; yaw: number; sequence: number } {
+): Parameters<typeof buildNavigateInputPacket>[1] {
   const direction = (directionSeed + Math.floor((sequence - 1) / turnStride)) & 3;
   return {
     forward: 1,
     strafe: 0,
     yaw: direction * Math.PI / 2,
     sequence,
+    hasPositionSnapshot: false,
+    positionX: 0,
+    positionY: 0,
+    positionZ: 0,
   };
 }
 
