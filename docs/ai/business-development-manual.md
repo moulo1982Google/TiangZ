@@ -6,6 +6,8 @@
 
 存储侧继续对照 `postgres_connection_wait` 与 `postgres_operation`，以及缓存写入/修复 ACK、回源配额与锁等待。`committed_cache_sync` 已包含缓存写入与 ACK，不能重复相加。存储阶段 count 包括错误和取消，不是成功提交数；判断交易与存档正确性仍靠原回执/版本及最终对账。
 
+相邻 DBProxy 请求分片的 PG 排队预算、重连失败冷却现默认分别为 2,000 ms 和 500 ms。排队失败返回原有 StorageUnavailable；复用原始请求与幂等标识，不能改成新事务重试。该预算不限制已发送 SQL，也不证明超时业务回滚。提交后的缓存修复 ACK 排队失败会保留持久化修复目标，业务层不因此反向补偿已提交资产。完整游戏故障验收仍需独立执行，不把存储精确回归当作游戏尾延迟结论。
+
 ## 下线与路由恢复的交错
 
 成功删除 Location 后，即使 Actor 延迟到下一帧销毁，已捕获的周期恢复快照也不能重新发布它。`RecoverOwner` 不是任意缺失记录的 upsert：首次 MapHost 代次可重建，已知同代的缺失记录保持缺失；新入场必须走显式 `Register`。不要通过缩短 Timer、忽略 ActorNotFound 或超时后无条件清理 Location 掩盖竞态。
