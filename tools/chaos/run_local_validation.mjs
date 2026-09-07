@@ -245,8 +245,14 @@ async function gameRound(players, seconds = 25, verify = true) {
   const results = [];
   for (const [mapId, suffix] of [[1, "a"], [100, "b"]]) {
     const count = Math.max(1, Math.floor(players / 2));
+    // Windows 探针已有显式源端口；按轮次与地图隔离 loopback 地址，避免共享动态端口池。
+    // Use the probe's existing Windows source-port isolation for each round and map.
+    if (epoch >= 49_152) throw new Error("validation loopback source address space exhausted");
+    const sourceIp = process.platform === "win32" ? `127.${64 + Math.floor(epoch / 256)}.${epoch % 256}.${mapId === 1 ? 1 : 2}` : undefined;
+    if (sourceIp) event("game_probe_source", { epoch, mapId, sourceIp });
     const task = managed(`game-${epoch}-${mapId}`, path.join(runDir, "bin/map_probe_load.exe"), [
       "--host", "127.0.0.1", "--manager-port", "27000", "--players", String(count),
+      ...(sourceIp ? ["--source-ip", sourceIp] : []),
       "--setup-concurrency", "4", "--duration", String(seconds), "--warmup", "2",
       "--timeout", "10000", "--move-rate", "1", "--probe-rate", "0.2", "--business-rate", "0.1",
       "--map-id", String(mapId), "--account-prefix", `${runId}${suffix}`,

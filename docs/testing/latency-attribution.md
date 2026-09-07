@@ -1,5 +1,9 @@
 # DBProxy 尾延迟归因（2026-09-07）
 
+NVMe r5 在约第 19 分钟因探针建连收到 Windows 10055 中断，正常阶段已完成游戏检查及 131,502 次读取无错误，仍无最终对账。控制器补接探针既有的 Windows `--source-ip` 功能，按轮次和地图隔离本地源地址并记录事件，业务超时/错误断言不变；具体 OS 根因尚未确定，须新轮次验证。详见相邻仓库[存储路径验收](../../../TiangZ-DBProxy/docs/storage-path-acceptance-2026-09-07.md)。
+
+该控制器改动后 `verify:quick` 再次 23 步通过，codegen 无 Git 差异；独立 loopback 源地址诊断 400 次连接通过，日志保存为 `tiangz-quick-r2.log` 与 `loopback-source-check.json`。
+
 最新 r4（DBProxy `e364361` / TiangZ `e6dfcc2`）约第 21 分钟正常阶段失败，地图 100 有 1 次探针和 1 次移动超时。失败窗口缓存同步约 5 ms、PG 排队约 428 ms、执行约 242 ms；没有 AOF/最终对账。两客户端同步提交对照在机械盘路径为 17.78 TPS、NVMe 专用路径为 914.4 TPS，均保持 fsync/synchronous_commit 开启。后续先用相同产品和业务参数验证独立存储路径，不将介质差异伪装成代码收益，详见[存储路径验收](../../../TiangZ-DBProxy/docs/storage-path-acceptance-2026-09-07.md)。
 
 最新候选 DBProxy `6104111` / TiangZ `b5bf8eb` 的 `20260907-cleanup-batch-30m-r3`：139 项默认、33 项真实数据库/故障及 7 项控制器测试通过。100 玩家启动 p99 为 335/324 ms；截至约第 23 分钟健康阶段检查均通过。cache、PG、可靠 Redis 恢复完成，累计 6 次恢复登录重试，缓存恢复窗口有 3 个地图检查未通过。AOF 故障中 64 条已 ACK，Redis 重启后固定等待 10 秒仍处于 BusyLoading，控制器失败退出，无最终对账，不能记作 30 分钟通过。
