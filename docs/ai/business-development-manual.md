@@ -1,6 +1,10 @@
 # TiangZ AI 业务开发手册
 
+2026-09-07 换机续接：后续 PG 排队优化的精确测试、提交结果未知边界及验证步骤见[交接入口](../testing/handoff-2026-09-07.md)。本次只保存计划，业务接口与协议不变。
+
 ## DBProxy 尾延迟诊断
+
+缓存故障降级现可单独配置 DBProxy `storage.cacheOperationTimeoutMs`（默认 200 ms）；PG 回源仍由 `cacheFallbackTimeoutMs`（默认 2,000 ms）控制。不要用缩短 PG 或 AOF 等待代替缓存降级；提交后缓存超时必须保留持久化修复目标，普通缓存的 TTL/SWR 不等于强一致。TiangZ 业务接口及重试幂等键不变。
 
 先用 SDK 的 `connection_queue` / `connection_exchange` 区分连接排队和请求处理，再结合服务端 RPC、Scene/mailbox 和资源指标。exchange 不是 SQL 时间，各阶段 p99 不能相加减；不要在未归因时放宽业务超时、增加连接或放松一致性断言。指标边界和精准测试见[尾延迟归因](../testing/latency-attribution.md)。
 
