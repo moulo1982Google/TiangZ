@@ -18,6 +18,8 @@ DBProxy 尾延迟诊断现区分 SDK 的 `connection_queue` 与 `connection_exch
 
 2026-09-07 换机续接：相邻 DBProxy 的请求分片新增独立 PG 连接排队预算与共享重连失败冷却，默认分别为 2,000 ms 和 500 ms。排队失败仍为 StorageUnavailable，TiangZ 必须保留原请求/operation ID 恢复；不能从某次 Store 操作未发送 SQL 推断整个业务请求未提交。缓存预算仍为 200 ms，PG 回源仍为 2 秒；协议、Host/Model/Hotfix 接线不变。精确与真实数据库回归已覆盖，游戏全链路演练仍待验证，见[尾延迟归因](../testing/latency-attribution.md)。
 
+提交后验收更新：双仓库 release 和正常包已重建，30 分钟计划在 100 玩家启动健康检查失败，未进入故障注入/最终对账。短时冒烟有 PG 排队超时，正式启动现场则有 SDK 连接排队超过 5 秒与 Actor RPC 超时；本机机械盘同步成本较高，尚不能据此排除其他等待来源。不得把精确测试通过写成全链路验收通过，详见[续接状态](../testing/handoff-2026-09-07.md)。
+
 ## 2026-09 Location 恢复竞态与本机验证
 
 重复 MapHost 故障下，Gate 的断线超时清理与主动退出必须区分：主动退出仍要求 Actor 保存成功或匹配离线回执；已断开的超时会话，只有原宿主明确返回 `ActorLocationNotFound`、离线回执查询正常但未完成且 UnitId 匹配、Location 按 CharacterId 确认无主，才回收孤立 Gate 路由，供后续登录从持久化状态恢复。这不代表崩溃前未确认的最终保存成功。任何网络/存储错误、Location 不可用、仍有权威实例或活连接均不能走此分支。Core 的缺失 Actor mailbox 统一使用已有错误码 1012，不通过解析错误文本判断。
