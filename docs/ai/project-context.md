@@ -8,6 +8,10 @@
 
 更新时间：2026-09-05。
 
+DBProxy 尾延迟诊断现区分 SDK 的 `connection_queue` 与 `connection_exchange`，保留原总耗时指标；exchange 包含网络与服务端处理，不能解释成 SQL 耗时。计时不改变超时、重试或持久化语义；下一轮需重建候选，不把旧演练当作新指标验收。范围与验证见[尾延迟归因](../testing/latency-attribution.md)。
+
+存储侧进一步导出固定的 `dbproxy_storage_stage_seconds`：缓存读写、回源配额/同键/分布式租约、PG 连接等待/操作、提交后同步及修复 ACK。父子阶段不可相加；取消样本只表示截至取消的等待，不代表 SQL 停止或事务结果。沿用低频指标采集，不增加业务请求日志。
+
 ## 2026-09 Location 恢复竞态与本机验证
 
 重复 MapHost 故障下，Gate 的断线超时清理与主动退出必须区分：主动退出仍要求 Actor 保存成功或匹配离线回执；已断开的超时会话，只有原宿主明确返回 `ActorLocationNotFound`、离线回执查询正常但未完成且 UnitId 匹配、Location 按 CharacterId 确认无主，才回收孤立 Gate 路由，供后续登录从持久化状态恢复。这不代表崩溃前未确认的最终保存成功。任何网络/存储错误、Location 不可用、仍有权威实例或活连接均不能走此分支。Core 的缺失 Actor mailbox 统一使用已有错误码 1012，不通过解析错误文本判断。

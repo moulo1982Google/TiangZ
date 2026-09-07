@@ -1,5 +1,11 @@
 # TiangZ AI 业务开发手册
 
+## DBProxy 尾延迟诊断
+
+先用 SDK 的 `connection_queue` / `connection_exchange` 区分连接排队和请求处理，再结合服务端 RPC、Scene/mailbox 和资源指标。exchange 不是 SQL 时间，各阶段 p99 不能相加减；不要在未归因时放宽业务超时、增加连接或放松一致性断言。指标边界和精准测试见[尾延迟归因](../testing/latency-attribution.md)。
+
+存储侧继续对照 `postgres_connection_wait` 与 `postgres_operation`，以及缓存写入/修复 ACK、回源配额与锁等待。`committed_cache_sync` 已包含缓存写入与 ACK，不能重复相加。存储阶段 count 包括错误和取消，不是成功提交数；判断交易与存档正确性仍靠原回执/版本及最终对账。
+
 ## 下线与路由恢复的交错
 
 成功删除 Location 后，即使 Actor 延迟到下一帧销毁，已捕获的周期恢复快照也不能重新发布它。`RecoverOwner` 不是任意缺失记录的 upsert：首次 MapHost 代次可重建，已知同代的缺失记录保持缺失；新入场必须走显式 `Register`。不要通过缩短 Timer、忽略 ActorNotFound 或超时后无条件清理 Location 掩盖竞态。

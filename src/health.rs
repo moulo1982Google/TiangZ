@@ -133,6 +133,7 @@ pub(crate) struct DbProxyEndpointObservabilitySnapshot {
     pub(crate) request_attempts: u64,
     pub(crate) request_failures: u64,
     pub(crate) request_duration_seconds: f64,
+    pub(crate) request_latencies: Vec<LatencyObservabilitySnapshot>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1147,6 +1148,11 @@ fn append_dbproxy_client_metrics_prometheus(
             "DBProxy client endpoint switches after reconnectable failures",
             "counter",
         ),
+        (
+            "tiangz_dbproxy_request_stage_ms",
+            "Completed DBProxy attempt stages; exchange includes network and server work, not SQL alone",
+            "histogram",
+        ),
     ] {
         writeln!(output, "# HELP {name} {help}").expect("formatting metric help");
         writeln!(output, "# TYPE {name} {kind}").expect("formatting metric type");
@@ -1197,6 +1203,37 @@ fn append_dbproxy_client_metrics_prometheus(
             endpoint.request_duration_seconds
         )
         .expect("formatting DBProxy metric");
+        for latency in &endpoint.request_latencies {
+            let stage = escape_prometheus_label(&latency.name);
+            let labels = format!("{labels},stage=\"{stage}\"");
+            let mut cumulative = 0_u64;
+            for (bound, count) in latency.bounds_ms.iter().zip(&latency.bucket_counts) {
+                cumulative += count;
+                writeln!(
+                    output,
+                    "tiangz_dbproxy_request_stage_ms_bucket{{{labels},le=\"{bound}\"}} {cumulative}"
+                )
+                .expect("formatting DBProxy latency bucket");
+            }
+            writeln!(
+                output,
+                "tiangz_dbproxy_request_stage_ms_bucket{{{labels},le=\"+Inf\"}} {}",
+                latency.count
+            )
+            .expect("formatting DBProxy latency infinity bucket");
+            writeln!(
+                output,
+                "tiangz_dbproxy_request_stage_ms_count{{{labels}}} {}",
+                latency.count
+            )
+            .expect("formatting DBProxy latency count");
+            writeln!(
+                output,
+                "tiangz_dbproxy_request_stage_ms_sum{{{labels}}} {:.3}",
+                latency.sum_ms
+            )
+            .expect("formatting DBProxy latency sum");
+        }
     }
     for failover in &snapshot.failovers {
         writeln!(
@@ -3389,6 +3426,14 @@ mod tests {
                     request_attempts: 9,
                     request_failures: 1,
                     request_duration_seconds: 0.5,
+                    request_latencies: vec![LatencyObservabilitySnapshot {
+                        name: "connection_queue".to_string(),
+                        count: 4,
+                        sum_ms: 100.0,
+                        bounds_ms: vec![1.0, 5.0],
+                        bucket_counts: vec![1, 2],
+                        ..Default::default()
+                    }],
                 }],
                 failovers: vec![DbProxyFailoverObservabilitySnapshot {
                     from_endpoint: "127.0.0.1:7800".to_string(),
@@ -3400,6 +3445,19 @@ mod tests {
         });
 
         let body = format_prometheus_metrics("map-1", &state);
+        let latency_labels =
+            "process=\"map-1\",endpoint=\"127.0.0.1:7800\",stage=\"connection_queue\"";
+        for (bound, count) in [("1", 1), ("5", 3), ("+Inf", 4)] {
+            assert!(body.contains(&format!(
+                "tiangz_dbproxy_request_stage_ms_bucket{{{latency_labels},le=\"{bound}\"}} {count}"
+            )));
+        }
+        assert!(body.contains(&format!(
+            "tiangz_dbproxy_request_stage_ms_count{{{latency_labels}}} 4"
+        )));
+        assert!(body.contains(&format!(
+            "tiangz_dbproxy_request_stage_ms_sum{{{latency_labels}}} 100.000"
+        )));
         assert!(body.contains(
             "tiangz_dbproxy_endpoint_selected{process=\"map-1\",endpoint=\"127.0.0.1:7800\"} 1"
         ));

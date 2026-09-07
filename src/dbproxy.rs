@@ -17,7 +17,7 @@ use deno_error::JsErrorBox;
 use serde::{Deserialize, Serialize};
 use tiangz_dbproxy_client::{
     ClientConfig, ClientConnectionOutcome, ClientError, ClientObserver, ClientRequestOutcome,
-    DbProxyClientPool, RemoteError,
+    ClientRequestTiming, DbProxyClientPool, RemoteError,
 };
 use tiangz_dbproxy_core::{
     MultiRecordTransactionReceipt, MultiRecordTransactionalWrite,
@@ -35,6 +35,9 @@ use crate::health::{
 };
 
 const MAX_DBPROXY_ENDPOINTS: usize = 8;
+
+#[path = "dbproxy_latency.rs"]
+mod latency;
 
 thread_local! {
     static DBPROXY_BRIDGE: RefCell<Option<DbProxyBridge>> = const { RefCell::new(None) };
@@ -83,6 +86,8 @@ struct DbProxyClientMetrics {
     request_attempts: [AtomicU64; MAX_DBPROXY_ENDPOINTS],
     request_failures: [AtomicU64; MAX_DBPROXY_ENDPOINTS],
     request_duration_micros: [AtomicU64; MAX_DBPROXY_ENDPOINTS],
+    request_queue_latency: [latency::Histogram; MAX_DBPROXY_ENDPOINTS],
+    request_exchange_latency: [latency::Histogram; MAX_DBPROXY_ENDPOINTS],
     failovers: [AtomicU64; MAX_DBPROXY_ENDPOINTS * MAX_DBPROXY_ENDPOINTS],
 }
 
@@ -98,6 +103,8 @@ impl DbProxyClientMetrics {
             request_attempts: std::array::from_fn(|_| AtomicU64::new(0)),
             request_failures: std::array::from_fn(|_| AtomicU64::new(0)),
             request_duration_micros: std::array::from_fn(|_| AtomicU64::new(0)),
+            request_queue_latency: std::array::from_fn(|_| latency::Histogram::default()),
+            request_exchange_latency: std::array::from_fn(|_| latency::Histogram::default()),
             failovers: std::array::from_fn(|_| AtomicU64::new(0)),
         }
     }
@@ -120,6 +127,10 @@ impl DbProxyClientMetrics {
                 request_duration_seconds: self.request_duration_micros[index]
                     .load(Ordering::Relaxed) as f64
                     / 1_000_000.0,
+                request_latencies: vec![
+                    self.request_queue_latency[index].snapshot("connection_queue"),
+                    self.request_exchange_latency[index].snapshot("connection_exchange"),
+                ],
             })
             .collect();
         let mut failovers = Vec::new();
@@ -144,6 +155,21 @@ impl DbProxyClientMetrics {
 }
 
 impl ClientObserver for DbProxyClientMetrics {
+    fn request_attempt_timed(
+        &self,
+        endpoint_index: usize,
+        operation: &'static str,
+        timing: ClientRequestTiming,
+        outcome: ClientRequestOutcome,
+    ) {
+        if endpoint_index >= self.endpoints.len() {
+            return;
+        }
+        self.request_queue_latency[endpoint_index].record(timing.queue_wait);
+        self.request_exchange_latency[endpoint_index].record(timing.exchange);
+        self.request_attempt(endpoint_index, operation, timing.total(), outcome);
+    }
+
     fn connection_attempt(
         &self,
         endpoint_index: usize,
@@ -1285,6 +1311,36 @@ pub const BOOTSTRAP_SOURCE: &str = r#"
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timed_observer_records_stages_without_double_counting_or_unbounded_labels() {
+        let metrics = DbProxyClientMetrics::new(vec!["127.0.0.1:7800".to_owned()]);
+        let timing = ClientRequestTiming {
+            queue_wait: Duration::from_millis(40),
+            exchange: Duration::from_millis(60),
+        };
+        for outcome in [ClientRequestOutcome::Success, ClientRequestOutcome::Timeout] {
+            metrics.request_attempt_timed(0, "load", timing, outcome);
+        }
+        metrics.request_attempt_timed(99, "load", timing, ClientRequestOutcome::Success);
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.endpoints.len(), 1);
+        let endpoint = &snapshot.endpoints[0];
+        assert_eq!(endpoint.request_attempts, 2);
+        assert_eq!(endpoint.request_failures, 1);
+        assert_eq!(endpoint.request_duration_seconds, 0.2);
+        assert_eq!(endpoint.request_latencies.len(), 2);
+        assert_eq!(endpoint.request_latencies[0].name, "connection_queue");
+        assert_eq!(endpoint.request_latencies[0].sum_ms, 80.0);
+        assert_eq!(endpoint.request_latencies[1].name, "connection_exchange");
+        assert_eq!(endpoint.request_latencies[1].sum_ms, 120.0);
+        assert!(
+            endpoint
+                .request_latencies
+                .iter()
+                .all(|stage| stage.count == 2)
+        );
+    }
 
     #[test]
     fn request_failure_diagnostics_are_bounded_without_dropping_metrics() {
