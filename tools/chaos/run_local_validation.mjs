@@ -127,10 +127,10 @@ async function killService(name) {
   return service.port;
 }
 async function restart(name) { const port = await killService(name); await startService(name, port); }
-async function containersReady() {
+async function containersReady(selected = containers) {
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
-    const state = JSON.parse(command("docker", ["inspect", ...containers]));
+    const state = JSON.parse(command("docker", ["inspect", ...selected]));
     if (state.every(c => c.State.Running && c.State.Health?.Status === "healthy")) return;
     await sleep(500);
   }
@@ -318,7 +318,9 @@ async function inject(action) {
     await probe("enqueue", "AOF_ACK ");
     await probe("stats", "AOF_BACKLOG ");
     command("docker", ["kill", containers[1]]); await checkedSleep(5000);
-    command("docker", ["start", containers[1]]); await checkedSleep(10_000);
+    command("docker", ["start", containers[1]]);
+    // PG stays intentionally stopped here; wait for Redis AOF loading and its health probe.
+    await containersReady([containers[1]]);
     await probe("stats", "AOF_BACKLOG ");
     command("docker", ["start", containers[0]]);
     await containersReady();

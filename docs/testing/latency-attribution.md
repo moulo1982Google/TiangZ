@@ -1,5 +1,11 @@
 # DBProxy 尾延迟归因（2026-09-07）
 
+最新候选 DBProxy `6104111` / TiangZ `b5bf8eb` 的 `20260907-cleanup-batch-30m-r3`：139 项默认、33 项真实数据库/故障及 7 项控制器测试通过。100 玩家启动 p99 为 335/324 ms；截至约第 23 分钟健康阶段检查均通过。cache、PG、可靠 Redis 恢复完成，累计 6 次恢复登录重试，缓存恢复窗口有 3 个地图检查未通过。AOF 故障中 64 条已 ACK，Redis 重启后固定等待 10 秒仍处于 BusyLoading，控制器失败退出，无最终对账，不能记作 30 分钟通过。
+
+控制器现在复用既有 90 秒健康等待，PG 刻意停机时只等待可靠 Redis。独立专项实际等待 18,798 ms 后健康，重启前后队列 processing 均为 64，恢复 PG 后新 64 条完整落库；原失败轮次的 64 条也事后恢复验证通过。这些证据保存在 `.build-tmp/repair-ack-20260907/aof-readiness-check/`，不补写失败轮次的 final.json，也不改变业务超时、持久化或数据断言。新候选必须提交后从头完成 30 分钟。
+
+控制器修改后的 `npm run verify:quick` 全部 23 步通过，包含 codegen、严格 Clippy 和 Rust 全目标测试；生成物无 Git 差异，保留既有 Windows LNK4098 链接警告。DBProxy 最终格式与严格 Clippy 通过。完整 Runtime `verify`、发布门禁、七天长稳及 WoW335 实机验收未运行；本次没有运行时边界改动。
+
 后续首轮 `20260907-cleanup-30m-r1`：候选 DBProxy `24d66b7` / TiangZ `2597c8f` 的 100 玩家启动通过，18 分钟后的健康阶段地图 100 出现 1 次探针和 2 次移动超时。三次故障恢复通过但 AOF/最终对账未执行，不能记作 30 分钟通过。失败窗口缓存同步约 2 ms，PG 排队均值约 665 ms、操作约 279 ms；SDK 仍有长等待。进一步定位并减少同库 SaveMulti 的分片提交次数，详见相邻仓库[批次提交](../../../TiangZ-DBProxy/docs/snapshot-batch-commit.md)。
 
 ## 后续修复：提交后清理
