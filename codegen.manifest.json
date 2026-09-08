@@ -594,7 +594,7 @@
         "app/model/mmorpg/map/UnitPresentation.ts": "2a2ffd41a73a886256ad2fb386ca864ee8d45917eaeae092508314a3c1a7a4e5",
         "app/model/mmorpg/mapHost/DynamicMapLifecycleComponent.ts": "f5216e39bebee0719dd8d34eb10d1475d85d5be7514270fd7df966f4e6293a5c",
         "app/model/mmorpg/mapHost/DynamicMapProxy.ts": "bb902647725d323d596c9b3890251906770edd712d5eb085c8e8534279cdc64b",
-        "app/model/mmorpg/mapHost/MapHostComponent.ts": "dd7060952715fc8f6e2fa89b11151190ac6b38c03d5f7f254196b60fde43693f",
+        "app/model/mmorpg/mapHost/MapHostComponent.ts": "ef558e86434f3bdd29790cc8c1324540e27648ae04023556f72c2b540d30497f",
         "app/model/mmorpg/mapHost/MapHostEndpoint.ts": "57d7e03e00cb76782cf70eb422e7db4674ca7191763a149ba9d1775c7f4932c2",
         "app/model/mmorpg/mapHost/MapHostLease.ts": "5ae74eb9d0f40d7dd6bb82a9b4600a4a3071b37a57ee44605eb3ead5aed6b728",
         "app/model/mmorpg/mapHost/MapHostRegistrationComponent.ts": "0b38d72298d217393ef5807a581a8ef61ae554171757677cf8e12fe9ea1c009e",

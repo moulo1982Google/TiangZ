@@ -25,6 +25,8 @@ let nextRpcId = 1;
 void main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
+  // 故障留下的半关闭TCP连接不能阻止失败探针退出。 / Half-closed faulted connections must not keep a failed probe alive.
+  setImmediate(() => process.exit(1));
 });
 
 async function main(): Promise<void> {
@@ -71,7 +73,9 @@ async function main(): Promise<void> {
         `lost dynamic map did not fall back to safe map: ${recovered.mapId}/${recovered.mapInstanceId}`,
       );
     }
-    if (persistentState(dungeon.enterMap) !== persistentState(recovered)) throw new Error("dynamic fallback lost acknowledged persistent player state");
+    if (persistentState(dungeon.enterMap) !== persistentState(recovered)) {
+      throw new Error(`dynamic fallback lost acknowledged persistent player state: expected=${persistentState(dungeon.enterMap)} actual=${persistentState(recovered)}`);
+    }
     const probe = decodeMapProbeFrame(await recovered.connection.request(buildMapProbePacket(nextRpcId++, { sequence: 42 }), 5000)).body;
     if (probe.error || probe.sequence !== 42) throw new Error("recovered character cannot execute MapProbe");
     console.log(`DYNAMIC_FALLBACK_PASSED ${JSON.stringify({
@@ -282,6 +286,7 @@ function parseOptions(args: string[]): {
 function persistentState(value: ReturnType<typeof decodeEnterMapFrame>["body"]): string {
   return JSON.stringify({
     gold: value.gold,
+    starterDungeonCooldownEndAtMs: value.starterDungeonCooldownEndAtMs,
     items: [...value.items].sort((a, b) => a.itemId < b.itemId ? -1 : a.itemId > b.itemId ? 1 : 0),
     quests: value.quests,
     completed: [...value.completedQuestConfigIds].sort(),
