@@ -1,3 +1,4 @@
+import { evaluateHealth, playerIdentities } from "../../tools/chaos/game_recovery_health.mjs";
 import { spawn } from "node:child_process";
 import {
   appendFileSync,
@@ -101,21 +102,7 @@ try {
         healthy: outcome.healthy,
         healthIssues: outcome.healthIssues,
       };
-      if (requiresFreshAccountGeneration(outcome)) {
-        const nextGeneration = outcome.accountGeneration + 1;
-        if (nextGeneration >= 36 ** 2) {
-          throw new Error(`account generation exhausted for ${outcome.shard}`);
-        }
-        state.accountGenerations[outcome.shard] = nextGeneration;
-        writeEvent({
-          type: "shard_account_generation_advanced",
-          epoch: state.epoch,
-          shard: outcome.shard,
-          previousGeneration: outcome.accountGeneration,
-          nextGeneration,
-          reason: "entered map identity or spatial mode did not match the target",
-        });
-      }
+
     }
     saveState();
     writeEvent({
@@ -138,7 +125,8 @@ try {
     epoch: state.epoch,
     successfulShards: state.successfulShards,
     failedShards: state.failedShards,
-    allShardsHealthyAtEnd: Object.values(state.lastShardHealth).every((item) => item.healthy),
+    allShardsHealthyAtEnd: state.identityViolations === 0 && Object.values(state.lastShardHealth).every((item) => item.healthy),
+    identityViolations: state.identityViolations,
     lastShardHealth: state.lastShardHealth,
   });
 } finally {
@@ -160,7 +148,7 @@ async function runShard(shard, durationSeconds, operationPrefix) {
     "--probe-rate", String(options.probeRate),
     "--business-rate", String(options.businessRate),
     "--map-id", String(shard.mapId),
-    "--account-prefix", accountPrefixForShard(shard),
+    "--account-prefix", `${options.accountPrefix}${shard.suffix}`,
     "--operation-prefix", operationPrefix,
     "--reuse-accounts",
     "--label", `${options.label}-s${shard.shard}`,
@@ -180,7 +168,7 @@ async function runShard(shard, durationSeconds, operationPrefix) {
   let outputTail = "";
   const capture = (chunk) => {
     const text = chunk.toString("utf8");
-    outputTail = (outputTail + text).slice(-64 * 1024);
+    outputTail = (outputTail + text).slice(-1024 * 1024);
     appendFileSync(driverLogFd, `[${new Date().toISOString()}][${shard.name}] ${text}`);
   };
   child.stdout.on("data", capture);
@@ -209,9 +197,17 @@ async function runShard(shard, durationSeconds, operationPrefix) {
     }
   }
   const completed = code === 0 && Boolean(result);
-  const healthIssues = completed ? evaluateHealth(shard, result) : [
+  const healthIssues = completed ? evaluateHealth(shard, result, { ...options, safeMapId: state.epoch > 1 ? 1 : undefined }) : [
     result ? `load generator exited with code=${code} signal=${signal}` : "missing RESULT_JSON",
   ];
+  const identities = playerIdentities(result?.playerPlacements, shard.players);
+  if (identities) {
+    const expected = state.playerIdentities[shard.name];
+    if (expected && expected !== identities) {
+      healthIssues.push("original character identity changed");
+      state.identityViolations += 1;
+    } else if (!expected) state.playerIdentities[shard.name] = identities;
+  }
   const healthy = completed && healthIssues.length === 0;
   const event = {
     type: "shard_finished",
@@ -228,6 +224,8 @@ async function runShard(shard, durationSeconds, operationPrefix) {
     healthIssues,
     code,
     signal,
+    setupStartedAt: new Date(startedAt).toISOString(),
+    playerIdentities: identities,
     elapsedSeconds: (Date.now() - startedAt) / 1000,
     result,
     errorTail: healthy ? undefined : outputTail.slice(-8 * 1024),
@@ -236,77 +234,10 @@ async function runShard(shard, durationSeconds, operationPrefix) {
   return event;
 }
 
-function evaluateHealth(shard, result) {
-  const issues = [];
-  if (result.players !== shard.players) {
-    issues.push(`players=${result.players}, expected=${shard.players}`);
-  }
-  if (result.targetMapId !== shard.mapId) {
-    issues.push(`targetMapId=${result.targetMapId}, expected=${shard.mapId}`);
-  }
-  if (result.enteredMapId !== shard.mapId) {
-    issues.push(`enteredMapId=${result.enteredMapId}, expected=${shard.mapId}`);
-  }
-  if (!Number.isFinite(Number(result.enteredMapInstanceId)) || Number(result.enteredMapInstanceId) <= 0) {
-    issues.push(`enteredMapInstanceId=${result.enteredMapInstanceId}, expected=positive integer`);
-  }
-  if (result.setup?.count !== shard.players) {
-    issues.push(`setup.count=${result.setup?.count}, expected=${shard.players}`);
-  }
-  if (result.movement?.spatialMode !== shard.spatialMode) {
-    issues.push(
-      `movement.spatialMode=${result.movement?.spatialMode}, expected=${shard.spatialMode}`,
-    );
-  }
-  if (options.moveRate > 0) {
-    const sent = Number(result.movement?.count ?? 0);
-    const acknowledged = Number(result.movement?.acknowledged ?? 0);
-    if (sent <= 0) issues.push("movement sent no measured requests");
-    if (Number(result.movement?.errors ?? 0) !== 0) {
-      issues.push(`movement.errors=${result.movement?.errors}`);
-    }
-    if (sent > 0 && acknowledged / sent < 0.99) {
-      issues.push(`movement acknowledgement ratio=${(acknowledged / sent).toFixed(4)}`);
-    }
-    if (Number(result.movement?.entityMovePushes ?? 0) <= 0) {
-      issues.push("movement received no authoritative pushes");
-    }
-  }
-  if (options.probeRate > 0) {
-    if (Number(result.probe?.count ?? 0) <= 0) issues.push("probe sent no measured requests");
-    if (Number(result.probe?.errors ?? 0) !== 0) {
-      issues.push(`probe.errors=${result.probe?.errors}`);
-    }
-  }
-  if (options.businessRate > 0) {
-    if (Number(result.business?.count ?? 0) <= 0) {
-      issues.push("business sent no measured requests");
-    }
-    if (Number(result.business?.transportErrors ?? 0) !== 0) {
-      issues.push(`business.transportErrors=${result.business?.transportErrors}`);
-    }
-  }
-  return issues;
-}
-
-function requiresFreshAccountGeneration(outcome) {
-  return outcome.completed && (
-    outcome.result?.enteredMapId !== outcome.mapId ||
-    outcome.result?.movement?.spatialMode !== outcome.expectedSpatialMode
-  );
-}
-
-function accountPrefixForShard(shard) {
-  const generation = shard.accountGeneration === 0
-    ? ""
-    : `r${shard.accountGeneration.toString(36).padStart(2, "0")}`;
-  return `${options.accountPrefix}${shard.suffix}${generation}`;
-}
-
 function loadOrCreateState() {
   if (existsSync(statePath)) {
     const loaded = JSON.parse(readFileSync(statePath, "utf8"));
-    if (loaded.schemaVersion !== 3) {
+    if (loaded.schemaVersion !== 4) {
       throw new Error(`existing ${statePath} uses unsupported schema ${loaded.schemaVersion}`);
     }
     if (loaded.parametersFingerprint !== parametersFingerprint()) {
@@ -316,7 +247,9 @@ function loadOrCreateState() {
   }
   const startedAt = Date.now();
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
+    playerIdentities: {},
+    identityViolations: 0,
     parametersFingerprint: parametersFingerprint(),
     startedAt,
     deadlineAt: startedAt + options.totalHours * 3_600_000,

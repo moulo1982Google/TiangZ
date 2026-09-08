@@ -23,6 +23,11 @@ process.once("exit", () => {
     "tiangz-overnight-game.service",
     "tiangz-overnight-soak.service",
     "tiangz-overnight-audit.service",
+    "tiangz-12h-relay.service",
+    "tiangz-overnight-finalize.timer",
+    "tiangz-overnight-finalize.service",
+    "tiangz-12h-combine.timer",
+    "tiangz-12h-combine.service",
   ]) {
     spawnSync("systemctl", ["stop", unit], { stdio: "ignore" });
   }
@@ -33,6 +38,9 @@ if (process.platform !== "linux" || process.getuid?.() !== 0) {
 }
 for (const required of [
   "/opt/tiangz-chaos/map_probe_load",
+  "/opt/tiangz-dbproxy/dbproxy_relay_soak",
+  "/opt/tiangz-chaos/tools/chaos/run_external_relay_window.mjs",
+  "/opt/tiangz-chaos/tools/chaos/combine_external_validation.mjs",
   "/opt/tiangz-dbproxy/dbproxy_fault_soak",
   "/opt/tiangz-chaos/perf/chaos/run_longhaul_game.mjs",
   "/opt/tiangz-chaos/tools/chaos/run_external_fault_plan.mjs",
@@ -58,6 +66,9 @@ const tiangzUser = await userIdentity("tiangz");
 await command("chown", ["-R", `${tiangzUser.uid}:${tiangzUser.gid}`, path.join(runDir, "game")]);
 
 for (const unit of [
+  "tiangz-12h-relay.service",
+  "tiangz-12h-combine.service",
+  "tiangz-12h-combine.timer",
   "tiangz-overnight-game.service",
   "tiangz-overnight-soak.service",
   "tiangz-overnight-faults.service",
@@ -176,6 +187,18 @@ await startTransient("tiangz-overnight-soak", [
   "--validation-timeout", "240",
 ]);
 
+// Only abnormal Relay termination stops fault injection. Normal completion is expected.
+writeFileSync("/run/systemd/system/tiangz-validation-stop-faults.service", "[Unit]\nDescription=Stop faults after validation workload failure\n[Service]\nType=oneshot\nExecStart=/usr/bin/systemctl stop tiangz-overnight-faults.service\n");
+mkdirSync("/run/systemd/system/tiangz-overnight-faults.service.d", {recursive:true});
+writeFileSync("/run/systemd/system/tiangz-overnight-faults.service.d/workloads.conf", "[Unit]\nBindsTo=tiangz-overnight-game.service tiangz-overnight-soak.service\nAfter=tiangz-overnight-game.service tiangz-overnight-soak.service\n");
+await command("systemctl", ["daemon-reload"]);
+await startTransient("tiangz-12h-relay", [
+  "User=root", "WorkingDirectory=/opt/tiangz-dbproxy", "EnvironmentFile=/etc/tiangz/dbproxy.env",
+  "Restart=no", "OnFailure=tiangz-validation-stop-faults.service", "Nice=5", "MemoryMax=384M",
+  `StandardOutput=append:${path.join(runDir,"relay-soak.log")}`,
+  `StandardError=append:${path.join(runDir,"relay-soak.log")}`,
+], "/usr/local/bin/node", ["/opt/tiangz-chaos/tools/chaos/run_external_relay_window.mjs", runDir,
+  new Date(options.deadlineAt-360_000).toISOString(), options.runId]);
 await startTransient("tiangz-overnight-faults", [
   "User=root",
   "WorkingDirectory=/opt/tiangz-chaos",
@@ -197,7 +220,11 @@ await startTransient("tiangz-overnight-faults", [
   "--marker", markerPath,
 ]);
 
+for (const unit of ["tiangz-overnight-game", "tiangz-overnight-soak", "tiangz-12h-relay", "tiangz-overnight-faults"]) {
+  await command("systemctl", ["is-active", "--quiet", unit]);
+}
 await scheduleFinalizer(runDir, options.deadlineAt);
+await command("systemd-run", ["--unit", "tiangz-12h-combine", "--on-calendar", new Date(options.deadlineAt+30_000).toISOString().replace("T"," ").replace(/\.\d{3}Z$/, " UTC"), "--timer-property", "AccuracySec=1s", "--property", "User=root", "--property", `StandardOutput=append:${path.join(runDir,"combined-finalizer.log")}`, "--property", `StandardError=append:${path.join(runDir,"combined-finalizer.log")}`, "/usr/local/bin/node", "/opt/tiangz-chaos/tools/chaos/combine_external_validation.mjs", runDir]);
 launchCompleted = true;
 console.log(JSON.stringify({ status: "started", ...manifest }));
 
@@ -209,7 +236,7 @@ async function startTransient(unit, properties, executable, args) {
 }
 
 async function scheduleFinalizer(validationRunDir, deadlineAt) {
-  const calendar = `${new Date(deadlineAt).toISOString().replace("T", " ").replace(".000Z", " UTC")}`;
+  const calendar = new Date(deadlineAt).toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
   await command("systemd-run", [
     "--unit", "tiangz-overnight-finalize",
     "--on-calendar", calendar,

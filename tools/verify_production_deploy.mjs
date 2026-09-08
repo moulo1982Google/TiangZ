@@ -39,8 +39,8 @@ assert.match(audit, /prometheusIngestionClean/);
 assert.match(audit, /gameRecoveryPassed/);
 assert.match(audit, /theilSenBytesPerHour/);
 assert.match(runner, /--movement-sequence-base/);
-assert.match(runner, /enteredMapId/);
-assert.match(runner, /shard_account_generation_advanced/);
+assert.match(runner, /playerIdentities/);
+assert.doesNotMatch(runner, /shard_account_generation_advanced/);
 assert.match(finalizer, /report\?\.checks\?\.gameRecoveryPassed === true/);
 
 const mappings = new Map([

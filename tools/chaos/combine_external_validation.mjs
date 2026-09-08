@@ -1,0 +1,15 @@
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+const runDir = process.argv[2];
+if (!runDir?.startsWith('/var/log/tiangz-chaos/')) throw Error('invalid run directory');
+const read = name => { const file = path.join(runDir, name); return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null; };
+const until = Date.now() + 300_000;
+while ((!read('validation-final.json') || !read('relay-validation-final.json')) && Date.now() < until) await new Promise(r => setTimeout(r, 2000));
+const main = read('validation-final.json');
+const relay = read('relay-validation-final.json');
+const manifest = read('run-manifest.json');
+const checks = { mainValidationPassed: main?.status === 'passed', relayValidationPassed: relay?.passed === true, windowCompleted: Date.now() >= Date.parse(manifest?.deadlineAt ?? ''), plannedWindowValid: manifest?.seconds?.total >= 1800 };
+const result = { status: Object.values(checks).every(Boolean) ? 'passed' : 'failed', at: new Date().toISOString(), checks, manifest, main, relay };
+writeFileSync(path.join(runDir, 'acceptance-final.json'), JSON.stringify(result, null, 2) + '\n');
+console.log(JSON.stringify({ status: result.status, checks }));
+if (result.status !== 'passed') process.exitCode = 1;
