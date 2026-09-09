@@ -3,6 +3,7 @@ import {
   MapScene,
   MonsterContentProfileComponent,
   MonsterEvents,
+  MonsterComponent,
   NumericComponent,
   NumericType,
   ProgressionComponent,
@@ -31,11 +32,12 @@ export class MonsterKillExperienceHandler implements SyncSceneEventHandler<MapSc
     if (amount <= 0) return;
 
     const map = scene.GetComponent(MapComponent);
-    // AreaId is the stable spawn slot and is deliberately reused after a
-    // respawn. InstanceId identifies this concrete monster lifecycle, so a
-    // retried handler is idempotent without suppressing later kills at the
-    // same spawn.
-    const operationId = `monster-xp:${map.MapInstanceId}:${event.monster.AreaId}:${event.monster.InstanceId}:${event.player.CharacterId}`;
+    // 运行实例号会在重启后复用，持久回执必须同时包含地图组件的全局生命周期作用域。
+    // Runtime instance IDs may repeat after restart; durable receipts also need
+    // the map component's globally identified lifecycle scope.
+    const scope = scene.GetComponent(MonsterComponent).DefeatRewardScopeId;
+    if (scope <= 0n) throw new Error("monster reward scope is not initialized");
+    const operationId = `monster-xp-v2:${scope}:${event.monster.InstanceId}:${event.player.CharacterId}`;
     scene.Tasks.Spawn("monster-kill-experience", async () => {
       await Promise.resolve(map.RunPlayerMailbox(event.player, async (current) => {
         const result = await current

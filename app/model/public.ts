@@ -7,6 +7,7 @@
  * lifetime of a Process; changing it requires deployment and Process restart.
  */
 export * from "../core/public";
+export { UnitActionComponent, type OwnedUnitActionHandler } from "./mmorpg/map/UnitActionComponent";
 
 export * from "../generated/model/server/demo/protocol/messages";
 export {
@@ -93,6 +94,8 @@ export {
   type QuestAcceptResult,
   type QuestObjectiveIndexEntry,
   type QuestRewardResult,
+  type QuestRewardDelivery,
+  NormalizeQuestRewardDeliveries,
   type QuestTransferState,
 } from "./mmorpg/quest/QuestComponent";
 export {
@@ -100,6 +103,7 @@ export {
   type BeforeAcceptQuestEvent,
   type QuestAcceptedEvent,
   type QuestRewardedEvent,
+  type BeforeRewardQuestEvent,
   type QuestProgressEvent,
 } from "./mmorpg/quest/QuestEvents";
 export {
@@ -401,6 +405,7 @@ export {
 } from "./mmorpg/dungeon/StarterDungeon";
 export type {
   PlayerPersistenceExtension,
+  PlayerRepository,
   PlayerPersistenceExtensionState,
   PlayerSaveData,
 } from "./mmorpg/persistence/PlayerRepository";
@@ -453,6 +458,8 @@ export {
   type DamageAbsorberState,
   type DamageAbsorption,
   type DamageRequest,
+  type DamageCalculation,
+  type DamageCalculator,
   type DamageResult,
   type DamageSchoolValue,
   type HealingResult,

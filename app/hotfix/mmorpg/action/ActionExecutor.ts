@@ -130,6 +130,7 @@ export function ExecuteAction(
           sourceUnitId: context.sourceUnitId,
           abilityId: context.sourceAbilityId,
           damageSchool: toDamageSchool(action.parameters[1]),
+          periodic: context.sourceBuffInstanceId !== undefined,
         });
         return {
           changed: result.finalDamage > 0n || result.absorbedDamage > 0n,

@@ -25,6 +25,8 @@ export interface SkillMapComponent {
    * module-owned abilities through the same authoritative scheduler.
    */
   Cast(caster: Unit<any[]>, command: SkillCastCommand): SkillCastState;
+  /** 仅取消匹配的活动施法；旧请求不影响新动作或已发射弹道。 / Cancels only a matching active cast; stale requests preserve newer casts and launched projectiles. */
+  Cancel(caster: Unit<any[]>, skillId: number, castId: bigint): boolean;
   InterruptByMovement(caster: Unit<any[]>): boolean;
   HandleDamageDuringCast(target: PlayerUnit): boolean;
 }

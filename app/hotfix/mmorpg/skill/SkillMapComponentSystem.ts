@@ -154,6 +154,19 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     return state;
   }
 
+  /** 主动取消经权威施法身份校验，不退款或清除冷却；只发布一次终止状态。 / Fences explicit cancellation by cast identity without refunds or cooldown resets, publishing one terminal state. */
+  Cancel(caster: Unit<any[]>, skillId: number, castId: bigint): boolean {
+    this.requireCaster(caster);
+    const skill = caster.GetComponent(SkillComponent);
+    const active = skill.ActiveCast();
+    if (castId <= 0n || !active || active.skillId !== skillId || active.castId !== castId) return false;
+    const state = skill.Interrupt("cancelled");
+    if (!state) return false;
+    this.activeCasterUnitIds.delete(caster.UnitId);
+    this.publishCastState(caster, state);
+    return true;
+  }
+
   InterruptByMovement(caster: Unit<any[]>): boolean {
     this.requireCaster(caster);
     const skill = caster.GetComponent(SkillComponent);

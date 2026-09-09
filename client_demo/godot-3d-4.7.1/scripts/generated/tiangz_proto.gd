@@ -15,12 +15,14 @@ const C2M_ACCEPT_QUEST := 10052
 const C2M_ATTACK_MONSTER := 10042
 const C2M_BUY_NPC_SHOP_ITEM := 10070
 const C2M_CANCEL_PLAYER_TRADE := 10082
+const C2M_CANCEL_SKILL := 10108
 const C2M_CAST_SKILL := 10047
 const C2M_COMMAND_OWNED_UNIT := 10104
 const C2M_COMPLETE_QUEST := 10054
 const C2M_CONFIRM_PLAYER_TRADE := 10080
 const C2M_FIND_PATH := 10032
 const C2M_INSPECT_LOOT_MONSTER := 10064
+const C2M_INVOKE_UNIT_ACTION := 10110
 const C2M_LEARN_TRAINER_SKILL := 10091
 const C2M_LOOT_MONSTER := 10062
 const C2M_MAP_PROBE := 10014
@@ -80,12 +82,14 @@ const M2C_ACCEPT_QUEST := 10053
 const M2C_ATTACK_MONSTER := 10043
 const M2C_BUY_NPC_SHOP_ITEM := 10071
 const M2C_CANCEL_PLAYER_TRADE := 10083
+const M2C_CANCEL_SKILL := 10109
 const M2C_CAST_SKILL := 10048
 const M2C_COMMAND_OWNED_UNIT := 10105
 const M2C_COMPLETE_QUEST := 10055
 const M2C_CONFIRM_PLAYER_TRADE := 10081
 const M2C_FIND_PATH := 10033
 const M2C_INSPECT_LOOT_MONSTER := 10065
+const M2C_INVOKE_UNIT_ACTION := 10111
 const M2C_LEARN_TRAINER_SKILL := 10092
 const M2C_LOOT_MONSTER := 10063
 const M2C_MAP_PROBE := 10015
@@ -751,6 +755,39 @@ static func decode_c2m_cancel_player_trade(payload: PackedByteArray) -> Dictiona
 				reader.skip(tag.wire)
 	return result
 
+static func encode_c2m_cancel_skill(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("skill_id"):
+		varint_field(result, 1, int(value["skill_id"]))
+	if value.has("cast_id"):
+		varint_field(result, 2, int(value["cast_id"]))
+	return result
+
+static func decode_c2m_cancel_skill(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"skill_id": 0, "cast_id": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["skill_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["cast_id"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
 static func encode_c2m_cast_skill(value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	if value.has("skill_id"):
@@ -973,6 +1010,60 @@ static func decode_c2m_inspect_loot_monster(payload: PackedByteArray) -> Diction
 			1:
 				if tag.wire == 0:
 					result["monster_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_c2m_invoke_unit_action(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("namespace"):
+		string_field(result, 1, String(value["namespace"]))
+	if value.has("action"):
+		string_field(result, 2, String(value["action"]))
+	if value.has("version"):
+		varint_field(result, 3, int(value["version"]))
+	if value.has("operation_id"):
+		string_field(result, 4, String(value["operation_id"]))
+	if value.has("payload"):
+		bytes_field(result, 5, value["payload"])
+	return result
+
+static func decode_c2m_invoke_unit_action(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"namespace": "", "action": "", "version": 0, "operation_id": "", "payload": PackedByteArray()}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 2:
+					result["namespace"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 2:
+					result["action"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			3:
+				if tag.wire == 0:
+					result["version"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			4:
+				if tag.wire == 2:
+					result["operation_id"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			5:
+				if tag.wire == 2:
+					result["payload"] = reader.bytes_value()
 				else:
 					reader.skip(tag.wire)
 			90:
@@ -2274,11 +2365,13 @@ static func encode_g2c_combat_result(value: Dictionary) -> PackedByteArray:
 		varint_field(result, 11, int(value["server_tick"]))
 	if value.has("prevented_reason"):
 		varint_field(result, 12, int(value["prevented_reason"]))
+	if value.has("critical"):
+		bool_field(result, 13, bool(value["critical"]))
 	return result
 
 static func decode_g2c_combat_result(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"result_type": 0, "source_unit_id": 0, "target_unit_id": 0, "requested_amount": 0, "effective_amount": 0, "absorbed_amount": 0, "current_hp": 0, "damage_school": 0, "ability_id": 0, "killed": false, "server_tick": 0, "prevented_reason": 0}
+	var result := {"result_type": 0, "source_unit_id": 0, "target_unit_id": 0, "requested_amount": 0, "effective_amount": 0, "absorbed_amount": 0, "current_hp": 0, "damage_school": 0, "ability_id": 0, "killed": false, "server_tick": 0, "prevented_reason": 0, "critical": false}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -2340,6 +2433,11 @@ static func decode_g2c_combat_result(payload: PackedByteArray) -> Dictionary:
 			12:
 				if tag.wire == 0:
 					result["prevented_reason"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			13:
+				if tag.wire == 0:
+					result["critical"] = reader.boolean()
 				else:
 					reader.skip(tag.wire)
 			_:
@@ -3827,6 +3925,42 @@ static func decode_m2c_cancel_player_trade(payload: PackedByteArray) -> Dictiona
 				reader.skip(tag.wire)
 	return result
 
+static func encode_m2c_cancel_skill(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("cancelled"):
+		bool_field(result, 1, bool(value["cancelled"]))
+	return result
+
+static func decode_m2c_cancel_skill(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"cancelled": false}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["cancelled"] = reader.boolean()
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			91:
+				if tag.wire == 0:
+					result["error"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			92:
+				if tag.wire == 2:
+					result["message"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
 static func encode_m2c_cast_skill(value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	if value.has("phase"):
@@ -4226,6 +4360,42 @@ static func decode_m2c_inspect_loot_monster(payload: PackedByteArray) -> Diction
 			2:
 				if tag.wire == 2:
 					result["drops"].append(decode_loot_drop_snapshot(reader.bytes_value()))
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			91:
+				if tag.wire == 0:
+					result["error"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			92:
+				if tag.wire == 2:
+					result["message"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_m2c_invoke_unit_action(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("payload"):
+		bytes_field(result, 1, value["payload"])
+	return result
+
+static func decode_m2c_invoke_unit_action(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"payload": PackedByteArray()}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 2:
+					result["payload"] = reader.bytes_value()
 				else:
 					reader.skip(tag.wire)
 			90:

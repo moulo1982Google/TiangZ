@@ -27,6 +27,7 @@ export class GatePlayerRoute {
   readonly account: string;
   readonly characterId: bigint;
   readonly playerConfigId: number;
+  readonly displayName: string;
   readonly gateName: string;
   connectionId?: number;
   lastReceiveTimeMs: number;
@@ -46,8 +47,10 @@ export class GatePlayerRoute {
     gateName: string,
     connectionId: number,
     nowMs: number,
+    displayName = account,
   ) {
     this.account = account;
+    this.displayName = displayName;
     this.characterId = characterId;
     if (!Number.isSafeInteger(playerConfigId) || playerConfigId <= 0) {
       throw new Error(`invalid playerConfigId: ${playerConfigId}`);

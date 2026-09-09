@@ -10,6 +10,7 @@ declare module "../../../model/mmorpg/combat/CombatComponent" {
     SetAutoAttackInterval(intervalMs: number): AutoAttackState;
     ToggleAutoAttack(targetUnitId: number, enabled: boolean): AutoAttackState;
     BeginAutoAttackSwing(nowMs: number): AutoAttackState;
+    ShortenAutoAttackSwing(amountMs: number): AutoAttackState;
     ResetAutoAttackSwing(): AutoAttackState;
     RegisterDamageAbsorber(amount: bigint, priority?: number): number;
     UpdateDamageAbsorber(modifierId: number, remaining: bigint): boolean;

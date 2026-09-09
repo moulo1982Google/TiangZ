@@ -14,6 +14,10 @@ import {
   QuestComponent,
   QuestContentProfileComponent,
   QuestEvents,
+  NormalizeQuestRewardDeliveries,
+  type QuestRewardDelivery,
+  utf8Encode,
+  utf8Decode,
   QuestStatus,
   QuestObjectiveType,
   SystemErrCode,
@@ -199,17 +203,23 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
   ): Promise<QuestRewardResult> {
     const player = this.GetParent() as PlayerUnit;
     const persistence = player.GetComponent(PlayerPersistenceComponent);
-    const operationId = questRewardOperationId(player.Account, questConfigId);
+    const operationId = questRewardOperationId(player.CharacterId, questConfigId);
     const quest = this.TryGetChild(Quest, BigInt(questConfigId));
     if (!quest || persistence.IsTransactionUncertain(operationId)) {
-      const receipt = await persistence.LoadTransaction(operationId, QUEST_REWARD_DOMAINS);
+      let receipt = await persistence.LoadTransaction(operationId, QUEST_REWARD_DOMAINS);
+      // 仅已完成的旧角色读取账号键回执；活动任务绝不复用其他角色的旧操作号。
+      // Only completed legacy characters may read account-keyed receipts; active quests never reuse them.
+      if (!receipt && !quest && this.HasCompletedQuest(questConfigId)) {
+        receipt = await persistence.LoadTransaction(`quest-reward:${player.Account}:${questConfigId}`, QUEST_REWARD_DOMAINS);
+      }
       if (receipt) {
         const recovered = decodeQuestReward(receipt.result, questConfigId);
         if (quest) {
           applyCommittedQuestReward(player, recovered);
-          this.RestoreTransfer(this.completionState(questConfigId));
+          this.RestoreTransfer({ ...this.completionState(questConfigId),
+            rewardDeliveries: [...this.rewardDeliveries, ...decodeRewardDeliveries(receipt.result)] });
+          this.PublishRewarded(questConfigId, sourceUnitId);
         }
-        this.PublishRewarded(questConfigId, sourceUnitId);
         return recovered;
       }
     }
@@ -243,7 +253,16 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
         player.GetComponent(NumericComponent)[NumericType.Level],
       ),
     );
-    const nextQuests = this.completionState(questConfigId);
+    const deliveries: QuestRewardDelivery[] = [];
+    const veto = this.DomainScene().Events.Check(QuestEvents.BeforeReward, {
+      player, questConfigId,
+      AddDelivery: (ownerId, payload) => {
+        deliveries.push({ id: `${player.CharacterId}:${questConfigId}:${ownerId}`, ownerId, payload });
+      },
+    });
+    if (veto !== SystemErrCode.Success) throw new RpcError(veto, "quest reward rejected by BeforeReward");
+    const nextQuests = { ...this.completionState(questConfigId),
+      rewardDeliveries: NormalizeQuestRewardDeliveries([...this.rewardDeliveries, ...deliveries]) };
     const proposed: QuestRewardResult = {
       questConfigId,
       rewardItems: [...inventoryPlan.grantedItems],
@@ -258,7 +277,7 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
       gainedExperience: progressionPlan.gainedExperience,
       leveledUp: progressionPlan.leveledUp,
     };
-    const encodedResult = M2C_CompleteQuestCodec.encode(proposed);
+    const encodedResult = encodeQuestReward(proposed, deliveries);
     const committed = await persistence.ApplyTransaction(
       operationId,
       QUEST_REWARD_DOMAINS,
@@ -278,7 +297,8 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
     } else {
       applyCommittedQuestReward(player, durable);
     }
-    this.RestoreTransfer(nextQuests);
+    this.RestoreTransfer({ ...nextQuests,
+      rewardDeliveries: [...this.rewardDeliveries, ...decodeRewardDeliveries(committed.result)] });
     this.PublishRewarded(questConfigId, sourceUnitId);
     return durable;
   }
@@ -304,13 +324,35 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
   }
 
   CaptureTransfer(): QuestTransferState {
-    return { active: this.Snapshot(), completedQuestConfigIds: this.CompletedQuestConfigIds() };
+    return { active: this.Snapshot(), completedQuestConfigIds: this.CompletedQuestConfigIds(),
+      rewardDeliveries: this.PendingRewardDeliveries() };
+  }
+
+  /** 返回分离副本，未知owner的消息仍保留。 / Returns detached deliveries, preserving unknown owners. */
+  PendingRewardDeliveries(): readonly QuestRewardDelivery[] {
+    return NormalizeQuestRewardDeliveries(this.rewardDeliveries);
+  }
+
+  /** 目标端确认幂等提交后，持有玩家mailbox调用；ACK丢失通过原事务恢复。 / Call under the player mailbox after destination commit; a lost ACK recovers the original transaction. */
+  async AcknowledgeRewardDelivery(id: string): Promise<void> {
+    if (!this.rewardDeliveries.some((entry) => entry.id === id)) return;
+    const persistence = this.GetParent<PlayerUnit>().GetComponent(PlayerPersistenceComponent);
+    const operationId = `quest-delivery-ack:${id}`;
+    const next = this.rewardDeliveries.filter((entry) => entry.id !== id);
+    const receipt = persistence.IsTransactionUncertain(operationId)
+      ? await persistence.LoadTransaction(operationId, ["quest"]) : undefined;
+    if (!receipt) await persistence.ApplyTransaction(operationId, ["quest"],
+      persistence.Capture("quest-delivery-ack", { quests: { ...this.CaptureTransfer(), rewardDeliveries: next } }),
+      utf8Encode(id));
+    this.rewardDeliveries = next;
   }
 
   RestoreTransfer(state: QuestTransferState): void {
+    const deliveries = NormalizeQuestRewardDeliveries(state.rewardDeliveries);
     for (const quest of this.GetChildren(Quest)) this.RemoveChild(Quest, quest.Id);
     this.objectiveIndex.clear();
     this.completedQuestConfigIds.clear();
+    this.rewardDeliveries = deliveries;
     for (const id of state.completedQuestConfigIds) this.completedQuestConfigIds.add(id);
     for (const snapshot of state.active) {
       const quest = this.AddChild(Quest, BigInt(snapshot.questConfigId), {
@@ -329,6 +371,7 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
     }
     return {
       active: this.Snapshot().filter((state) => state.questConfigId !== questConfigId),
+      rewardDeliveries: this.PendingRewardDeliveries(),
       completedQuestConfigIds: [...new Set([
         ...this.CompletedQuestConfigIds(),
         questConfigId,
@@ -434,6 +477,7 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
       revision: 1,
     };
     const quests: QuestTransferState = {
+      rewardDeliveries: this.PendingRewardDeliveries(),
       active: [...this.Snapshot(), quest]
         .sort((left, right) => left.questConfigId - right.questConfigId),
       completedQuestConfigIds: this.CompletedQuestConfigIds(),
@@ -554,8 +598,8 @@ function objectiveIndexKey(objectiveType: number, targetConfigId: number): strin
   return `${objectiveType}:${targetConfigId}`;
 }
 
-function questRewardOperationId(account: string, questConfigId: number): string {
-  return `quest-reward:${account}:${questConfigId}`;
+function questRewardOperationId(characterId: bigint, questConfigId: number): string {
+  return `quest-reward:v2:${characterId}:${questConfigId}`;
 }
 
 function questAcceptOperationId(characterId: bigint, questConfigId: number): string {
@@ -613,8 +657,31 @@ function applyCommittedQuestAccept(
   return quests.ApplyCommittedAcceptance(result.quest);
 }
 
+/** 私有持久化回执包装；外部协议继续使用生成的protobuf codec，旧回执保持可读。 / Private durable envelope; wire responses still use generated protobuf and legacy receipts remain readable. */
+function encodeQuestReward(result: QuestRewardResult, deliveries: readonly QuestRewardDelivery[]): Uint8Array {
+  const encoded = M2C_CompleteQuestCodec.encode(result);
+  if (deliveries.length === 0) return encoded;
+  return utf8Encode(`QDR1\n${JSON.stringify({ result: [...encoded], deliveries })}`);
+}
+
+function decodeRewardEnvelope(payload: Uint8Array): { result: Uint8Array; deliveries: QuestRewardDelivery[] } {
+  if (payload[0] !== 81 || payload[1] !== 68 || payload[2] !== 82 || payload[3] !== 49 || payload[4] !== 10) {
+    return { result: payload, deliveries: [] };
+  }
+  const envelope = JSON.parse(utf8Decode(payload.subarray(5)));
+  if (!Array.isArray(envelope.result) || !envelope.result.every((value: unknown) =>
+    typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 255)) {
+    throw new Error("invalid quest reward receipt envelope");
+  }
+  return { result: Uint8Array.from(envelope.result), deliveries: NormalizeQuestRewardDeliveries(envelope.deliveries) };
+}
+
+function decodeRewardDeliveries(payload: Uint8Array): QuestRewardDelivery[] {
+  return decodeRewardEnvelope(payload).deliveries;
+}
+
 function decodeQuestReward(payload: Uint8Array, questConfigId: number): QuestRewardResult {
-  const result = M2C_CompleteQuestCodec.decode(payload);
+  const result = M2C_CompleteQuestCodec.decode(decodeRewardEnvelope(payload).result);
   if (result.questConfigId !== questConfigId) {
     throw new Error(
       `quest reward receipt mismatch: ${result.questConfigId} != ${questConfigId}`,

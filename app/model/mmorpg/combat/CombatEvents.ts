@@ -36,4 +36,6 @@ export const CombatEvents = {
     SystemErrCode.Success,
   ),
   DamageResolved: defineSyncEvent<DamageResolvedEvent>("Combat.DamageResolved"),
+  /** 否决已经确定后的可追加事实，不代表扣血。 / Post-veto fact that permits follow-up effects but represents no health mutation. */
+  DamagePrevented: defineSyncEvent<DamageResolvedEvent>("Combat.DamagePrevented"),
 } as const;

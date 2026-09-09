@@ -796,16 +796,39 @@ pub(crate) fn reset_unit_movement(handle: u32) -> Result<(), JsErrorBox> {
             .get_unit_cold(location)
             .ok_or_else(|| wrong_entity_type(handle, "Unit"))?
             .map_id;
-        if store.navigation_worlds.contains_key(&map_id) {
-            store.navigation_movements.remove(&handle);
-            store.navigation_directional_inputs.remove(&handle);
+        if let Some(world) = store.navigation_worlds.get(&map_id) {
+            let obstacle_revision = world.obstacle_revision();
+            let movement = store.navigation_movements.remove(&handle);
+            let input = store.navigation_directional_inputs.remove(&handle);
             let unit = store.get_unit_hot_mut(handle)?;
+            let changed = unit.moving != 0
+                || movement.as_ref().is_some_and(|value| {
+                    value.state_changed || value.next_point < value.points.len()
+                })
+                || input.as_ref().is_some_and(|value| {
+                    value.state_changed || value.forward != 0 || value.strafe != 0
+                });
+            let position = [unit.x, unit.y, unit.z];
             unit.input_x = 0;
             unit.input_z = 0;
             unit.grid_goal_active = 0;
             unit.input_changed = 0;
             unit.sequence = 0;
             unit.moving = 0;
+            // 停止保留一次原有批量输出；重复重置不能抹掉尚未发出的停止记录。
+            // Keep one batched stop notification, including across repeated resets before the next tick.
+            if changed {
+                store.navigation_movements.insert(
+                    handle,
+                    NavigationMovement {
+                        target: position,
+                        points: vec![position],
+                        next_point: 1,
+                        state_changed: true,
+                        obstacle_revision,
+                    },
+                );
+            }
             return Ok(());
         }
         let bounds = *store.spatial_bounds.get(&map_id).ok_or_else(|| {
@@ -813,10 +836,17 @@ pub(crate) fn reset_unit_movement(handle: u32) -> Result<(), JsErrorBox> {
         })?;
         let (x, z) = {
             let unit = store.get_unit_hot_mut(handle)?;
+            let changed = unit.input_changed != 0
+                || unit.moving != 0
+                || unit.input_x != 0
+                || unit.input_z != 0
+                || unit.grid_goal_active != 0;
             unit.input_x = 0;
             unit.input_z = 0;
             unit.grid_goal_active = 0;
-            unit.input_changed = 0;
+            // 与普通移动共用变更标记，下一Tick输出停止快照后自动消费。
+            // Reuse the movement dirty flag so the next tick consumes exactly one stopped snapshot.
+            unit.input_changed = u32::from(changed);
             unit.sequence = 0;
             unit.target_cell_x = unit.cell_x;
             unit.target_cell_z = unit.cell_z;
@@ -5027,6 +5057,84 @@ mod tests {
             assert_eq!(value.grid_goal_active, 0);
             assert_eq!((value.input_x, value.input_z), (0, 0));
         });
+    }
+
+    #[test]
+    fn reset_movement_publishes_one_grid_stop_after_repeated_calls() {
+        let bounds = Grid2DBounds::new(128, 128, 1_000).unwrap();
+        let handle = STORE.with(|slot| {
+            let mut store = slot.borrow_mut();
+            *store = NativeEntityStore::default();
+            store.spatial_bounds.insert(1, bounds);
+            store.create(NativeEntityData::Unit(unit(10))).unwrap()
+        });
+        set_unit_grid_movement_target(handle, 4, 0, 1).unwrap();
+        assert_eq!(native_map_advance_movement(1, 1, 50).unwrap(), 1);
+        reset_unit_movement(handle).unwrap();
+        reset_unit_movement(handle).unwrap();
+        assert_eq!(
+            native_map_advance_movement(1, 2, 50).unwrap(),
+            1,
+            "stopped state was lost"
+        );
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let value = store.get_unit_hot(handle).unwrap();
+            assert_eq!(value.moving, 0);
+            assert_eq!((value.x, value.z), (0.0, 0.0));
+        });
+        reset_unit_movement(handle).unwrap();
+        assert_eq!(
+            native_map_advance_movement(1, 3, 50).unwrap(),
+            0,
+            "idle reset produced another stop"
+        );
+    }
+
+    #[test]
+    fn reset_movement_publishes_one_navigation_stop_after_repeated_calls() {
+        configure_project_root(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
+        STORE.with(|slot| *slot.borrow_mut() = NativeEntityStore::default());
+        native_spatial_create_nav_mesh_3d(
+            1,
+            48,
+            48,
+            1_000,
+            b"navigation/maps/demo_3d/generated/navigation.bin",
+            b"1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421",
+        )
+        .unwrap();
+        let handle = STORE.with(|slot| {
+            let mut value = unit(77);
+            value.x = -12.0;
+            value.y = 0.2;
+            value.z = -12.0;
+            slot.borrow_mut()
+                .create(NativeEntityData::Unit(value))
+                .unwrap()
+        });
+        set_unit_navigation_target(1, handle, 12.0, 0.0, 12.0, 1).unwrap();
+        assert_eq!(native_map_advance_movement(1, 1, 50).unwrap(), 1);
+        reset_unit_movement(handle).unwrap();
+        reset_unit_movement(handle).unwrap();
+        assert_eq!(
+            native_map_advance_movement(1, 2, 50).unwrap(),
+            1,
+            "stopped state was lost"
+        );
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let value = store.get_unit_hot(handle).unwrap();
+            let record = store.pending_navigation_records[&1].last().unwrap();
+            assert!(!record.moving && record.state_changed);
+            assert_eq!((record.x, record.y, record.z), (value.x, value.y, value.z));
+        });
+        reset_unit_movement(handle).unwrap();
+        assert_eq!(
+            native_map_advance_movement(1, 3, 50).unwrap(),
+            0,
+            "idle reset produced another stop"
+        );
     }
 
     #[test]

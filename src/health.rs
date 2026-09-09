@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -17,6 +17,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 
 use crate::config::{HealthObservabilityConfig, HotfixOperationsConfig};
+use crate::data_pack::{LoadedRuntimeDataPack, RuntimeDataPackIdentity};
 use crate::process::RuntimeControl;
 
 const MAX_HTTP_REQUEST_BYTES: usize = 16 * 1024;
@@ -32,6 +33,7 @@ pub(crate) struct ProcessHealthState {
     observability_snapshot: Mutex<ProcessObservabilitySnapshot>,
     hotfix_snapshot: Mutex<HotfixObservabilitySnapshot>,
     game_config_snapshot: Mutex<GameConfigObservabilitySnapshot>,
+    runtime_data_packs: OnceLock<Vec<RuntimeDataPackIdentity>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -308,7 +310,15 @@ impl ProcessHealthState {
                 ..HotfixObservabilitySnapshot::default()
             }),
             game_config_snapshot: Mutex::new(GameConfigObservabilitySnapshot::default()),
+            runtime_data_packs: OnceLock::new(),
         }
+    }
+
+    /// 在就绪前冻结本进程装载的数据身份，磁盘更新不会改变它。 / Freezes loaded identities before readiness; disk updates cannot change them.
+    pub(crate) fn set_runtime_data_packs(&self, packs: &[LoadedRuntimeDataPack]) {
+        self.runtime_data_packs
+            .set(packs.iter().map(LoadedRuntimeDataPack::identity).collect())
+            .expect("runtime data pack identity installed twice");
     }
 
     /// 标记全部 TS Scene 已完成启动屏障。 / Marks every TS Scene as having completed the startup barrier.
@@ -957,6 +967,21 @@ fn probe_response(
     state: &ProcessHealthState,
 ) -> (&'static str, &'static str, String) {
     match path {
+        "/runtime-identity" => (
+            if state.is_ready() {
+                "200 OK"
+            } else {
+                "503 Service Unavailable"
+            },
+            "application/json",
+            json!({
+                "formatVersion": 1,
+                "process": process_name,
+                "status": if state.is_ready() { "ready" } else { "not-ready" },
+                "dataPacks": state.runtime_data_packs.get().map(Vec::as_slice).unwrap_or(&[]),
+            })
+            .to_string(),
+        ),
         "/live" if state.is_live() => (
             "200 OK",
             "application/json",
@@ -3096,6 +3121,32 @@ fn escape_prometheus_label(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_identity_is_startup_owned_and_respects_readiness() {
+        let state = ProcessHealthState::starting(Duration::from_secs(15));
+        state
+            .runtime_data_packs
+            .set(vec![RuntimeDataPackIdentity {
+                id: "org.example.content".to_owned(),
+                owner_module_id: "org.example".to_owned(),
+                file_hash: "a".repeat(64),
+            }])
+            .unwrap();
+        assert!(
+            probe_response("/runtime-identity", "fixture", &state)
+                .0
+                .starts_with("503")
+        );
+        state.mark_runtime_ready();
+        state.mark_endpoints_ready();
+        let response = probe_response("/runtime-identity", "fixture", &state);
+        assert!(response.0.starts_with("200"));
+        let body: Value = serde_json::from_str(&response.2).unwrap();
+        assert_eq!(body["dataPacks"][0]["fileHash"], "a".repeat(64));
+        assert_eq!(body["dataPacks"][0].as_object().unwrap().len(), 3);
+        assert!(state.runtime_data_packs.set(vec![]).is_err());
+    }
 
     #[test]
     fn readiness_requires_runtime_endpoints_and_non_stopping_state() {

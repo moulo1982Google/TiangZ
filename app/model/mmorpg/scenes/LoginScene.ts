@@ -16,6 +16,7 @@ import {
 } from "../../../generated/model/server/demo/protocol/messages";
 import { LoginComponent } from "../login/LoginComponent";
 import { CreateCharacterRepository } from "../login/CharacterRepository";
+import { CreatePlayerRepository } from "../persistence/DbProxyPlayerRepository";
 import { RankStickyScenes } from "../login/GateSelector";
 import { IsGateReachable } from "../gate/GateHealth";
 import { LocationProxy } from "../location/LocationProxy";
@@ -45,6 +46,7 @@ export class LoginScene extends EntryScene {
       config.process.name,
       CreateCharacterRepository(config.process),
       playerContent,
+      CreatePlayerRepository(config.process),
     );
   }
 

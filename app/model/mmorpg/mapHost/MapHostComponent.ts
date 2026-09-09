@@ -961,6 +961,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       account: snapshot.account,
       characterId: snapshot.characterId,
       playerConfigId: player.PlayerConfigId,
+      displayName: player.DisplayName,
       sourceMapId: snapshot.mapId,
       targetMapId: targetInstance.mapConfigId,
       gateName: snapshot.gateName,

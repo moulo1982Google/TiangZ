@@ -303,7 +303,25 @@ export class SummonComponentSystem extends SummonComponent {
   Update5Hz(): void {
     if (this.map.IsStopping) return;
     const now = TimeSystem.Instance.ServerNow;
-    for (const state of this.runtime.values()) this.TickSummon(state, now);
+    for (const state of this.runtime.values()) {
+      this.TickSummon(state, now);
+      this.PublishResourceChanges(state);
+    }
+  }
+
+  /** 复用思考桶检测私有资源变化；不改公开Numeric白名单或创建独立Timer。 / Detects private resource changes in the existing think bucket without changing public numerics or adding timers. */
+  private PublishResourceChanges(state: SummonRuntimeState): void {
+    if (state.resourcePublicationPending || !(this.units.Get(state.ownerUnitId) instanceof PlayerUnit)) return;
+    const numeric = state.summon.GetComponent(NumericComponent);
+    const current = numeric[NumericType.CurrentMp];
+    const maximum = numeric[NumericType.MaxMp];
+    if (state.publishedResources?.current === current && state.publishedResources.maximum === maximum) return;
+    state.resourcePublicationPending = true;
+    void this.map.PublishOwnedUnitResources(state.summon).then(published => {
+      if (published) state.publishedResources = { current, maximum };
+    }).catch(error => {
+      this.DomainScene().logger.warn("owned unit resource publication failed", { unitId: state.summon.UnitId, error });
+    }).finally(() => { state.resourcePublicationPending = false; });
   }
 
   /** 清理死亡或失去所有者的临时Unit。 / Cleans temporary Units that died or lost their owner. */

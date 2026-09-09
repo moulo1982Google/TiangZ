@@ -12,7 +12,7 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "d81f5d0df9da28762ce855bb4d0677b18f96ea35698dd0f610f02597337b2c1e";
+    public const string Value = "2960996b383548962c5b2e0b4fbfc3e1af85f9a1953b52ce2647d661022280a2";
 }
 
 public static class MsgCode
@@ -27,12 +27,14 @@ public static class MsgCode
     public const ushort C2M_AttackMonster = 10042;
     public const ushort C2M_BuyNpcShopItem = 10070;
     public const ushort C2M_CancelPlayerTrade = 10082;
+    public const ushort C2M_CancelSkill = 10108;
     public const ushort C2M_CastSkill = 10047;
     public const ushort C2M_CommandOwnedUnit = 10104;
     public const ushort C2M_CompleteQuest = 10054;
     public const ushort C2M_ConfirmPlayerTrade = 10080;
     public const ushort C2M_FindPath = 10032;
     public const ushort C2M_InspectLootMonster = 10064;
+    public const ushort C2M_InvokeUnitAction = 10110;
     public const ushort C2M_LearnTrainerSkill = 10091;
     public const ushort C2M_LootMonster = 10062;
     public const ushort C2M_MapProbe = 10014;
@@ -92,12 +94,14 @@ public static class MsgCode
     public const ushort M2C_AttackMonster = 10043;
     public const ushort M2C_BuyNpcShopItem = 10071;
     public const ushort M2C_CancelPlayerTrade = 10083;
+    public const ushort M2C_CancelSkill = 10109;
     public const ushort M2C_CastSkill = 10048;
     public const ushort M2C_CommandOwnedUnit = 10105;
     public const ushort M2C_CompleteQuest = 10055;
     public const ushort M2C_ConfirmPlayerTrade = 10081;
     public const ushort M2C_FindPath = 10033;
     public const ushort M2C_InspectLootMonster = 10065;
+    public const ushort M2C_InvokeUnitAction = 10111;
     public const ushort M2C_LearnTrainerSkill = 10092;
     public const ushort M2C_LootMonster = 10063;
     public const ushort M2C_MapProbe = 10015;
@@ -229,6 +233,13 @@ public sealed class C2M_CancelPlayerTrade : IRpcRequest
     public uint RpcId { get; set; }
 }
 
+public sealed class C2M_CancelSkill : IRpcRequest
+{
+    public uint SkillId { get; set; }
+    public ulong CastId { get; set; }
+    public uint RpcId { get; set; }
+}
+
 public sealed class C2M_CastSkill : IRpcRequest
 {
     public uint SkillId { get; set; }
@@ -273,6 +284,16 @@ public sealed class C2M_FindPath : IRpcRequest
 public sealed class C2M_InspectLootMonster : IRpcRequest
 {
     public uint MonsterId { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2M_InvokeUnitAction : IRpcRequest
+{
+    public string? Namespace { get; set; }
+    public string? Action { get; set; }
+    public uint Version { get; set; }
+    public string? OperationId { get; set; }
+    public byte[]? Payload { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -541,6 +562,7 @@ public sealed class G2C_CombatResult
     public bool Killed { get; set; }
     public uint ServerTick { get; set; }
     public uint PreventedReason { get; set; }
+    public bool Critical { get; set; }
 }
 
 public sealed class G2C_DemoDoorState
@@ -828,6 +850,14 @@ public sealed class M2C_CancelPlayerTrade : IRpcResponse
     public string? Message { get; set; }
 }
 
+public sealed class M2C_CancelSkill : IRpcResponse
+{
+    public bool Cancelled { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
 public sealed class M2C_CastSkill : IRpcResponse
 {
     public uint Phase { get; set; }
@@ -900,6 +930,14 @@ public sealed class M2C_InspectLootMonster : IRpcResponse
 {
     public uint MonsterId { get; set; }
     public List<LootDropSnapshot> Drops { get; set; } = new List<LootDropSnapshot>();
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class M2C_InvokeUnitAction : IRpcResponse
+{
+    public byte[]? Payload { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -1905,6 +1943,44 @@ public static class C2M_CancelPlayerTradeCodec
     }
 }
 
+public static class C2M_CancelSkillCodec
+{
+    public static C2M_CancelSkill Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_CancelSkill();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.SkillId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.CastId = reader.ReadUInt64();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_CancelSkill value)
+    {
+        var writer = new BinaryWriter();
+        if (value.SkillId != 0) writer.WriteUInt32(1, value.SkillId);
+        if (value.CastId != 0) writer.WriteUInt64(2, value.CastId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
 public static class C2M_CastSkillCodec
 {
     public static C2M_CastSkill Decode(byte[] payload)
@@ -2148,6 +2224,56 @@ public static class C2M_InspectLootMonsterCodec
     {
         var writer = new BinaryWriter();
         if (value.MonsterId != 0) writer.WriteUInt32(1, value.MonsterId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2M_InvokeUnitActionCodec
+{
+    public static C2M_InvokeUnitAction Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_InvokeUnitAction();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.Namespace = reader.ReadString();
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.Action = reader.ReadString();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.Version = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 2:
+                    value.OperationId = reader.ReadString();
+                    break;
+                case 5 when tag.WireType == 2:
+                    value.Payload = reader.ReadBytes();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_InvokeUnitAction value)
+    {
+        var writer = new BinaryWriter();
+        if (!string.IsNullOrEmpty(value.Namespace)) writer.WriteString(1, value.Namespace);
+        if (!string.IsNullOrEmpty(value.Action)) writer.WriteString(2, value.Action);
+        if (value.Version != 0) writer.WriteUInt32(3, value.Version);
+        if (!string.IsNullOrEmpty(value.OperationId)) writer.WriteString(4, value.OperationId);
+        if (value.Payload != null && value.Payload.Length > 0) writer.WriteBytes(5, value.Payload);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -3542,6 +3668,9 @@ public static class G2C_CombatResultCodec
                 case 12 when tag.WireType == 0:
                     value.PreventedReason = reader.ReadUInt32();
                     break;
+                case 13 when tag.WireType == 0:
+                    value.Critical = reader.ReadBool();
+                    break;
                 default:
                     reader.Skip(tag.WireType);
                     break;
@@ -3565,6 +3694,7 @@ public static class G2C_CombatResultCodec
         if (value.Killed) writer.WriteBool(10, value.Killed);
         if (value.ServerTick != 0) writer.WriteUInt32(11, value.ServerTick);
         if (value.PreventedReason != 0) writer.WriteUInt32(12, value.PreventedReason);
+        if (value.Critical) writer.WriteBool(13, value.Critical);
         return writer.ToArray();
     }
 }
@@ -5090,6 +5220,48 @@ public static class M2C_CancelPlayerTradeCodec
     }
 }
 
+public static class M2C_CancelSkillCodec
+{
+    public static M2C_CancelSkill Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_CancelSkill();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.Cancelled = reader.ReadBool();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_CancelSkill value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Cancelled) writer.WriteBool(1, value.Cancelled);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
 public static class M2C_CastSkillCodec
 {
     public static M2C_CastSkill Decode(byte[] payload)
@@ -5469,6 +5641,48 @@ public static class M2C_InspectLootMonsterCodec
         {
             writer.WriteMessage(2, item == null ? null : LootDropSnapshotCodec.Encode(item));
         }
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
+public static class M2C_InvokeUnitActionCodec
+{
+    public static M2C_InvokeUnitAction Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_InvokeUnitAction();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.Payload = reader.ReadBytes();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_InvokeUnitAction value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Payload != null && value.Payload.Length > 0) writer.WriteBytes(1, value.Payload);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -7767,6 +7981,11 @@ public static class MapProtocol
         C2M_CancelPlayerTradeCodec.Encode, M2C_CancelPlayerTradeCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_CancelSkill, M2C_CancelSkill> CancelSkill = new(
+        "Map.CancelSkill", MsgCode.C2M_CancelSkill, MsgCode.M2C_CancelSkill,
+        C2M_CancelSkillCodec.Encode, M2C_CancelSkillCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2M_CastSkill, M2C_CastSkill> CastSkill = new(
         "Map.CastSkill", MsgCode.C2M_CastSkill, MsgCode.M2C_CastSkill,
         C2M_CastSkillCodec.Encode, M2C_CastSkillCodec.Decode,
@@ -7795,6 +8014,11 @@ public static class MapProtocol
     public static readonly RpcDescriptor<C2M_InspectLootMonster, M2C_InspectLootMonster> InspectLootMonster = new(
         "Map.InspectLootMonster", MsgCode.C2M_InspectLootMonster, MsgCode.M2C_InspectLootMonster,
         C2M_InspectLootMonsterCodec.Encode, M2C_InspectLootMonsterCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_InvokeUnitAction, M2C_InvokeUnitAction> InvokeUnitAction = new(
+        "Map.InvokeUnitAction", MsgCode.C2M_InvokeUnitAction, MsgCode.M2C_InvokeUnitAction,
+        C2M_InvokeUnitActionCodec.Encode, M2C_InvokeUnitActionCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2M_LearnTrainerSkill, M2C_LearnTrainerSkill> LearnTrainerSkill = new(
@@ -8014,6 +8238,8 @@ public sealed class MapClient
         socket.CallAsync(MapProtocol.BuyNpcShopItem, request, cancellationToken);
     public Task<M2C_CancelPlayerTrade> CancelPlayerTradeAsync(C2M_CancelPlayerTrade request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.CancelPlayerTrade, request, cancellationToken);
+    public Task<M2C_CancelSkill> CancelSkillAsync(C2M_CancelSkill request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.CancelSkill, request, cancellationToken);
     public Task<M2C_CastSkill> CastSkillAsync(C2M_CastSkill request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.CastSkill, request, cancellationToken);
     public Task<M2C_CommandOwnedUnit> CommandOwnedUnitAsync(C2M_CommandOwnedUnit request, CancellationToken cancellationToken = default) =>
@@ -8026,6 +8252,8 @@ public sealed class MapClient
         socket.CallAsync(MapProtocol.FindPath, request, cancellationToken);
     public Task<M2C_InspectLootMonster> InspectLootMonsterAsync(C2M_InspectLootMonster request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.InspectLootMonster, request, cancellationToken);
+    public Task<M2C_InvokeUnitAction> InvokeUnitActionAsync(C2M_InvokeUnitAction request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.InvokeUnitAction, request, cancellationToken);
     public Task<M2C_LearnTrainerSkill> LearnTrainerSkillAsync(C2M_LearnTrainerSkill request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.LearnTrainerSkill, request, cancellationToken);
     public Task<M2C_LootMonster> LootMonsterAsync(C2M_LootMonster request, CancellationToken cancellationToken = default) =>

@@ -977,6 +977,7 @@ message G2C_CombatResult // IMessage
   uint32 server_tick = 11;
   // 模块定义的不透明伤害规避原因；0表示未规避。 / Opaque module-defined damage-prevention reason; zero means not prevented.
   uint32 prevented_reason = 12;
+  optional bool critical = 13;
 }
 
 // Unit语义表现是AOI事件；具体聊天、表情或动画包由外置客户端协议适配器决定。
@@ -1016,4 +1017,36 @@ message G2C_LogoutCharacter // IResponse
   uint64 character_id = 1;
   // True only after authoritative offline/save acknowledgement and route release.
   bool released = 2;
+}
+
+//ResponseType M2C_CancelSkill
+// 以完整施法身份取消当前动作，旧请求不影响后续施法。 / Cancels by full cast identity; stale requests preserve later casts.
+// @ets.msg protocol=Map method=CancelSkill duringTransfer=reject
+message C2M_CancelSkill // IActorLocationRequest
+{
+  uint32 skill_id = 1;
+  uint64 cast_id = 2;
+}
+
+message M2C_CancelSkill // IActorLocationResponse
+{
+  bool cancelled = 1;
+}
+
+//ResponseType M2C_InvokeUnitAction
+// 有界信封只路由到玩家自己的登记组件，业务字段由空间所有者解释。
+// Bounded envelope routed only to the player's owned component; the namespace owner interprets its data.
+// @ets.msg protocol=Map method=InvokeUnitAction duringTransfer=reject
+message C2M_InvokeUnitAction // IActorLocationRequest
+{
+  string namespace = 1;
+  string action = 2;
+  uint32 version = 3;
+  string operation_id = 4;
+  bytes payload = 5;
+}
+
+message M2C_InvokeUnitAction // IActorLocationResponse
+{
+  bytes payload = 1;
 }

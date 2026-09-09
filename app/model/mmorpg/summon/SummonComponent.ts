@@ -93,6 +93,9 @@ export interface SummonRuntimeState {
   followOwner: boolean;
   reaction: OwnedUnitReactionValue;
   readonly autoCastAbilityIds: Set<number>;
+  /** 只缓存成功发布的资源；失败后由下一思考周期重试。 / Cache only published resources so failures retry on the next think cycle. */
+  publishedResources?: Readonly<{ current: bigint; maximum: bigint }>;
+  resourcePublicationPending?: boolean;
 }
 
 /** 当前控制面快照；用于 AOI/协议适配器恢复 UI，不暴露地图内 AI 状态。 / Current control-plane snapshot for AOI adapters; map-local AI state remains private. */

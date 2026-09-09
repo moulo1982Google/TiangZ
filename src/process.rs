@@ -912,6 +912,7 @@ pub async fn run_runtime_config(
         .map(|health| Duration::from_millis(health.stale_after_ms.max(1)))
         .unwrap_or_else(|| Duration::from_secs(15));
     let health_state = Arc::new(ProcessHealthState::starting(runtime_stale_after));
+    health_state.set_runtime_data_packs(&runtime_data_packs);
     let health_server = match config
         .process
         .observability

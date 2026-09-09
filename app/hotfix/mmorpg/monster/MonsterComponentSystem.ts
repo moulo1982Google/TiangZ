@@ -1,5 +1,6 @@
 import {
   GameConfigs,
+  GlobalIdSystem,
   GameErrCode,
   CombatComponent,
   CombatStateComponent,
@@ -115,6 +116,7 @@ const LOOT_OPERATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/;
 export class MonsterComponentSystem extends MonsterComponent {
   /** 读取本地图冷刷点，并在地图创建时生成初始怪物。 / Loads cold spawn points and creates initial monsters when the map is created. */
   protected override Awake(map: MapComponent, aoi: MapAoiComponent): void {
+    this.defeatRewardScopeId = GlobalIdSystem.Instance.Next();
     this.map = map;
     this.aoi = aoi;
     const externalContent = this.DomainScene().GetComponent(MonsterContentProfileComponent);
@@ -930,11 +932,9 @@ export class MonsterComponentSystem extends MonsterComponent {
     const monsterPosition = monster.GetComponent(PositionComponent);
     const spawn = monster.GetComponent(MonsterSpawnProfileComponent).Point;
     const returnPoint = state.combatReturnPoint ?? spawn;
-    const returnDistance = Math.sqrt(distanceSquared(
-      monsterPosition.x,
-      monsterPosition.z,
-      returnPoint.x,
-      returnPoint.z,
+    const returnDistance = Math.sqrt(monsterArrivalDistanceSquared(
+      monsterPosition, returnPoint, this.map.SpatialProfile.spatialMode,
+      this.map.SpatialProfile.cellSizeMeters,
     ));
     if (state.returningToSpawn) {
       if (returnDistance <= MONSTER_SPAWN_ARRIVAL_RANGE_METERS) {
@@ -987,13 +987,17 @@ export class MonsterComponentSystem extends MonsterComponent {
     ));
     const hasAmbientMovement = (spawnConfig.waypoints?.length ?? 0) > 0
       || (spawnConfig.wanderRadius ?? 0) > 0;
+    const engagementArrived = monsterArrivalDistanceSquared(
+      monsterPosition, engagementPoint, this.map.SpatialProfile.spatialMode,
+      this.map.SpatialProfile.cellSizeMeters,
+    ) <= MONSTER_SPAWN_ARRIVAL_RANGE_METERS * MONSTER_SPAWN_ARRIVAL_RANGE_METERS;
     const mustReturn = (
       (wasEngaged && target === undefined) ||
       (target !== undefined && engagementDistance > MONSTER_LEASH_RANGE_METERS) ||
       (
         target === undefined
         && !hasAmbientMovement
-        && engagementDistance > MONSTER_SPAWN_ARRIVAL_RANGE_METERS
+        && !engagementArrived
       )
     );
     if (mustReturn) {
@@ -1001,7 +1005,7 @@ export class MonsterComponentSystem extends MonsterComponent {
       // A leash return is not a teleport: atomically clear threat and player
       // combat sources, then use the normal movement path to reach the spawn.
       this.ClearThreat(monster, state, now);
-      if (engagementDistance <= MONSTER_SPAWN_ARRIVAL_RANGE_METERS) {
+      if (engagementArrived) {
         this.FinishMonsterReturn(monster, state, now, engagementPoint);
         return;
       }
@@ -1651,7 +1655,8 @@ export class MonsterComponentSystem extends MonsterComponent {
     const position = monster.GetComponent(PositionComponent);
     const spawn = monster.GetComponent(MonsterSpawnProfileComponent).Point;
     state.combatReturnPoint = { x: spawn.x, y: spawn.y, z: spawn.z };
-    if (distanceSquared(position.x, position.z, spawn.x, spawn.z)
+    if (monsterArrivalDistanceSquared(position, spawn, this.map.SpatialProfile.spatialMode,
+      this.map.SpatialProfile.cellSizeMeters)
       <= MONSTER_SPAWN_ARRIVAL_RANGE_METERS * MONSTER_SPAWN_ARRIVAL_RANGE_METERS) {
       state.returningToSpawn = false;
       state.combatReturnPoint = null;
@@ -2460,4 +2465,16 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
     if (left[index] !== right[index]) return false;
   }
   return true;
+}
+
+/** 按导航实际终点判断返回到达，避免格点取整后的实体永远达不到小数目标。 / Measures return arrival against the actual navigation destination so grid rounding cannot leave an entity returning forever. */
+function monsterArrivalDistanceSquared(
+  position: { readonly x: number; readonly z: number },
+  destination: { readonly x: number; readonly z: number },
+  spatialMode: number,
+  cellSizeMeters: number,
+): number {
+  const x = spatialMode === SpatialMode.Grid2D ? Math.round(destination.x / cellSizeMeters) * cellSizeMeters : destination.x;
+  const z = spatialMode === SpatialMode.Grid2D ? Math.round(destination.z / cellSizeMeters) * cellSizeMeters : destination.z;
+  return distanceSquared(position.x, position.z, x, z);
 }

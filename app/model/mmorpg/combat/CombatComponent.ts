@@ -37,6 +37,16 @@ export interface DamageRequest {
   readonly damageSchool?: DamageSchoolValue;
   /** 是否允许外置规则在扣血前规避本次伤害；法术和持续效果默认不可规避。 / Whether extensions may prevent this damage before health mutation; spells and periodic effects are non-preventable by default. */
   readonly canBePrevented?: boolean;
+  readonly periodic?: boolean;
+}
+
+export interface DamageCalculation {
+  readonly amount: bigint;
+  readonly critical: boolean;
+}
+
+export interface DamageCalculator {
+  CalculateDamage(request: Readonly<DamageRequest>, attemptSequence: number): DamageCalculation;
 }
 
 export interface DamageAbsorption {
@@ -56,6 +66,7 @@ export interface DamageResult {
   readonly damageSchool: DamageSchoolValue;
   /** 非零值是不透明的模块规避原因；Combat只负责透传，不解释具体命中规则。 / A non-zero opaque module reason; Combat forwards it without interpreting game-specific hit rules. */
   readonly preventedReason: number;
+  readonly critical?: boolean;
 }
 
 export interface HealingResult {
@@ -84,6 +95,7 @@ export interface CombatComponent {
   SetAutoAttackInterval(intervalMs: number): AutoAttackState;
   ToggleAutoAttack(targetUnitId: number, enabled: boolean): AutoAttackState;
   BeginAutoAttackSwing(nowMs: number): AutoAttackState;
+  ShortenAutoAttackSwing(amountMs: number): AutoAttackState;
   ResetAutoAttackSwing(): AutoAttackState;
   RegisterDamageAbsorber(amount: bigint, priority?: number): number;
   UpdateDamageAbsorber(modifierId: number, remaining: bigint): boolean;
@@ -102,6 +114,7 @@ export interface CombatComponent {
  */
 @component()
 export class CombatComponent extends Component {
+  protected damageCalculator: (Component & DamageCalculator) | undefined;
   protected autoAttackEnabled = false;
   protected autoAttackTargetUnitId = 0;
   protected autoAttackPhase: AutoAttackPhaseValue = AutoAttackPhase.Inactive;
@@ -111,8 +124,30 @@ export class CombatComponent extends Component {
   protected readonly damageAbsorbers = new Map<number, DamageAbsorberState>();
   protected nextDamageAbsorberId = 1;
   protected nextDamageAttemptSequence = 1;
+  protected nextDamageCalculationSequence = 1;
+
+  /** 只登记目标自身的计算组件；调用时读取当前方法以支持Hotfix。 / Registers only a target-owned calculator and resolves its current method at invocation. */
+  RegisterDamageCalculator(calculator: Component & DamageCalculator): void {
+    if (calculator.IsDisposed || calculator.Parent !== this.Parent || typeof calculator.CalculateDamage !== "function") {
+      throw new Error("damage calculator must belong to the combat owner");
+    }
+    if (this.damageCalculator && this.damageCalculator !== calculator) throw new Error("damage calculator already registered");
+    this.damageCalculator = calculator;
+  }
+
+  /** 计算阶段不得改写生命或吸收器；非法结果在扣血前拒绝。 / Rejects invalid results before health or absorber mutation. */
+  CalculateDamage(request: Readonly<DamageRequest>, attemptSequence: number): DamageCalculation {
+    const calculator = this.damageCalculator;
+    if (!calculator) return { amount: request.amount, critical: false };
+    if (calculator.IsDisposed || calculator.Parent !== this.Parent) throw new Error("damage calculator owner no longer valid");
+    const result = calculator.CalculateDamage(Object.freeze({ ...request }), attemptSequence);
+    if (!result || typeof result.amount !== "bigint" || result.amount < 0n || result.amount > 0xffff_ffff_ffff_ffffn ||
+      typeof result.critical !== "boolean") throw new Error("invalid damage calculation");
+    return result;
+  }
 
   protected override OnDestroy(): void {
     this.damageAbsorbers.clear();
+    this.damageCalculator = undefined;
   }
 }

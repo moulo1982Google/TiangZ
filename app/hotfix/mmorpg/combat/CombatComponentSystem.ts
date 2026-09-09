@@ -92,6 +92,15 @@ export class CombatComponentSystem extends CombatComponent {
     return this.snapshotAutoAttackState();
   }
 
+  /** 只缩短当前正在进行的挥击，不开启攻击或改变目标。 / Shortens only an active swing without enabling attacks or changing targets. */
+  ShortenAutoAttackSwing(amountMs: number): AutoAttackState {
+    if (!Number.isFinite(amountMs) || amountMs < 0) throw new Error("invalid swing shortening amount");
+    if (this.autoAttackEnabled && this.autoAttackPhase === AutoAttackPhase.Swinging) {
+      this.autoAttackSwingStartAtMs = Math.max(0, this.autoAttackSwingStartAtMs - amountMs);
+    }
+    return this.snapshotAutoAttackState();
+  }
+
   /**
    * 保持自动攻击激活但清除当前读条；重新满足条件时由BeginAutoAttackSwing从0开始。
    *
@@ -185,10 +194,17 @@ export class CombatComponentSystem extends CombatComponent {
         attemptSequence,
       });
       if (preventedReason !== 0) {
-        return emptyDamageResult(request.amount, currentHp, damageSchool, preventedReason);
+        const result = emptyDamageResult(request.amount, currentHp, damageSchool, preventedReason);
+        this.DomainScene().Events.Publish(CombatEvents.DamagePrevented, {
+          target: owner, request: Object.freeze({ ...request, damageSchool }), result,
+        });
+        return result;
       }
     }
-    let pending = applyIncomingDamageMultipliers(request.amount, numeric, damageSchool);
+    const calculationSequence = this.nextDamageCalculationSequence;
+    this.nextDamageCalculationSequence = (calculationSequence + 1) >>> 0;
+    const calculation = this.CalculateDamage({ ...request, damageSchool }, calculationSequence);
+    let pending = applyIncomingDamageMultipliers(calculation.amount, numeric, damageSchool);
     let absorbedDamage = 0n;
     const absorptions: DamageAbsorption[] = [];
     const modifiers = [...this.damageAbsorbers.values()]
@@ -224,6 +240,7 @@ export class CombatComponentSystem extends CombatComponent {
       absorptions,
       damageSchool,
       preventedReason: 0,
+      ...(calculation.critical ? { critical: true } : {}),
     };
     if (finalDamage > 0n || absorbedDamage > 0n) {
       this.DomainScene().Events.Publish(CombatEvents.DamageResolved, {

@@ -147,6 +147,12 @@ export class MonsterComponent extends Component<[
   /** 尸体掉落归Map所有；普通掉落带首个有效攻击者归属，任务掉落按账号资格判断。 / Corpse loot belongs to the Map; regular rows are tagged to the first effective attacker and quest rows use account eligibility. */
   protected readonly lootContainers = new Map<number, LootContainer>();
   protected nextMonsterUnitId = 0x8000_0000;
+  protected defeatRewardScopeId = 0n;
+
+  /** 一次地图组件生命周期的持久奖励作用域；与目标InstanceId组合后不受进程实例号复用影响。 / Persistent reward scope for one map-component lifetime; combining it with a target InstanceId survives process-local ID reuse. */
+  get DefeatRewardScopeId(): bigint {
+    return this.defeatRewardScopeId;
+  }
 
   /** 查询本地图怪物；业务攻击、任务和掉落只通过这个入口取Unit。 / Looks up a map monster for attacks, quests, and drops. */
   Get(monsterId: number): MonsterUnit | undefined {

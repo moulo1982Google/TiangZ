@@ -326,6 +326,7 @@ export class GateScene extends EntryScene {
         this.self.name,
         connectionId,
         now,
+        tokenClaims.displayName ?? request.account,
       );
       this.routesByAccount.set(request.account, route);
     }
@@ -707,6 +708,7 @@ export class GateScene extends EntryScene {
           gateEpoch: 1n,
           characterId: session.characterId,
           playerConfigId: session.playerConfigId,
+          displayName: route.displayName,
           mapInstanceId: target.instance.mapInstanceId,
           hasInitialSpawnOverride: spawnOverride !== undefined,
           initialSpawnX: spawnOverride?.x ?? 0,

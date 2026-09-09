@@ -37,6 +37,25 @@ pub struct LoadedRuntimeDataPack {
     payload: Value,
 }
 
+/// 只公开启动时实际装载的身份，不泄露数据内容或本机路径。 / Exposes loaded identity without payloads or local paths.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RuntimeDataPackIdentity {
+    pub(crate) id: String,
+    pub(crate) owner_module_id: String,
+    pub(crate) file_hash: String,
+}
+
+impl LoadedRuntimeDataPack {
+    pub(crate) fn identity(&self) -> RuntimeDataPackIdentity {
+        RuntimeDataPackIdentity {
+            id: self.id.clone(),
+            owner_module_id: self.owner_module_id.clone(),
+            file_hash: self.file_hash.clone(),
+        }
+    }
+}
+
 pub fn load_runtime_data_packs(
     resolved_config: &Path,
     config: &ProcessDataPackConfig,

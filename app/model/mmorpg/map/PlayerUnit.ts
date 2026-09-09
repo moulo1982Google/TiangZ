@@ -10,6 +10,7 @@ import type {
 
 export interface AwakePlayerUnit {
   account: string;
+  displayName?: string;
   characterId: bigint;
   playerConfigId: number;
   mapId: number;
@@ -23,6 +24,7 @@ export interface MatchPlayerGate {
 
 export interface PlayerSnapshot {
   account: string;
+  displayName?: string;
   characterId: bigint;
   mapId: number;
   mapInstanceId: bigint;
@@ -87,6 +89,8 @@ export interface DeadPlayerReleaseRequest {
 
 export interface PlayerUnit {
   CastSkill(skillId: number, targetUnitId: number): M2C_CastSkill;
+  /** 取消本人指定的活动技能；重复或旧施法身份返回false。 / Cancels the specified owned cast; duplicate or stale identities return false. */
+  CancelSkill(skillId: number, castId: bigint): boolean;
   InspectLootMonster(monsterId: number): M2C_InspectLootMonster;
   LootMonster(monsterId: number, operationId: string, dropId: number, lootAll: boolean): Promise<M2C_LootMonster>;
   ReleaseDeadPlayer(request?: DeadPlayerReleaseRequest): M2C_ReleaseDeadPlayer;
@@ -98,6 +102,7 @@ export interface PlayerUnit {
 @lifecycle({ awake: true })
 export class PlayerUnit extends ActorUnit<[request: AwakePlayerUnit]> {
   protected account = "";
+  protected displayName = "";
   protected characterId = 0n;
   protected playerConfigId = 0;
   protected mapId = 0;
@@ -109,6 +114,10 @@ export class PlayerUnit extends ActorUnit<[request: AwakePlayerUnit]> {
 
   get CharacterId(): bigint {
     return this.characterId;
+  }
+
+  get DisplayName(): string {
+    return this.displayName;
   }
 
   get PlayerConfigId(): number {

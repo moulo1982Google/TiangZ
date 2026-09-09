@@ -6,7 +6,8 @@ import type {
 } from "../../domains/quest/QuestComponent";
 
 /** MMORPG compatibility facade; quest ownership lives in the reusable domain layer. / MMORPG兼容门面；任务归属位于可复用领域层。 */
-export { QuestComponent } from "../../domains/quest/QuestComponent";
+export { QuestComponent, NormalizeQuestRewardDeliveries } from "../../domains/quest/QuestComponent";
+export type { QuestRewardDelivery } from "../../domains/quest/QuestComponent";
 export type { QuestObjectiveIndexEntry, QuestTransferState };
 export type QuestComponentDomainSurface = GenericQuestComponent;
 

@@ -4,6 +4,7 @@ export interface LoginTokenClaims {
   readonly loginCount: number;
   readonly characterId: bigint;
   readonly playerConfigId: number;
+  readonly displayName?: string;
 }
 
 /**
@@ -28,12 +29,13 @@ export function EncodeLoginToken(claims: LoginTokenClaims): string {
     claims.loginCount.toString(10),
     claims.characterId.toString(10),
     claims.playerConfigId.toString(10),
+    encodeURIComponent(claims.displayName ?? claims.account).replace(/\./g, "%2E"),
   ].join(".");
 }
 
 export function DecodeLoginToken(token: string): LoginTokenClaims {
   const parts = token.split(".");
-  if (parts.length !== 5) throw new Error("invalid login token");
+  if (parts.length !== 5 && parts.length !== 6) throw new Error("invalid login token");
   const loginCount = Number(parts[2]);
   const characterId = BigInt(parts[3]);
   const playerConfigId = Number(parts[4]);
@@ -43,9 +45,11 @@ export function DecodeLoginToken(token: string): LoginTokenClaims {
     loginCount,
     characterId,
     playerConfigId,
+    displayName: parts.length === 6 ? decodeURIComponent(parts[5]) : decodeURIComponent(parts[1]),
   } satisfies LoginTokenClaims;
   if (!claims.processId || !claims.account || !Number.isSafeInteger(loginCount) || loginCount <= 0 ||
-    characterId <= 0n || !Number.isSafeInteger(playerConfigId) || playerConfigId <= 0) {
+    characterId <= 0n || !Number.isSafeInteger(playerConfigId) || playerConfigId <= 0 ||
+    !claims.displayName || claims.displayName.length > 128 || /[\u0000-\u001f\u007f]/.test(claims.displayName)) {
     throw new Error("invalid login token claims");
   }
   return claims;

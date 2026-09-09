@@ -38,6 +38,7 @@ import {
   resolveFacingRelativeGridInput,
   SpatialMode,
   SkillComponent,
+  SkillMapComponent,
   TimeSystem,
   type SkillCastState,
   type MovePlayer,
@@ -51,6 +52,7 @@ export class PlayerUnitSystem extends PlayerUnit {
   /** 初始化稳定身份；组件组合仍由 MapComponent 工厂负责。 / Initializes stable identity while MapComponent remains responsible for Component composition. */
   protected override Awake(request: AwakePlayerUnit): void {
     this.account = request.account;
+    this.displayName = request.displayName || request.account;
     if (request.characterId <= 0n) throw new Error("player characterId must be positive");
     this.characterId = request.characterId;
     if (!Number.isSafeInteger(request.playerConfigId) || request.playerConfigId <= 0) {
@@ -84,6 +86,7 @@ export class PlayerUnitSystem extends PlayerUnit {
     const native = this.GetComponent(NativeUnitRef);
     return {
       account: this.account,
+      displayName: this.displayName,
       characterId: this.characterId,
       mapId: this.mapId,
       mapInstanceId: this.mapInstanceId,
@@ -330,6 +333,11 @@ export class PlayerUnitSystem extends PlayerUnit {
   /** 提交一次权威施法；目标、距离、GCD和CD都由地图技能桶同步校验。 / Submits an authoritative cast validated synchronously by the map skill scheduler. */
   CastSkill(skillId: number, targetUnitId: number): M2C_CastSkill {
     return toCastSkillResponse(this.GetComponent(SkillComponent).Cast({ skillId, targetUnitId }));
+  }
+
+  /** 由玩家mailbox取消本人指定的施法，不影响已经发射的技能。 / Cancels the owned cast through the player mailbox without affecting launched effects. */
+  CancelSkill(skillId: number, castId: bigint): boolean {
+    return this.DomainScene().GetComponent(SkillMapComponent).Cancel(this, skillId, castId);
   }
 }
 

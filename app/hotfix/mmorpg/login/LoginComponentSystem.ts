@@ -19,6 +19,8 @@ import {
   type S2C_Register,
   type SceneConfig,
   type CharacterRepository,
+  type PlayerRepository,
+  NumericType,
   systemFor,
 } from "#tiangz/model";
 
@@ -31,6 +33,7 @@ export class LoginComponentSystem extends LoginComponent {
     processId: string,
     characterRepository: CharacterRepository,
     playerContent: PlayerContentProfileComponent,
+    playerRepository?: PlayerRepository,
   ): void {
     if (gateScenes.length === 0) throw new Error("LoginComponent needs at least one Gate Scene");
     this.gateScenes = [...gateScenes].sort((left, right) =>
@@ -39,6 +42,7 @@ export class LoginComponentSystem extends LoginComponent {
     this.processId = processId;
     this.characterRepository = characterRepository;
     this.playerContent = playerContent;
+    this.playerRepository = playerRepository ?? null;
   }
 
   /** 完成Demo登录，并用账号稳定选择Gate；全部Login实例对同一拓扑会得到相同结果。 / Completes Demo login and selects a stable Gate by account across Login instances sharing the same topology. */
@@ -61,6 +65,23 @@ export class LoginComponentSystem extends LoginComponent {
     const loginCount = (this.loginCounts.get(account) ?? 0) + 1;
     this.loginCounts.set(account, loginCount);
     const gate = SelectStickyGate(account, this.gateScenes);
+    const characters: import("#tiangz/model").CharacterSummary[] = [];
+    for (const character of catalog.data.characters) {
+      const summary = toSummary(character);
+      const saved = await this.playerRepository?.Load(character.characterId);
+      const progression = saved?.data.progression;
+      if (progression) {
+        if (progression.account !== account || progression.characterId !== character.characterId) {
+          throw new Error("character summary progression identity mismatch");
+        }
+        const levels = progression.numerics.filter(row => row.numericType === NumericType.Level);
+        if (levels.length > 1 || levels.some(row => row.value < 1n || row.value > 0xffff_ffffn)) {
+          throw new Error("character summary progression level is invalid");
+        }
+        if (levels.length === 1) summary.level = Number(levels[0].value);
+      }
+      characters.push(summary);
+    }
 
     return {
       account,
@@ -72,11 +93,12 @@ export class LoginComponentSystem extends LoginComponent {
         loginCount,
         characterId: selected.characterId,
         playerConfigId: selected.playerConfigId,
+        displayName: selected.name,
       }) : "",
       gateName: gate.name,
       gateIp: gate.outerIp ?? gate.innerIp,
       gatePort: gate.outerPort ?? gate.port,
-      characters: catalog.data.characters.map(toSummary),
+      characters,
       selectedCharacterId,
     };
   }

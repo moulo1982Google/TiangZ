@@ -95,6 +95,7 @@ export async function main(): Promise<void> {
     async PublishVisibilityChanges(changes: readonly AoiVisibilityDelta[]): Promise<void> {
       published.push([...changes]);
     },
+    async PublishOwnedUnitResources(): Promise<boolean> { return true; },
   } as unknown as MapComponent;
   const summons = mapScene.AddComponent(SummonComponent, map, aoi);
   const owner = units.Create(1, PlayerUnit, {

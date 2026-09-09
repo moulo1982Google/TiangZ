@@ -173,6 +173,10 @@ export const OuterMessage = {
   G2C_Ping: 10031,
   C2G_LogoutCharacter: 10106,
   G2C_LogoutCharacter: 10107,
+  C2M_CancelSkill: 10108,
+  M2C_CancelSkill: 10109,
+  C2M_InvokeUnitAction: 10110,
+  M2C_InvokeUnitAction: 10111,
 } as const;
 
 export const MsgCode = {

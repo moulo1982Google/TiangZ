@@ -1,5 +1,6 @@
 import type { ActionDefinition, ActionTypeValue } from "../action/ActionType";
 import { utf8Decode, utf8Encode } from "../../../core/public";
+import { NormalizeQuestRewardDeliveries } from "../quest/QuestComponent";
 import type {
   PersistedBuffState,
   PlayerDomainDataMap,
@@ -65,6 +66,8 @@ export function ProjectPlayerDomainData<TDomain extends PlayerPersistenceDomain>
             objectives: quest.objectives.map((objective) => ({ ...objective })),
           })),
           completedQuestConfigIds: [...data.quests.completedQuestConfigIds],
+          ...(data.quests.rewardDeliveries?.length
+            ? { rewardDeliveries: NormalizeQuestRewardDeliveries(data.quests.rewardDeliveries) } : {}),
         },
         reason: data.reason,
       } satisfies PlayerQuestSaveData;
@@ -396,6 +399,7 @@ function validateQuests(value: unknown): void {
   ).forEach((id, index) =>
     requirePositiveInteger(id, `quests.completedQuestConfigIds[${index}]`)
   );
+  NormalizeQuestRewardDeliveries(quests.rewardDeliveries);
 }
 
 function validateStarterDungeon(value: unknown, name: string): void {

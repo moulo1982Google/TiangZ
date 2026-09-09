@@ -63,6 +63,7 @@ export async function main(): Promise<void> {
         return preventionReason;
       },
       Publish(descriptor: unknown, event: unknown): void {
+        if (descriptor === CombatEvents.DamagePrevented) return;
         assert.equal(descriptor, CombatEvents.DamageResolved);
         resolvedDamageEvents.push(event);
       },

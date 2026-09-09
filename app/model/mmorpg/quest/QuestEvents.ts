@@ -40,7 +40,15 @@ export interface QuestRewardedEvent {
   readonly sourceUnitId: number;
 }
 
+/** 同步收集奖励的持久化副作用；不得异步执行或提前修改游戏状态。 / Collects durable reward effects synchronously without executing them or mutating gameplay state. */
+export interface BeforeRewardQuestEvent {
+  readonly player: PlayerUnit;
+  readonly questConfigId: number;
+  AddDelivery(ownerId: string, payload: string): void;
+}
+
 export const QuestEvents = {
+  BeforeReward: defineVetoEvent<BeforeRewardQuestEvent, number>("Quest.BeforeReward", SystemErrCode.Success),
   BeforeAccept: defineVetoEvent<BeforeAcceptQuestEvent, number>(
     "Quest.BeforeAccept",
     SystemErrCode.Success,

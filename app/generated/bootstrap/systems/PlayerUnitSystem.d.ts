@@ -27,6 +27,7 @@ declare module "../../../model/mmorpg/map/PlayerUnit" {
     LootMonster(monsterId: number, operationId: string, dropId: number, lootAll: boolean): Promise<M2C_LootMonster>;
     ToggleAutoAttack(targetUnitId: number, enabled: boolean): M2C_ToggleAutoAttack;
     CastSkill(skillId: number, targetUnitId: number): M2C_CastSkill;
+    CancelSkill(skillId: number, castId: bigint): boolean;
   }
 }
 

@@ -1,5 +1,25 @@
 # TiangZ AI 项目上下文
 
+2026-09-09 登录摘要在鉴权通过后通过既有PlayerRepository读取各目录角色的持久成长等级，不写回账号目录；无成长记录保留创建等级，身份不匹配、非法等级或存储失败拒绝返回过期成功。LoginComponent新增可选仓库依赖，LoginScene通过同一仓库工厂提供；Model变更必须生成、构建并重启。中立回归见 `tests/unit/login_summary_level.test.ts`。
+
+2026-09-08 DamagePrevented 是已确定否决后的同步事实，可追加领域副作用；DamageResolved 仍只表示实际扣血/吸收。ShortenAutoAttackSwing 仅缩短当前活动挥击，不激活闲置攻击或改变目标。否决监听器继续保持只读，游戏招架/格挡规则留模块。
+
+2026-09-08 Combat 可登记同一目标拥有的 DamageCalculator 组件。否决通过后读取其当前方法计算金额与 critical，再执行目标乘数、吸收器和单次扣血；非法金额或失效拥有者在扣血前拒绝。模块计算方法不得产生结算副作用。周期伤害由 Buff 来源显式标记，G2C_CombatResult 新增可选 critical；公式与数据不进入宿主。Model/协议变更需生成、完整构建与重启。
+
+2026-09-08 公开玩家 displayName 来自 Login 选中的角色目录项，经 Demo 令牌、Gate 长期路由、内部入图及迁移快照传递到 PlayerUnit。公开 AOI 快照不得用账号覆盖角色名。旧令牌及缺失可选字段的内部快照回退到账号；Demo 令牌仍不是生产认证方案。内部协议新增可选字段，必须显式更新锁、生成、完整构建和重启。
+
+2026-09-08 MMORPG 的 `Map.InvokeUnitAction` 为外置玩法提供有界命名空间信封，经既有玩家 ActorLocation / ordered mailbox 路由，转图期间拒绝。`UnitActionComponent` 只登记同一玩家拥有的存活组件，按调用时的组件方法执行，禁止重复命名空间及跨拥有者登记；请求与响应分别上限64KiB。业务 schema、授权、幂等和持久化仍属于模块，信封不保证 exactly-once。不新增 Core 运行时分发器或绕开原有 Actor 路由。协议已显式更新生成锁，部署必须完整构建、重启。
+
+2026-09-08 归属单位资源同步：Map 的共享 AOI 快照缓存保持公开；玩家进入时单独替换自己及自己召唤单位的私有快照。AOI Enter 先拆分拥有者与其他观察者受众，再构造快照，避免共享缓存泄漏。Summon 使用现有思考桶检测当前资源与上限，变化时通过 `PublishOwnedUnitResources` 的逻辑 Self 受众及既有 EntityNumeric/latest 描述符发送，未成功发布会重试。非玩家所有者和不在拥有者视野内的单位不产生私有玩家通知。公开 Numeric 白名单、协议和 Native schema 均未扩大；Model 修改须生成、完整构建并重启进程。
+
+2026-09-08 成长事务修复：等级档位数值仅在 `result.level > currentLevel` 时应用。同级经验增加保留在线生命/资源；已提交回执重放不能再次套用等级初始值，覆盖提交后的消耗。规划持久快照与提交后协调必须使用同一条件。中立测试见 `tests/unit/progression_resource_preservation.test.ts`；协议、Model和Native schema不变。
+
+2026-09-08 移动停止同步：`NativeData.ResetMovement` 在停止活动移动时保留一次待输出状态，Grid2D 使用既有 dirty 标记，NavMesh 使用既有批量移动记录。下一固定 Tick 输出最终位置与 stopped 状态；同 Tick 重复 reset 保留待发通知，之后空闲 reset 不重复发布。移动仍归 Rust 持有，没有新增 schema、op 或协议；Rust 修改必须重建并重启。
+
+同日真实多角色验收发现旧奖励操作号按账号隔离，导致同账号第二角色的同任务事务冲突。新奖励使用 `quest-reward:v2:<CharacterId>:<QuestId>`；只有本地已完成任务的旧角色才能回退查询原账号键回执，活动任务不得复用账号键。跨角色隔离必须用同账号双角色验证。
+
+2026-09-08：任务奖励可通过 `QuestEvents.BeforeReward` 同步登记有界、不透明的模块投递消息，与奖励一起写入 quest 领域；`PendingRewardDeliveries` / `AcknowledgeRewardDelivery` 在玩家 ordered mailbox 中消费和确认。模块必须在目标端用消息 ID 做持久化幂等；离线队列在重登/迁移后继续，未提供离线后台投递保证。旧快照和原 protobuf 奖励回执可读，新增 Model 状态必须构建并重启。中立验证样本为 `org.example.reward-counter`，不把外部游戏规则放入 Core。Rust `/runtime-identity` 返回启动时加载的数据包 ID、owner 和文件 SHA-256，不暴露文件路径或内容；数据包变更仍需重启。
+
 **当前验收状态（2026-09-07）：r6 已通过。** 在独立 NVMe PG 路径下，DBProxy `0114af0` / TiangZ `d7af251` 完成 100 游戏玩家 + 100 持久化玩家、30 分钟、五次故障恢复及 SQL/事件/交易最终对账，独立审计通过。206,742 次读取无旧读、缺失或不变量错误；3 次恢复登录重试及暂时存储错误保留。PG fsync、Redis WAITAOF、连接数和业务预算不变。机械盘 r4 失败仍有效，Windows 10055 的具体 OS 根因未确定，不能作无限性能保证。当前测试 PG 保持 NVMe，旧卷留存，完整结果见[交接入口](../testing/handoff-2026-09-07.md)。以下同日“未通过/待验证”为历史进展，以本段及最终报告为准。
 
 最新 NVMe r5 在约第 19 分钟因负载进程 Windows 10055 建连错误中断，正常阶段检查未失败，但仍无完整验收。控制器现按轮次/地图启用探针既有 loopback 源地址隔离，记录 `game_probe_source`；仅测试工具变化，不改变业务传输或失败断言。旧 r4/r5 均保留为失败。
@@ -764,3 +784,17 @@ NPC 与怪物类名只表达基础身份，不是互斥的玩法能力标签。�
 ### 可交互物的不透明动作
 
 `InteractableContentDefinition.interactionActionId` 用于没有背包/任务持久化事务、但需要在地图中执行一次动作的交互物。Core 只校验实体存在、可用、同地图、使用距离和通用熟练度，然后同步发布 `InteractableEvents.ActionRequested`；动作编号、目标位置算法、动画和协议封包全部由外置模块拥有。动作型定义不能同时声明奖励、掉落表、任务入口/目标或熟练度写入，成功后不会自动隐藏、持久化或进入重生计时。模块需要移动 Unit 时必须调用 `MapComponent.RelocateUnit`，不得直接写 Position 或自行广播移动。
+
+## 精确取消活动技能（2026-09-08）
+
+MMORPG 的 MapProtocol.CancelSkill 经 PlayerUnit 有序 mailbox 和转移拒绝策略进入地图技能调度器。请求必须同时匹配当前技能ID及64位施法ID；无活动技能、旧ID、错误技能或重复请求返回 cancelled=false。成功取消仅移除当前调度项并发布现有 SkillCastState，不退款、不清除公共/独立冷却、不取消已发射弹道。客户端不能借取消消息选择其他玩家；所有权继续由既有 Actor Location 路由检查。
+
+新增协议是领域契约变更，需显式更新opcode/schema锁并通过完整codegen和进程重启部署；它不属于兼容Hotfix更新。来源游戏的取消计数、线协议和映射规则仍留在外置适配层。
+
+## 格点返回终点一致性（2026-09-09）
+
+MMORPG 怪物的返回完成判定必须使用导航能够抵达的终点：Grid2D 按 cellSizeMeters 对目标 X/Z 取整，NavMesh 保留连续坐标。返回期间和静止刷点的到达判断共用该语义，追击最大距离仍按原始遭遇点计算。不能仅扩大固定到达半径或由外置模块强行修改返回状态。中立仓库守卫的对角小数终点回归覆盖完成、远点拒绝及 NavMesh 不取整；本次不新增 Stable API 或协议。
+
+## 持久击败奖励作用域（2026-09-09）
+
+MonsterComponent 每次 Awake 分配一个 GlobalIdSystem 全局作用域，击败经验事务键由该作用域、目标 InstanceId 和角色持久 ID 组成。InstanceId 仍只保证进程内唯一，禁止单独用于跨重启的持久回执身份。同一组件生命周期内重试保持原键，重建地图组件后的新目标必须获得新键；按组件分配避免大批刷怪耗尽每秒全局 ID 序列。新增 Model 状态要求生成、构建及进程重启，不可只替换 Hotfix。

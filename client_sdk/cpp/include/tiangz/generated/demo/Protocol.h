@@ -9018,6 +9018,7 @@ struct G2C_CombatResult {
   bool killed = false;
   std::uint32_t serverTick = 0;
   std::uint32_t preventedReason = 0;
+  std::optional<bool> critical;
 };
 
 struct G2C_CombatResultCodec {
@@ -9111,6 +9112,13 @@ struct G2C_CombatResultCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 13:
+          if (tag.wireType == 0) {
+            value.critical = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -9133,6 +9141,7 @@ struct G2C_CombatResultCodec {
     writer.Bool(10, value.killed);
     writer.UInt32(11, value.serverTick);
     writer.UInt32(12, value.preventedReason);
+    if (value.critical.has_value()) writer.Bool(13, *value.critical);
     return writer.Finish();
   }
 };
@@ -9410,6 +9419,255 @@ struct G2C_LogoutCharacterCodec {
   }
 };
 
+struct C2M_CancelSkill {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t skillId = 0;
+  std::uint64_t castId = 0;
+};
+
+struct C2M_CancelSkillCodec {
+  static C2M_CancelSkill Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_CancelSkill value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.skillId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.castId = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_CancelSkill& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.skillId);
+    writer.UInt64(2, value.castId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_CancelSkill {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  bool cancelled = false;
+};
+
+struct M2C_CancelSkillCodec {
+  static M2C_CancelSkill Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_CancelSkill value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.cancelled = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_CancelSkill& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.Bool(1, value.cancelled);
+    return writer.Finish();
+  }
+};
+
+struct C2M_InvokeUnitAction {
+  std::optional<std::uint32_t> rpcId;
+  std::string namespace;
+  std::string action;
+  std::uint32_t version = 0;
+  std::string operationId;
+  tiangz::client::Bytes payload;
+};
+
+struct C2M_InvokeUnitActionCodec {
+  static C2M_InvokeUnitAction Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_InvokeUnitAction value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.namespace = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.action = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.version = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 2) {
+            value.operationId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 2) {
+            value.payload = reader.BytesField();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_InvokeUnitAction& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.String(1, value.namespace);
+    writer.String(2, value.action);
+    writer.UInt32(3, value.version);
+    writer.String(4, value.operationId);
+    writer.BytesField(5, value.payload);
+    return writer.Finish();
+  }
+};
+
+struct M2C_InvokeUnitAction {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  tiangz::client::Bytes payload;
+};
+
+struct M2C_InvokeUnitActionCodec {
+  static M2C_InvokeUnitAction Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_InvokeUnitAction value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.payload = reader.BytesField();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_InvokeUnitAction& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.BytesField(1, value.payload);
+    return writer.Finish();
+  }
+};
+
 namespace MsgCode {
 inline constexpr std::uint16_t C2S_GetLoginServiceAddr = 10002;
 inline constexpr std::uint16_t S2C_GetLoginServiceAddr = 10003;
@@ -9515,6 +9773,10 @@ inline constexpr std::uint16_t C2G_Ping = 10024;
 inline constexpr std::uint16_t G2C_Ping = 10031;
 inline constexpr std::uint16_t C2G_LogoutCharacter = 10106;
 inline constexpr std::uint16_t G2C_LogoutCharacter = 10107;
+inline constexpr std::uint16_t C2M_CancelSkill = 10108;
+inline constexpr std::uint16_t M2C_CancelSkill = 10109;
+inline constexpr std::uint16_t C2M_InvokeUnitAction = 10110;
+inline constexpr std::uint16_t M2C_InvokeUnitAction = 10111;
 } // namespace MsgCode
 
 inline constexpr tiangz::client::RpcDescriptor<C2S_GetLoginServiceAddr, S2C_GetLoginServiceAddr, C2S_GetLoginServiceAddrCodec, S2C_GetLoginServiceAddrCodec> LoginMgr_GetLoginServiceAddr{
@@ -9671,6 +9933,14 @@ inline constexpr tiangz::client::RpcDescriptor<C2G_Ping, G2C_Ping, C2G_PingCodec
 
 inline constexpr tiangz::client::RpcDescriptor<C2G_LogoutCharacter, G2C_LogoutCharacter, C2G_LogoutCharacterCodec, G2C_LogoutCharacterCodec> Gate_LogoutCharacter{
   "Gate.LogoutCharacter", MsgCode::C2G_LogoutCharacter, MsgCode::G2C_LogoutCharacter
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_CancelSkill, M2C_CancelSkill, C2M_CancelSkillCodec, M2C_CancelSkillCodec> Map_CancelSkill{
+  "Map.CancelSkill", MsgCode::C2M_CancelSkill, MsgCode::M2C_CancelSkill
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_InvokeUnitAction, M2C_InvokeUnitAction, C2M_InvokeUnitActionCodec, M2C_InvokeUnitActionCodec> Map_InvokeUnitAction{
+  "Map.InvokeUnitAction", MsgCode::C2M_InvokeUnitAction, MsgCode::M2C_InvokeUnitAction
 };
 
 inline constexpr tiangz::client::MessageDescriptor<G2C_MapReady, G2C_MapReadyCodec> Client_MapReady{

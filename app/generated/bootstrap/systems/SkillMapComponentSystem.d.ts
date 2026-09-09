@@ -5,6 +5,7 @@ import type { PlayerUnit, SkillCastCommand, SkillCastState, Unit } from "../../.
 declare module "../../../model/mmorpg/skill/SkillMapComponent" {
   interface SkillMapComponent {
     Cast(caster: Unit<any[]>, command: SkillCastCommand): SkillCastState;
+    Cancel(caster: Unit<any[]>, skillId: number, castId: bigint): boolean;
     InterruptByMovement(caster: Unit<any[]>): boolean;
     HandleDamageDuringCast(target: PlayerUnit): boolean;
     Update10Hz(): void;

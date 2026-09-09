@@ -44,6 +44,8 @@ import {
   PlanItemUseTransaction,
 } from "../app/hotfix/mmorpg/item/ItemUseTransaction";
 import { QuestComponent } from "../app/model/mmorpg/quest/QuestComponent";
+import { QuestEvents, type BeforeRewardQuestEvent } from "../app/model/mmorpg/quest/QuestEvents";
+import { vetoEventHandler } from "../app/core/runtime/SceneEventSystem";
 import { QuestContentProfileComponent } from "../app/model/mmorpg/quest/QuestContentProfileComponent";
 import { QuestObjectiveType, QuestStatus } from "../app/generated/model/config";
 import { PlayerUnit } from "../app/model/mmorpg/map/PlayerUnit";
@@ -63,6 +65,14 @@ class BuffTestScene extends Scene {}
 
 @actor({ mailbox: "ordered" })
 class BuffTestUnit extends PlayerUnit {}
+
+@vetoEventHandler(BuffTestScene, QuestEvents.BeforeReward, { id: "fixture.reward-counter" })
+class RewardCounterFixture {
+  Handle(_scene: BuffTestScene, event: BeforeRewardQuestEvent): number {
+    if (event.questConfigId === 5001) event.AddDelivery("org.example.reward-counter", '{"amount":7}');
+    return 0;
+  }
+}
 
 
 export async function main(): Promise<void> {
@@ -347,6 +357,7 @@ export async function main(): Promise<void> {
   // 模拟PostgreSQL已提交但ACK丢失：按operationId读取原回执后只补做一次内存效果。
   // Simulate a committed PostgreSQL transaction with a lost ACK: the original receipt reconciles in-memory state exactly once.
   repository.failTransactions = false;
+  assert.equal(quests.PendingRewardDeliveries().length, 0);
   repository.loseNextTransactionAck = true;
   const lostAckPlan = PlanItemUseTransaction(unit, smallPotion.itemId, smallPotion.configId);
   const lostAckResult = EncodeItemUseReceipt(lostAckPlan.receipt);
@@ -471,6 +482,14 @@ export async function main(): Promise<void> {
   assert.equal(quests.Snapshot().find((quest) => quest.questConfigId === 5001)?.status, QuestStatus.ReadyToTurnIn);
   assert.equal(items.Snapshot().find((item) => item.configId === 1001)?.count, 50);
   const reward = await quests.CompleteQuest(5001);
+  const pendingReward = quests.PendingRewardDeliveries();
+  assert.equal(pendingReward.length, 1);
+  assert.equal(pendingReward[0].payload, '{"amount":7}');
+  assert.deepEqual(repository.Load(unit.CharacterId)?.data.quest?.quests.rewardDeliveries, pendingReward);
+  // 冷恢复/迁移使用同一持久化队列，回执重放不重新收集副作用。
+  // Cold restore and transfer retain original messages; receipt replay never collects new effects.
+  quests.RestoreTransfer(repository.Load(unit.CharacterId)!.data.quest!.quests);
+  assert.deepEqual(quests.PendingRewardDeliveries(), pendingReward);
   assert.equal(reward.rewardItems[0]?.configId, 1001);
   assert.equal(reward.rewardItems[0]?.count, 60);
   assert.equal(items.Snapshot().filter((item) => item.configId === 1001).length, 1);
@@ -486,6 +505,14 @@ export async function main(): Promise<void> {
   assert.equal(followUpProgress[0]?.status, QuestStatus.ReadyToTurnIn);
   const duplicateReward = await quests.CompleteQuest(5001);
   assert.deepEqual(duplicateReward, reward);
+  assert.deepEqual(quests.PendingRewardDeliveries(), pendingReward);
+  repository.loseNextTransactionAck = true;
+  await assert.rejects(quests.AcknowledgeRewardDelivery(pendingReward[0].id), /injected lost transaction ack/);
+  assert.equal(quests.PendingRewardDeliveries().length, 1);
+  assert.equal(repository.Load(unit.CharacterId)?.data.quest?.quests.rewardDeliveries?.length ?? 0, 0);
+  await quests.AcknowledgeRewardDelivery(pendingReward[0].id);
+  await quests.CompleteQuest(5001);
+  assert.equal(quests.PendingRewardDeliveries().length, 0);
   assert.equal(items.Snapshot().find((item) => item.configId === 1001)?.count, 60);
   const splitStacks = items.GrantItem(1001, 60);
   assert.deepEqual(splitStacks.map((item) => item.count), [99, 21]);
@@ -921,6 +948,34 @@ export async function main(): Promise<void> {
   assert.equal(sourceSkill.State(3001).queuedSkillId, 3001);
   assert.deepEqual(sourceSkill.TakeQueued(), { skillId: 3001, targetUnitId: 123 });
   sourceSkill.Interrupt("test-queue");
+
+  // 同账号不同角色领取同任务，不能在Repository全局operationId空间中冲突。
+  // Two characters on one account must claim the same quest without colliding in the repository operation space.
+  const sibling = scene.SpawnActor(3, BuffTestUnit, {
+    account: unit.Account, characterId: 3n, playerConfigId: 1, mapId: 1, mapInstanceId: 1n,
+  });
+  const siblingNative = sibling.AddComponent(NativeUnitRef, { id: 3, instanceId: sibling.InstanceId, mapId: 1 });
+  sibling.AddComponent(PositionComponent, siblingNative, 100, 100, 1);
+  sibling.AddComponent(UnitGateComponent, "gate_test", 1n);
+  sibling.AddComponent(NumericComponent, {
+    [NumericType.CurrentHp]: 100n, [NumericType.MaxHpBase]: 100n,
+    [NumericType.Level]: 1n, [NumericType.Experience]: 0n,
+    [NumericType.MoveSpeedBase]: 6_000n,
+  });
+  sibling.AddComponent(BuffComponent);
+  const siblingItems = sibling.AddComponent(ItemComponent);
+  sibling.AddComponent(CurrencyComponent);
+  sibling.AddComponent(SkillComponent);
+  sibling.AddComponent(ProgressionComponent);
+  const siblingQuests = sibling.AddComponent(QuestComponent);
+  sibling.AddComponent(PlayerPersistenceComponent, repository, EmptyPlayerPersistenceRevisions());
+  siblingQuests.AcceptQuest(5001);
+  siblingQuests.ApplyProgress({ player: sibling, objectiveType: QuestObjectiveType.KillMonster, targetConfigId: 1, count: 5 });
+  await siblingQuests.CompleteQuest(5001);
+  assert.equal(siblingItems.Snapshot().find((item) => item.configId === 1001)?.count, 10);
+  await siblingQuests.CompleteQuest(5001);
+  assert.equal(siblingItems.Snapshot().find((item) => item.configId === 1001)?.count, 10);
+  assert.equal(siblingQuests.PendingRewardDeliveries().length, 1);
 
   host.Dispose();
   SingletonRegistry.DestroyAll();

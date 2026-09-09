@@ -688,6 +688,7 @@ export class MapComponent extends Component<[
         killed: result.killed,
         serverTick: this.serverTick,
         preventedReason: result.preventedReason,
+        critical: result.critical ?? false,
       } satisfies G2C_CombatResult,
       this.serverTick,
     );
@@ -1080,6 +1081,7 @@ export class MapComponent extends Component<[
       {
         account: snapshot.account,
         characterId: snapshot.characterId,
+        displayName: snapshot.displayName,
         playerConfigId: snapshot.playerConfigId,
         token: "cross-process-transfer",
         gateName: snapshot.gateName,
@@ -1165,6 +1167,7 @@ export class MapComponent extends Component<[
     const player = this.units.Create(unitId, PlayerUnit, {
       account: request.account,
       characterId: request.characterId,
+      displayName: request.displayName,
       playerConfigId: request.playerConfigId,
       mapId: this.mapId,
       mapInstanceId: this.mapInstanceId,
@@ -1495,12 +1498,17 @@ export class MapComponent extends Component<[
       cache.byAudience.set(audienceKey, snapshots);
       this.entryMetrics.snapshotBuilds += 1;
     }
-    const ownerIndex = snapshots.findIndex((snapshot) => snapshot.unitId === observer.UnitId);
-    if (ownerIndex >= 0) {
-      const ownerSnapshots = snapshots.slice();
-      ownerSnapshots[ownerIndex] = toMapEntity(observer, true);
-      snapshots = ownerSnapshots;
+    let privateSnapshots: MapEntitySnapshot[] | undefined;
+    for (let index = 0; index < snapshots.length; index += 1) {
+      const snapshot = snapshots[index];
+      if (snapshot.unitId !== observer.UnitId
+        && !(snapshot.entityType === 5 && snapshot.ownerUnitId === observer.UnitId)) continue;
+      const subject = this.units.Get(snapshot.unitId);
+      if (!subject) continue;
+      privateSnapshots ??= snapshots.slice();
+      privateSnapshots[index] = toMapEntity(subject, true);
     }
+    snapshots = privateSnapshots ?? snapshots;
     const elapsedMs = monotonicNow() - startedAt;
     this.entryMetrics.snapshotCalls += 1;
     this.entryMetrics.snapshotItems += snapshots.length;
@@ -1563,6 +1571,24 @@ export class MapComponent extends Component<[
       result,
       this.serverTick,
     );
+  }
+
+  /** 仅向当前可见的玩家所有者发布归属单位资源；旁观者继续使用公开快照。 / Publishes owned resources only to the current visible player owner; observers retain the public view. */
+  async PublishOwnedUnitResources(unit: SummonedUnit): Promise<boolean> {
+    this.requireMapUnit(unit);
+    const owner = this.units.Get(unit.OwnerUnitId);
+    if (!(owner instanceof PlayerUnit)
+      || !this.aoi.VisibleUnitIds(owner.UnitId).includes(unit.UnitId)) return false;
+    const numeric = unit.GetComponent(NumericComponent);
+    await this.clientBroadcast.PublishMany(
+      ClientAudience.Self(owner.UnitId),
+      ClientBroadcasts.EntityNumeric,
+      [NumericType.CurrentMp, NumericType.MaxMp].map(numericType => ({
+        unitId: unit.UnitId, numericType, value: numeric[numericType],
+      })),
+      this.serverTick,
+    );
+    return true;
   }
 
   /** 向玩家本人发布可覆盖任务状态；接取和领奖仍由RPC确认，不使用latest冒充事实。 / Publishes replaceable owner-only quest state while accept and reward remain RPC-confirmed facts. */
@@ -2516,7 +2542,17 @@ export class MapComponent extends Component<[
 
     const batches: AoiDeltaBatch[] = [];
     const batchesByHash = new Map<number, AoiDeltaBatch[]>();
-    for (const group of groupsInOrder) {
+    // 拥有者详情不能进入共享AOI批次；先拆受众再物化快照。 / Split the owner before materializing snapshots so private detail never enters a shared AOI batch.
+    const projectionGroups = groupsInOrder.flatMap(group => {
+      const subject = group.visible ? this.units.Get(group.subjectId) : undefined;
+      if (!(subject instanceof SummonedUnit) || !group.observerIds.includes(subject.OwnerUnitId)) return [group];
+      const others = group.observerIds.filter(id => id !== subject.OwnerUnitId);
+      return [
+        ...(others.length > 0 ? [{ ...group, observerIds: others }] : []),
+        { ...group, observerIds: [subject.OwnerUnitId] },
+      ];
+    });
+    for (const group of projectionGroups) {
       const subject = group.visible ? this.units.Get(group.subjectId) : undefined;
       if (group.visible && !subject) {
         this.logger.warn("AOI enter subject disappeared before publish", {
@@ -2540,7 +2576,8 @@ export class MapComponent extends Component<[
         batchesByHash.set(hash, bucket);
       }
       if (group.visible) {
-        batch.enters.push(toMapEntity(subject!));
+        batch.enters.push(toMapEntity(subject!, subject instanceof SummonedUnit
+          && group.observerIds.length === 1 && group.observerIds[0] === subject.OwnerUnitId));
       } else {
         batch.leaves.push(group.subjectId);
       }
@@ -2693,7 +2730,7 @@ function toMapEntity(
       state: new Uint8Array(0),
       cellX: snapshot.cellX,
       cellZ: snapshot.cellZ,
-      numerics: AoiVisibleNumericValues(snapshot.numerics),
+      numerics: includePrivateNumerics ? snapshot.numerics : AoiVisibleNumericValues(snapshot.numerics),
       buffs: unit.GetComponent(BuffComponent).SnapshotPublic(),
       speedCellsPerSecond: snapshot.speedCellsPerSecond,
       facing: snapshot.facing,
@@ -2859,7 +2896,7 @@ function toMapEntity(
   return {
     unitId: snapshot.unitId,
     account: snapshot.account,
-    displayName: snapshot.account,
+    displayName: snapshot.displayName || snapshot.account,
     x: snapshot.x,
     y: snapshot.y,
     z: snapshot.z,

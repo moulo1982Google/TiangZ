@@ -24,6 +24,8 @@ message G2M_EnterMap // IRequest
   uint64 character_id = 13;
   uint64 gate_epoch = 14;
   uint32 player_config_id = 15;
+  // Login选择的公开角色名；外部入图请求不提供此字段。
+  optional string display_name = 16;
 }
 
 //ResponseType M2G_SecondEnterMap
@@ -283,6 +285,7 @@ message PlayerTransferSnapshot
   uint64 gate_epoch = 30;
   uint32 player_config_id = 31;
   repeated OwnedSummonTransferSnapshot owned_summons = 32;
+  optional string display_name = 33;
 }
 
 message MapInstanceSnapshot

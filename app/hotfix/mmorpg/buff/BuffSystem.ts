@@ -245,6 +245,7 @@ export class BuffSystem extends Buff {
         sourceUnitId,
         abilityId: sourceAbilityId,
         damageSchool: school,
+        periodic: true,
       };
       const damage = this.owner instanceof MonsterUnit
         ? this.DomainScene().GetComponent(MonsterComponent).ApplyUnitDamage(this.owner, request)

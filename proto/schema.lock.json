@@ -2135,6 +2135,13 @@
           "synthetic": false
         },
         {
+          "number": 16,
+          "name": "display_name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -4898,6 +4905,13 @@
           "type": "OwnedSummonTransferSnapshot",
           "repeated": true,
           "synthetic": false
+        },
+        {
+          "number": 33,
+          "name": "display_name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -6025,6 +6039,35 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_CancelSkill",
+      "name": "C2M_CancelSkill",
+      "base": "IActorLocationRequest",
+      "response": "M2C_CancelSkill",
+      "fields": [
+        {
+          "number": 1,
+          "name": "skill_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "cast_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_CastSkill",
       "name": "C2M_CastSkill",
       "base": "IActorLocationRequest",
@@ -6221,6 +6264,56 @@
           "number": 1,
           "name": "monster_id",
           "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_InvokeUnitAction",
+      "name": "C2M_InvokeUnitAction",
+      "base": "IActorLocationRequest",
+      "response": "M2C_InvokeUnitAction",
+      "fields": [
+        {
+          "number": 1,
+          "name": "namespace",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "action",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "version",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "operation_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "payload",
+          "type": "bytes",
           "repeated": false,
           "synthetic": false
         },
@@ -7345,6 +7438,13 @@
           "number": 12,
           "name": "prevented_reason",
           "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 13,
+          "name": "critical",
+          "type": "bool",
           "repeated": false,
           "synthetic": false
         }
@@ -8542,6 +8642,42 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_CancelSkill",
+      "name": "M2C_CancelSkill",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "cancelled",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_CastSkill",
       "name": "M2C_CastSkill",
       "base": "IActorLocationResponse",
@@ -8935,6 +9071,42 @@
           "name": "drops",
           "type": "LootDropSnapshot",
           "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_InvokeUnitAction",
+      "name": "M2C_InvokeUnitAction",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "payload",
+          "type": "bytes",
+          "repeated": false,
           "synthetic": false
         },
         {

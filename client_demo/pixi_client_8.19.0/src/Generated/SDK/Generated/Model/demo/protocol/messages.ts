@@ -6722,6 +6722,7 @@ export interface G2C_CombatResult extends IMessage {
   killed: boolean;
   serverTick: number;
   preventedReason: number;
+  critical?: boolean;
 }
 
 export const G2C_CombatResultCodec = {
@@ -6779,6 +6780,9 @@ export const G2C_CombatResultCodec = {
       else if (tag.fieldNo === 12 && tag.wireType === 0) {
         value.preventedReason = reader.uint32();
       }
+      else if (tag.fieldNo === 13 && tag.wireType === 0) {
+        value.critical = reader.bool();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -6800,6 +6804,7 @@ export const G2C_CombatResultCodec = {
     if (value.killed !== undefined) writer.bool(10, value.killed);
     if (value.serverTick !== undefined) writer.uint32(11, value.serverTick);
     if (value.preventedReason !== undefined) writer.uint32(12, value.preventedReason);
+    if (value.critical !== undefined) writer.bool(13, value.critical);
     return writer.finish();
   },
 };
@@ -7009,6 +7014,192 @@ export const G2C_LogoutCharacterCodec = {
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.characterId !== undefined) writer.uint64(1, value.characterId);
     if (value.released !== undefined) writer.bool(2, value.released);
+    return writer.finish();
+  },
+};
+
+export interface C2M_CancelSkill extends IActorLocationRequest {
+  rpcId?: number;
+  skillId: number;
+  castId: bigint;
+}
+
+export const C2M_CancelSkillCodec = {
+  decode(payload: Uint8Array): C2M_CancelSkill {
+    const reader = new BinaryReader(payload);
+    const value: C2M_CancelSkill = {
+      skillId: 0,
+      castId: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.skillId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.castId = reader.uint64();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_CancelSkill): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.skillId !== undefined) writer.uint32(1, value.skillId);
+    if (value.castId !== undefined) writer.uint64(2, value.castId);
+    return writer.finish();
+  },
+};
+
+export interface M2C_CancelSkill extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  cancelled: boolean;
+}
+
+export const M2C_CancelSkillCodec = {
+  decode(payload: Uint8Array): M2C_CancelSkill {
+    const reader = new BinaryReader(payload);
+    const value: M2C_CancelSkill = {
+      cancelled: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.cancelled = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_CancelSkill): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.cancelled !== undefined) writer.bool(1, value.cancelled);
+    return writer.finish();
+  },
+};
+
+export interface C2M_InvokeUnitAction extends IActorLocationRequest {
+  rpcId?: number;
+  namespace: string;
+  action: string;
+  version: number;
+  operationId: string;
+  payload: Uint8Array;
+}
+
+export const C2M_InvokeUnitActionCodec = {
+  decode(payload: Uint8Array): C2M_InvokeUnitAction {
+    const reader = new BinaryReader(payload);
+    const value: C2M_InvokeUnitAction = {
+      namespace: "",
+      action: "",
+      version: 0,
+      operationId: "",
+      payload: new Uint8Array(0),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.namespace = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.action = reader.string();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.version = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 2) {
+        value.operationId = reader.string();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 2) {
+        value.payload = reader.bytesField();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_InvokeUnitAction): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.namespace !== undefined) writer.string(1, value.namespace);
+    if (value.action !== undefined) writer.string(2, value.action);
+    if (value.version !== undefined) writer.uint32(3, value.version);
+    if (value.operationId !== undefined) writer.string(4, value.operationId);
+    if (value.payload !== undefined) writer.bytes(5, value.payload);
+    return writer.finish();
+  },
+};
+
+export interface M2C_InvokeUnitAction extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  payload: Uint8Array;
+}
+
+export const M2C_InvokeUnitActionCodec = {
+  decode(payload: Uint8Array): M2C_InvokeUnitAction {
+    const reader = new BinaryReader(payload);
+    const value: M2C_InvokeUnitAction = {
+      payload: new Uint8Array(0),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.payload = reader.bytesField();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_InvokeUnitAction): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.payload !== undefined) writer.bytes(1, value.payload);
     return writer.finish();
   },
 };
