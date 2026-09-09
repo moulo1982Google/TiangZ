@@ -4,6 +4,8 @@ import { BinaryReader } from "../app/core/protocol/binary";
 import { LengthPrefixedFrameDecoder } from "../app/core/protocol/frame";
 import {
   buildEnterMapPacket,
+  buildMapProbePacket,
+  decodeMapProbeFrame,
   buildEnterStarterDungeonPacket,
   buildLoginGatePacket,
   buildLoginPacket,
@@ -23,12 +25,14 @@ let nextRpcId = 1;
 void main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
+  // 故障留下的半关闭TCP连接不能阻止失败探针退出。 / Half-closed faulted connections must not keep a failed probe alive.
+  setImmediate(() => process.exit(1));
 });
 
 async function main(): Promise<void> {
   await register();
   const firstLogin = await login();
-  const first = await enter(firstLogin.gateIp, firstLogin.gatePort, firstLogin.token);
+  const first = await enter(firstLogin.gateIp, firstLogin.gatePort, firstLogin.token, firstLogin.selectedCharacterId);
   const dungeon = decodeEnterStarterDungeonFrame(await first.connection.request(
     buildEnterStarterDungeonPacket(nextRpcId++, { operationId: `dynamic-ha-${Date.now()}` }),
     15_000,
@@ -37,23 +41,49 @@ async function main(): Promise<void> {
     throw new Error(`dynamic dungeon entry failed: ${dungeon.error} ${dungeon.message}`);
   }
   await first.connection.close();
+  const liveLogin = await login();
+  if (liveLogin.selectedCharacterId !== firstLogin.selectedCharacterId) {
+    throw new Error("live dungeon reconnect changed character identity");
+  }
+  const live = await enter(liveLogin.gateIp, liveLogin.gatePort, liveLogin.token, liveLogin.selectedCharacterId);
+  try {
+    if (live.mapId !== dungeon.enterMap.mapId || live.mapInstanceId !== dungeon.enterMap.mapInstanceId) {
+      throw new Error("live dungeon reconnect did not reuse the original instance");
+    }
+    if (persistentState(live) !== persistentState(dungeon.enterMap)) {
+      throw new Error("live dungeon reconnect changed persistent player state");
+    }
+  } finally {
+    await live.connection.close();
+  }
   console.log(`DYNAMIC_FALLBACK_READY ${JSON.stringify({
     account,
+    liveInstanceReused: true,
     mapInstanceId: dungeon.enterMap.mapInstanceId.toString(),
     unitId: dungeon.enterMap.unitId,
   })}`);
 
   await waitForCommand("continue");
   const recoveredLogin = await login();
-  const recovered = await enter(recoveredLogin.gateIp, recoveredLogin.gatePort, recoveredLogin.token);
+  if (recoveredLogin.selectedCharacterId !== firstLogin.selectedCharacterId) throw new Error("dynamic fallback changed character identity");
+  const recovered = await enter(recoveredLogin.gateIp, recoveredLogin.gatePort, recoveredLogin.token, recoveredLogin.selectedCharacterId);
   try {
     if (recovered.mapId !== 1 || recovered.mapInstanceId !== 1n) {
       throw new Error(
         `lost dynamic map did not fall back to safe map: ${recovered.mapId}/${recovered.mapInstanceId}`,
       );
     }
+    if (persistentState(dungeon.enterMap) !== persistentState(recovered)) {
+      throw new Error(`dynamic fallback lost acknowledged persistent player state: expected=${persistentState(dungeon.enterMap)} actual=${persistentState(recovered)}`);
+    }
+    const probe = decodeMapProbeFrame(await recovered.connection.request(buildMapProbePacket(nextRpcId++, { sequence: 42 }), 5000)).body;
+    if (probe.error || probe.sequence !== 42) throw new Error("recovered character cannot execute MapProbe");
     console.log(`DYNAMIC_FALLBACK_PASSED ${JSON.stringify({
       account,
+      characterId: recoveredLogin.selectedCharacterId.toString(),
+      persistentStateMatched: true,
+      liveInstanceReused: true,
+      playable: true,
       previousMapInstanceId: dungeon.enterMap.mapInstanceId.toString(),
       safeMapId: recovered.mapId,
       safeMapInstanceId: recovered.mapInstanceId.toString(),
@@ -92,7 +122,7 @@ async function login() {
   return response.body;
 }
 
-async function enter(ip: string, port: number, token: string) {
+async function enter(ip: string, port: number, token: string, characterId: bigint) {
   const connection = new TcpRpcConnection(ip, port);
   try {
     const gateLogin = decodeLoginGateFrame(await connection.request(buildLoginGatePacket(
@@ -100,6 +130,9 @@ async function enter(ip: string, port: number, token: string) {
       { account, token },
     ))).body;
     if (gateLogin.error) throw new Error(`LoginGate failed: ${gateLogin.message}`);
+    if (characterId <= 0n || gateLogin.characterId !== characterId) {
+      throw new Error("LoginGate changed the selected character identity");
+    }
     const entered = decodeEnterMapFrame(await connection.request(buildEnterMapPacket(
       nextRpcId++,
       { mapId: 100, mapInstanceId: 100n },
@@ -248,4 +281,15 @@ function parseOptions(args: string[]): {
     loginPort,
     accountPrefix,
   };
+}
+
+function persistentState(value: ReturnType<typeof decodeEnterMapFrame>["body"]): string {
+  return JSON.stringify({
+    gold: value.gold,
+    starterDungeonCooldownEndAtMs: value.starterDungeonCooldownEndAtMs,
+    items: [...value.items].sort((a, b) => a.itemId < b.itemId ? -1 : a.itemId > b.itemId ? 1 : 0),
+    quests: value.quests,
+    completed: [...value.completedQuestConfigIds].sort(),
+    skills: [...value.knownSkillIds].sort(),
+  }, (_, entry) => typeof entry === "bigint" ? entry.toString() : entry);
 }

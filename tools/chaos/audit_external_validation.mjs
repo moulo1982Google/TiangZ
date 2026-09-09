@@ -408,7 +408,7 @@ function writeFinalReport(state) {
     noApplicationMetricDuplicates: state.maxApplicationMetricDuplicateSeries === 0 &&
       state.maxApplicationMetricConflictingSeries === 0,
     prometheusIngestionClean,
-    gameRecoveryPassed: game.runnerCompleted && game.finalShardsHealthy,
+    gameRecoveryPassed: game.runnerCompleted && game.finalShardsHealthy && game.recoveryGenerationAdvances === 0 && (game.runner?.identityViolations ?? 0) === 0,
     faultPlanPassed: faults.orchestratorCompleted && faults.actionsStarted > 0 &&
       faults.actionsStarted === faults.actionsPassed && faults.actionsFailed === 0 &&
       faults.baselineRecoveryFailures === 0,

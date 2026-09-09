@@ -226,6 +226,7 @@ async function main(): Promise<void> {
     targetProbeRatePerPlayer: options.probeRate,
     targetBusinessRatePerPlayer: options.businessRate,
     targetMapId: options.mapId,
+    playerPlacements: players.map((item, playerIndex) => ({ playerIndex, ...item.player.placement })),
     accountMode: options.reuseAccounts ? "stable-reuse" : "ephemeral",
     measurementStartedAtUnixMs,
     measurementEndedAtUnixMs:
@@ -458,6 +459,7 @@ async function createPlayer(index: number): Promise<PlayerResult> {
       ),
     ).body;
     checkResponse(loginGate, loginGateRpcId, "LoginGate");
+    if (login.selectedCharacterId <= 0n || loginGate.characterId !== login.selectedCharacterId) throw new Error("LoginGate changed the selected character identity");
     gate.startHeartbeat();
 
     const enterMapRpcId = allocateRpcId();
@@ -479,6 +481,7 @@ async function createPlayer(index: number): Promise<PlayerResult> {
     return {
       player: new GamePlayer(
         gate,
+        { characterId: login.selectedCharacterId.toString(), mapId: enterMap.mapId, mapInstanceId: enterMap.mapInstanceId.toString(), spatialMode: enterMap.spatialMode === SpatialMode.Grid2D ? "grid2d" : "navmesh3d" },
         enterMap.items.find((item) => item.configId === 1001)?.itemId ?? 0n,
       ),
       setupLatencyMs: performance.now() - startedAt,
@@ -526,6 +529,7 @@ async function loginAccount(
 class GamePlayer {
   constructor(
     private readonly gate: GateConnection,
+    readonly placement: { characterId: string; mapId: number; mapInstanceId: string; spatialMode: string },
     starterItemId: bigint,
   ) {
     this.gate.setBusinessItemId(starterItemId);

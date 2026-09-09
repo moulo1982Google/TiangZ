@@ -251,6 +251,7 @@ struct LoginResult {
 }
 
 struct PreparedPlayerConnection {
+    character_id: u64,
     frame_rx: mpsc::UnboundedReceiver<Result<Vec<u8>>>,
     reader_task: tokio::task::JoinHandle<()>,
     writer_tx: mpsc::Sender<Vec<u8>>,
@@ -264,6 +265,7 @@ struct PreparedPlayerConnection {
 }
 
 struct PlayerConnection {
+    character_id: u64,
     frame_rx: mpsc::UnboundedReceiver<Result<Vec<u8>>>,
     reader_task: tokio::task::JoinHandle<()>,
     writer_tx: mpsc::Sender<Vec<u8>>,
@@ -389,6 +391,8 @@ struct PendingGridMove {
 
 #[derive(Default)]
 struct PlayerResult {
+    player_index: u32,
+    character_id: u64,
     latencies_micros: Vec<u64>,
     probe_errors: u64,
     move_errors: u64,
@@ -774,6 +778,7 @@ async fn main() -> Result<()> {
         "targetProbeRatePerPlayer": options.probe_rate,
         "targetBusinessRatePerPlayer": options.business_rate,
         "targetMapId": options.map_id,
+        "playerPlacements": results.iter().map(|r| json!({"playerIndex":r.player_index,"characterId":r.character_id.to_string(),"mapId":r.entered_map_id,"mapInstanceId":r.entered_map_instance_id.to_string(),"spatialMode":r.spatial_mode.map(SpatialMode::name)})).collect::<Vec<_>>(),
         "enteredMapId": entered_map_id,
         "enteredMapInstanceId": entered_map_instance_id,
         "mapRecovery": {
@@ -927,6 +932,10 @@ async fn prepare_player(
         let detail = login_response.string(92).unwrap_or_default();
         bail!("Login RPC returned error {login_error}: {detail}");
     }
+    let character_id = login_response.u64(9);
+    if character_id == 0 {
+        bail!("Login returned an invalid selected character identity");
+    }
     let login = LoginResult {
         token: login_response.string(4)?,
         gate: Address {
@@ -956,6 +965,7 @@ async fn prepare_player(
     let placement_layout = options.spawn_layout.placement_code();
     let player_index = u32::try_from(index).context("player index exceeds uint32")?;
     let mut connection = start_gate_connection(reader, writer, player_index, placement_layout);
+    connection.character_id = character_id;
     if let Err(error) = await_gate_login(&mut connection, options.timeout).await {
         connection.reader_task.abort();
         connection.writer_task.abort();
@@ -971,7 +981,11 @@ async fn await_gate_login(
     timeout: Duration,
 ) -> Result<()> {
     let response = receive_gate_frame(&mut connection.frame_rx, timeout, "LoginGate").await?;
-    decode_message(&response, LOGIN_GATE_RESP, Some(2)).context("LoginGate RPC failed")?;
+    let decoded =
+        decode_message(&response, LOGIN_GATE_RESP, Some(2)).context("LoginGate RPC failed")?;
+    if connection.character_id != 0 && decoded.u64(2) != connection.character_id {
+        bail!("LoginGate changed the selected character identity");
+    }
     Ok(())
 }
 
@@ -1024,6 +1038,7 @@ async fn enter_player(
     prepared: PreparedPlayerConnection,
 ) -> Result<PlayerConnection> {
     let PreparedPlayerConnection {
+        character_id,
         mut frame_rx,
         reader_task,
         writer_tx,
@@ -1176,6 +1191,7 @@ async fn enter_player(
         }
 
         return Ok(PlayerConnection {
+            character_id,
             frame_rx,
             reader_task,
             writer_tx,
@@ -1313,6 +1329,7 @@ fn start_gate_connection(
     });
 
     PreparedPlayerConnection {
+        character_id: 0,
         frame_rx,
         reader_task,
         writer_tx,
@@ -1344,6 +1361,7 @@ async fn run_player(
 ) -> Result<PlayerResult> {
     let mut result = PlayerResult::default();
     let PlayerConnection {
+        character_id,
         mut frame_rx,
         reader_task,
         writer_tx,
@@ -1360,6 +1378,8 @@ async fn run_player(
         entered_map_instance_id,
         initial_entered_map_id,
     } = player;
+    result.character_id = character_id;
+    result.player_index = player_index;
     result.spatial_mode = Some(spatial_mode);
     result.entered_map_id = entered_map_id;
     result.initial_entered_map_id = initial_entered_map_id;
@@ -2933,6 +2953,23 @@ mod tests {
                     .await
                     .is_err()
             );
+            stop_login_fixture(connection);
+        }
+    }
+
+    #[tokio::test]
+    async fn gate_login_must_keep_the_login_selected_character() {
+        for returned_id in [0, 101, 102] {
+            let (mut connection, mut server) = login_fixture().await;
+            connection.character_id = 101;
+            let mut fields = Vec::new();
+            push_uint64(&mut fields, 2, returned_id);
+            server
+                .write_all(&packet(&encode_rpc(LOGIN_GATE_RESP, 2, &fields).unwrap()).unwrap())
+                .await
+                .unwrap();
+            let result = await_gate_login(&mut connection, Duration::from_secs(2)).await;
+            assert_eq!(result.is_ok(), returned_id == 101);
             stop_login_fixture(connection);
         }
     }

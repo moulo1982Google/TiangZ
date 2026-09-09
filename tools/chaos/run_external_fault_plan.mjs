@@ -11,7 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
-import { recentGameEvents, recoveryBaseline, evaluateBusinessRecovery } from "./business_recovery.mjs";
+import { recentGameEvents, recoveryBaseline, recoveryBudgetMs, canStartFault, waitRecovery } from "./business_recovery.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -28,6 +28,7 @@ const actions = [
   "aof-backlog-recovery",
   "storage-joint-outage",
 ];
+if (options.actionNames?.some(name => !actions.includes(name))) throw new Error("unknown fault action");
 const healthUrls = [
   17601, 17602, 17603, 17604, 17605,
   17606, 17607, 17608, 17609, 17610,
@@ -107,6 +108,12 @@ async function run() {
   while (!stopping && Date.now() < state.deadlineAt) {
     await sleepUntil(Math.min(state.nextActionAt, state.deadlineAt));
     if (stopping || Date.now() >= state.deadlineAt) break;
+    const gameState = JSON.parse(readFileSync(path.resolve(options.runDir, "../game/state.json"), "utf8"));
+    const recoveryMs = recoveryBudgetMs(JSON.parse(gameState.parametersFingerprint));
+    if (!canStartFault(Date.now(), state.deadlineAt, recoveryMs, options.actionReserveSeconds * 1000)) {
+      writeEvent({ type: "fault_injection_finished", reason: "reserve complete recovery before deadline", recoveryMs });
+      break;
+    }
     const planned = plannedAction(state);
     state.inFlightAction = planned;
     saveState(state);
@@ -119,7 +126,7 @@ async function run() {
       await assertBaselineHealthy();
       const infrastructureRecoveredAt = Date.now();
       writeEvent({ type: "infrastructure_recovered", action: planned, actionIndex: state.actionIndex });
-      await waitBusinessRecovery(gameEvents, baseline, infrastructureRecoveredAt);
+      await waitBusinessRecovery(gameEvents, baseline, infrastructureRecoveredAt, recoveryMs);
       writeEvent({ type: "action_passed", action: planned, actionIndex: state.actionIndex });
       state.passedActions += 1;
     } catch (error) {
@@ -152,22 +159,13 @@ async function run() {
   });
 }
 
-async function waitBusinessRecovery(file, baseline, recoveredAfterMs) {
-  const deadline = Date.now() + 15 * 60_000;
-  let evidence;
-  while (!stopping && Date.now() < deadline) {
-    evidence = evaluateBusinessRecovery(recentGameEvents(file), baseline, recoveredAfterMs);
-    if (evidence.passed) {
-      writeEvent({ type: "business_recovered", elapsedMs: Date.now() - recoveredAfterMs, ...evidence });
-      return;
-    }
-    await new Promise(resolve => setTimeout(resolve, 5_000));
-  }
-  throw new Error(`same-player business recovery not proven: ${evidence?.reason ?? "stopped"}`);
+async function waitBusinessRecovery(file, baseline, recoveredAfterMs, timeoutMs) {
+  const evidence = await waitRecovery(() => recentGameEvents(file), baseline, recoveredAfterMs, timeoutMs, { stopping: () => stopping });
+  writeEvent({ type: "business_recovered", elapsedMs: Date.now() - recoveredAfterMs, ...evidence });
 }
 
 function plannedAction(state) {
-  const candidate = actions[state.actionIndex % actions.length];
+  const candidate = (options.actionNames ?? actions)[state.actionIndex % (options.actionNames ?? actions).length];
   const elapsedHours = (Date.now() - state.startedAt) / 3_600_000;
   return candidate === "storage-joint-outage" && elapsedHours < options.jointAfterHours
     ? "redis-outage"
@@ -334,6 +332,9 @@ async function validateDynamicMapFallback() {
     await sleepResponsive(21_000);
     probe.stdin.write("continue\n");
     const passed = await waitForMarker(probe, () => output, "DYNAMIC_FALLBACK_PASSED", 60_000);
+    if (passed.persistentStateMatched !== true || passed.playable !== true || !/^[1-9][0-9]*$/.test(passed.characterId)) {
+      throw new Error("dynamic fallback probe did not prove character state and playability");
+    }
     const code = await waitForExit(probe, 15_000);
     if (code !== 0) throw new Error(`dynamic fallback probe exited ${code}: ${output}`);
     const restartedDungeonPid = await waitChildReplacement(
@@ -345,6 +346,9 @@ async function validateDynamicMapFallback() {
     await waitAllUrls(["http://127.0.0.1:17610/ready"], 30_000);
     writeEvent({
       type: "dynamic_fallback_passed",
+      characterId: passed.characterId,
+      persistentStateMatched: passed.persistentStateMatched,
+      playable: passed.playable,
       previousMapInstanceId: ready.mapInstanceId,
       safeMapInstanceId: passed.safeMapInstanceId,
       managerPid,
@@ -614,7 +618,8 @@ function printDryRun() {
   console.log("[chaos-fault] dry run; add --execute and create the safety marker to inject faults");
   for (let index = 0; index < 16; index += 1) {
     const elapsedHours = (at - Date.now()) / 3_600_000;
-    const candidate = actions[index % actions.length];
+    const selected = options.actionNames ?? actions;
+    const candidate = selected[index % selected.length];
     const action = candidate === "storage-joint-outage" && elapsedHours < options.jointAfterHours
       ? "redis-outage"
       : candidate;
@@ -629,6 +634,9 @@ function printDryRun() {
 
 function publicOptions() {
   return {
+    recoveryPolicyVersion: 2,
+    actionNames: options.actionNames,
+    actionReserveSeconds: options.actionReserveSeconds,
     durationHours: options.durationHours,
     warmupMinutes: options.warmupMinutes,
     minGapMinutes: options.minGapMinutes,
@@ -680,6 +688,8 @@ function parseOptions(args) {
   return {
     execute,
     preflight,
+    actionNames: values.get("--actions")?.split(","),
+    actionReserveSeconds: positive("--action-reserve-seconds", 900),
     durationHours: positive("--duration-hours", 168),
     warmupMinutes: positive("--warmup-minutes", 30),
     minGapMinutes,

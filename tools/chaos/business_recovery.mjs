@@ -20,6 +20,7 @@ export function recoveryBaseline(events) {
   for (const event of events) {
     if (event.type === "shard_finished") baseline.set(event.shard, {
       accountGeneration: event.accountGeneration, epoch: event.epoch,
+      playerIdentities: event.playerIdentities,
     });
   }
   if (baseline.size === 0) throw new Error("missing pre-fault game identity evidence");
@@ -44,13 +45,43 @@ export function evaluateBusinessRecovery(events, baseline, recoveredAfterMs, req
     if (rounds.some(e => e.accountGeneration !== initial.accountGeneration)) {
       return { passed: false, reason: `${shard}: account replacement is not recovery` };
     }
+    if (initial.playerIdentities && rounds.some(e => e.playerIdentities !== initial.playerIdentities)) {
+      return { passed: false, reason: `${shard}: original character identity changed` };
+    }
     if (rounds.some(e => e.healthy !== true || e.completed !== true)) {
       return { passed: false, reason: `${shard}: business has not recovered` };
     }
     // A round that started before infrastructure recovery can hide setup failures.
-    if (rounds.some(e => !events.some(start => start.type === "epoch_started" && start.epoch === e.epoch && Date.parse(start.at) >= recoveredAfterMs))) {
+    if (rounds.some(e => e.setupStartedAt
+      ? Date.parse(e.setupStartedAt) < recoveredAfterMs
+      : !events.some(start => start.type === "epoch_started" && start.epoch === e.epoch && Date.parse(start.at) >= recoveredAfterMs))) {
       return { passed: false, reason: `${shard}: setup predates recovery` };
     }
   }
   return { passed: true, shards: [...baseline.keys()], requiredRounds };
+}
+
+// Account for the current epoch and two completely new epochs, including setup and drain.
+export function recoveryBudgetMs(parameters) {
+  const names = ["setupTimeoutSeconds", "warmupSeconds", "sessionSeconds", "failureRetrySeconds", "epochGapSeconds"];
+  if (names.some(name => !Number.isFinite(parameters[name]) || parameters[name] < 0)) throw new Error("invalid game recovery timing");
+  const epochSeconds = parameters.setupTimeoutSeconds + parameters.warmupSeconds + parameters.sessionSeconds + 35
+    + Math.max(parameters.failureRetrySeconds, parameters.epochGapSeconds);
+  return 3 * epochSeconds * 1000 + 10_000;
+}
+
+export function canStartFault(now, deadline, recoveryMs, actionMs) {
+  return now + recoveryMs + actionMs <= deadline;
+}
+
+export async function waitRecovery(readEvents, baseline, recoveredAfterMs, timeoutMs, {
+  now = Date.now, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), stopping = () => false,
+} = {}) {
+  const deadline = now() + timeoutMs;
+  while (true) {
+    const evidence = evaluateBusinessRecovery(readEvents(), baseline, recoveredAfterMs);
+    if (evidence.passed && !stopping()) return evidence;
+    if (stopping() || now() >= deadline) throw new Error(`same-player business recovery not proven: ${evidence.reason ?? "stopped"}`);
+    await sleep(Math.min(5000, deadline - now()));
+  }
 }

@@ -19,7 +19,7 @@ try {
   await stopUnit("tiangz-overnight-faults.service");
   await recoverBaseline();
 
-  for (const unit of ["tiangz-overnight-game.service", "tiangz-overnight-soak.service"]) {
+  for (const unit of ["tiangz-overnight-game.service", "tiangz-overnight-soak.service", "tiangz-12h-relay.service"]) {
     const active = await unitActive(unit);
     if (active) {
       writeEvent({ type: "workload_overran_deadline", unit });

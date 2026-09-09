@@ -76,7 +76,7 @@ import { BuffComponent } from "../buff/BuffComponent";
 import { BuffDefinitionProfileComponent } from "../buff/BuffDefinitionProfileComponent";
 import { SkillComponent, type SkillTransferState } from "../skill/SkillComponent";
 import { QuestComponent } from "../quest/QuestComponent";
-import type { PlayerRepository } from "../persistence/PlayerRepository";
+import { PLAYER_PERSISTENCE_DOMAINS, type PlayerRepository } from "../persistence/PlayerRepository";
 import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
 import { ProgressionComponent } from "../progression/ProgressionComponent";
 import { GameConfigs, QuestStatus } from "../../../generated/model/config";
@@ -338,34 +338,49 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
           this.entryMetrics.maxPlayerCreateMs,
           stageElapsedMs,
         );
-        try {
-          stageStartedAt = monotonicNow();
+        await this.owner.RunLocalActorMailbox(player, async (current) => {
           try {
-            await this.location.Register({
-              unitId: player.UnitId,
-              account: player.Account,
-              characterId: player.CharacterId,
-              gateName: request.gateName,
-              gateEpoch: request.gateEpoch,
-              mapHostName: this.owner.self.name,
-              mapId,
-              mapInstanceId: map.MapInstanceId,
-              actorInstanceId: player.InstanceId,
-              ownerGeneration: this.ownerGeneration,
-            });
-          } finally {
-            stageElapsedMs = monotonicNow() - stageStartedAt;
-            this.entryMetrics.locationRegisters += 1;
-            this.entryMetrics.locationRegisterMs += stageElapsedMs;
-            this.entryMetrics.maxLocationRegisterMs = Math.max(
-              this.entryMetrics.maxLocationRegisterMs,
-              stageElapsedMs,
-            );
+            if (!loaded) {
+              // 首次进图先原子保存全部领域，避免副本CD先落库后把尚未保存的出生背包读成空。
+              // Persist all initial domains atomically before publishing entry; a dungeon cooldown alone must not turn unsaved starter inventory into an empty restored bag.
+              const persistence = current.GetComponent(PlayerPersistenceComponent);
+              await persistence.ApplyTransaction(
+                `player-initial:${current.CharacterId}:${GlobalIdSystem.Instance.Next()}`,
+                PLAYER_PERSISTENCE_DOMAINS,
+                persistence.Capture("initial-entry"),
+                new Uint8Array(),
+              );
+            }
+            stageStartedAt = monotonicNow();
+            try {
+              await this.location.Register({
+                unitId: current.UnitId,
+                account: current.Account,
+                characterId: current.CharacterId,
+                gateName: request.gateName,
+                gateEpoch: request.gateEpoch,
+                mapHostName: this.owner.self.name,
+                mapId,
+                mapInstanceId: map.MapInstanceId,
+                actorInstanceId: current.InstanceId,
+                ownerGeneration: this.ownerGeneration,
+              });
+            } finally {
+              stageElapsedMs = monotonicNow() - stageStartedAt;
+              this.entryMetrics.locationRegisters += 1;
+              this.entryMetrics.locationRegisterMs += stageElapsedMs;
+              this.entryMetrics.maxLocationRegisterMs = Math.max(
+                this.entryMetrics.maxLocationRegisterMs,
+                stageElapsedMs,
+              );
+            }
+          } catch (error) {
+            // 释放mailbox前销毁失败候选，后续重连不能观察未确认的初始状态。
+            // Dispose a failed candidate before releasing its mailbox so queued reconnects cannot observe unconfirmed initial state.
+            map.RemoveTransferredPlayer(current);
+            throw error;
           }
-        } catch (error) {
-          map.RemoveTransferredPlayer(player);
-          throw error;
-        }
+        });
       }
       snapshot = player.Snapshot();
       isNewPlayer = true;

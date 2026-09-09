@@ -224,7 +224,7 @@ systemd-run --unit=tiangz-dbproxy-soak-preview --collect \
 
 七日演练前使用同一套负载和故障动作做有明确截止时间的验证。starter 创建四个 transient service：500 玩家 Rust 游戏负载、100 玩家 DBProxy 正确性负载、故障编排和五分钟日志审计；最后再创建一个定时 finalizer。负载在截止时间前预留 2–10 分钟自然收尾，DBProxy 输出 `SOAK_FINAL` 后做逐玩家及队列对账；截止时 finalizer 撤销安全 marker、停止残留故障、恢复三个存储容器和全部服务，并写出最终报告。
 
-长稳客户端不会只回显请求的目标地图：`RESULT_JSON.enteredMapId/enteredMapInstanceId` 来自真实 `G2C_EnterMap` 响应。复用账号的移动序列以 epoch 为基数保持单调；如果 MapHost 丢失后玩家被安全回退到地图 1，runner 会记录失败并为该 shard 切换一代新账号，下一 epoch 必须重新进入目标地图并恢复健康。最终 shard 仍不健康时，即使 runner 正常退出也不能通过。
+长稳客户端不会只回显请求的目标地图：`RESULT_JSON.enteredMapId/enteredMapInstanceId` 来自真实 `G2C_EnterMap` 响应。复用账号的移动序列以 epoch 为基数保持单调；如果 MapHost 丢失后玩家被安全回退到地图 1，runner 必须继续使用原账号和原角色，并验证实际地图、空间模式及可玩性；换账号不能作为恢复证据。最终 shard 仍不健康时，即使 runner 正常退出也不能通过。
 
 ```bash
 /usr/local/bin/node /opt/tiangz-chaos/tools/chaos/start_external_validation.mjs \
@@ -316,3 +316,19 @@ systemctl restart 'tiangz-dbproxy@1.service' 'tiangz-dbproxy@2.service' \
 ```
 
 最后等待 PostgreSQL、两个 Redis、12 个 `/ready` endpoint 与三类持久队列恢复健康，再做最终逐玩家对账。只有整个运行期间零旧读、最终对账、队列排空和日志归档全部通过，七日演练才能标记为通过。
+
+
+## 2026-09-08 故障恢复验收契约
+
+地图故障后的成功条件是原账号、原角色在允许的地图恢复可玩，并保持已确认的持久化数据正确。原实例存活时重连复用原实例；动态副本状态丢失时允许由 Gate 回退到配置的安全静态地图，不要求重建原动态实例。静态地图可恢复到目标地图或安全静态地图。地图白名单、实例和空间模式必须一起核对，不能把任意地图响应当作恢复。副本进度、入场费用、奖励补偿属于玩法规则，本次不新增自动退款或重复发奖逻辑。
+
+外网长稳不再换账号代替恢复。Rust/TypeScript 负载记录真实登录角色 ID 和每名玩家实际地图；同一账号槽位跨轮次的角色 ID 必须一致。允许目标地图和安全地图混合分布，各玩家按实际空间模式验证移动、Probe 和业务响应，原角色身份变化会导致整轮失败。动态副本探针核对同一角色、金币/背包/任务/已学技能状态，并在安全地图执行 MapProbe。
+
+业务恢复需要两个在基础设施恢复后开始的新轮次。等待预算计入当前轮次、两轮登录/预热/测量/排空及轮次间隔；截止时读取最后一份证据。故障编排预留完整故障动作和恢复预算，窗口不足时停止新增故障。Relay 正常完成不停止故障验证，异常退出通过 OnFailure 停止注入。最终必须同时通过主验收与 Relay 对账；旧运行目录不得套用新语义重新标记通过。
+
+
+### 首次进图的初始存档必须原子提交
+
+2026-09-08 定向故障复测发现：新角色的出生背包尚未定时保存时，副本入场已经单独提交 progression。副本进程丢失后，读档能找到 progression，却找不到 inventory，导致出生道具变成空背包。问题位于 TiangZ 首次进图的持久化边界。
+
+MapHost 对没有任何存档的新角色，在 PlayerUnit 的 ordered mailbox 内，通过现有多领域事务一次提交 inventory、progression、quest、runtime、wallet；确认成功后才注册 Location、发布 AOI 和返回进图结果。初始化或 Location 注册失败时，必须在释放 mailbox 前清理候选角色，避免排队重连观察未确认状态。已有存档只按存档恢复，不重复发放出生道具，不自动填补历史缺失领域。没有修改 DBProxy 格式、协议或数据库结构。此修改属于 Model，部署必须重建并重启游戏进程。

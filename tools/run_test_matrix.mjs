@@ -40,6 +40,7 @@ const profiles = Object.freeze({
       "test:dev-runtime", "test:runtime-contract-verifier",
       "test:matrix-runner",
     ].map(npmStep),
+    commandStep("chaos recovery acceptance", process.execPath, ["--test", "tools/chaos/recovery_acceptance.test.mjs"]),
     commandStep("cargo fmt", "cargo", ["fmt", "--all", "--", "--check"]),
     commandStep("cargo clippy", "cargo", ["clippy", "--all-targets", "--", "-D", "warnings"]),
     commandStep("cargo test", "cargo", ["test", "--all-targets"]),
