@@ -5,15 +5,14 @@ import {
   mkdtemp,
   readFile,
   readdir,
-  rename,
   rm,
-  writeFile,
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
 import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
+import { publishModuleOutputs } from "./module_generated_outputs.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const moduleRoot = path.resolve(requiredArgument("--module-root"));
@@ -67,7 +66,8 @@ try {
   const dataFingerprint = sha256(data);
   const sourceFingerprint = await fingerprintSources(
     path.dirname(module.gameConfig.project),
-    [module.gameConfig.generatedCode, module.gameConfig.generatedData],
+    [module.gameConfig.generatedCode, module.gameConfig.generatedData,
+      ...(module.gameConfig.client ? [module.gameConfig.client.generatedCode, module.gameConfig.client.generatedData] : [])],
   );
   const manifest = canonicalJson({
     formatVersion: 1,
@@ -92,46 +92,38 @@ try {
     ]),
   };
 
-  if (checkOnly) {
-    await verifyOutput(module.gameConfig.generatedCode, expected.code);
-    await verifyOutput(module.gameConfig.generatedData, expected.data);
-    process.stdout.write(
-      `[codegen:module-game-config] checked module=${module.id} schema=${schemaFingerprint.slice(0, 12)} data=${dataFingerprint.slice(0, 12)}\n`,
-    );
-  } else {
-    await publishDirectory(module.gameConfig.generatedCode, expected.code);
-    await publishDirectory(module.gameConfig.generatedData, expected.data);
-    process.stdout.write(
-      `[codegen:module-game-config] generated module=${module.id} schema=${schemaFingerprint.slice(0, 12)} data=${dataFingerprint.slice(0, 12)}\n`,
-    );
+  const outputGroups = [
+    { directory: module.gameConfig.generatedCode, files: expected.code },
+    { directory: module.gameConfig.generatedData, files: expected.data },
+  ];
+  if (module.gameConfig.client) {
+    const client = module.gameConfig.client;
+    const code = path.join(stagingRoot, "client-code");
+    const dataDir = path.join(stagingRoot, "client-data");
+    run("dotnet", [lubanDll, "-t", client.target, "-c", "typescript-json", "-d", "json",
+      "--validationFailAsError", "--conf", module.gameConfig.project,
+      "-x", `outputCodeDir=${code}`, "-x", `outputDataDir=${dataDir}`], module.root);
+    const clientSchema = normalizeText(await readFile(path.join(code, "schema.ts"), "utf8"));
+    const names = (await readdir(dataDir)).filter((name) => name.endsWith(".json")).sort();
+    const clientTables = Object.fromEntries(await Promise.all(names.map(async (name) => [
+      name.slice(0, -5), JSON.parse(await readFile(path.join(dataDir, name), "utf8")),
+    ])));
+    const clientData = canonicalJson(clientTables);
+    const clientCodeFiles = new Map([["schema.ts", clientSchema]]);
+    const clientDataFiles = new Map([
+      ["client.json", clientData],
+      ["module-game-config.manifest.json", canonicalJson({
+        formatVersion: 1, moduleId: module.id, target: client.target,
+        schemaFingerprint: sha256(clientSchema), dataFingerprint: sha256(clientData),
+        dataFile: "client.json", dataHash: sha256(clientData),
+      })],
+    ]);
+    outputGroups.push({ directory: client.generatedCode, files: clientCodeFiles }, { directory: client.generatedData, files: clientDataFiles });
   }
+  await publishModuleOutputs(module.root, outputGroups, checkOnly);
+  process.stdout.write(`[codegen:module-game-config] ${checkOnly ? "checked" : "generated"} module=${module.id} schema=${schemaFingerprint.slice(0, 12)} data=${dataFingerprint.slice(0, 12)}\n`);
 } finally {
   await rm(stagingRoot, { recursive: true, force: true });
-}
-
-/** 原子替换声明的生成目录，避免混入旧Schema文件。 / Atomically replaces the declared generated directory so stale schema files cannot survive. */
-async function publishDirectory(directory, files) {
-  const building = `${directory}.building-${process.pid}`;
-  await rm(building, { recursive: true, force: true });
-  await mkdir(building, { recursive: true });
-  for (const [name, contents] of files) {
-    await writeFile(path.join(building, name), contents, "utf8");
-  }
-  await rm(directory, { recursive: true, force: true });
-  await mkdir(path.dirname(directory), { recursive: true });
-  await rename(building, directory);
-}
-
-async function verifyOutput(directory, expected) {
-  const actualNames = (await readdir(directory)).sort((left, right) => left.localeCompare(right, "en"));
-  const expectedNames = [...expected.keys()].sort((left, right) => left.localeCompare(right, "en"));
-  if (JSON.stringify(actualNames) !== JSON.stringify(expectedNames)) {
-    throw new Error(`generated module game config files are stale: ${directory}`);
-  }
-  for (const [name, contents] of expected) {
-    const actual = await readFile(path.join(directory, name), "utf8");
-    if (actual !== contents) throw new Error(`generated module game config is stale: ${path.join(directory, name)}`);
-  }
 }
 
 async function fingerprintSources(directory, excludedDirectories) {

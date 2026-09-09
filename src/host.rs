@@ -497,12 +497,14 @@ deno_core::extension!(
 
 /// 创建带 TiangZ host op 的 V8 运行时，但不加载或执行业务代码。 / Creates a V8 runtime with TiangZ host ops; it does not load or execute business code.
 pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRuntime, AnyError> {
+    let mut extensions = vec![
+        ets_runtime_host::init(),
+        crate::dbproxy::init(),
+        crate::generated::native_ops::init(),
+    ];
+    extensions.extend(crate::module_native::extensions());
     let mut runtime = JsRuntime::new(RuntimeOptions {
-        extensions: vec![
-            ets_runtime_host::init(),
-            crate::dbproxy::init(),
-            crate::generated::native_ops::init(),
-        ],
+        extensions,
         inspector,
         module_loader: Some(Rc::new(FsModuleLoader)),
         ..Default::default()
@@ -589,6 +591,16 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
     runtime.execute_script(
         "ets-runtime:native-ops.js",
         crate::generated::native_ops::BOOTSTRAP_SOURCE,
+    )?;
+    for &(name, source) in crate::module_native::bootstraps() {
+        runtime.execute_script(name.to_string(), source)?;
+    }
+    runtime.execute_script(
+        "ets-runtime:module-native-identity.js",
+        format!(
+            "Object.defineProperty(globalThis, '__tiangzModuleNativeFingerprint', {{ value: {:?}, writable: false, configurable: false }});",
+            crate::module_native::FINGERPRINT,
+        ),
     )?;
 
     Ok(runtime)

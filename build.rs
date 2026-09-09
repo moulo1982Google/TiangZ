@@ -1,4 +1,29 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=TIANGZ_ENGINE_ROOT");
+    println!("cargo:rerun-if-env-changed=TIANGZ_MODULE_NATIVE_BRIDGE");
+    if let Some(root) = std::env::var_os("TIANGZ_ENGINE_ROOT") {
+        std::env::set_current_dir(&root).expect("cannot enter TiangZ engine source root");
+        println!(
+            "cargo:rerun-if-changed={}",
+            std::path::Path::new(&root).join("src").display()
+        );
+        println!(
+            "cargo:rerun-if-changed={}",
+            std::path::Path::new(&root).join("third_party").display()
+        );
+    }
+    let bridge = if let Some(file) = std::env::var_os("TIANGZ_MODULE_NATIVE_BRIDGE") {
+        println!(
+            "cargo:rerun-if-changed={}",
+            std::path::Path::new(&file).display()
+        );
+        std::fs::read_to_string(file).expect("cannot read module Native bridge")
+    } else {
+        "pub(crate) const FINGERPRINT: &str = \"\";\npub(crate) fn extensions() -> Vec<deno_core::Extension> { vec![] }\npub(crate) fn bootstraps() -> &'static [(&'static str, &'static str)] { &[] }\n".to_string()
+    };
+    let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR missing"));
+    std::fs::write(output.join("module_native.rs"), bridge)
+        .expect("cannot write module Native bridge");
     println!("cargo:rerun-if-changed=third_party/kcp/ikcp.c");
     println!("cargo:rerun-if-changed=third_party/kcp/ikcp.h");
     println!("cargo:rerun-if-changed=src/native/kcp_shim.c");

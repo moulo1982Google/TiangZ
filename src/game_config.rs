@@ -11,6 +11,10 @@ use sha2::{Digest, Sha256};
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GameConfigManifest {
+    #[serde(default)]
+    module_configs_json: Option<String>,
+    #[serde(default)]
+    module_configs_hash: Option<String>,
     format_version: u32,
     schema_fingerprint: String,
     client_schema_fingerprint: String,
@@ -76,6 +80,19 @@ impl GameConfigBundle {
             bail!("game config data filenames are fixed");
         }
         require_sha256("schemaFingerprint", &manifest.schema_fingerprint)?;
+        match (&manifest.module_configs_json, &manifest.module_configs_hash) {
+            (Some(json), Some(hash)) => {
+                require_sha256("moduleConfigsHash", hash)?;
+                verify_bytes_hash(json.as_bytes(), hash, "module configs")?;
+                let value: Value =
+                    serde_json::from_str(json).context("invalid module config JSON")?;
+                if !value.is_array() {
+                    bail!("module configs must be an array");
+                }
+            }
+            (None, None) => {}
+            _ => bail!("module config JSON and hash must be supplied together"),
+        }
         require_sha256(
             "clientSchemaFingerprint",
             &manifest.client_schema_fingerprint,
@@ -290,12 +307,65 @@ fn require_sha256(name: &str, value: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::require_sha256;
+    use super::{GameConfigBundle, require_sha256};
+    use sha2::{Digest, Sha256};
 
     #[test]
     fn fingerprint_requires_lowercase_sha256() {
         assert!(require_sha256("test", &"a".repeat(64)).is_ok());
         assert!(require_sha256("test", &"A".repeat(64)).is_err());
         assert!(require_sha256("test", "abc").is_err());
+    }
+
+    #[test]
+    fn module_payload_requires_matching_hash_and_complete_pair() {
+        let directory = tempfile::tempdir().unwrap();
+        let data_hash = format!("{:x}", Sha256::digest(b"{}"));
+        let combined_hash = format!("{:x}", Sha256::digest(b"{}\0{}"));
+        let mut manifest = serde_json::json!({
+            "formatVersion": 2,
+            "schemaFingerprint": data_hash, "clientSchemaFingerprint": data_hash,
+            "dataFingerprint": combined_hash, "hotDataFingerprint": combined_hash,
+            "coldDataFingerprint": combined_hash,
+            "reloadPolicies": {"hot": [], "cold": []},
+            "serverFile": "server.json", "serverHash": data_hash,
+            "serverHotFile": "server.hot.json", "serverHotHash": data_hash,
+            "serverColdFile": "server.cold.json", "serverColdHash": data_hash,
+            "clientFile": "client.json", "clientHash": data_hash,
+            "clientHotFile": "client.hot.json", "clientHotHash": data_hash,
+            "clientColdFile": "client.cold.json", "clientColdHash": data_hash
+        });
+        for name in [
+            "server.json",
+            "server.hot.json",
+            "server.cold.json",
+            "client.json",
+            "client.hot.json",
+            "client.cold.json",
+        ] {
+            std::fs::write(directory.path().join(name), b"{}").unwrap();
+        }
+        let write = |value: &serde_json::Value| {
+            std::fs::write(
+                directory.path().join("game-config.manifest.json"),
+                value.to_string(),
+            )
+            .unwrap();
+        };
+        write(&manifest);
+        assert!(GameConfigBundle::load(directory.path()).is_ok());
+        manifest["moduleConfigsJson"] = "[]".into();
+        write(&manifest);
+        assert!(GameConfigBundle::load(directory.path()).is_err());
+        manifest["moduleConfigsHash"] = format!("{:x}", Sha256::digest(b"[]")).into();
+        write(&manifest);
+        assert!(GameConfigBundle::load(directory.path()).is_ok());
+        manifest["moduleConfigsJson"] = "[{}]".into();
+        write(&manifest);
+        assert!(GameConfigBundle::load(directory.path()).is_err());
+        manifest["moduleConfigsJson"] = "{}".into();
+        manifest["moduleConfigsHash"] = data_hash.into();
+        write(&manifest);
+        assert!(GameConfigBundle::load(directory.path()).is_err());
     }
 }

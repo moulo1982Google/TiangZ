@@ -218,14 +218,49 @@ MMORPG地图在执行`MapScene`装配器前创建`SkillDefinitionProfileComponen
 
 ## v1 明确边界
 
-当前 v1 已完成 TypeScript Model/Hotfix 模块图、版本与依赖校验、独立类型检查、显式入口、不可变导出桥、强类型Entity装配、模块指纹、模块自有Luban工程与 Protobuf/客户端 SDK 声明及确定性生成，以及宿主发现、严格信封、所有权校验、指纹和不可变目录的运行时数据包。以下能力尚未完成，不能在 manifest 中虚构字段：
+既有 v1 提供 TypeScript Model/Hotfix 模块图、版本与依赖校验、独立类型检查、显式入口、不可变导出桥、强类型 Entity 装配、模块指纹、模块自有 Luban 工程与 Protobuf/SDK，以及宿主校验的运行时数据包。本轮扩展的具体接口如下；实际验收状态以[模块化推进记录](module-completion-plan.md)为准。
 
-- `.native`/Rust crate 的模块化编译；
-- 模块配置的运行期热更、跨schema迁移、客户端导出和DBProxy migration的声明式装配；当前payload由所有者模块用自己生成的Luban类型校验并投影到已有领域Profile；
-- 跨模块强类型公开 API；当前依赖只确定装载顺序，不开放深层导入；
-- 运行期安装、卸载或 Model 热更。
+### 跨模块 API
 
-后续按 protocol、data、native 三个独立扩展面推进，每个扩展都必须有内容指纹、兼容校验和非游戏专属夹具，不能退化为“执行模块目录里的任意脚本”。
+`"publicApi": "src/model/public.ts"` 声明 Model 源码根中的公开文件。消费者在 dependencies 中声明直接依赖和版本窗口，然后使用 `import { Counter, type Options } from "#tiangz/modules/org.example.provider"`。未声明依赖、传递依赖和深层路径被类型检查与构建拒绝。公开入口只导出稳定类型和不可变常量；有状态服务仍由 Scene/Entity/Component 拥有。Hotfix 读取公共 Model 桥，不复制 Provider 的 Model。公开 API 属于 Model 源码指纹，改变它必须重建重启。
+
+### 配置导出与运行时更新
+
+gameConfig 可增加 `client` 对象：`{ "target": "client", "generatedCode": "generated/client/config", "generatedData": "generated/client/data" }`。客户端 target 必须在模块 Luban 工程中显式选择客户端分组，生成器不会把服务端 JSON 直接复制给客户端。
+
+完整构建包含 `codegen:module-config`。模块配置 schema 固定在 Model 中，`build:game-config` 将所有模块数据打包进同一个候选，与既有 `reload-config <candidate>` 一起验证和发布。通过 `ModuleConfigRegistry.Get(moduleId).tables` 读取不可变原始表，也可由模块自己的 Luban Tables 构造领域视图。候选必须包含完整模块集合；任一模块数据验证失败，原目录保持不变。客户端导出独立分发，不由服务端热更自动推送客户端。
+
+配置跨 schema 的处理是重新生成 Tables、构建和重启；不能把新 schema 塞进旧 Model。已捕获的领域 Profile/快照不会自动更新，消费者明确决定何时重读并投影配置。
+
+### 持久化版本迁移
+
+`VersionedEntityCodec` 可声明 `migrations: [{ fromVersion: 1, toVersion: 2, Migrate(payload) { ... } }]`。每一步把旧版字节转换为下一版本，必须同步、确定性、无外部副作用；若 payload 内含版本字段，同样由该转换升级。生成 Codec 可在模块 Model 中通过对象展开添加迁移声明，无需修改生成文件。
+
+Repository Load 遇到旧版本时先完整转换和 Decode 校验，再用原 revision CAS 保存；并发冲突重新加载权威数据，未知或未来版本拒绝。Save 的不明确回执沿用既有同 requestId 重试。这里迁移的是 DBProxy 通用记录 payload，不执行数据库 DDL，也不枚举全库；批量迁移调度和停服窗口由部署方管理。升级写入后，旧版 Codec 会拒绝新版本，不能把代码回滚等同于数据可逆。
+
+### Native 模块
+
+```json
+"native": {
+  "source": "native",
+  "crate": "rust",
+  "crateName": "example_native",
+  "generatedRust": "rust/src/generated",
+  "generatedTypeScript": "src/model/generated/native"
+}
+```
+
+模块 crate 的 `lib.rs` 声明 `pub mod generated; pub mod native_data; pub use generated::{extension, BOOTSTRAP};`，在 `native_data` 中实现生成 ABI 引用的 op。生成器提供原生类型、池布局和 TypeScript 句柄；具体 Store 的生命周期由 crate 实现，仍须保证 generation/释放语义。Rust 扩展在进程创建时装入，同名 op 使用模块 ID 隔离。`codegen:module-native` 使用宿主固定生成器，`build:module-native` 通过临时 Cargo 清单静态组合宿主与模块 crate，不更改宿主 Cargo.toml。模块 crate 不得声明自定义 build script；普通依赖仍走 Cargo 锁文件。`--check` 只检查编译，正式构建不传该参数。使用构建器报告的二进制启动对应 Model；身份不符在启动时拒绝。
+
+### 模块部署边界
+
+模块安装、升级、删除修改构建期模块集合：先准备完整依赖目录，执行目录验证、codegen、模块类型检查和完整 Model/Hotfix/Native 构建，再以版本化目录部署并优雅重启进程。缺少被依赖模块时不能构建。保留旧制品用于回滚，但有持久化迁移时必须另行验证旧版本读兼容性。运行期 Model reload、改变冻结路由或卸载已有对象类型不提供接口；这是 AGENTS.md 的硬边界，不是一个待补的热更开关。
+
+`npm run release:package` 读取 `TIANGZ_MODULES_DIR`，自动选择组合 Native 构建；首次组合先用 `build:module-native -- --check` 生成临时工作区及锁，发布编译要求 `--locked`。制品携带模块图、二进制 SHA256 和组合 Cargo.lock。完整配置、Model、Hotfix 与 Native 身份不一致时拒绝打包，默认在临时制品目录运行冒烟，成功后才发布带内容摘要的最终目录，不覆盖旧制品。`--debug` 用于开发验收；没有这个参数时是 release 配置。部署操作仍使用现有 Watcher/服务管理流程切换工作目录并优雅重启，不自动操作运行中的其他游戏。
+
+生成器会先准备所有输出，再替换模块声明的目录；某个输出失败则恢复已替换目录，遗留文件会在成功生成时移除。完整 Model/Hotfix 编译也会先完成编译再写 Model，避免 Hotfix 编译失败破坏旧 Model。发行制品的最终目录只在完整打包成功后出现。
+
+独立工作区可先将完整 bundle 构建到自己的目录，再使用 `release:package -- --skip-build --bundle-dir <目录>` 打包；该目录需要包含 Model/Hotfix、配置启动包和 smoke client。`node tools/release/package_release.mjs --smoke-existing <制品目录>` 会核对 SHA256SUMS 并运行既有发布冒烟，用于复验保留的制品；冒烟使用本机示例端口，应与其他本机验收串行运行。
 
 ## 验证
 
@@ -233,11 +268,15 @@ MMORPG地图在执行`MapScene`装配器前创建`SkillDefinitionProfileComponen
 npm run modules:validate
 npm run modules:typecheck
 npm run test:game-modules
+npm run test:module-extensions
+npm run test:module-native-runtime
 npm run verify:hotfix-boundary
 npm run verify:core-api
 ```
 
 中立夹具位于 `tools/fixtures/game-modules/greeting`，只验证通用 Component/System，不包含 MMORPG 或 WoW 概念。
+
+数据库实跑需要明确指定独立验收实例：`npm run test:module-dbproxy-migration -- --endpoint <地址:端口> --env-file <环境文件>`，也可通过 `TIANGZ_DBPROXY_AUTH_TOKEN` 注入令牌。此验收在 `org.tiangz.module-migration.acceptance` namespace 留下独立记录，覆盖旧数据升级、第二个 TiangZ 进程重读及旧 Codec 写入拒绝；不会停止 DBProxy 容器或扫描其他 namespace。故障与并发竞争由普通单测注入，数据库实跑不默认包含在本机无数据库的验证矩阵中。
 
 ## 复合实体能力边界
 

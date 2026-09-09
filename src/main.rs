@@ -23,6 +23,9 @@ mod hotfix;
 mod inspector;
 mod logging;
 mod native_data;
+mod module_native {
+    include!(concat!(env!("OUT_DIR"), "/module_native.rs"));
+}
 mod process;
 mod shutdown;
 mod telemetry;

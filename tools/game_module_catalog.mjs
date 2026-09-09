@@ -6,7 +6,7 @@ const MODULE_FILE = "tiangz.module.json";
 const MODULE_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9][a-z0-9-]*)+$/;
 const CAPABILITY_ID = /^[a-z][a-z0-9]*(?:[.:/-][a-z0-9][a-z0-9-]*)*$/;
 const ENTRY_KEYS = new Set(["model", "hotfix", "modelRoots", "hotfixRoots"]);
-const GAME_CONFIG_KEYS = new Set(["project", "target", "generatedCode", "generatedData"]);
+const GAME_CONFIG_KEYS = new Set(["project", "target", "generatedCode", "generatedData", "client"]);
 const PROTOCOL_KEYS = new Set([
   "source",
   "opcodeLock",
@@ -27,6 +27,8 @@ const TOP_LEVEL_KEYS = new Set([
   "entries",
   "gameConfig",
   "protocol",
+  "publicApi",
+  "native",
 ]);
 
 /**
@@ -78,6 +80,8 @@ export async function loadGameModuleCatalog({
     },
     ...(module.gameConfig ? { gameConfig: { ...module.gameConfig.relative } } : {}),
     ...(module.protocol ? { protocol: { ...module.protocol.relative } } : {}),
+    ...(module.publicApi ? { publicApi: module.publicApi.relative } : {}),
+    ...(module.native ? { native: module.native.relative } : {}),
   }));
   const canonicalGraph = `${JSON.stringify({ formatVersion: 1, modules: graph })}\n`;
 
@@ -243,6 +247,52 @@ async function readModule(root, engineVersion) {
   const protocol = value.protocol === undefined
     ? undefined
     : await requireProtocol(root, value.protocol, modelRoots, manifestFile);
+  let publicApi;
+  if (value.publicApi !== undefined) {
+    const relative = requireSafeRelativePath(value.publicApi, "publicApi", manifestFile);
+    const file = path.resolve(root, relative);
+    await requireContainedFile(root, file, `${manifestFile}: publicApi`);
+    if (!modelRoots.some((directory) => isWithin(directory, file)) || !file.endsWith(".ts")) {
+      throw new Error(`${manifestFile}: publicApi must be a TypeScript file in Model roots`);
+    }
+    publicApi = { file, relative: normalizeRelative(relative) };
+  }
+  let native;
+  if (value.native !== undefined) {
+    const label = `${manifestFile}: native`;
+    requireObject(value.native, label);
+    rejectUnknownKeys(value.native, new Set(["source", "crate", "crateName", "generatedRust", "generatedTypeScript"]), label);
+    const relative = {};
+    for (const name of ["source", "crate", "generatedRust", "generatedTypeScript"]) {
+      relative[name] = normalizeRelative(requireSafeRelativePath(value.native[name], `native.${name}`, manifestFile));
+    }
+    if (typeof value.native.crateName !== "string" || !/^[a-z][a-z0-9_-]*$/.test(value.native.crateName)) throw new Error(`${label}.crateName is invalid`);
+    relative.crateName = value.native.crateName;
+    native = { relative, crateName: relative.crateName };
+    for (const name of ["source", "crate", "generatedRust", "generatedTypeScript"]) native[name] = path.resolve(root, relative[name]);
+    await requireContainedDirectory(root, native.source, label);
+    await requireContainedFile(root, path.join(native.crate, "Cargo.toml"), label);
+    await requireSymlinkFreeSourceTree(root, native.source, label);
+    await requireSymlinkFreeSourceTree(root, path.join(native.crate, "src"), label);
+    if (!isWithin(path.join(native.crate, "src"), native.generatedRust) || native.generatedRust === path.join(native.crate, "src")) throw new Error(`${label}.generatedRust must be inside crate/src`);
+    if (!modelRoots.some((directory) => isWithin(directory, native.generatedTypeScript) && directory !== native.generatedTypeScript)) throw new Error(`${label}.generatedTypeScript must be inside Model roots`);
+    for (const output of [native.generatedRust, native.generatedTypeScript]) {
+      if (isWithin(output, native.source) || isWithin(native.source, output)) throw new Error(`${label} output overlaps native source`);
+    }
+  }
+  const generatedOutputs = [
+    ...(protocol ? [protocol.serverOutput, protocol.typescriptOutput, protocol.godotOutput] : []),
+    ...(gameConfig ? [gameConfig.generatedCode, gameConfig.generatedData,
+      ...(gameConfig.client ? [gameConfig.client.generatedCode, gameConfig.client.generatedData] : [])] : []),
+    ...(native ? [native.generatedRust, native.generatedTypeScript] : []),
+  ];
+  for (let index = 0; index < generatedOutputs.length; index++) {
+    const output = generatedOutputs[index];
+    await requireSafeOutput(root, output, manifestFile);
+    for (const other of generatedOutputs.slice(index + 1)) {
+      if (isWithin(output, other) || isWithin(other, output)) throw new Error(`${manifestFile}: generated outputs must not overlap`);
+    }
+  }
 
   return {
     root: path.resolve(root),
@@ -256,6 +306,8 @@ async function readModule(root, engineVersion) {
     capabilities: capabilities.sort((left, right) => left.localeCompare(right, "en")),
     gameConfig,
     protocol,
+    publicApi,
+    native,
     entries: {
       model,
       hotfix,
@@ -269,6 +321,20 @@ async function readModule(root, engineVersion) {
       hotfixRealRoots,
     },
   };
+}
+
+async function requireSafeOutput(root, output, label) {
+  const relative = path.relative(root, output);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(`${label}: unsafe generated output`);
+  let current = root;
+  for (const segment of relative.split(path.sep)) {
+    current = path.join(current, segment);
+    const details = await lstat(current).catch((error) => { if (error.code === "ENOENT") return undefined; throw error; });
+    if (!details) break;
+    if (details.isSymbolicLink() || !details.isDirectory()) throw new Error(`${label}: generated output must use regular directories: ${current}`);
+  }
+  try { await requireSymlinkFreeSourceTree(root, output, label); }
+  catch (error) { if (error.code !== "ENOENT") throw error; }
 }
 
 async function requireProtocol(root, value, modelRoots, manifestFile) {
@@ -406,16 +472,46 @@ async function requireGameConfig(root, value, sourceRoots, hotfixRoots, manifest
   if (isWithin(generatedCode, project) || isWithin(generatedData, project)) {
     throw new Error(`${label} generated outputs must not contain the Luban project`);
   }
+  let client;
+  if (value.client !== undefined) {
+    requireObject(value.client, `${label}.client`);
+    rejectUnknownKeys(value.client, new Set(["target", "generatedCode", "generatedData"]), `${label}.client`);
+    const relative = {
+      target: value.client.target ?? "client",
+      generatedCode: requireSafeRelativePath(value.client.generatedCode, "gameConfig.client.generatedCode", manifestFile),
+      generatedData: requireSafeRelativePath(value.client.generatedData, "gameConfig.client.generatedData", manifestFile),
+    };
+    if (!/^[a-z][a-z0-9_-]*$/.test(relative.target)) throw new Error(`${label}.client.target is invalid`);
+    client = {
+      target: relative.target,
+      generatedCode: path.resolve(root, relative.generatedCode),
+      generatedData: path.resolve(root, relative.generatedData),
+      relative,
+    };
+    const outputs = [generatedCode, generatedData, client.generatedCode, client.generatedData];
+    for (let index = 0; index < outputs.length; index++) {
+      for (const other of outputs.slice(index + 1)) {
+        if (isWithin(outputs[index], other) || isWithin(other, outputs[index])) throw new Error(`${label} generated outputs must not overlap`);
+      }
+    }
+    for (const output of [client.generatedCode, client.generatedData]) {
+      if (isWithin(output, project) || sourceRoots.some((source) => isWithin(source, output) || isWithin(output, source))) {
+        throw new Error(`${label}.client output overlaps source roots or Luban project`);
+      }
+    }
+  }
   return {
     project,
     generatedCode,
     generatedData,
     target,
+    client,
     relative: {
       project: normalizeRelative(projectRelative),
       target,
       generatedCode: normalizeRelative(generatedCodeRelative),
       generatedData: normalizeRelative(generatedDataRelative),
+      ...(client ? { client: client.relative } : {}),
     },
   };
 }

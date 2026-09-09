@@ -4,6 +4,7 @@ import process from "node:process";
 
 import ts from "typescript";
 import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
+import { resolveModuleApi } from "./game_module_imports.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const moduleDirectoryArgument = argumentValue("--modules-dir") ?? process.env.TIANGZ_MODULES_DIR;
@@ -136,6 +137,11 @@ function inspectModuleImports(module, file, tree, hotfix) {
     if (!specifier || !ts.isStringLiteral(specifier)) continue;
     const value = specifier.text;
     if (hotfix && (value === "#tiangz/model" || value === "#tiangz/module")) continue;
+    if (value.startsWith("#tiangz/modules/")) {
+      try { resolveModuleApi(moduleCatalog, module, value); }
+      catch (error) { errors.push(`${relative(file)}: ${error.message}`); }
+      continue;
+    }
     if (!hotfix && (value === "#tiangz/core" || value === "#tiangz/model")) continue;
     if (!value.startsWith(".")) {
       errors.push(

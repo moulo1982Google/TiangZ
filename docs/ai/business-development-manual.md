@@ -1,5 +1,9 @@
 # TiangZ AI 业务开发手册
 
+模块安装/升级/删除先完整构建验证，再运行 `npm run release:package` 生成独立版本目录；此命令自动选择模块 Native 二进制并校验配置/Bundle 身份，不能混用旧二进制。Native 首次组合需先运行 `build:module-native -- --check` 解析并保存组合依赖锁，正式发布使用 `--locked`，制品携带该锁。`--debug` 可生成开发验收制品。命令不会自动切换现有服务；保留旧制品后按现有部署流程优雅重启。迁移写入后旧版 Codec 会拒绝更新已升级记录，数据回退必须单独设计。
+
+模块扩展开发：通过 manifest 的 `publicApi` 暴露 Model 类型，依赖方只导入 `#tiangz/modules/<直接依赖ID>`；类型检查使用 `modules:typecheck` 自动解析，禁止深层或传递依赖导入。配置可声明 `gameConfig.client` 的 target 和两类输出目录；`codegen:module-config` 生成后完整构建固定 schema，数据更新复用 `build:game-config` 与 `reload-config`，由 `ModuleConfigRegistry.Get(id)` 读取最新原始表快照。旧快照引用不自动刷新，领域适配必须选择重读时机。持久化升级在模块 Codec 的 `migrations` 中声明逐版本纯转换，不能附带 SQL/Shell；Repository 以 CAS 落库并对冲突重新读取。Native 模块执行 `codegen:module-native` 和 `build:module-native`，生成文件不得手改，二进制与 Model 变更必须配套重启。Model 在线重载仍禁止，配置 schema 变化通过版本部署处理。详细字段和限制见[外置游戏模块](../design/external-game-modules.md)。
+
 2026-09-09 外置模块协议由模块自己拥有。模块在 `tiangz.module.json.protocol` 声明 `source`、`opcodeLock`、`schemaLock`、`serverOutput`、`typescriptOutput`、`godotOutput` 和 `godotClassName`；Proto 与两份锁提交在模块仓库，生成的服务端描述符放在模块 Model 源码根，TypeScript/Godot SDK 放在模块输出目录。开发时用 `npm run codegen:module-protocol:update-lock`（独立游戏工作区可用 `npm run protocol:generate`）更新锁，日常用 `npm run codegen:module-protocol` 或 `npm run protocol:check` 严格生成并校验；`--check` 不更新锁。模块 opcode 还要通过宿主和其他模块的全局冲突检查。不要手工编辑生成文件、把模块 Proto 复制到 `app/core`，或让宿主 tsc 直接把外部模块协议当作宿主生成入口；完整 Model bundle 会自动注册模块描述符。协议、锁或生成输出变化必须完整 codegen、构建并重启 Process。
 
 2026-09-08 招架、格挡等否决后的奖励通过 CombatEvents.DamagePrevented 处理，禁止在 BeforeDamage 中修改单位。需要加速当前挥击时先检查活动阶段与剩余时间，再调用 ShortenAutoAttackSwing；方法不替业务决定加速比例，也不激活闲置攻击。

@@ -1,5 +1,9 @@
 # TiangZ AI 项目上下文
 
+模块版本部署：`release:package` 根据已安装模块选择普通或组合 Native 二进制，校验 Model/Hotfix/配置的模块图与指纹，生成带内容身份的独立制品目录，冒烟成功后才发布目录；已有同身份制品拒绝覆盖。Native 发布包含组合 Cargo.lock 和二进制校验记录。`--debug` 仅用于开发制品验收。源码编译失败不会覆盖旧 Model；版本切换仍由部署方执行优雅重启，旧数据版本的写入由 Repository 读前检查与 CAS 拒绝。
+
+模块扩展推进：`publicApi` 声明模块 Model 公开入口，消费者通过 `#tiangz/modules/<id>` 引入直接依赖；Hotfix 绑定封闭的公共 Model 引用。`gameConfig.client` 使用独立 Luban target 导出客户端内容，模块 schema 进入 Model 指纹。模块配置随现有配置候选携带，Rust 校验 `moduleConfigsJson/moduleConfigsHash`，Model 中的 Luban schema 预检全部模块后统一发布 `ModuleConfigRegistry` 快照。未知所有者、schema 变化及模块增删必须重建重启。`VersionedEntityCodec.migrations` 声明相邻版本迁移，Repository 在读取时按 revision CAS 保存升级结果，冲突重新读取，未知版本拒绝。`native` 声明独立源码、crate 和生成目录，独立 Cargo 组合构建使用模块命名空间及 Native/Model 身份检查。工作范围和验收状态见[模块化推进](../design/module-completion-plan.md)。游戏仅作消费方验证，当前暂停游戏功能开发。
+
 2026-09-09 模块自有协议链路已接入：外置模块可在 `tiangz.module.json.protocol` 声明 Proto 源目录、opcode/schema 锁、服务端 Model 输出、TypeScript SDK 输出和 Godot 输出。`codegen:module-protocol` 使用宿主固定生成器逐模块生成，锁文件参与模块图与 Model 指纹；更新锁必须显式使用 `--update-locks`，默认构建和 `--check` 均不改锁。模块 opcode 会与宿主及其他模块做全局冲突校验。服务端生成描述符留在模块 Model 根，由虚拟 Model 组合入口注册到 Core 路由；宿主不会把模块字段写入 `app/core` 或宿主协议生成目录。模块删除、Proto/锁/Model 变化仍需完整构建并重启，生成的 SDK 和协议文件不得手工维护。
 
 2026-09-09 登录摘要在鉴权通过后通过既有PlayerRepository读取各目录角色的持久成长等级，不写回账号目录；无成长记录保留创建等级，身份不匹配、非法等级或存储失败拒绝返回过期成功。LoginComponent新增可选仓库依赖，LoginScene通过同一仓库工厂提供；Model变更必须生成、构建并重启。中立回归见 `tests/unit/login_summary_level.test.ts`。

@@ -10,6 +10,8 @@ export { isPromiseLike } from "./async";
 export type { MaybePromise } from "./async";
 
 export { RuntimeDataPackRegistry } from "./content/RuntimeDataPackRegistry";
+export { ModuleConfigRegistry } from "./content/ModuleConfigRegistry";
+export type { ModuleConfigCandidate } from "./content/ModuleConfigRegistry";
 export type {
   RuntimeDataPack,
   RuntimeDataPackInput,
@@ -129,6 +131,7 @@ export {
 } from "./persistence/VersionedEntityRepository";
 export type {
   VersionedEntityCodec,
+  VersionedEntityMigration,
   VersionedEntityLoadResult,
   VersionedEntityRepository,
   VersionedEntitySaveResult,

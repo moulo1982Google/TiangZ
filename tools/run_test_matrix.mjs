@@ -36,7 +36,7 @@ const profiles = Object.freeze({
       "verify:dependency-policy", "verify:no-local-traces", "verify:hotfix-boundary",
       "verify:runtime-contracts", "verify:domain-boundaries", "verify:observability:assets",
       "verify:production-deploy", "verify:design-rule-sync", "check:project",
-      "test:protocol-locks", "check", "test:hotfix", "test:game-modules",
+      "test:protocol-locks", "check", "test:hotfix", "test:game-modules", "test:module-extensions",
       "test:dev-runtime", "test:runtime-contract-verifier",
       "test:matrix-runner",
     ].map(npmStep),
@@ -50,7 +50,7 @@ const profiles = Object.freeze({
     ...[
       "test:runtime", "test:mailbox-parity", "test:backpressure", "test:watcher-graceful",
       "test:hotfix-reload", "test:hotfix-operations", "test:hotfix-barrier",
-      "test:game-config-reload",
+      "test:game-config-reload", "test:module-native-runtime",
     ].map(npmStep),
   ],
 });

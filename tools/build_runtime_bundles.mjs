@@ -5,6 +5,8 @@ import process from "node:process";
 
 import { build } from "esbuild";
 import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
+import { resolveModuleApi } from "./game_module_imports.mjs";
+import { moduleNativeFingerprint } from "./module_native.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const requestedOutputDirectory = argumentValue("--out-dir");
@@ -27,6 +29,8 @@ const moduleCatalog = await loadGameModuleCatalog({
 const moduleProtocolLockFiles = moduleCatalog.modules
   .filter((module) => module.protocol)
   .flatMap((module) => [module.protocol.opcodeLock, module.protocol.schemaLock]);
+const nativeModules = moduleCatalog.modules.filter((module) => module.native);
+const nativeModuleHash = nativeModules.length ? await moduleNativeFingerprint(moduleCatalog) : "";
 const gameConfigManifest = JSON.parse(
   await readFile(path.join(root, "game_config", "generated", "game-config.manifest.json"), "utf8"),
 );
@@ -48,7 +52,6 @@ const hotfixEntry = requestedHotfixEntry
   ? path.resolve(root, requestedHotfixEntry)
   : path.join(root, bench ? "app/hotfix/main.bench.ts" : "app/hotfix/main.ts");
 
-if (!hotfixOnly) await rm(path.join(dist, "main.js"), { force: true });
 if (automaticCandidate) await rm(hotfixOutputDirectory, { recursive: true, force: true });
 await mkdir(hotfixOutputDirectory, { recursive: true });
 await rm(hotfixCandidateFile, { force: true });
@@ -64,6 +67,7 @@ const common = {
 
 const modelSourceHash = await hashModelSources();
 let modelManifest;
+let builtModelBytes;
 if (hotfixOnly) {
   modelManifest = JSON.parse(
     await readFile(path.join(dist, "model.manifest.json"), "utf8"),
@@ -79,8 +83,7 @@ if (hotfixOnly) {
     );
   }
 } else {
-  await rm(path.join(dist, "model.js"), { force: true });
-  await build({
+  const result = await build({
     ...common,
     format: "esm",
     stdin: {
@@ -90,8 +93,10 @@ if (hotfixOnly) {
       loader: "ts",
     },
     outfile: path.join(dist, "model.js"),
+    write: false,
     plugins: [modelModuleBoundaryPlugin(moduleCatalog)],
   });
+  builtModelBytes = result.outputFiles[0].contents;
 }
 
 await build({
@@ -105,6 +110,12 @@ await build({
     return model;
   }
   const modulePrefix = "tiangz:module-model:";
+  const apiPrefix = "tiangz:module-api:";
+  if (specifier.startsWith(apiPrefix)) {
+    const api = globalThis.__tiangzModulePublicApis?.[specifier.slice(apiPrefix.length)];
+    if (!api) throw new Error("immutable module public API is not installed: " + specifier);
+    return api;
+  }
   if (specifier.startsWith(modulePrefix)) {
     const moduleId = specifier.slice(modulePrefix.length);
     const modules = globalThis.__tiangzModuleModelExports;
@@ -125,7 +136,7 @@ await build({
   plugins: [hotfixModuleBoundaryPlugin(moduleCatalog)],
 });
 
-const modelBytes = await readFile(path.join(dist, "model.js"));
+const modelBytes = builtModelBytes ?? await readFile(path.join(dist, "model.js"));
 const hotfixBytes = await readFile(hotfixCandidateFile);
 if (!hotfixOnly) {
   modelManifest = {
@@ -141,8 +152,12 @@ if (!hotfixOnly) {
     stableCoreApiHash: await hashFiles([
       path.join(root, "app", "core", "public-api.lock.json"),
     ]),
-    nativeSchemaHash: await hashDirectory(path.join(root, "native_data"), ".native"),
+    nativeSchemaHash: sha256(`${await hashDirectory(path.join(root, "native_data"), ".native")}:${nativeModuleHash}`),
+    nativeModuleHash,
     gameConfigSchemaFingerprint: gameConfigManifest.schemaFingerprint,
+    moduleConfigSchemas: Object.fromEntries(await Promise.all(moduleCatalog.modules.filter((module) => module.gameConfig).map(async (module) => [
+      module.id, sha256((await readFile(path.join(module.gameConfig.generatedCode, "schema.ts"), "utf8")).replaceAll("\r\n", "\n")),
+    ]))),
     moduleGraphHash: moduleCatalog.graphHash,
     modules: moduleCatalog.graph,
     buildMode,
@@ -163,7 +178,11 @@ const hotfixManifest = {
   buildMode,
 };
 
-if (!hotfixOnly) await writeJson(path.join(dist, "model.manifest.json"), modelManifest);
+if (!hotfixOnly) {
+  await writeFile(path.join(dist, "model.js"), modelBytes);
+  await writeJson(path.join(dist, "model.manifest.json"), modelManifest);
+  await rm(path.join(dist, "main.js"), { force: true });
+}
 await writeFile(hotfixOutputFile, hotfixBytes);
 await writeJson(hotfixManifestFile, hotfixManifest);
 await rm(hotfixCandidateFile, { force: true });
@@ -178,6 +197,21 @@ process.stdout.write(
 );
 
 function modelEntrySource(catalog, includeBench) {
+  const configModules = catalog.modules.filter((module) => module.gameConfig);
+  const configImports = configModules.map((module, index) =>
+    `import { Tables as ModuleTables${index} } from ${JSON.stringify(importSpecifier(path.join(module.gameConfig.generatedCode, "schema.ts")))};\n` +
+    `import { ModuleGameConfigSchemaFingerprint as ModuleSchema${index} } from ${JSON.stringify(importSpecifier(path.join(module.gameConfig.generatedCode, "fingerprint.ts")))};`
+  ).join("\n");
+  const configSchemas = configModules.map((module, index) =>
+    `{ moduleId: ${JSON.stringify(module.id)}, schemaFingerprint: ModuleSchema${index}, validate: (tables) => { new ModuleTables${index}((name) => { if (!Object.hasOwn(tables, name)) throw new Error("module config table missing: " + name); return tables[name]; }); } }`
+  ).join(",\n");
+  const publicModules = catalog.modules.filter((module) => module.publicApi);
+  const apiImports = publicModules.map((module, index) =>
+    `import * as ModuleApi${index} from ${JSON.stringify(importSpecifier(module.publicApi.file))};`
+  ).join("\n");
+  const apiValues = publicModules.map((module, index) =>
+    `${JSON.stringify(module.id)}: ModuleApi${index}`
+  ).join(",");
   const imports = catalog.modules
     .map((module) => `import ${JSON.stringify(importSpecifier(module.entries.model))};`)
     .join("\n");
@@ -197,9 +231,24 @@ ${protocolModules.map((_, index) => `registerKnownRpcs(ModuleRpcDescriptors${ind
   const expected = catalog.modules.map((module) => ({ id: module.id, version: module.version }));
   return `${protocolRegistration}${protocolRegistration ? "\n" : ""}import ${JSON.stringify(includeBench ? "./app/model/main.bench.ts" : "./app/model/main.ts")};
 import { sealGameModules } from "./app/core/modules/GameModuleSystem.ts";
+import { ModuleConfigRegistry } from "./app/core/content/ModuleConfigRegistry.ts";
 ${imports}
+${apiImports}
+${configImports}
 
-sealGameModules(${JSON.stringify(expected)});
+sealGameModules(${JSON.stringify(expected)}, {${apiValues}});
+if ((globalThis.__tiangzModuleNativeFingerprint ?? "") !== ${JSON.stringify(nativeModuleHash)}) {
+  throw new Error("module Native binary does not match Model; rebuild Native and restart Process");
+}
+ModuleConfigRegistry.__configure([${configSchemas}]);
+const installHostConfig = globalThis.__etsInstallGameConfig;
+globalThis.__etsInstallGameConfig = (manifestJson, dataJson) => {
+  const manifest = JSON.parse(manifestJson);
+  const commitModules = ModuleConfigRegistry.__prepare(JSON.parse(manifest.moduleConfigsJson ?? "[]"));
+  const hostStatus = installHostConfig(manifestJson, dataJson);
+  commitModules();
+  return JSON.stringify({ ...JSON.parse(hostStatus), moduleConfigGeneration: ModuleConfigRegistry.Generation });
+};
 `;
 }
 
@@ -216,6 +265,7 @@ function modelModuleBoundaryPlugin(catalog) {
   return {
     name: "game-module-model-boundary",
     setup(buildApi) {
+      installModuleApiResolver(buildApi, catalog, false);
       buildApi.onResolve({ filter: /^#tiangz\/core$/ }, () => ({
         path: path.join(root, "app", "core", "public.ts"),
       }));
@@ -246,6 +296,7 @@ function hotfixModuleBoundaryPlugin(catalog) {
   return {
     name: "immutable-model-and-game-module-boundary",
     setup(buildApi) {
+      installModuleApiResolver(buildApi, catalog, true);
       buildApi.onResolve({ filter: /^#tiangz\/model$/ }, () => ({
         path: "tiangz:model",
         external: true,
@@ -283,6 +334,19 @@ function hotfixModuleBoundaryPlugin(catalog) {
   };
 }
 
+function installModuleApiResolver(buildApi, catalog, hotfix) {
+  buildApi.onResolve({ filter: /^#tiangz\/modules\// }, (args) => {
+    try {
+      const target = resolveModuleApi(catalog, catalog.moduleForFile(args.importer), args.path);
+      return hotfix
+        ? { path: `tiangz:module-api:${target.id}`, external: true }
+        : { path: target.publicApi.file };
+    } catch (error) {
+      return { errors: [{ text: error.message }] };
+    }
+  });
+}
+
 function rejectModuleBareImport(catalog, args, layer) {
   const owner = catalog.moduleForFile(args.importer);
   if (!owner) return undefined;
@@ -297,6 +361,7 @@ function validateModuleRelativeImport(catalog, args, layer) {
   const owner = catalog.moduleForFile(args.importer);
   if (!owner) return undefined;
   const target = path.resolve(args.resolveDir, args.path);
+  if (layer === "model" && owner.gameConfig && isWithin(owner.gameConfig.generatedCode, args.importer) && isWithin(owner.gameConfig.generatedCode, target)) return undefined;
   if (
     owner.protocol &&
     isWithin(owner.protocol.serverOutput, args.importer) &&
@@ -352,6 +417,7 @@ async function hashModelSources() {
       file,
     }));
   entries.push({ label: "game-modules/graph.json", content: moduleCatalog.canonicalGraph });
+  entries.push({ label: "game-modules/native-fingerprint", content: nativeModuleHash });
   for (const module of moduleCatalog.modules) {
     entries.push({
       label: `game-modules/${module.id}/${path.basename(module.manifestFile)}`,
@@ -375,6 +441,16 @@ async function hashModelSources() {
       entries.push({
         label: `game-modules/${module.id}/${module.protocol.relative.schemaLock}`,
         file: module.protocol.schemaLock,
+      });
+    }
+    if (module.gameConfig) {
+      entries.push({
+        label: `game-modules/${module.id}/game-config-schema`,
+        file: path.join(module.gameConfig.generatedCode, "schema.ts"),
+      });
+      entries.push({
+        label: `game-modules/${module.id}/game-config-fingerprint`,
+        file: path.join(module.gameConfig.generatedCode, "fingerprint.ts"),
       });
     }
   }

@@ -73,7 +73,10 @@ export function defineGameModule<
 }
 
 /** 仅供构建生成的Model组合入口封闭模块图；业务代码不得调用。 / Seals the module graph from the generated Model composition entry only. */
-export function sealGameModules(expected: readonly GameModuleIdentity[]): void {
+export function sealGameModules(
+  expected: readonly GameModuleIdentity[],
+  publicApis: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {},
+): void {
   if (sealed) throw new Error("game module registration is already sealed");
   if (expected.length !== registeredModules.length) {
     throw new Error(
@@ -93,7 +96,27 @@ export function sealGameModules(expected: readonly GameModuleIdentity[]): void {
     for (const target of actual.requiredSystems) HotfixSystem.RequireType(target);
     exportsByModule[actual.identity.id] = actual.modelExports;
   }
+  const installedApis = Object.create(null) as Record<string, Readonly<Record<string, unknown>>>;
+  for (const [id, exports] of Object.entries(publicApis)) {
+    if (!Object.prototype.hasOwnProperty.call(exportsByModule, id)) {
+      throw new Error(`public API owner is not installed: ${id}`);
+    }
+    // 模块命名空间转为数据属性；引用保持同一份Model身份。
+    // Copy module namespaces to data properties while preserving Model identity.
+    const api = copyModelExports({ ...exports }, id);
+    const objects: object[] = [];
+    const visited = new WeakSet<object>();
+    for (const value of Object.values(api)) collectModelObjects(value, visited, objects);
+    for (const object of objects) Object.freeze(object);
+    installedApis[id] = Object.freeze(api);
+  }
   Object.freeze(exportsByModule);
+  Object.defineProperty(globalThis, "__tiangzModulePublicApis", {
+    value: Object.freeze(installedApis),
+    configurable: false,
+    enumerable: false,
+    writable: false,
+  });
   Object.defineProperty(globalThis, "__tiangzModuleModelExports", {
     value: exportsByModule,
     configurable: false,

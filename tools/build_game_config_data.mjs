@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const source = path.join(root, "game_config", "generated");
-const dist = path.join(root, "dist");
+const outIndex = process.argv.indexOf("--out-dir");
+if (outIndex >= 0 && (!process.argv[outIndex + 1] || process.argv[outIndex + 1].startsWith("--"))) throw new Error("--out-dir requires a directory");
+const dist = path.resolve(root, outIndex >= 0 ? process.argv[outIndex + 1] : "dist");
 const initial = process.argv.includes("--initial");
 const manifest = JSON.parse(
   await readFile(path.join(source, "game-config.manifest.json"), "utf8"),
@@ -16,6 +19,25 @@ const files = await readPackageFiles(source, manifest);
 const modelManifest = JSON.parse(
   await readFile(path.join(dist, "model.manifest.json"), "utf8"),
 );
+const catalog = await loadGameModuleCatalog({ projectRoot: root,
+  modulesDirectory: path.resolve(root, process.env.TIANGZ_MODULES_DIR ?? "modules") });
+if (modelManifest.moduleGraphHash !== catalog.graphHash) throw new Error("module graph changed; rebuild Model before packaging config");
+const moduleConfigs = [];
+for (const module of catalog.modules.filter((item) => item.gameConfig)) {
+  const config = module.gameConfig;
+  const generatedManifest = JSON.parse(await readFile(path.join(config.generatedData, "module-game-config.manifest.json"), "utf8"));
+  const schema = await readFile(path.join(config.generatedCode, "schema.ts"), "utf8");
+  const bytes = await readFile(path.join(config.generatedData, "server.json"));
+  assertHash(Buffer.from(schema.replaceAll("\r\n", "\n")), generatedManifest.schemaFingerprint, "module schema");
+  assertHash(bytes, generatedManifest.dataFingerprint, "module data");
+  if (modelManifest.moduleConfigSchemas?.[module.id] !== generatedManifest.schemaFingerprint) {
+    throw new Error(`module config schema changed; rebuild Model and restart: ${module.id}`);
+  }
+  moduleConfigs.push({ moduleId: module.id, schemaFingerprint: generatedManifest.schemaFingerprint,
+    dataFingerprint: generatedManifest.dataFingerprint, tables: JSON.parse(bytes.toString("utf8")) });
+}
+manifest.moduleConfigsJson = JSON.stringify(moduleConfigs);
+manifest.moduleConfigsHash = sha256(manifest.moduleConfigsJson);
 if (modelManifest.gameConfigSchemaFingerprint !== manifest.schemaFingerprint) {
   throw new Error(
     "GameConfig schema changed; data-only build is forbidden. Run npm run build and restart the Process.",
@@ -23,7 +45,7 @@ if (modelManifest.gameConfigSchemaFingerprint !== manifest.schemaFingerprint) {
 }
 
 const candidatesRoot = path.join(dist, "game-config-candidates");
-const candidate = path.join(candidatesRoot, manifest.dataFingerprint.slice(0, 16));
+const candidate = path.join(candidatesRoot, sha256(`${manifest.dataFingerprint}:${manifest.moduleConfigsHash}`).slice(0, 16));
 if (!initial) {
   const activeManifest = JSON.parse(
     await readFile(path.join(dist, "game-config", "game-config.manifest.json"), "utf8"),
@@ -46,7 +68,7 @@ process.stdout.write(
 );
 if (initial) {
   process.stdout.write(
-    "[build:game-config] 已更新dist/game-config，服务器重启时会读取这个启动包。\n",
+    `[build:game-config] 已更新${path.relative(root, path.join(dist, "game-config")).replaceAll(path.sep, "/")}，服务器重启时会读取这个启动包。\n`,
   );
 } else {
   process.stdout.write(
@@ -61,7 +83,7 @@ async function publish(directory, value, files, replace = false) {
       const existing = JSON.parse(
         await readFile(path.join(directory, "game-config.manifest.json"), "utf8"),
       );
-      if (existing.dataFingerprint === value.dataFingerprint) return;
+      if (existing.dataFingerprint === value.dataFingerprint && existing.moduleConfigsHash === value.moduleConfigsHash) return;
       throw new Error(`immutable game config candidate collision: ${directory}`);
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;

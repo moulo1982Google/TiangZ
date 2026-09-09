@@ -1,9 +1,10 @@
-import { spawn } from "node:child_process";
 import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
 import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
+import { resolveModuleApi } from "./game_module_imports.mjs";
+import ts from "typescript";
 
 const root = path.resolve(import.meta.dirname, "..");
 const modulesArgument = argumentValue("--modules-dir") ?? process.env.TIANGZ_MODULES_DIR;
@@ -13,7 +14,6 @@ const catalog = await loadGameModuleCatalog({
     ? path.resolve(root, modulesArgument)
     : path.join(root, "modules"),
 });
-const compiler = path.join(root, "node_modules", "typescript", "bin", "tsc");
 
 for (const module of catalog.modules) {
   const project = path.join(module.root, "tsconfig.json");
@@ -35,26 +35,33 @@ for (const module of catalog.modules) {
 process.stdout.write(`game module typecheck passed: modules=${catalog.modules.length}\n`);
 
 function runCompiler(project, moduleId) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [
-      compiler,
-      "--project",
-      project,
-      "--noEmit",
-      "--pretty",
-      "false",
-    ], {
-      cwd: root,
-      env: process.env,
-      windowsHide: true,
-      stdio: "inherit",
-    });
-    child.once("error", reject);
-    child.once("exit", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`game module ${moduleId} typecheck failed with exitCode=${code ?? 1}`));
-    });
+  const config = ts.readConfigFile(project, ts.sys.readFile);
+  if (config.error) throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, "\n"));
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, path.dirname(project));
+  const options = { ...parsed.options, noEmit: true };
+  const host = ts.createCompilerHost(options);
+  host.resolveModuleNames = (names, containingFile) => names.map((name) => {
+    const owner = catalog.moduleForFile(containingFile);
+    const api = resolveModuleApi(catalog, owner, name);
+    if (api) return { resolvedFileName: api.publicApi.file, extension: ts.Extension.Ts };
+    if (name === "#tiangz/module" && owner) {
+      return { resolvedFileName: owner.entries.model, extension: ts.Extension.Ts };
+    }
+    if (name === "#tiangz/core" || name === "#tiangz/model") {
+      return { resolvedFileName: path.join(root, "app", name.slice("#tiangz/".length), "public.ts"), extension: ts.Extension.Ts };
+    }
+    return ts.resolveModuleName(name, containingFile, options, host).resolvedModule;
   });
+  const publicFile = catalog.modules.find((module) => module.id === moduleId)?.publicApi?.file;
+  const program = ts.createProgram({ rootNames: [...parsed.fileNames, ...(publicFile ? [publicFile] : [])], options, host });
+  const diagnostics = [...parsed.errors, ...ts.getPreEmitDiagnostics(program)];
+  if (diagnostics.length) {
+    throw new Error(`game module ${moduleId} typecheck failed:\n${ts.formatDiagnostics(diagnostics, {
+      getCanonicalFileName: (file) => file,
+      getCurrentDirectory: () => root,
+      getNewLine: () => "\n",
+    })}`);
+  }
 }
 
 function isWithin(directory, candidate) {

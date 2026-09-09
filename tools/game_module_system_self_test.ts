@@ -75,7 +75,15 @@ export function main(): void {
     modelExports: { GreetingCounter, moduleMetadata },
     requiredSystems: [GreetingCounter],
   });
-  sealGameModules([{ id: "org.example.greeting", version: "1.0.0+fixture.1" }]);
+  sealGameModules([{ id: "org.example.greeting", version: "1.0.0+fixture.1" }], {
+    "org.example.greeting": { GreetingCounter },
+  });
+  const publicApis = (globalThis as typeof globalThis & {
+    __tiangzModulePublicApis: Record<string, Record<string, unknown>>;
+  }).__tiangzModulePublicApis;
+  assert.equal(publicApis["org.example.greeting"].GreetingCounter, GreetingCounter);
+  assert.equal(Object.isFrozen(publicApis["org.example.greeting"]), true);
+  assert.equal(Reflect.set(publicApis, "injected", {}), false);
 
   const installed = (globalThis as typeof globalThis & {
     __tiangzModuleModelExports: Record<string, Record<string, unknown>>;
