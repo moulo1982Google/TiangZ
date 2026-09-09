@@ -369,15 +369,16 @@
     "godot-client-sdk": {
       "command": "npm run codegen:godot-client-sdk",
       "contentInputs": {
+        "client_sdk/godot/proto_reader.gd": "99b7e16eb972e3025bddfd3a5e6339b125b046dda05981ebe524875a06cb9df3",
         "codegen.config.json": "e83f410fa579e69cfcdf71f10e32482c07ee46cb4d62d0e4fa43bda8656727bf",
         "proto/opcode.lock.json": "22687e9b87ede6f78e55a1a62ad79efba13d2358d53bf88910d464b9f46619fa",
         "proto/schema.lock.json": "17d90bbc9290481561fc6d71d64c6c447c9caa09b4fa8a511cb1c14af023390d",
-        "tools/codegen_godot_client_sdk.mjs": "5039ebba5c85261fe300231b01d1376e0cc9678b5d8b50e2095d835cfd6d6142",
+        "tools/codegen_godot_client_sdk.mjs": "7c4564ae6f7c3d190622a224127c8b9c1d2db53c2e2ecab24eb8cec48a7c4afc",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
       },
       "selections": [],
       "outputs": {
-        "client_demo/godot-3d-4.7.1/scripts/generated/tiangz_proto.gd": "4d8973153f5830d89218accfae8724402d8f17cad792c2911c7a0dd54646b10e"
+        "client_demo/godot-3d-4.7.1/scripts/generated/tiangz_proto.gd": "7472ebe3b0a80ecf033252d8a9c338a6512dca32a302e984171b9781bbee29db"
       },
       "outputRoots": [
         {

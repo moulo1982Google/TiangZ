@@ -114,6 +114,102 @@ const S2C_GET_LOGIN_SERVICE_ADDR := 10003
 const S2C_LOGIN := 10005
 const S2C_REGISTER := 10060
 
+class ProtoReader:
+	extends RefCounted
+
+	## 带边界检查的Proto读取器；Godot收到的每个WebSocket包都是一个完整消息。
+	## Bounds-checked protobuf reader; each Godot WebSocket packet is one complete message.
+
+	var data: PackedByteArray
+	var offset: int = 0
+
+	func _init(bytes: PackedByteArray = PackedByteArray()) -> void:
+		data = bytes
+
+	func eof() -> bool:
+		return offset >= data.size()
+
+	func tag() -> Dictionary:
+		var value := varint()
+		return {"field": value >> 3, "wire": value & 7}
+
+	func varint() -> int:
+		var value: int = 0
+		var shift: int = 0
+		while offset < data.size() and shift <= 63:
+			var current := int(data[offset])
+			offset += 1
+			value |= (current & 0x7f) << shift
+			if (current & 0x80) == 0:
+				return value
+			shift += 7
+		return value
+
+	func sint32() -> int:
+		var value := varint()
+		return (value >> 1) ^ -(value & 1)
+
+	func uint32() -> int:
+		return varint() & 0xffffffff
+
+	func int32() -> int:
+		var value := varint()
+		if value & 0x80000000:
+			return value - 0x100000000
+		return value
+
+	func uint64() -> int:
+		return varint()
+
+	func int64() -> int:
+		return varint()
+
+	func boolean() -> bool:
+		return varint() != 0
+
+	func string_value() -> String:
+		return bytes_value().get_string_from_utf8()
+
+	func bytes_value() -> PackedByteArray:
+		var length := varint()
+		var start := offset
+		offset = mini(offset + length, data.size())
+		return data.slice(start, offset)
+
+	func float32() -> float:
+		if offset + 4 > data.size():
+			offset = data.size()
+			return 0.0
+		var buffer := StreamPeerBuffer.new()
+		buffer.big_endian = false
+		buffer.data_array = data.slice(offset, offset + 4)
+		offset += 4
+		return buffer.get_float()
+
+	func float64() -> float:
+		if offset + 8 > data.size():
+			offset = data.size()
+			return 0.0
+		var buffer := StreamPeerBuffer.new()
+		buffer.big_endian = false
+		buffer.data_array = data.slice(offset, offset + 8)
+		offset += 8
+		return buffer.get_double()
+
+	func skip(wire: int) -> void:
+		match wire:
+			0:
+				varint()
+			1:
+				offset = mini(offset + 8, data.size())
+			2:
+				var length := varint()
+				offset = mini(offset + length, data.size())
+			5:
+				offset = mini(offset + 4, data.size())
+			_:
+				offset = data.size()
+
 static func frame(msg_code: int, payload: PackedByteArray) -> PackedByteArray:
 	var result := PackedByteArray()
 	result.append((msg_code >> 8) & 0xff)
@@ -191,7 +287,7 @@ static func varint(out: PackedByteArray, value: int) -> void:
 	out.append(int(current) & 0xff)
 
 static func decode_rpc_id(payload: PackedByteArray) -> int:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	while not reader.eof():
 		var tag := reader.tag()
 		if tag.field == 90 and tag.wire == 0:
@@ -200,7 +296,7 @@ static func decode_rpc_id(payload: PackedByteArray) -> int:
 	return 0
 
 static func decode_error(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"rpc_id": 0, "error": 0, "message": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -228,7 +324,7 @@ static func encode_buff_detail_view(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_buff_detail_view(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"unit_id": 0, "buff_instance_id": 0, "absorb_remaining": 0, "revision": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -274,7 +370,7 @@ static func encode_buff_public_view(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_buff_public_view(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"unit_id": 0, "buff_instance_id": 0, "buff_config_id": 0, "stacks": 0, "expire_time_ms": 0, "revision": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -354,7 +450,7 @@ static func encode_buff_transfer_snapshot(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_buff_transfer_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"buff_instance_id": 0, "buff_config_id": 0, "stacks": 0, "applied_at_ms": 0, "expire_time_ms": 0, "tick_interval_ms": 0, "next_tick_at_ms": 0, "revision": 0, "source_unit_id": 0, "source_ability_id": 0, "conflict_priority": 0, "damage_absorber_remaining": 0, "add_action_type": 0, "add_action_params": [], "tick_action_type": 0, "tick_action_params": [], "remove_action_type": 0, "remove_action_params": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -462,7 +558,7 @@ static func encode_c2g_enter_map(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2g_enter_map(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"map_id": 0, "map_instance_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -493,7 +589,7 @@ static func encode_c2g_enter_starter_dungeon(value: Dictionary) -> PackedByteArr
 	return result
 
 static func decode_c2g_enter_starter_dungeon(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"operation_id": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -523,7 +619,7 @@ static func encode_c2g_login_gate(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2g_login_gate(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"account": "", "token": "", "character_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -559,7 +655,7 @@ static func encode_c2g_logout_character(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2g_logout_character(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"character_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -585,7 +681,7 @@ static func encode_c2g_map_snapshot_ready(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2g_map_snapshot_ready(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"unit_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -609,7 +705,7 @@ static func encode_c2g_ping(_value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2g_ping(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -632,7 +728,7 @@ static func encode_c2m_accept_quest(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_accept_quest(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"quest_config_id": 0, "npc_unit_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -663,7 +759,7 @@ static func encode_c2m_attack_monster(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_attack_monster(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"monster_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -695,7 +791,7 @@ static func encode_c2m_buy_npc_shop_item(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_buy_npc_shop_item(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"npc_unit_id": 0, "item_config_id": 0, "count": 0, "operation_id": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -736,7 +832,7 @@ static func encode_c2m_cancel_player_trade(value: Dictionary) -> PackedByteArray
 	return result
 
 static func decode_c2m_cancel_player_trade(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"trade_id": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -764,7 +860,7 @@ static func encode_c2m_cancel_skill(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_cancel_skill(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"skill_id": 0, "cast_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -797,7 +893,7 @@ static func encode_c2m_cast_skill(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_cast_skill(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"skill_id": 0, "target_unit_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -834,7 +930,7 @@ static func encode_c2m_command_owned_unit(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_command_owned_unit(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"owned_unit_id": 0, "command": 0, "target_unit_id": 0, "ability_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -879,7 +975,7 @@ static func encode_c2m_complete_quest(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_complete_quest(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"quest_config_id": 0, "npc_unit_id": 0, "reward_choice_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -915,7 +1011,7 @@ static func encode_c2m_confirm_player_trade(value: Dictionary) -> PackedByteArra
 	return result
 
 static func decode_c2m_confirm_player_trade(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"trade_id": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -951,7 +1047,7 @@ static func encode_c2m_find_path(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_find_path(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"start_x": 0.0, "start_y": 0.0, "start_z": 0.0, "target_x": 0.0, "target_y": 0.0, "target_z": 0.0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1002,7 +1098,7 @@ static func encode_c2m_inspect_loot_monster(value: Dictionary) -> PackedByteArra
 	return result
 
 static func decode_c2m_inspect_loot_monster(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"monster_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1036,7 +1132,7 @@ static func encode_c2m_invoke_unit_action(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_invoke_unit_action(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"namespace": "", "action": "", "version": 0, "operation_id": "", "payload": PackedByteArray()}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1086,7 +1182,7 @@ static func encode_c2m_learn_trainer_skill(value: Dictionary) -> PackedByteArray
 	return result
 
 static func decode_c2m_learn_trainer_skill(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"npc_unit_id": 0, "skill_config_id": 0, "operation_id": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1128,7 +1224,7 @@ static func encode_c2m_loot_monster(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_loot_monster(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"monster_id": 0, "operation_id": "", "drop_id": 0, "loot_all": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1169,7 +1265,7 @@ static func encode_c2m_map_probe(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_map_probe(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"sequence": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1199,7 +1295,7 @@ static func encode_c2m_move(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_move(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"input_x": 0, "input_z": 0, "sequence": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1244,7 +1340,7 @@ static func encode_c2m_navigate_input(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_navigate_input(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"forward": 0, "strafe": 0, "yaw": 0.0, "sequence": 0, "has_position_snapshot": false, "position_x": 0.0, "position_y": 0.0, "position_z": 0.0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1311,7 +1407,7 @@ static func encode_c2m_navigate_to(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_navigate_to(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"target_x": 0.0, "target_y": 0.0, "target_z": 0.0, "sequence": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1352,7 +1448,7 @@ static func encode_c2m_open_npc_shop(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_open_npc_shop(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"npc_unit_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1386,7 +1482,7 @@ static func encode_c2m_release_dead_player(value: Dictionary) -> PackedByteArray
 	return result
 
 static func decode_c2m_release_dead_player(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"has_recovery_position": false, "recovery_x": 0.0, "recovery_y": 0.0, "recovery_z": 0.0, "recovery_yaw": 0.0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1436,7 +1532,7 @@ static func encode_c2m_repair_items(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_repair_items(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"npc_unit_id": 0, "item_id": 0, "operation_id": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1472,7 +1568,7 @@ static func encode_c2m_request_player_trade(value: Dictionary) -> PackedByteArra
 	return result
 
 static func decode_c2m_request_player_trade(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"target_unit_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1500,7 +1596,7 @@ static func encode_c2m_respond_player_trade(value: Dictionary) -> PackedByteArra
 	return result
 
 static func decode_c2m_respond_player_trade(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"trade_id": "", "accept": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1529,7 +1625,7 @@ static func encode_c2m_revive_player(_value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_revive_player(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1556,7 +1652,7 @@ static func encode_c2m_sell_item(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_sell_item(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"npc_unit_id": 0, "item_id": 0, "count": 0, "operation_id": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1599,7 +1695,7 @@ static func encode_c2m_toggle_auto_attack(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_toggle_auto_attack(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"enabled": false, "target_unit_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1630,7 +1726,7 @@ static func encode_c2m_toggle_demo_door(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_toggle_demo_door(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"closed": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1658,7 +1754,7 @@ static func encode_c2m_trigger_monster_signal(value: Dictionary) -> PackedByteAr
 	return result
 
 static func decode_c2m_trigger_monster_signal(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"monster_unit_id": 0, "signal_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1693,7 +1789,7 @@ static func encode_c2m_trigger_npc_interaction(value: Dictionary) -> PackedByteA
 	return result
 
 static func decode_c2m_trigger_npc_interaction(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"npc_unit_id": 0, "trigger": 0, "trigger_value": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1733,7 +1829,7 @@ static func encode_c2m_update_player_trade_offer(value: Dictionary) -> PackedByt
 	return result
 
 static func decode_c2m_update_player_trade_offer(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"trade_id": "", "gold": 0, "items": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1771,7 +1867,7 @@ static func encode_c2m_use_interactable(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_use_interactable(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"interactable_unit_id": 0, "operation_id": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1804,7 +1900,7 @@ static func encode_c2m_use_item(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2m_use_item(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"item_id": 0, "operation_id": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1841,7 +1937,7 @@ static func encode_c2s_create_character(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2s_create_character(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"account": "", "name": "", "player_config_id": 0, "extensions": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1882,7 +1978,7 @@ static func encode_c2s_get_login_service_addr(value: Dictionary) -> PackedByteAr
 	return result
 
 static func decode_c2s_get_login_service_addr(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"account": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1912,7 +2008,7 @@ static func encode_c2s_login(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2s_login(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"account": "", "character_id": 0, "password": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -1954,7 +2050,7 @@ static func encode_c2s_register(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_c2s_register(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"account": "", "password": "", "player_config_id": 0, "skip_initial_character": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2017,7 +2113,7 @@ static func encode_cell_movement_state(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_cell_movement_state(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"unit_id": 0, "acknowledged_sequence": 0, "from_cell_x": 0, "from_cell_z": 0, "to_cell_x": 0, "to_cell_z": 0, "move_start_tick": 0, "move_end_tick": 0, "moving": false, "facing": 0, "y": 0.0, "yaw": 0.0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2097,7 +2193,7 @@ static func encode_character_extension(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_character_extension(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"id": "", "version": 0, "payload": PackedByteArray()}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2136,7 +2232,7 @@ static func encode_character_summary(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_character_summary(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"character_id": 0, "name": "", "player_config_id": 0, "level": 0, "extensions": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2181,7 +2277,7 @@ static func encode_g2c_aoi_delta(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_aoi_delta(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"server_tick": 0, "enters": [], "leaves": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2220,7 +2316,7 @@ static func encode_g2c_auto_attack_state(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_auto_attack_state(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"enabled": false, "target_unit_id": 0, "phase": 0, "swing_start_at_ms": 0, "swing_interval_ms": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2262,7 +2358,7 @@ static func encode_g2c_buff_added(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_buff_added(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"buff": null}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2285,7 +2381,7 @@ static func encode_g2c_buff_detail(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_buff_detail(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"server_tick": 0, "buffs": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2315,7 +2411,7 @@ static func encode_g2c_buff_removed(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_buff_removed(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"unit_id": 0, "buff_instance_id": 0, "revision": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2370,7 +2466,7 @@ static func encode_g2c_combat_result(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_combat_result(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"result_type": 0, "source_unit_id": 0, "target_unit_id": 0, "requested_amount": 0, "effective_amount": 0, "absorbed_amount": 0, "current_hp": 0, "damage_school": 0, "ability_id": 0, "killed": false, "server_tick": 0, "prevented_reason": 0, "critical": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2451,7 +2547,7 @@ static func encode_g2c_demo_door_state(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_demo_door_state(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"closed": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2512,7 +2608,7 @@ static func encode_g2c_enter_map(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_enter_map(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"account": "", "map_service": "", "map_id": 0, "unit_id": 0, "x": 0.0, "z": 0.0, "entities": [], "fixed_update_ms": 0, "items": [], "y": 0.0, "map_instance_id": 0, "spatial_mode": 0, "navigation_version": "", "navigation_hash": "", "quests": [], "completed_quest_config_ids": [], "gold": 0, "starter_dungeon_cooldown_end_at_ms": 0, "known_skill_ids": [], "numerics": [], "proficiencies": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2651,7 +2747,7 @@ static func encode_g2c_enter_starter_dungeon(value: Dictionary) -> PackedByteArr
 	return result
 
 static func decode_g2c_enter_starter_dungeon(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"enter_map": null, "cooldown_end_at_ms": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2693,7 +2789,7 @@ static func encode_g2c_entity_enter(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_entity_enter(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"entity": null}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2714,7 +2810,7 @@ static func encode_g2c_entity_leave(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_entity_leave(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"unit_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2737,7 +2833,7 @@ static func encode_g2c_entity_move(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_entity_move(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"server_tick": 0, "movements": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2765,7 +2861,7 @@ static func encode_g2c_entity_navigate(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_entity_navigate(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"server_tick": 0, "movements": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2793,7 +2889,7 @@ static func encode_g2c_entity_numeric(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_entity_numeric(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"server_tick": 0, "numerics": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2821,7 +2917,7 @@ static func encode_g2c_entity_state(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_entity_state(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"server_tick": 0, "states": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2848,7 +2944,7 @@ static func encode_g2c_item_changed(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_item_changed(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"item": null}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2871,7 +2967,7 @@ static func encode_g2c_login_gate(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_login_gate(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"account": "", "character_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2914,7 +3010,7 @@ static func encode_g2c_logout_character(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_logout_character(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"character_id": 0, "released": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -2965,7 +3061,7 @@ static func encode_g2c_map_ready(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_map_ready(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"account": "", "map_id": 0, "unit_id": 0, "x": 0.0, "z": 0.0, "y": 0.0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3011,7 +3107,7 @@ static func encode_g2c_map_snapshot_ready(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_map_snapshot_ready(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"demo_door_closed": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3047,7 +3143,7 @@ static func encode_g2c_ping(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_ping(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"server_time": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3084,7 +3180,7 @@ static func encode_g2c_player_trade_changed(value: Dictionary) -> PackedByteArra
 	return result
 
 static func decode_g2c_player_trade_changed(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"trade": null}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3114,7 +3210,7 @@ static func encode_g2c_player_trade_closed(value: Dictionary) -> PackedByteArray
 	return result
 
 static func decode_g2c_player_trade_closed(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"trade_id": "", "committed": false, "reason": 0, "gold": 0, "inventory": null}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3156,7 +3252,7 @@ static func encode_g2c_player_trade_invite(value: Dictionary) -> PackedByteArray
 	return result
 
 static func decode_g2c_player_trade_invite(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"trade": null}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3183,7 +3279,7 @@ static func encode_g2c_progression_changed(value: Dictionary) -> PackedByteArray
 	return result
 
 static func decode_g2c_progression_changed(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"level": 0, "experience": 0, "gained_experience": 0, "leveled_up": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3219,7 +3315,7 @@ static func encode_g2c_quest_progress(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_quest_progress(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"quests": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3242,7 +3338,7 @@ static func encode_g2c_session_replaced(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_session_replaced(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"reason_code": 0, "reason": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3294,7 +3390,7 @@ static func encode_g2c_skill_cast_state(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_skill_cast_state(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"phase": 0, "cast_id": 0, "skill_id": 0, "target_unit_id": 0, "started_at_ms": 0, "finish_at_ms": 0, "global_cooldown_end_at_ms": 0, "skill_cooldown_end_at_ms": 0, "interrupt_reason": "", "channel_tick_index": 0, "channel_tick_count": 0, "queued_skill_id": 0, "queued_target_unit_id": 0, "queue_deadline_at_ms": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3392,7 +3488,7 @@ static func encode_g2c_skill_impact(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_skill_impact(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"cast_id": 0, "skill_id": 0, "source_unit_id": 0, "target_unit_id": 0, "damage": 0, "damage_school": 0, "killed": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3453,7 +3549,7 @@ static func encode_g2c_skill_projectile(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_skill_projectile(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"cast_id": 0, "skill_id": 0, "source_unit_id": 0, "target_unit_id": 0, "launched_at_ms": 0, "impact_at_ms": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3507,7 +3603,7 @@ static func encode_g2c_unit_presentation(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_g2c_unit_presentation(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"presentation_type": 0, "source_unit_id": 0, "target_unit_id": 0, "presentation_id": 0, "text": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3548,7 +3644,7 @@ static func encode_inventory_snapshot(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_inventory_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"items": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3571,7 +3667,7 @@ static func encode_item_cooldown_snapshot(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_item_cooldown_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"item_config_id": 0, "cooldown_end_at_ms": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3613,7 +3709,7 @@ static func encode_item_snapshot(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_item_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"item_id": 0, "config_id": 0, "count": 0, "quality": 0, "level": 0, "version": 0, "durability": 0, "max_durability": 0, "placement_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3680,7 +3776,7 @@ static func encode_loot_drop_snapshot(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_loot_drop_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"drop_id": 0, "item_config_id": 0, "count": 0, "gold": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3723,7 +3819,7 @@ static func encode_m2c_accept_quest(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_accept_quest(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"quest": null, "inventory_changes": [], "inventory_items": [], "base_inventory_items": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3780,7 +3876,7 @@ static func encode_m2c_attack_monster(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_attack_monster(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"monster_id": 0, "damage": 0, "remaining_hp": 0, "killed": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3840,7 +3936,7 @@ static func encode_m2c_buy_npc_shop_item(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_buy_npc_shop_item(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"item_config_id": 0, "count": 0, "items": [], "gold": 0, "inventory_recovery": null}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3896,7 +3992,7 @@ static func encode_m2c_cancel_player_trade(value: Dictionary) -> PackedByteArray
 	return result
 
 static func decode_m2c_cancel_player_trade(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"trade_id": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3932,7 +4028,7 @@ static func encode_m2c_cancel_skill(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_cancel_skill(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"cancelled": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -3994,7 +4090,7 @@ static func encode_m2c_cast_skill(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_cast_skill(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"phase": 0, "cast_id": 0, "skill_id": 0, "target_unit_id": 0, "started_at_ms": 0, "finish_at_ms": 0, "global_cooldown_end_at_ms": 0, "skill_cooldown_end_at_ms": 0, "interrupt_reason": "", "channel_tick_index": 0, "channel_tick_count": 0, "queued_skill_id": 0, "queued_target_unit_id": 0, "queue_deadline_at_ms": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4101,7 +4197,7 @@ static func encode_m2c_command_owned_unit(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_command_owned_unit(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"owned_unit_id": 0, "command": 0, "accepted": false, "ability_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4174,7 +4270,7 @@ static func encode_m2c_complete_quest(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_complete_quest(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"quest_config_id": 0, "reward_items": [], "gold": 0, "gained_gold": 0, "level": 0, "experience": 0, "gained_experience": 0, "leveled_up": false, "selected_reward_choice_id": 0, "inventory_items": [], "base_inventory_items": [], "inventory_changes": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4268,7 +4364,7 @@ static func encode_m2c_confirm_player_trade(value: Dictionary) -> PackedByteArra
 	return result
 
 static func decode_m2c_confirm_player_trade(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"trade": null, "committed": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4309,7 +4405,7 @@ static func encode_m2c_find_path(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_find_path(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"points": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4347,7 +4443,7 @@ static func encode_m2c_inspect_loot_monster(value: Dictionary) -> PackedByteArra
 	return result
 
 static func decode_m2c_inspect_loot_monster(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"monster_id": 0, "drops": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4388,7 +4484,7 @@ static func encode_m2c_invoke_unit_action(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_invoke_unit_action(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"payload": PackedByteArray()}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4432,7 +4528,7 @@ static func encode_m2c_learn_trainer_skill(value: Dictionary) -> PackedByteArray
 	return result
 
 static func decode_m2c_learn_trainer_skill(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"skill_config_id": 0, "learned": false, "gold": 0, "proficiencies": [], "learned_skill_config_ids": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4498,7 +4594,7 @@ static func encode_m2c_loot_monster(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_loot_monster(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"monster_id": 0, "items": [], "quests": [], "remaining_drops": [], "gold": 0, "gained_gold": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4559,7 +4655,7 @@ static func encode_m2c_map_probe(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_map_probe(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"sequence": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4597,7 +4693,7 @@ static func encode_m2c_navigate_input(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_navigate_input(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"acknowledged_sequence": 0, "points": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4640,7 +4736,7 @@ static func encode_m2c_navigate_to(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_navigate_to(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"acknowledged_sequence": 0, "points": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4688,7 +4784,7 @@ static func encode_m2c_open_npc_shop(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_open_npc_shop(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"npc_unit_id": 0, "items": [], "gold": 0, "inventory": null}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4755,7 +4851,7 @@ static func encode_m2c_release_dead_player(value: Dictionary) -> PackedByteArray
 	return result
 
 static func decode_m2c_release_dead_player(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"released": false, "x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0, "health": 0, "max_health": 0, "mana": 0, "max_mana": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4838,7 +4934,7 @@ static func encode_m2c_repair_items(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_repair_items(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"cost": 0, "gold": 0, "items": [], "inventory_recovery": null}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4890,7 +4986,7 @@ static func encode_m2c_request_player_trade(value: Dictionary) -> PackedByteArra
 	return result
 
 static func decode_m2c_request_player_trade(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"trade": null}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4927,7 +5023,7 @@ static func encode_m2c_respond_player_trade(value: Dictionary) -> PackedByteArra
 	return result
 
 static func decode_m2c_respond_player_trade(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"trade": null}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -4979,7 +5075,7 @@ static func encode_m2c_revive_player(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_revive_player(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"revived": false, "x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0, "health": 0, "max_health": 0, "mana": 0, "max_mana": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -5065,7 +5161,7 @@ static func encode_m2c_sell_item(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_sell_item(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"item_config_id": 0, "count": 0, "gold": 0, "item": null, "inventory_recovery": null}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -5129,7 +5225,7 @@ static func encode_m2c_toggle_auto_attack(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_toggle_auto_attack(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"enabled": false, "target_unit_id": 0, "phase": 0, "swing_start_at_ms": 0, "swing_interval_ms": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -5187,7 +5283,7 @@ static func encode_m2c_toggle_demo_door(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_toggle_demo_door(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"closed": false, "changed": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -5228,7 +5324,7 @@ static func encode_m2c_trigger_monster_signal(value: Dictionary) -> PackedByteAr
 	return result
 
 static func decode_m2c_trigger_monster_signal(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"accepted": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -5264,7 +5360,7 @@ static func encode_m2c_trigger_npc_interaction(value: Dictionary) -> PackedByteA
 	return result
 
 static func decode_m2c_trigger_npc_interaction(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"accepted": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -5301,7 +5397,7 @@ static func encode_m2c_update_player_trade_offer(value: Dictionary) -> PackedByt
 	return result
 
 static func decode_m2c_update_player_trade_offer(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"trade": null}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -5345,7 +5441,7 @@ static func encode_m2c_use_interactable(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_use_interactable(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"interactable_unit_id": 0, "items": [], "quests": [], "respawn_at_ms": 0, "proficiencies": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -5412,7 +5508,7 @@ static func encode_m2c_use_item(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_m2c_use_item(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"item": null, "buff": null, "global_cooldown_end_at_ms": 0, "item_cooldown_end_at_ms": 0, "inventory_recovery": null}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -5542,7 +5638,7 @@ static func encode_map_entity_snapshot(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_map_entity_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"unit_id": 0, "x": 0.0, "z": 0.0, "yaw": 0.0, "alive": false, "state": PackedByteArray(), "account": "", "cell_x": 0, "cell_z": 0, "numerics": [], "speed_cells_per_second": 0.0, "facing": 0, "y": 0.0, "buffs": [], "entity_type": 0, "config_id": 0, "display_name": "", "shop_enabled": false, "persistent_id": 0, "presentation_model_id": "", "presentation_state_id": 0, "owner_unit_id": 0, "owner_persistent_id": 0, "created_by_ability_id": 0, "quest_starter_config_ids": [], "quest_ender_config_ids": [], "shop_item_config_ids": [], "trainer_id": 0, "quest_enabled": false, "conversation_enabled": false, "training_enabled": false, "repair_enabled": false, "recovery_enabled": false, "presentation_loadout_id": "", "extension_capabilities": [], "runtime_profile_revision": 0, "owned_unit_reaction": 0, "auto_cast_ability_ids": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -5760,7 +5856,7 @@ static func encode_navigation_movement_state(value: Dictionary) -> PackedByteArr
 	return result
 
 static func decode_navigation_movement_state(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"unit_id": 0, "acknowledged_sequence": 0, "x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0, "moving": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -5815,7 +5911,7 @@ static func encode_navigation_path_point(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_navigation_path_point(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"x": 0.0, "y": 0.0, "z": 0.0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -5892,7 +5988,7 @@ static func encode_owned_summon_transfer_snapshot(value: Dictionary) -> PackedBy
 	return result
 
 static func decode_owned_summon_transfer_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"ownership_slot": 0, "created_by_ability_id": 0, "definition_id": 0, "name": "", "model_id": "", "max_hp": 0, "max_mp": 0, "attack_damage": 0, "move_speed": 0.0, "attack_range": 0.0, "attack_interval_ms": 0, "attack_damage_school": 0, "attack_ability_id": 0, "follow_distance": 0.0, "teleport_distance": 0.0, "assist_owner": false, "initial_reaction": 0, "aggressive_acquire_range": 0.0, "reaction": 0, "abilities": [], "auto_cast_ability_ids": [], "resource_regen_amount": 0, "resource_regen_interval_ms": 0, "resource_regen_delay_after_spend_ms": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6030,7 +6126,7 @@ static func encode_owned_unit_ability_snapshot(value: Dictionary) -> PackedByteA
 	return result
 
 static func decode_owned_unit_ability_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"ability_id": 0, "auto_cast_by_default": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6060,7 +6156,7 @@ static func encode_player_trade_item_offer(value: Dictionary) -> PackedByteArray
 	return result
 
 static func decode_player_trade_item_offer(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"item_id": 0, "item_config_id": 0, "count": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6099,7 +6195,7 @@ static func encode_player_trade_participant(value: Dictionary) -> PackedByteArra
 	return result
 
 static func decode_player_trade_participant(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"unit_id": 0, "display_name": "", "gold": 0, "items": [], "confirmed": false}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6150,7 +6246,7 @@ static func encode_player_trade_snapshot(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_player_trade_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"trade_id": "", "requester": null, "target": null, "phase": 0, "expire_at_ms": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6195,7 +6291,7 @@ static func encode_quest_objective_snapshot(value: Dictionary) -> PackedByteArra
 	return result
 
 static func decode_quest_objective_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"objective_id": 0, "current": 0, "required": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6234,7 +6330,7 @@ static func encode_quest_snapshot(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_quest_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"quest_config_id": 0, "objectives": [], "revision": 0, "ready_to_complete": false, "status": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6278,7 +6374,7 @@ static func encode_s2c_create_character(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_s2c_create_character(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"character": null, "characters": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6323,7 +6419,7 @@ static func encode_s2c_get_login_service_addr(value: Dictionary) -> PackedByteAr
 	return result
 
 static func decode_s2c_get_login_service_addr(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"name": "", "ip": "", "port": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6385,7 +6481,7 @@ static func encode_s2c_login(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_s2c_login(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"account": "", "service": "", "login_count": 0, "token": "", "gate_name": "", "gate_ip": "", "gate_port": 0, "characters": [], "selected_character_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6464,7 +6560,7 @@ static func encode_s2c_register(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_s2c_register(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"account": "", "character": null}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6511,7 +6607,7 @@ static func encode_shop_item_snapshot(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_shop_item_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"item_config_id": 0, "buy_price": 0, "sell_price": 0, "purchase_count": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6549,7 +6645,7 @@ static func encode_skill_cooldown_snapshot(value: Dictionary) -> PackedByteArray
 	return result
 
 static func decode_skill_cooldown_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"skill_id": 0, "cooldown_end_at_ms": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6579,7 +6675,7 @@ static func encode_skill_proficiency_snapshot(value: Dictionary) -> PackedByteAr
 	return result
 
 static func decode_skill_proficiency_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"proficiency_id": 0, "rank": 0, "maximum_rank": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6618,7 +6714,7 @@ static func encode_skill_transfer_snapshot(value: Dictionary) -> PackedByteArray
 	return result
 
 static func decode_skill_transfer_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"global_cooldown_end_at_ms": 0, "cooldowns": [], "item_cooldowns": [], "known_skill_ids": [], "proficiencies": []}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6661,7 +6757,7 @@ static func encode_starter_dungeon_cooldown_snapshot(value: Dictionary) -> Packe
 	return result
 
 static func decode_starter_dungeon_cooldown_snapshot(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"cooldown_end_at_ms": 0, "operation_id": ""}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6691,7 +6787,7 @@ static func encode_unit_numeric_delta(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_unit_numeric_delta(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"unit_id": 0, "numeric_type": 0, "value": 0}
 	while not reader.eof():
 		var tag := reader.tag()
@@ -6738,7 +6834,7 @@ static func encode_unit_state_delta(value: Dictionary) -> PackedByteArray:
 	return result
 
 static func decode_unit_state_delta(payload: PackedByteArray) -> Dictionary:
-	var reader := TzProtoReader.new(payload)
+	var reader := ProtoReader.new(payload)
 	var result := {"unit_id": 0, "dirty_mask_low": 0, "dirty_mask_high": 0, "x": 0.0, "y": 0.0, "speed_cells_per_second": 0.0, "alive": false, "z": 0.0, "yaw": 0.0}
 	while not reader.eof():
 		var tag := reader.tag()

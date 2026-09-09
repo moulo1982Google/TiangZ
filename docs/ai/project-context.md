@@ -1,5 +1,7 @@
 # TiangZ AI 项目上下文
 
+2026-09-10 独立 Godot 接入验收发现并修复 SDK 对示例全局 `TzProtoReader` 的隐式依赖。读取器唯一源码现在位于 `client_sdk/godot/proto_reader.gd`，生成器将其嵌入宿主及各模块协议类的局部 `ProtoReader`，单个生成 `.gd` 可在无示例文件、无编辑器 class 缓存的工程直接加载。旧示例 `TzProtoReader` 仅作继承兼容。设置 `GODOT_BIN` 后，模块协议自测会实际运行干净 Godot 工程，覆盖双 SDK 共存、Unicode、RPC 和读取游标隔离；未配置 Godot 时明确报告实跑跳过。
+
 模块版本部署：`release:package` 根据已安装模块选择普通或组合 Native 二进制，校验 Model/Hotfix/配置的模块图与指纹，生成带内容身份的独立制品目录，冒烟成功后才发布目录；已有同身份制品拒绝覆盖。Native 发布包含组合 Cargo.lock 和二进制校验记录。`--debug` 仅用于开发制品验收。源码编译失败不会覆盖旧 Model；版本切换仍由部署方执行优雅重启，旧数据版本的写入由 Repository 读前检查与 CAS 拒绝。
 
 模块扩展推进：`publicApi` 声明模块 Model 公开入口，消费者通过 `#tiangz/modules/<id>` 引入直接依赖；Hotfix 绑定封闭的公共 Model 引用。`gameConfig.client` 使用独立 Luban target 导出客户端内容，模块 schema 进入 Model 指纹。模块配置随现有配置候选携带，Rust 校验 `moduleConfigsJson/moduleConfigsHash`，Model 中的 Luban schema 预检全部模块后统一发布 `ModuleConfigRegistry` 快照。未知所有者、schema 变化及模块增删必须重建重启。`VersionedEntityCodec.migrations` 声明相邻版本迁移，Repository 在读取时按 revision CAS 保存升级结果，冲突重新读取，未知版本拒绝。`native` 声明独立源码、crate 和生成目录，独立 Cargo 组合构建使用模块命名空间及 Native/Model 身份检查。工作范围和验收状态见[模块化推进](../design/module-completion-plan.md)。游戏仅作消费方验证，当前暂停游戏功能开发。

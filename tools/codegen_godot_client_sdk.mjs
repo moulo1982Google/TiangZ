@@ -62,6 +62,8 @@ for (const entry of entries) {
 const className = moduleMode
   ? requiredArgument("--class-name")
   : "TiangZProto";
+const readerFile = path.join(root, "client_sdk", "godot", "proto_reader.gd");
+const readerSource = (await readFile(readerFile, "utf8")).replaceAll("\r\n", "\n").trimEnd();
 const content = emitProtocol(entries, opcodeByKey, className);
 await mkdir(outputRoot, { recursive: true });
 await writeFile(outputFile, content, "utf8");
@@ -69,7 +71,7 @@ if (!moduleMode) {
   await recordGenerator(root, {
     id: "godot-client-sdk",
     command: "npm run codegen:godot-client-sdk",
-    contentInputs: [scriptFile, configFile, schemaFile, opcodeFile],
+    contentInputs: [scriptFile, configFile, schemaFile, opcodeFile, readerFile],
     outputs: [outputFile],
     outputRoots: [{ path: outputRoot, extensions: [".gd"] }],
   });
@@ -91,6 +93,7 @@ function emitProtocol(entries, opcodeByKey, className) {
     lines.push(`const ${constantName(entry.name)} := ${opcodeByKey.get(entry.key)}`);
   }
   lines.push("");
+  lines.push("class ProtoReader:", ...readerSource.split("\n").map((line) => line ? `\t${line}` : ""), "");
   emitRuntimeHelpers(lines);
   for (const entry of entries.sort(compareEntry)) emitCodec(lines, entry, messages);
   return `${lines.join("\n")}\n`;
@@ -189,7 +192,7 @@ function emitRuntimeHelpers(lines) {
     "\tout.append(int(current) & 0xff)",
     "",
     "static func decode_rpc_id(payload: PackedByteArray) -> int:",
-    "\tvar reader := TzProtoReader.new(payload)",
+    "\tvar reader := ProtoReader.new(payload)",
     "\twhile not reader.eof():",
     "\t\tvar tag := reader.tag()",
     "\t\tif tag.field == 90 and tag.wire == 0:",
@@ -198,7 +201,7 @@ function emitRuntimeHelpers(lines) {
     "\treturn 0",
     "",
     "static func decode_error(payload: PackedByteArray) -> Dictionary:",
-    "\tvar reader := TzProtoReader.new(payload)",
+    "\tvar reader := ProtoReader.new(payload)",
     "\tvar result := {\"rpc_id\": 0, \"error\": 0, \"message\": \"\"}",
     "\twhile not reader.eof():",
     "\t\tvar tag := reader.tag()",
@@ -226,7 +229,7 @@ function emitCodec(lines, entry, messages) {
   }
   lines.push("\treturn result", "");
   lines.push(`static func decode_${functionName}(payload: PackedByteArray) -> Dictionary:`);
-  lines.push("\tvar reader := TzProtoReader.new(payload)");
+  lines.push("\tvar reader := ProtoReader.new(payload)");
   lines.push(`\tvar result := ${dictionaryDefaults(entry.fields)}`);
   lines.push("\twhile not reader.eof():", "\t\tvar tag := reader.tag()", "\t\tmatch tag.field:");
   for (const field of entry.fields) emitDecoderField(lines, field, messages);

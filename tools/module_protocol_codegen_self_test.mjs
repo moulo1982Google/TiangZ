@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -19,6 +19,11 @@ try {
   }
   await stat(path.join(moduleRoot, "src", "model", "generated", "protocol", "index.ts"));
   await stat(path.join(moduleRoot, "generated", "godot", "CardsProto.gd"));
+  const godotSource = await readFile(path.join(moduleRoot, "generated", "godot", "CardsProto.gd"), "utf8");
+  if (!godotSource.includes("class ProtoReader:") || godotSource.includes("TzProtoReader")) {
+    throw new Error("module Godot SDK still depends on a demo/global reader");
+  }
+  await verifyStandaloneGodot();
   const clientSource = await readFile(
     path.join(moduleRoot, "generated", "typescript", "cards", "protocol", "clients.ts"),
     "utf8",
@@ -42,6 +47,83 @@ try {
 }
 
 process.stdout.write("module protocol codegen self-test passed\n");
+
+async function verifyStandaloneGodot() {
+  const godot = process.env.GODOT_BIN;
+  if (!godot) {
+    process.stdout.write("module Godot runtime check skipped: set GODOT_BIN to enable fresh-project validation\n");
+    return;
+  }
+  const project = path.join(temporary, "godot-standalone");
+  await mkdir(project, { recursive: true });
+  await cp(path.join(moduleRoot, "generated", "godot", "CardsProto.gd"), path.join(project, "CardsProto.gd"));
+  await runProcess(process.execPath, [path.join(root, "tools", "codegen_godot_client_sdk.mjs"),
+    "--module-root", moduleRoot, "--schema-lock", path.join(moduleRoot, "proto", "schema.lock.json"),
+    "--opcode-lock", path.join(moduleRoot, "proto", "opcode.lock.json"),
+    "--output", path.join(project, "OtherCardsProto.gd"), "--class-name", "OtherCardsProto"]);
+  await writeFile(path.join(project, "project.godot"), 'config_version=5\n[application]\nconfig/name="Module SDK acceptance"\n');
+  await writeFile(path.join(project, "smoke.gd"), `extends SceneTree
+const Cards = preload("res://CardsProto.gd")
+const Other = preload("res://OtherCardsProto.gd")
+func _initialize() -> void:
+\tvar text := "独立模块 · hello 🌍"
+\tvar payload := Cards.encode_c2s_cards_ping({"text": text})
+\tassert(Cards.decode_c2s_cards_ping(payload).text == text)
+\tassert(Other.decode_c2s_cards_ping(payload).text == text)
+\tvar rpc := Cards.with_rpc(719, payload)
+\tassert(Cards.decode_rpc_id(rpc) == 719)
+\tassert(Cards.decode_c2s_cards_ping(rpc).text == text)
+\tvar response := Other.encode_s2c_cards_ping({"greeting": text})
+\tassert(Cards.decode_s2c_cards_ping(response).greeting == text)
+\tvar first := Cards.ProtoReader.new(payload)
+\tvar second := Other.ProtoReader.new(payload)
+\tfirst.tag()
+\tassert(first.offset > 0 and second.offset == 0)
+\tprint("MODULE_GODOT_STANDALONE_OK")
+\tquit()
+`);
+  const result = await runProcess(godot, ["--headless", "--path", project, "--script", "res://smoke.gd", "--quit-after", "60"]);
+  if (!result.includes("MODULE_GODOT_STANDALONE_OK") || /(?:SCRIPT ERROR|ERROR):/.test(result)) {
+    throw new Error(`standalone Godot SDK runtime failed:\n${result}`);
+  }
+  // 独立 SDK 实跑之后再引入旧示例入口，避免全局类掩盖独立依赖缺失。
+  // Add the legacy alias only after standalone validation, so global classes cannot mask missing dependencies.
+  await mkdir(path.join(project, "scripts", "generated"), { recursive: true });
+  await cp(path.join(root, "client_demo/godot-3d-4.7.1/scripts/generated/tiangz_proto.gd"), path.join(project, "scripts/generated/tiangz_proto.gd"));
+  await cp(path.join(root, "client_demo/godot-3d-4.7.1/scripts/proto_reader.gd"), path.join(project, "scripts/proto_reader.gd"));
+  await writeFile(path.join(project, "legacy.gd"), `extends SceneTree
+const Cards = preload("res://CardsProto.gd")
+const Legacy = preload("res://scripts/proto_reader.gd")
+func _initialize() -> void:
+\tvar payload := Cards.encode_c2s_cards_ping({"text": "旧入口"})
+\tvar reader := Legacy.new(payload)
+\tassert(reader.tag().field == 1)
+\tassert(reader.string_value() == "旧入口")
+\tprint("MODULE_GODOT_LEGACY_OK")
+\tquit()
+`);
+  const legacy = await runProcess(godot, ["--headless", "--path", project, "--script", "res://legacy.gd", "--quit-after", "60"]);
+  if (!legacy.includes("MODULE_GODOT_LEGACY_OK") || /(?:SCRIPT ERROR|ERROR):/.test(legacy)) {
+    throw new Error(`legacy Godot reader compatibility failed:\n${legacy}`);
+  }
+  process.stdout.write("module Godot fresh-project runtime passed: two codecs, Unicode, RPC and reader isolation\n");
+}
+
+function runProcess(executable, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(executable, args, { cwd: root, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    const timeout = setTimeout(() => { child.kill(); reject(new Error("Godot SDK validation timed out")); }, 30000);
+    child.stdout.on("data", (chunk) => { output += chunk; });
+    child.stderr.on("data", (chunk) => { output += chunk; });
+    child.once("error", (error) => { clearTimeout(timeout); reject(error); });
+    child.once("exit", (code) => {
+      clearTimeout(timeout);
+      if (code !== 0) reject(new Error(`SDK subprocess failed (${code}): ${output}`));
+      else resolve(output);
+    });
+  });
+}
 
 async function writeFixture() {
   await Promise.all([
