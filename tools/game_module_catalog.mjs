@@ -7,6 +7,15 @@ const MODULE_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9][a-z0-9-]*)+$/;
 const CAPABILITY_ID = /^[a-z][a-z0-9]*(?:[.:/-][a-z0-9][a-z0-9-]*)*$/;
 const ENTRY_KEYS = new Set(["model", "hotfix", "modelRoots", "hotfixRoots"]);
 const GAME_CONFIG_KEYS = new Set(["project", "target", "generatedCode", "generatedData"]);
+const PROTOCOL_KEYS = new Set([
+  "source",
+  "opcodeLock",
+  "schemaLock",
+  "serverOutput",
+  "typescriptOutput",
+  "godotOutput",
+  "godotClassName",
+]);
 const TOP_LEVEL_KEYS = new Set([
   "formatVersion",
   "id",
@@ -17,6 +26,7 @@ const TOP_LEVEL_KEYS = new Set([
   "capabilities",
   "entries",
   "gameConfig",
+  "protocol",
 ]);
 
 /**
@@ -67,6 +77,7 @@ export async function loadGameModuleCatalog({
       hotfixRoots: [...module.entries.hotfixRootRelatives],
     },
     ...(module.gameConfig ? { gameConfig: { ...module.gameConfig.relative } } : {}),
+    ...(module.protocol ? { protocol: { ...module.protocol.relative } } : {}),
   }));
   const canonicalGraph = `${JSON.stringify({ formatVersion: 1, modules: graph })}\n`;
 
@@ -229,6 +240,9 @@ async function readModule(root, engineVersion) {
       hotfixRoots,
       manifestFile,
     );
+  const protocol = value.protocol === undefined
+    ? undefined
+    : await requireProtocol(root, value.protocol, modelRoots, manifestFile);
 
   return {
     root: path.resolve(root),
@@ -241,6 +255,7 @@ async function readModule(root, engineVersion) {
     dependencies,
     capabilities: capabilities.sort((left, right) => left.localeCompare(right, "en")),
     gameConfig,
+    protocol,
     entries: {
       model,
       hotfix,
@@ -252,6 +267,98 @@ async function readModule(root, engineVersion) {
       hotfixRoots,
       modelRealRoots,
       hotfixRealRoots,
+    },
+  };
+}
+
+async function requireProtocol(root, value, modelRoots, manifestFile) {
+  const label = `${manifestFile}: protocol`;
+  requireObject(value, label);
+  rejectUnknownKeys(value, PROTOCOL_KEYS, label);
+  const sourceRelative = requireSafeRelativePath(
+    value.source ?? "proto",
+    "protocol.source",
+    manifestFile,
+  );
+  const opcodeLockRelative = requireSafeRelativePath(
+    value.opcodeLock ?? path.join(sourceRelative, "opcode.lock.json"),
+    "protocol.opcodeLock",
+    manifestFile,
+  );
+  const schemaLockRelative = requireSafeRelativePath(
+    value.schemaLock ?? path.join(sourceRelative, "schema.lock.json"),
+    "protocol.schemaLock",
+    manifestFile,
+  );
+  const serverOutputRelative = requireSafeRelativePath(
+    value.serverOutput ?? path.join("src", "model", "generated", "protocol"),
+    "protocol.serverOutput",
+    manifestFile,
+  );
+  const typescriptOutputRelative = requireSafeRelativePath(
+    value.typescriptOutput ?? path.join("generated", "typescript"),
+    "protocol.typescriptOutput",
+    manifestFile,
+  );
+  const godotOutputRelative = requireSafeRelativePath(
+    value.godotOutput ?? path.join("generated", "godot"),
+    "protocol.godotOutput",
+    manifestFile,
+  );
+  const godotClassName = value.godotClassName ?? "TiangZModuleProto";
+  if (typeof godotClassName !== "string" || !/^[A-Z][A-Za-z0-9]*$/.test(godotClassName)) {
+    throw new Error(`${label}.godotClassName must be a PascalCase identifier`);
+  }
+
+  const source = path.resolve(root, sourceRelative);
+  const opcodeLock = path.resolve(root, opcodeLockRelative);
+  const schemaLock = path.resolve(root, schemaLockRelative);
+  const serverOutput = path.resolve(root, serverOutputRelative);
+  const typescriptOutput = path.resolve(root, typescriptOutputRelative);
+  const godotOutput = path.resolve(root, godotOutputRelative);
+  await requireContainedDirectory(root, source, `${label}.source`);
+  for (const [name, output] of [
+    ["serverOutput", serverOutput],
+    ["typescriptOutput", typescriptOutput],
+    ["godotOutput", godotOutput],
+  ]) {
+    if (!isWithin(root, output)) throw new Error(`${label}.${name} escapes the module root`);
+  }
+  if (new Set([serverOutput, typescriptOutput, godotOutput]).size !== 3) {
+    throw new Error(`${label} output directories must be distinct`);
+  }
+  if (isWithin(source, serverOutput) || isWithin(serverOutput, source)) {
+    throw new Error(`${label}.serverOutput must not overlap protocol.source`);
+  }
+  if (isWithin(source, typescriptOutput) || isWithin(typescriptOutput, source)) {
+    throw new Error(`${label}.typescriptOutput must not overlap protocol.source`);
+  }
+  if (isWithin(source, godotOutput) || isWithin(godotOutput, source)) {
+    throw new Error(`${label}.godotOutput must not overlap protocol.source`);
+  }
+  for (const [name, lock] of [["opcodeLock", opcodeLock], ["schemaLock", schemaLock]]) {
+    if (!isWithin(source, lock)) throw new Error(`${label}.${name} must be inside protocol.source`);
+  }
+  const modelOutputAllowed = modelRoots.some((directory) => isWithin(directory, serverOutput));
+  if (!modelOutputAllowed) {
+    throw new Error(`${label}.serverOutput must be inside a declared Model source root`);
+  }
+  return {
+    source,
+    opcodeLock,
+    schemaLock,
+    serverOutput,
+    typescriptOutput,
+    godotOutput,
+    godotClassName,
+    relative: {
+      source: normalizeRelative(sourceRelative),
+      opcodeLock: normalizeRelative(opcodeLockRelative),
+      schemaLock: normalizeRelative(schemaLockRelative),
+      serverOutput: normalizeRelative(serverOutputRelative),
+      typescriptOutput: normalizeRelative(typescriptOutputRelative),
+      godotOutput: normalizeRelative(godotOutputRelative),
+      godotClassName,
     },
   };
 }

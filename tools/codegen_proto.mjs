@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,23 +7,33 @@ import { collectGeneratedFiles, recordGenerator } from "./codegen_manifest.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const root = path.resolve(path.dirname(scriptFile), "..");
-const protoDir = path.join(root, "proto");
+const requestedModuleRoot = argumentValue("--module-root");
+const moduleRoot = requestedModuleRoot ? path.resolve(requestedModuleRoot) : undefined;
+const moduleMode = Boolean(moduleRoot);
+const protoOwnerRoot = moduleRoot ?? root;
+const protoDir = path.join(protoOwnerRoot, "proto");
 const opcodeLockFile = path.join(protoDir, "opcode.lock.json");
 const schemaLockFile = path.join(protoDir, "schema.lock.json");
 const internalFrameProtocolFile = path.join(root, "app", "core", "process", "InternalFrameProtocol.ts");
 const internalFrameMsgCodes = await readInternalFrameMsgCodes(internalFrameProtocolFile);
-const generatedModelDir = path.join(root, "app", "generated", "model");
-const generatedServerProtocolDir = path.join(generatedModelDir, "server");
-const obsoleteAppClientProtocolDir = path.join(generatedModelDir, "client");
+const generatedModelDir = moduleMode
+  ? path.resolve(requiredArgument("--server-output"))
+  : path.join(root, "app", "generated", "model");
+const generatedServerProtocolDir = moduleMode
+  ? generatedModelDir
+  : path.join(generatedModelDir, "server");
+const obsoleteAppClientProtocolDir = moduleMode
+  ? undefined
+  : path.join(generatedModelDir, "client");
 const appDir = path.join(root, "app");
 const configFile = path.join(root, "codegen.config.json");
 const codegenConfig = JSON.parse(
   await readFile(configFile, "utf8"),
 );
-const typescriptClientSdk = resolveTypescriptClientSdk(
-  codegenConfig.typescriptClientSdk,
-);
-const cppClientSdk = resolveCppClientSdk(codegenConfig.cppClientSdk);
+const typescriptClientSdk = moduleMode
+  ? resolveModuleTypescriptClientSdk(requiredArgument("--typescript-output"))
+  : resolveTypescriptClientSdk(codegenConfig.typescriptClientSdk);
+const cppClientSdk = moduleMode ? undefined : resolveCppClientSdk(codegenConfig.cppClientSdk);
 const appRuntimeFiles = {
   binary: path.join(appDir, "core", "protocol", "binary.ts"),
   broadcast: path.join(appDir, "core", "broadcast", "index.ts"),
@@ -118,9 +128,18 @@ async function main() {
   }
 
   await rm(generatedServerProtocolDir, { recursive: true, force: true });
-  await rm(obsoleteAppClientProtocolDir, { recursive: true, force: true });
+  if (obsoleteAppClientProtocolDir) {
+    await rm(obsoleteAppClientProtocolDir, { recursive: true, force: true });
+  }
   if (typescriptClientSdk) {
     await removeGeneratedTypeScript(typescriptClientSdk.protocolOutputRoot);
+    if (typescriptClientSdk.runtimeSourceRoot && typescriptClientSdk.runtimeOutputRoot) {
+      await cp(
+        typescriptClientSdk.runtimeSourceRoot,
+        typescriptClientSdk.runtimeOutputRoot,
+        { recursive: true, force: true },
+      );
+    }
   }
   if (cppClientSdk) {
     await rm(cppClientSdk.protocolOutputRoot, { recursive: true, force: true });
@@ -156,20 +175,22 @@ async function main() {
     ...(typescriptClientSdk ? [{ path: typescriptClientSdk.protocolOutputRoot, extensions: [".ts"] }] : []),
     ...(cppClientSdk ? [{ path: cppClientSdk.protocolOutputRoot, extensions: [".h"] }] : []),
   ];
-  await recordGenerator(root, {
-    id: "proto",
-    command: "npm run codegen:proto",
-    contentInputs: [
-      scriptFile,
-      configFile,
-      opcodeLockFile,
-      schemaLockFile,
-      internalFrameProtocolFile,
-      ...protoFiles,
-    ],
-    outputs: await collectGeneratedFiles(outputRoots),
-    outputRoots,
-  });
+  if (!moduleMode) {
+    await recordGenerator(root, {
+      id: "proto",
+      command: "npm run codegen:proto",
+      contentInputs: [
+        scriptFile,
+        configFile,
+        opcodeLockFile,
+        schemaLockFile,
+        internalFrameProtocolFile,
+        ...protoFiles,
+      ],
+      outputs: await collectGeneratedFiles(outputRoots),
+      outputRoots,
+    });
+  }
 }
 
 async function readInternalFrameMsgCodes(file) {
@@ -231,6 +252,23 @@ function resolveTypescriptClientSdk(config) {
   };
 }
 
+function resolveModuleTypescriptClientSdk(output) {
+  const protocolOutputRoot = path.resolve(output);
+  const sourceRoot = path.join(root, "client_sdk", "typescript");
+  const runtimeOutputRoot = path.join(protocolOutputRoot, "Core");
+  return {
+    protocolOutputRoot,
+    runtimeSourceRoot: path.join(sourceRoot, "Core"),
+    runtimeOutputRoot,
+    runtimeFiles: {
+      binary: path.join(runtimeOutputRoot, "Protocol", "Binary.ts"),
+      message: path.join(runtimeOutputRoot, "Protocol", "Message.ts"),
+      rpc: path.join(runtimeOutputRoot, "Protocol", "Rpc.ts"),
+      socket: path.join(runtimeOutputRoot, "Net", "RpcSocket.ts"),
+    },
+  };
+}
+
 async function discoverProtoFiles(dir) {
   const entries = await readdir(dir, { withFileTypes: true });
   const files = [];
@@ -279,7 +317,7 @@ function parseProtoFileInfo(protoFile) {
     protoName,
     targetFlag,
     startOpcode: Number(startOpcodeText),
-    relativePath: path.relative(root, protoFile).replaceAll(path.sep, "/"),
+    relativePath: path.relative(protoOwnerRoot, protoFile).replaceAll(path.sep, "/"),
   };
 }
 
@@ -1743,4 +1781,18 @@ function toTsImport(fromDir, targetFile) {
   let relativePath = path.relative(fromDir, targetFile).replace(/\\/g, "/");
   relativePath = relativePath.replace(/\.ts$/, "");
   return relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
+}
+
+function argumentValue(name) {
+  const prefix = `${name}=`;
+  const inline = process.argv.find((value) => value.startsWith(prefix));
+  if (inline) return inline.slice(prefix.length);
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] : undefined;
+}
+
+function requiredArgument(name) {
+  const value = argumentValue(name);
+  if (!value || value.startsWith("--")) throw new Error(`${name} is required`);
+  return value;
 }

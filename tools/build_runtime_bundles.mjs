@@ -24,6 +24,9 @@ const moduleCatalog = await loadGameModuleCatalog({
     : path.join(root, "modules"),
   engineVersion: packageJson.version,
 });
+const moduleProtocolLockFiles = moduleCatalog.modules
+  .filter((module) => module.protocol)
+  .flatMap((module) => [module.protocol.opcodeLock, module.protocol.schemaLock]);
 const gameConfigManifest = JSON.parse(
   await readFile(path.join(root, "game_config", "generated", "game-config.manifest.json"), "utf8"),
 );
@@ -133,6 +136,7 @@ if (!hotfixOnly) {
     protocolFingerprint: await hashFiles([
       path.join(root, "proto", "opcode.lock.json"),
       path.join(root, "proto", "schema.lock.json"),
+      ...moduleProtocolLockFiles,
     ]),
     stableCoreApiHash: await hashFiles([
       path.join(root, "app", "core", "public-api.lock.json"),
@@ -177,8 +181,21 @@ function modelEntrySource(catalog, includeBench) {
   const imports = catalog.modules
     .map((module) => `import ${JSON.stringify(importSpecifier(module.entries.model))};`)
     .join("\n");
+  const protocolModules = catalog.modules.filter((module) => module.protocol);
+  const protocolImports = protocolModules
+    .map((module, index) => (
+      `import { AllRpcDescriptors as ModuleRpcDescriptors${index}, AllMessageDescriptors as ModuleMessageDescriptors${index} } from ${JSON.stringify(importSpecifier(path.join(module.protocol.serverOutput, "index.ts")))};`
+    ))
+    .join("\n");
+  const protocolRegistration = protocolModules.length > 0
+    ? `import { registerKnownRpcs } from "./app/core/protocol/rpc";
+import { registerKnownMessages } from "./app/core/protocol/message";
+${protocolImports}
+
+${protocolModules.map((_, index) => `registerKnownRpcs(ModuleRpcDescriptors${index});\nregisterKnownMessages(ModuleMessageDescriptors${index});`).join("\n")}`
+    : "";
   const expected = catalog.modules.map((module) => ({ id: module.id, version: module.version }));
-  return `import ${JSON.stringify(includeBench ? "./app/model/main.bench.ts" : "./app/model/main.ts")};
+  return `${protocolRegistration}${protocolRegistration ? "\n" : ""}import ${JSON.stringify(includeBench ? "./app/model/main.bench.ts" : "./app/model/main.ts")};
 import { sealGameModules } from "./app/core/modules/GameModuleSystem.ts";
 ${imports}
 
@@ -280,6 +297,16 @@ function validateModuleRelativeImport(catalog, args, layer) {
   const owner = catalog.moduleForFile(args.importer);
   if (!owner) return undefined;
   const target = path.resolve(args.resolveDir, args.path);
+  if (
+    owner.protocol &&
+    isWithin(owner.protocol.serverOutput, args.importer) &&
+    (
+      isWithin(owner.protocol.serverOutput, target) ||
+      isWithin(path.join(root, "app", "core"), target)
+    )
+  ) {
+    return undefined;
+  }
   const allowedRoots = layer === "model"
     ? [...owner.entries.modelRoots, ...owner.entries.modelRealRoots]
     : [...owner.entries.hotfixRoots, ...owner.entries.hotfixRealRoots];
@@ -338,6 +365,16 @@ async function hashModelSources() {
       entries.push({
         label: `game-modules/${module.id}/${path.relative(module.root, file).replaceAll(path.sep, "/")}`,
         file,
+      });
+    }
+    if (module.protocol) {
+      entries.push({
+        label: `game-modules/${module.id}/${module.protocol.relative.opcodeLock}`,
+        file: module.protocol.opcodeLock,
+      });
+      entries.push({
+        label: `game-modules/${module.id}/${module.protocol.relative.schemaLock}`,
+        file: module.protocol.schemaLock,
       });
     }
   }

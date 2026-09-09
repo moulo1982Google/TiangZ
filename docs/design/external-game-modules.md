@@ -166,7 +166,7 @@ class GreetingEntityExtension implements EntityExtensionHandler<GreetingEntity> 
 
 当前MMORPG领域把这一边界应用到`MapScene`、`PlayerUnit`、`MonsterUnit`、`NpcUnit`、`InteractableUnit`和`SummonedUnit`。地图扩展发生在`MapRuntimeProfileComponent`装入默认冷配置之后、AOI与地图空间创建之前；怪物扩展发生在`MonsterSpawnProfileComponent`装入默认Area坐标之后、首次定位和AOI发布之前；NPC与可交互物扩展发生在基础身份、位置、静态资料和运行时内容增量装配完成之后，但一定早于领域索引与AOI发布。任何扩展失败都由原工厂移除整个Unit，不能留下已发布的半成品。模块给NPC组合`NumericComponent`时，NPC快照会自动使用同一中立数值复制策略；没有该组件的普通服务型NPC仍返回空数值集。外置模块只提供经过校验的资料，TiangZ仍拥有空间实现、刷怪生命周期、追击与回巢语义。每份可覆盖资料最多接受一个外部所有者，冲突必须失败，不能把模块加载顺序当作内容优先级。
 
-客户端表现同样保持边界：`UnitPresentation`提供`AOI`和玩家`Self`两种逻辑受众，并允许模块以自身命名空间键发送不透明`Extension`表现。Core只验证Unit、目标和受众，不认识外部协议字段；具体客户端适配器决定是否及如何投影该键。这个入口适合小型私有状态或表现事件，不替代尚未完成的模块自有protobuf/codegen能力。
+客户端表现同样保持边界：`UnitPresentation`提供`AOI`和玩家`Self`两种逻辑受众，并允许模块以自身命名空间键发送不透明`Extension`表现。Core只验证Unit、目标和受众，不认识外部协议字段；具体客户端适配器决定是否及如何投影该键。模块协议由自己的 Proto、锁文件和客户端 SDK 生成链路负责，Core 只组合并注册服务端描述符。
 
 需要批量装入地图怪物内容时，`MapHost`还会在同一阶段创建`MonsterContentProfileComponent`。模块以稳定所有者ID原子登记模板和刷点；同一登记中的刷点只能引用本所有者的模板，重复ID、跨所有者引用或无效数值会在任何资料发布前失败。完整内容包可以由唯一所有者调用`ReplaceColdContent`，避免与演示冷刷点混合；装配完成后`Seal`禁止运行期改写。`MonsterComponent`随后统一消费冷配置和目录资料，继续拥有Unit、AOI、战斗、尸体和重生。刷新周期位于刷点，允许同一模板的不同槽位采用不同周期。名称与模型ID在Unit创建时从已解析模板冻结，AOI快照不再回查只覆盖演示内容的Luban表，因此外部定义ID不会形成第二条隐式配置依赖。中立Training Dummy自测证明该能力不依赖具体游戏数据库或编号。
 
@@ -196,11 +196,30 @@ MMORPG地图在执行`MapScene`装配器前创建`SkillDefinitionProfileComponen
 
 模块没有通用 `onLoad/onUnload` 业务回调。Process、Scene、Entity 和 Component 已经提供确定的生命周期；再增加一个任意模块回调会制造第二套所有权。新增/删除 Handler 同样属于冻结路由集合变化，不能伪装成 Hotfix。
 
+## 模块自有 Protobuf 与客户端 SDK
+
+模块可以在 `tiangz.module.json.protocol` 中声明自己的 Proto 源目录、opcode/schema 锁、服务端生成目录、TypeScript 客户端 SDK 目录和 Godot 输出目录：
+
+```json
+"protocol": {
+  "source": "proto",
+  "opcodeLock": "proto/opcode.lock.json",
+  "schemaLock": "proto/schema.lock.json",
+  "serverOutput": "src/model/generated/protocol",
+  "typescriptOutput": "generated/typescript",
+  "godotOutput": "generated/godot",
+  "godotClassName": "WastelandProto"
+}
+```
+
+`npm run codegen:module-protocol` 会逐模块调用宿主固定版本的 Proto/Godot 生成器。服务端描述符和 Codec 留在模块 Model 源码根，客户端 TypeScript 与 Godot GDScript 留在模块自己的输出目录；宿主只负责把模块描述符注册进 Model bundle，不读取模块字段，也不把模块文件写入 `app/core`。opcode 锁和 schema 锁由模块提交并参与完整构建指纹，模块 opcode 还会和宿主及其他模块做全局冲突校验。
+
+新消息先在模块 Proto 中追加，再执行 `npm run codegen:module-protocol:update-lock`；日常构建使用严格锁校验，锁不一致会在生成阶段失败。生成的 `protocol.manifest.json` 记录源文件、锁指纹和输出位置，`--check` 不会更新锁。
+
 ## v1 明确边界
 
-当前 v1 已完成 TypeScript Model/Hotfix 模块图、版本与依赖校验、独立类型检查、显式入口、不可变导出桥、强类型Entity装配、模块指纹、模块自有Luban工程声明与确定性生成，以及宿主发现、严格信封、所有权校验、指纹和不可变目录的运行时数据包。以下能力尚未完成，不能在 manifest 中虚构字段：
+当前 v1 已完成 TypeScript Model/Hotfix 模块图、版本与依赖校验、独立类型检查、显式入口、不可变导出桥、强类型Entity装配、模块指纹、模块自有Luban工程与 Protobuf/客户端 SDK 声明及确定性生成，以及宿主发现、严格信封、所有权校验、指纹和不可变目录的运行时数据包。以下能力尚未完成，不能在 manifest 中虚构字段：
 
-- 模块自有 protobuf/codegen 与客户端 SDK 组合；
 - `.native`/Rust crate 的模块化编译；
 - 模块配置的运行期热更、跨schema迁移、客户端导出和DBProxy migration的声明式装配；当前payload由所有者模块用自己生成的Luban类型校验并投影到已有领域Profile；
 - 跨模块强类型公开 API；当前依赖只确定装载顺序，不开放深层导入；

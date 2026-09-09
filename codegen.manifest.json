@@ -372,7 +372,7 @@
         "codegen.config.json": "e83f410fa579e69cfcdf71f10e32482c07ee46cb4d62d0e4fa43bda8656727bf",
         "proto/opcode.lock.json": "22687e9b87ede6f78e55a1a62ad79efba13d2358d53bf88910d464b9f46619fa",
         "proto/schema.lock.json": "17d90bbc9290481561fc6d71d64c6c447c9caa09b4fa8a511cb1c14af023390d",
-        "tools/codegen_godot_client_sdk.mjs": "ee83669d5a331e88d90806695e423f6bd8c37dedb559c423b949ebcfc9547af3",
+        "tools/codegen_godot_client_sdk.mjs": "5039ebba5c85261fe300231b01d1376e0cc9678b5d8b50e2095d835cfd6d6142",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
       },
       "selections": [],
@@ -397,7 +397,7 @@
         "native_data/mmorpg/Item.native": "b8115687e4b6919be0dc310fe9833f05f4506e644dd214999acbca68a9233e40",
         "native_data/mmorpg/MapOps.native": "7003fa578c7bf49a0517c0b08cd8dabc78d5c8369931a5abf81af092a5f68d3b",
         "native_data/mmorpg/Unit.native": "727df50b194ce207e0b59b43cf74180773d173a9608147b11e9c64d8731a4429",
-        "package.json": "7ebbe61aff29a2563879420d433b206e3e84e98f5625130a20f9fbf9ec578291",
+        "package.json": "f354e2dbdba8f9950b28c675028029bfda1f7c5609c8fe3887b3c9e0bfea8b57",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "2d2a900111ec146a98db232cf9dd5f61efcb0f8ade3dcdba21ffd0fa06b11a0b"
       },
@@ -444,7 +444,7 @@
         "proto/OuterMessage_C_10001.proto": "72cd698d041da194d9368db8e2f49732c89d91ebd2392fade78c8ac836f38b96",
         "proto/schema.lock.json": "17d90bbc9290481561fc6d71d64c6c447c9caa09b4fa8a511cb1c14af023390d",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
-        "tools/codegen_proto.mjs": "832948af1e5df0f80373fe18102fe0bd137d6806ba94d9b60f0924b2e48fbb0a"
+        "tools/codegen_proto.mjs": "6da0f76981f7827b5a0a99789c3e1c9d25b5310ee3b21145c47ddd2aa2a41431"
       },
       "selections": [],
       "outputs": {

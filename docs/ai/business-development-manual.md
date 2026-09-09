@@ -1,5 +1,7 @@
 # TiangZ AI 业务开发手册
 
+2026-09-09 外置模块协议由模块自己拥有。模块在 `tiangz.module.json.protocol` 声明 `source`、`opcodeLock`、`schemaLock`、`serverOutput`、`typescriptOutput`、`godotOutput` 和 `godotClassName`；Proto 与两份锁提交在模块仓库，生成的服务端描述符放在模块 Model 源码根，TypeScript/Godot SDK 放在模块输出目录。开发时用 `npm run codegen:module-protocol:update-lock`（独立游戏工作区可用 `npm run protocol:generate`）更新锁，日常用 `npm run codegen:module-protocol` 或 `npm run protocol:check` 严格生成并校验；`--check` 不更新锁。模块 opcode 还要通过宿主和其他模块的全局冲突检查。不要手工编辑生成文件、把模块 Proto 复制到 `app/core`，或让宿主 tsc 直接把外部模块协议当作宿主生成入口；完整 Model bundle 会自动注册模块描述符。协议、锁或生成输出变化必须完整 codegen、构建并重启 Process。
+
 2026-09-08 招架、格挡等否决后的奖励通过 CombatEvents.DamagePrevented 处理，禁止在 BeforeDamage 中修改单位。需要加速当前挥击时先检查活动阶段与剩余时间，再调用 ShortenAutoAttackSwing；方法不替业务决定加速比例，也不激活闲置攻击。
 
 2026-09-08 需要攻击者与目标共同参与金额计算时，在目标工厂给 Combat 注册目标自己的 DamageCalculator。不要修改 BeforeDamage 只读请求，也不要在 DamageResolved 再打一笔伤害模拟暴击。计算器返回非负 uint64 金额及 critical，按调用时方法执行；保持纯计算，事件、吸收和死亡仍由既有 Combat 边界处理。验收应检查否决先于计算、非法结果不消耗吸收器、暴击只扣血一次以及周期来源。协议变化走完整 verify。
@@ -1168,6 +1170,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 | 只修改Hotfix行为 | `npm run build:hotfix`、`npm run test:hotfix`；涉及操作入口或调试重绑时追加`npm run test:hotfix-operations` |
 | Model字段、类型、构造或继承 | `npm run build`、相关测试并重启Process；不得使用Hotfix-only |
 | proto或客户端Push | `npm run codegen`、`npm run test:protocol`、对应Client测试 |
+| 外置模块自有Proto、锁或客户端SDK | 模块工作区执行 `npm run protocol:generate` 更新锁，日常执行 `npm run protocol:check`、`npm run modules:typecheck` 和引擎完整构建；协议变化重启Process，并验证模块客户端SDK |
 | Luban游戏配置 | 纯数据用`npm run build:game-config`、`npm run test:game-config`和Reload验收；结构变化追加完整构建、重启与客户端类型检查 |
 | 外置模块自有Luban配置 | `npm run modules:codegen-config -- --module-root <目录>`；CI追加`--check`，并执行模块自己的内容校验、运行时投影测试与完整重启 |
 | Native Entity/字段 | `npm run test:native-data`、`cargo test --all-targets` |
