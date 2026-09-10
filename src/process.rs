@@ -1155,6 +1155,7 @@ fn run_process_runtime(
         .build()
         .context("failed to create JS event loop runtime")?;
     configure_host_scene_bridge(host_runtime.clone(), completion_sink);
+    crate::event_stream::configure(&process, host_runtime.clone())?;
     crate::dbproxy::configure(&process, host_runtime)?;
     js_event_loop
         .block_on(crate::dbproxy::warm())

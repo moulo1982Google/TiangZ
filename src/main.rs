@@ -14,6 +14,7 @@ mod aoi;
 mod config;
 mod data_pack;
 mod dbproxy;
+mod event_stream;
 mod game;
 mod game_config;
 mod generated;

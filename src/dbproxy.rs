@@ -1242,6 +1242,8 @@ pub const BOOTSTRAP_SOURCE: &str = r#"
     return value;
   };
   globalThis.__hostDbProxy = Object.freeze({
+    // The linked Rust SDK rejects peers without supports_outbox_relay during handshake.
+    supportsOutboxRelay: true,
     load: (namespace, key) => core.ops.op_host_dbproxy_load(text(namespace, "namespace"), text(key, "key")),
     loadMulti: (records) => core.ops.op_host_dbproxy_load_multi(
       text(JSON.stringify(records), "records"),

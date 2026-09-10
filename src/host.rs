@@ -500,6 +500,7 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
     let mut extensions = vec![
         ets_runtime_host::init(),
         crate::dbproxy::init(),
+        crate::event_stream::init(),
         crate::generated::native_ops::init(),
     ];
     extensions.extend(crate::module_native::extensions());
@@ -587,6 +588,10 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
     runtime.execute_script(
         "ets-runtime:dbproxy-ops.js",
         crate::dbproxy::BOOTSTRAP_SOURCE,
+    )?;
+    runtime.execute_script(
+        "ets-runtime:event-stream.js",
+        crate::event_stream::BOOTSTRAP_SOURCE,
     )?;
     runtime.execute_script(
         "ets-runtime:native-ops.js",

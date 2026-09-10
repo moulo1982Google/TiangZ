@@ -821,3 +821,9 @@ MonsterComponent 每次 Awake 分配一个 GlobalIdSystem 全局作用域，击�
 2026-09-08 定向故障复测发现：新角色的出生背包尚未定时保存时，副本入场已经单独提交 progression。副本进程丢失后，读档能找到 progression，却找不到 inventory，导致出生道具变成空背包。问题位于 TiangZ 首次进图的持久化边界。
 
 MapHost 对没有任何存档的新角色，在 PlayerUnit 的 ordered mailbox 内，通过现有多领域事务一次提交 inventory、progression、quest、runtime、wallet；确认成功后才注册 Location、发布 AOI 和返回进图结果。初始化或 Location 注册失败时，必须在释放 mailbox 前清理候选角色，避免排队重连观察未确认状态。已有存档只按存档恢复，不重复发放出生道具，不自动填补历史缺失领域。没有修改 DBProxy 格式、协议或数据库结构。此修改属于 Model，部署必须重建并重启游戏进程。
+
+## 外置模块记录事务与事件消费（2026-09-10）
+
+集成验收同时修正 `verify_hotfix_boundary` 对模块生成协议的误报：仅声明的 `protocol.serverOutput` 可导入宿主协议 `binary/message/rpc` 三项内部 ABI，手写模块仍被拒绝。模块协议自测包含生成物通过、手写导入失败两个断言，不将生成器所需内部接口扩成业务 API。
+
+Stable Core 新增 `HostDbProxyRecords`、`CreateOutboxEvent`、事务/信封类型及 `HostStreamConsumer`。模块可原子提交自己的快照与 outbox，消费组收到后将 inbox 与业务状态同事务提交，再显式 ACK。Host 只处理固定部署目标的 Redis I/O；事件类型、去重记录、任务计数和补偿仍归模块。`process.persistence.eventStream` 为 Rust 私有配置，`IsAvailable` 只表示配置存在。详见[记录与事件闭环](../design/record-outbox-consumer.md)。不能将单记录 Repository、进程内事件派发或 MQ published 等同于消费者业务完成。

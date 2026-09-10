@@ -1546,3 +1546,11 @@ MonsterComponent 每次 Awake 分配一个 GlobalIdSystem 全局作用域，击�
 2026-09-08 定向故障复测发现：新角色的出生背包尚未定时保存时，副本入场已经单独提交 progression。副本进程丢失后，读档能找到 progression，却找不到 inventory，导致出生道具变成空背包。问题位于 TiangZ 首次进图的持久化边界。
 
 MapHost 对没有任何存档的新角色，在 PlayerUnit 的 ordered mailbox 内，通过现有多领域事务一次提交 inventory、progression、quest、runtime、wallet；确认成功后才注册 Location、发布 AOI 和返回进图结果。初始化或 Location 注册失败时，必须在释放 mailbox 前清理候选角色，避免排队重连观察未确认状态。已有存档只按存档恢复，不重复发放出生道具，不自动填补历史缺失领域。没有修改 DBProxy 格式、协议或数据库结构。此修改属于 Model，部署必须重建并重启游戏进程。
+
+## 外置模块的持久事件业务（2026-09-10）
+
+独立游戏除构建外，还要运行 `verify_hotfix_boundary.mjs --modules-dir <目录>`。声明的协议生成目录有受限的 `binary/message/rpc` ABI 例外；不要修改生成文件或把手写代码放进生成目录规避 Stable 入口。运行时方法检查使用 `verify_runtime_contracts.mjs --project <模块 tsconfig> --scan-root <模块 src>`。
+
+涉及“状态已写入但异步业务也必须最终执行”的流程，使用 `HostDbProxyRecords.CommitRecords` 一起提交业务回执和 `CreateOutboxEvent`。消费者以 `producer:event_id` 创建持久 inbox（CAS 0），与目标状态 CAS 同事务，成功后才 `HostStreamConsumer.Ack`。旧事件的业务适用条件应在事件产生时保存；不能用消费时的新状态反推死亡时是否已接任务。未知提交结果保留原请求或读取持久回执，失败不 ACK。
+
+每个 Process 部署一个固定 Redis 消费目标、一个领域消费入口，轮询不可重入；业务不接收 Redis URL。补齐 backlog、重复投递、提交后 ACK 失败、重启回收和奖励幂等的真实存储验收，避免只测内存事件。接口与边界见[记录与事件闭环](../design/record-outbox-consumer.md)。

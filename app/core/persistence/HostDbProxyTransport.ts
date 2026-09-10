@@ -132,6 +132,7 @@ interface HostLoadMultiTransactionResponse {
 }
 
 interface HostDbProxyApi {
+  readonly supportsOutboxRelay?: boolean;
   commitRecords?(request: DbProxyRecordCommit): Promise<HostMultiTransactionResponse>;
   load(namespace: string, key: string): Promise<HostLoadResponse>;
   loadMulti(records: readonly DbProxyRecordKey[]): Promise<HostLoadMultiResponse>;
@@ -205,6 +206,8 @@ interface HostDbProxyApi {
  */
 export class HostDbProxyTransport implements DbProxyTransport {
   private readonly host: HostDbProxyApi;
+  /** 仅新版宿主且握手验证Relay能力时启用。 / Enabled only by a relay-aware, handshake-validating host. */
+  get supportsOutboxRelay(): boolean { return this.host.supportsOutboxRelay === true; }
 
   constructor(host: HostDbProxyApi = requireHostDbProxyApi()) {
     this.host = host;

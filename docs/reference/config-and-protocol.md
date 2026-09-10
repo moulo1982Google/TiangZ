@@ -15,6 +15,8 @@ Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置�
 
 ## ProcessConfig
 
+`process.persistence.eventStream` 可选配置 Redis 消费组：`redisUrlEnv`、`stream`、`group`、`consumer`、`claimIdleMs` 均必填。前四项限 1–128 个 ASCII 字母、数字或 `_ : . -`，回收时间为 1000–600000 ms。配置不投影给 TS，凭据只从 Rust 环境变量读取；未配置时消费接口不可用。该接口每次最多交付 16 条，I/O 超时 3 秒，需要业务事务成功后显式 ACK。详见[持久事件消费](../design/record-outbox-consumer.md)。
+
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `name` | string | Process 唯一名称，也作为 ProcessHost ID |

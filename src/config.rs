@@ -73,6 +73,19 @@ pub struct ProcessPersistenceConfig {
     /// When omitted, this Process uses the non-DBProxy Repository selected by business code.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub db_proxy: Option<ProcessDbProxyConfig>,
+    /// 消费组连接仅在Rust内可见。 / Consumer connection settings stay in Rust.
+    #[serde(default, skip_serializing)]
+    pub event_stream: Option<ProcessEventStreamConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProcessEventStreamConfig {
+    pub redis_url_env: String,
+    pub stream: String,
+    pub group: String,
+    pub consumer: String,
+    pub claim_idle_ms: u64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -931,6 +944,9 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
         || config.process.data_packs.max_total_bytes > 1024 * 1024 * 1024
     {
         bail!("process dataPacks.maxTotalBytes must be between maxPackBytes and 1073741824");
+    }
+    if let Some(stream) = &config.process.persistence.event_stream {
+        crate::event_stream::validate(stream)?;
     }
     if let Some(db_proxy) = &config.process.persistence.db_proxy {
         let candidates = std::iter::once(&db_proxy.endpoint)

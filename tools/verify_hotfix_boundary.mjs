@@ -143,6 +143,11 @@ function inspectModuleImports(module, file, tree, hotfix) {
       continue;
     }
     if (!hotfix && (value === "#tiangz/core" || value === "#tiangz/model")) continue;
+    // 宿主生成的协议编解码器需要三项内部 ABI；手写模块仍只能使用 Stable 入口。
+    // Host-generated codecs use these three internal ABI files; handwritten modules still require Stable imports.
+    const generatedTarget = path.resolve(path.dirname(file), value).replace(/\.ts$/, "");
+    if (!hotfix && module.protocol && isWithin(file, module.protocol.serverOutput) &&
+      ["binary", "message", "rpc"].some(name => generatedTarget === path.join(root, "app", "core", "protocol", name))) continue;
     if (!value.startsWith(".")) {
       errors.push(
         `${relative(file)}: 游戏模块${hotfix ? "Hotfix" : "Model"}只能使用稳定入口或同层相对导入: ${value}`,

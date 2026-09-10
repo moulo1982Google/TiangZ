@@ -123,6 +123,12 @@ export {
   HostDbProxyTransport,
   IsHostDbProxyAvailable,
 } from "./persistence/HostDbProxyTransport";
+export { HostStreamConsumer } from "./persistence/HostStreamConsumer";
+export type { StreamDelivery } from "./persistence/HostStreamConsumer";
+// 外置模块使用宿主绑定的 SDK 版本，避免自行捆绑另一份事务契约。
+// External modules use the Host-linked SDK version instead of bundling competing transaction contracts.
+export { HostDbProxyRecords, CreateOutboxEvent } from "./persistence/HostDbProxyRecords";
+export type { DbProxyRecordCommit, DbProxyEventEnvelope } from "./persistence/HostDbProxyRecords";
 export {
   CreateVersionedEntityRepository,
   DbProxyEntityRepository,

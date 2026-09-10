@@ -33,6 +33,13 @@ try {
   }
 
   await runGenerator(["--check"]);
+  await runGenerator([], false, "verify_hotfix_boundary.mjs");
+  const modelEntry = path.join(moduleRoot, "src", "model", "index.ts");
+  const internalBinary = path.join(root, "app", "core", "protocol", "binary").replaceAll(path.sep, "/");
+  await writeFile(modelEntry, `import { BinaryReader } from ${JSON.stringify(internalBinary)};\nexport { BinaryReader };\n`);
+  const boundary = await runGenerator([], true, "verify_hotfix_boundary.mjs");
+  if (boundary.code === 0) throw new Error("handwritten module escaped Stable boundary via protocol codec exception");
+  await writeFile(modelEntry, "export {};\n");
   const changedProto = (await readFile(protoFile, "utf8")).replace(
     "  string greeting = 1;",
     "  string greeting = 1;\n  uint32 score = 2;",
@@ -154,10 +161,10 @@ async function writeFixture() {
   }, null, 2)}\n`, "utf8");
 }
 
-function runGenerator(extraArguments, allowFailure = false) {
+function runGenerator(extraArguments, allowFailure = false, tool = "codegen_module_protocol.mjs") {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [
-      path.join(root, "tools", "codegen_module_protocol.mjs"),
+      path.join(root, "tools", tool),
       "--modules-dir",
       modulesDirectory,
       ...extraArguments,
