@@ -41,6 +41,7 @@ const profiles = Object.freeze({
       "test:matrix-runner",
     ].map(npmStep),
     commandStep("chaos recovery acceptance", process.execPath, ["--test", "tools/chaos/recovery_acceptance.test.mjs"]),
+    commandStep("module typecheck host selection", process.execPath, ["tools/module_typecheck_host_self_test.mjs"]),
     commandStep("cargo fmt", "cargo", ["fmt", "--all", "--", "--check"]),
     commandStep("cargo clippy", "cargo", ["clippy", "--all-targets", "--", "-D", "warnings"]),
     commandStep("cargo test", "cargo", ["test", "--all-targets"]),

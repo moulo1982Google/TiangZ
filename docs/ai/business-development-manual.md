@@ -1,5 +1,7 @@
 # TiangZ AI 业务开发手册
 
+2026-09-15 主线整合后，外置游戏应调用统一 TiangZ 主线的生成器、模块检查和构建入口，游戏的 Proto、配置、SDK 输出和 dist 仍由游戏目录拥有。切换宿主后先运行宿主 `codegen:scenes`，再用该宿主 `modules:typecheck -- --modules-dir <目录>` 检查；检查器会把生成方法声明与当前 Stable API 绑定，并保留模块自有声明。协议/Model/Native 变动必须完整构建和重启，不能复用旧分支二进制。验收记录见 `docs/design/mainline-integration-20260915.md`。
+
 2026-09-14 诊断慢客户端时，`slow_client_disconnects` 只统计出站字节/帧/批队列容量拒绝；正常关闭接收端不计入该指标。传输层使用 `ConnectionQueueError` 保留关闭与容量原因，失败回滚本批队列计数，清理连接仍发送原 shutdown 信号。不得通过提高容量掩盖断线误分类。回归同时覆盖直接扇出和聚合批次，游戏模块无需改协议或存储。
 
 2026-09-13 宿主升级 Deno 后，Native 模块需同步检查其 Cargo.toml。组合构建会先用 Cargo metadata 检查正常依赖中的 deno_core crate 身份，发现旧版本或不同来源直接拒绝并标明模块；仅开发测试依赖不参与此生产扩展检查。先调整模块声明并按既有 --check 流程解析组合锁，再进行 --locked 发布构建，不手工修改生成的桥接文件来强转 Extension。

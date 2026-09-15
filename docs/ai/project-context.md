@@ -1,5 +1,7 @@
 # TiangZ AI 项目上下文
 
+2026-09-15 主线整合：模块化协议、SDK、Native 和后续地图/领域能力统一维护于 TiangZ。模块类型检查的 Stable API 与生成方法声明必须来自同一个当前宿主；`typecheck_game_modules.mjs` 使用当前宿主的 systems 声明，排除 tsconfig 指向旧宿主的同类声明，并保留模块自己的类型声明。切换 worktree 不应要求游戏改写业务类型来掩盖宿主身份混用。合并范围和实际验收见 `docs/design/mainline-integration-20260915.md`。
+
 2026-09-14 连接出站队列以 `ConnectionQueueError` 区分字节上限、帧上限、批队列满与接收端关闭。失败撤销本批计数；`flush_outbound` 清理两类失败连接，但只有容量拒绝计入 `slow_client_disconnects` 并发出慢连接警告。接收端关闭仅为 debug 清理记录，不能据普通客户端退出推断容量不足。队列容量、关闭信号、事件/状态投递语义不变。
 
 2026-09-13 Native 组合构建在编译前检查 Cargo 已解析依赖图：模块及其正常依赖使用的 deno_core 必须与宿主是同一 crate 身份；相同版本但不同来源也不能混用。失败报告模块 ID 与双方版本，不自动改写模块 Cargo.toml 或锁。测试模板从宿主 Cargo metadata 获取依赖要求，避免依赖升级后仍固定旧 Deno 版本。

@@ -53,7 +53,14 @@ function runCompiler(project, moduleId) {
     return ts.resolveModuleName(name, containingFile, options, host).resolvedModule;
   });
   const publicFile = catalog.modules.find((module) => module.id === moduleId)?.publicApi?.file;
-  const program = ts.createProgram({ rootNames: [...parsed.fileNames, ...(publicFile ? [publicFile] : [])], options, host });
+  // 将生成方法声明绑定到当前宿主，避免模块 tsconfig 引入旧 worktree 的类型身份。
+  // Bind generated method declarations to the same host as the stable API.
+  const declarations = ts.sys.readDirectory(path.join(root, "app/generated/bootstrap/systems"), [".d.ts"]);
+  if (!declarations.length) throw new Error("host system declarations missing; run npm run codegen:scenes first");
+  const moduleFiles = parsed.fileNames.filter((file) =>
+    isWithin(path.dirname(project), file) ||
+    !file.replaceAll("\\", "/").includes("/app/generated/bootstrap/systems/"));
+  const program = ts.createProgram({ rootNames: [...moduleFiles, ...declarations, ...(publicFile ? [publicFile] : [])], options, host });
   const diagnostics = [...parsed.errors, ...ts.getPreEmitDiagnostics(program)];
   if (diagnostics.length) {
     throw new Error(`game module ${moduleId} typecheck failed:\n${ts.formatDiagnostics(diagnostics, {
