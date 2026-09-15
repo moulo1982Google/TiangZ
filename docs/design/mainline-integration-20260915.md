@@ -33,4 +33,8 @@ WoW335：1 模块类型检查、模块图、Hotfix 边界、4 项账户/会话�
 
 ModuleGame 已通过实际主线入口的 `engine:check`、`protocol:check`、`config:check`、`godot:sdk:check`、`engine:build`；2 模块的 Bundle 与启动配置已更新到游戏自己的 dist。`checks:unit` 通过 12 组 Node 单测和 27 个 Godot 无界面脚本。20 个迁移脚本通过 `node --check`；命令索引由工具重建并检查一致。入口修改前文件保存在工作区 `.build-tmp/modulegame-mainline-20260915`。游戏仓库原有未提交内容保留，没有把全部游戏改动混入框架提交。
 
-WoW335 在实际主线上复验模块类型、消费的协议契约以及独立 Bundle/运行时装配，结果通过；输出放在主线 `temp/mainline-wow335`，不覆盖其原部署。原 `TiangZ-Modular` 工作目录保留作为历史工作状态，后续新功能统一从主线创建分支。
+WoW335 在实际主线上复验模块类型、消费的协议契约以及独立 Bundle/运行时装配，结果通过；输出放在主线 `temp/mainline-wow335`，不覆盖其原部署。后续新功能统一从主线创建分支。
+
+按后续清理指令，旧 `TiangZ-Modular` worktree 已注销并删除。删除前逐文件确认源码改动匹配已整合快照 `f12b635`，152 个改动文件/临时日志和 55 个忽略日志归档到工作区 `.build-tmp/modular-retired-20260915`；删除前断开内部目录联接，未删除其外部目标。整合验证目录的 node_modules 联接已切到主线。旧目录消失后，ModuleGame 的模块、协议、Godot SDK 清单及命令索引检查再次通过。
+
+DBProxy 的停止信号修复与能力文档已提交并合到较新的 DBProxy 主线，常用 `TiangZ-DBProxy` 目录现位于 `main`（`5162376`）。保留主线原有连接限额、端点切换、cache-repair 等修复；Rust fmt/workspace tests/clippy 和 TypeScript SDK 18 项测试通过。另一个 DBProxy worktree 的未提交部署改动保留在 `archive/dbproxy-deployment-worktree-20260915` 分支。TiangZ 随后使用该 SDK 重新构建。此次未重新部署容器或执行数据库故障/容量测试，未推送远端。
