@@ -6,6 +6,8 @@
 
 天工，一个正在开发中的 MMORPG 服务端框架。
 
+2026-09-15 模块化主线整合：外置模块支持自有 Protobuf、协议锁、TypeScript/Godot SDK、公开 API、配置、持久化迁移及 Native 组合构建。用法见[外置模块](docs/design/external-game-modules.md)，合并范围与实际验证见[整合记录](docs/design/mainline-integration-20260915.md)。游戏内容与生成输出继续由独立游戏目录拥有。
+
 当前开发版本为 `0.4.0`，Phase 4.0空间契约已经完成；`0.3.10`是框架能力的首个稳定基线。当前 Starter MMORPG 已经串起注册/登录、角色目录、NPC接取任务、怪物与技能战斗、Buff、掉落与尸体拾取、背包、货币、NPC商店、同地图玩家交易、动态Boss副本、经验升级和可选 DBProxy 重启恢复；最完整的可操作客户端是 Cocos3D。可复用领域契约与 MMORPG 适配边界见[能力归属表](docs/design/capability-ownership.md)。
 
 ## 性能基线

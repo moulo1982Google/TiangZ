@@ -2,6 +2,8 @@
 
 本文记录已经发生的工程变更、验证结果和当时的取舍。未来计划仍以 [路线图](roadmap.md) 为准，稳定架构约束以 [AI 项目上下文](ai/project-context.md) 和 [AI 业务开发手册](ai/business-development-manual.md) 为准。
 
+2026-09-15：模块化分支及后续通用能力整合回主线，范围和验收见[整合记录](design/mainline-integration-20260915.md)。下文早期 v1 的“尚未装配模块自有 proto/Native”等描述是历史状态；当前能力以[外置模块说明](design/external-game-modules.md)为准。
+
 维护约定：
 
 - 最新记录放在最前面，使用日期和版本作为标题。

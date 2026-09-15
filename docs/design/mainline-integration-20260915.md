@@ -19,4 +19,10 @@
 
 整合在独立 worktree 中验证。合并前主线保留为 `backup/main-before-modular-20260915`；原模块化工作目录与临时日志保留。
 
-完整验证与消费方构建结果将在完成后记入本节。验证不包含大规模容量、长稳、真实 WoW 客户端全流程或生产发布；本次不推送远端、不自动切换正在运行的 WoW 服务。
+合并前最终 `npm run verify` 通过：quick 26/26、check 15/15、full 11/11，耗时 525756 ms。设置 `GODOT_BIN`，实际执行双 SDK 独立 Godot 工程、旧读取器兼容与 TypeScript 共用传输验证；Native 两模块在同一 V8 独立读写及无效制品拒绝通过。报告保存在整合 worktree 的 `dist/test-results/`，日志为 `logs/merge-full-final.log`。
+
+首轮新目录编译因 Windows 跨盘 V8 symlink 权限失败；在 `target/debug/gn_root` 建立指向本机对应 V8 缓存的目录联接后，完整重跑得到上述结果。未修改系统权限或 Rust/V8 依赖来绕过验证。MSVC 有 LNK4098 链接警告，构建与运行测试仍通过。
+
+WoW335：1 模块类型检查、模块图、Hotfix 边界、4 项账户/会话与 5 项技能协议契约检查通过；独立 Bundle 构建与运行时装配检查通过，识别 577 个怪物刷怪点、65 个 NPC、145 个交互物、25 条任务与 6 个玩家出生配置。ModuleGame：2 模块类型检查、86+6 条消息协议校验与独立 Bundle 构建通过。
+
+验证不包含大规模容量、长稳、真实 WoW 客户端全流程或生产发布；本次不推送远端、不自动切换正在运行的 WoW 服务。
