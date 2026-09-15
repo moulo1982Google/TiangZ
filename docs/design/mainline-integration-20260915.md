@@ -26,3 +26,11 @@
 WoW335：1 模块类型检查、模块图、Hotfix 边界、4 项账户/会话与 5 项技能协议契约检查通过；独立 Bundle 构建与运行时装配检查通过，识别 577 个怪物刷怪点、65 个 NPC、145 个交互物、25 条任务与 6 个玩家出生配置。ModuleGame：2 模块类型检查、86+6 条消息协议校验与独立 Bundle 构建通过。
 
 验证不包含大规模容量、长稳、真实 WoW 客户端全流程或生产发布；本次不推送远端、不自动切换正在运行的 WoW 服务。
+
+## 合并后落地
+
+本地 `main` 已快进到整合提交 `3be619f`。在主线目录重新执行 `npm run codegen`，生成结果无 Git 漂移；执行 `cargo build --locked --bin TiangZ`（通过 `--target-dir` 复用整合目录缓存），构建主线源码，并将同一构建的可执行文件/调试符号安装到主线 `target/debug`。旧文件保存在工作区 `.build-tmp/main-binary-before-modular-20260915`，主线与构建产物 SHA256 一致。
+
+ModuleGame 已通过实际主线入口的 `engine:check`、`protocol:check`、`config:check`、`godot:sdk:check`、`engine:build`；2 模块的 Bundle 与启动配置已更新到游戏自己的 dist。`checks:unit` 通过 12 组 Node 单测和 27 个 Godot 无界面脚本。20 个迁移脚本通过 `node --check`；命令索引由工具重建并检查一致。入口修改前文件保存在工作区 `.build-tmp/modulegame-mainline-20260915`。游戏仓库原有未提交内容保留，没有把全部游戏改动混入框架提交。
+
+WoW335 在实际主线上复验模块类型、消费的协议契约以及独立 Bundle/运行时装配，结果通过；输出放在主线 `temp/mainline-wow335`，不覆盖其原部署。原 `TiangZ-Modular` 工作目录保留作为历史工作状态，后续新功能统一从主线创建分支。
