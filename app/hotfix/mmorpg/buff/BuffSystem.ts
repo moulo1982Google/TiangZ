@@ -1,6 +1,6 @@
 import {
   ActionType,
-  Buff,
+  Buff, BuffEvents,
   CombatComponent,
   MapComponent,
   MonsterComponent,
@@ -149,8 +149,12 @@ export class BuffSystem extends Buff {
   protected OnTick(): void {
     const now = TimeSystem.Instance.ServerNow;
     const action = this.resolveAction("tick");
-    if (action.type !== ActionType.None) {
-      this.publishCombatResult(this.executePhase(action, "tick"), "tick");
+    const map = this.tryMap();
+    if (action.type !== ActionType.None && (!map || this.DomainScene().Events.Check(BuffEvents.BeforeTick,{buff:this,target:this.owner})===0)) {
+      const result=this.executePhase(action, "tick");
+      if(this.IsDisposed)return;
+      this.publishCombatResult(result, "tick");
+      if(map)this.DomainScene().Events.Publish(BuffEvents.TickResolved,{buff:this,target:this.owner,restoredHealing:result.healing?.restoredHealing??0n});
     }
     if (this.expireAtMs > 0 && now >= this.expireAtMs) {
       this.ownerBuffComponent.RemoveBuff(this.Id as bigint, "expired");

@@ -34,11 +34,15 @@ export interface SkillEffectsResolvedEvent {
   readonly definition: SkillDefinition;
   readonly castId: bigint;
   readonly damage: bigint;
+  /** 各目标实际恢复生命，排除过量治疗。 / Effective healing per target, excluding overhealing. */
+  readonly healingByTarget?: readonly {readonly targetUnitId:number;readonly amount:bigint}[];
   readonly damageSchool: DamageSchoolValue;
   readonly killed: boolean;
 }
 
 export const SkillEvents = {
+  /** 每次命中前同步只读否决，不退还已提交消耗。 / Read-only veto before each impact; accepted costs are not refunded. */
+  BeforeEffects: defineVetoEvent<BeforeCastSkillEvent,number>("Skill.BeforeEffects",SystemErrCode.Success),
   /** 可扩展模块全部放行后，SkillMapComponent才提交GCD/CD和ActiveCast。 / SkillMapComponent commits GCD/CD and ActiveCast only after every extension allows the cast. */
   BeforeCast: defineVetoEvent<BeforeCastSkillEvent, number>(
     "Skill.BeforeCast",

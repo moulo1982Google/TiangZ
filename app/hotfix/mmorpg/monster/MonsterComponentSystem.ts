@@ -256,6 +256,18 @@ export class MonsterComponentSystem extends MonsterComponent {
     }
   }
 
+  CombatReadiness(monster: MonsterUnit): import("#tiangz/model").MonsterCombatReadiness {
+    this.RequireMapUnit(monster);
+    const state = this.runtime.get(monster.UnitId);
+    const target = state ? this.units.Get(state.targetUnitId) : undefined;
+    if (monster.IsDisposed || !state || state.returningToSpawn || monster.GetComponent(NativeUnitRef).alive === 0
+      || !(target instanceof PlayerUnit) || target.IsDisposed || target.GetComponent(NativeUnitRef).alive === 0) {
+      return Object.freeze({ targetUnitId: 0, attackRemainingMs: 0 });
+    }
+    return Object.freeze({ targetUnitId: target.UnitId,
+      attackRemainingMs: Math.max(0, Math.ceil(state.nextAttackAtMs - TimeSystem.Instance.ServerNow)) });
+  }
+
   /** 10Hz推进玩家自动攻击；一个地图桶统一扫描，避免每个玩家一个Timer。 / Advances player auto-attacks at 10Hz from one map bucket instead of one Timer per player. */
   Update10Hz(): void {
     if (this.map.IsStopping) return;
@@ -654,6 +666,33 @@ export class MonsterComponentSystem extends MonsterComponent {
     if (state.lootOwnerAccount === null) state.lootOwnerAccount = source.Account;
   }
 
+  /** 仅向受助者已有的战斗追加辅助仇恨，整数余数按 UnitId 分配。 / Adds assist threat only to existing combat, splitting remainders by UnitId. */
+  AddAssistThreat(source:PlayerUnit,beneficiary:PlayerUnit,amount:bigint):void {
+    this.RequireMapUnit(source);this.RequireMapUnit(beneficiary);
+    if(amount<=0n||source.GetComponent(NumericComponent)[NumericType.CurrentHp]<=0n||beneficiary.GetComponent(NumericComponent)[NumericType.CurrentHp]<=0n)return;
+    const engaged=[...this.monsters.values()].filter(m=>{
+      const state=this.runtime.get(m.UnitId);
+      return state&&!state.returningToSpawn&&state.threatByUnitId.has(beneficiary.UnitId)&&m.GetComponent(NumericComponent)[NumericType.CurrentHp]>0n;
+    }).sort((a,b)=>a.UnitId-b.UnitId);
+    if(!engaged.length)return;
+    const share=amount/BigInt(engaged.length),extra=amount%BigInt(engaged.length);
+    for(let i=0;i<engaged.length;i++)this.MarkCombatThreat(engaged[i]!,source,this.runtime.get(engaged[i]!.UnitId)!,share+(BigInt(i)<extra?1n:0n),TimeSystem.Instance.ServerNow);
+  }
+
+  /** 仇恨追平后短暂锁定目标，零伤害嘲讽不抢首击掉落。 / Matches threat and briefly forces targeting; taunts never claim first-hit loot. */
+  Taunt(monster:MonsterUnit,source:PlayerUnit,durationMs:number):void {
+    this.RequireMapUnit(source);
+    if(!Number.isSafeInteger(durationMs)||durationMs<1||durationMs>30000)throw new Error("invalid taunt duration");
+    if(this.monsters.get(monster.UnitId)!==monster)return;
+    const state=this.runtime.get(monster.UnitId);
+    if(!state||state.returningToSpawn||source.GetComponent(NativeUnitRef).alive===0||monster.GetComponent(NativeUnitRef).alive===0||!this.CanPlayerAttack(source,monster))return;
+    let peak=1n;for(const value of state.threatByUnitId.values())if(value>peak)peak=value;
+    const own=state.threatByUnitId.get(source.UnitId)??0n;
+    const now=TimeSystem.Instance.ServerNow;
+    this.MarkCombatThreat(monster,source,state,peak>own?peak-own:1n,now);
+    state.tauntTargetUnitId=source.UnitId;state.tauntUntilMs=now+durationMs;
+  }
+
   /** 地图销毁时释放怪物Unit，不向玩家发送额外业务事件。 / Releases monster Units during map disposal without inventing another business event. */
   protected override OnDestroy(): void {
     for (const monster of this.monsters.values()) {
@@ -993,7 +1032,7 @@ export class MonsterComponentSystem extends MonsterComponent {
     ) <= MONSTER_SPAWN_ARRIVAL_RANGE_METERS * MONSTER_SPAWN_ARRIVAL_RANGE_METERS;
     const mustReturn = (
       (wasEngaged && target === undefined) ||
-      (target !== undefined && engagementDistance > MONSTER_LEASH_RANGE_METERS) ||
+      (target !== undefined && engagementDistance > (config.leashRangeMeters ?? MONSTER_LEASH_RANGE_METERS)) ||
       (
         target === undefined
         && !hasAmbientMovement
@@ -2234,14 +2273,17 @@ export class MonsterComponentSystem extends MonsterComponent {
     const monsterPosition = monster.GetComponent(PositionComponent);
     let selected: PlayerUnit | undefined;
     let selectedThreat = 0n;
+    let forced:PlayerUnit|undefined;
     let selectedDistanceSquared = Number.POSITIVE_INFINITY;
     for (const [unitId, threat] of state.threatByUnitId) {
       const player = this.units.Get<PlayerUnit>(unitId);
       if (!player || player.GetComponent(NativeUnitRef).alive === 0) {
+        if(state.tauntTargetUnitId===unitId){state.tauntTargetUnitId=0;state.tauntUntilMs=0;}
         player?.GetComponent(CombatStateComponent).RemoveMonster(monster.UnitId, TimeSystem.Instance.ServerNow);
         state.threatByUnitId.delete(unitId);
         continue;
       }
+      if(state.tauntTargetUnitId===unitId&&(state.tauntUntilMs??0)>TimeSystem.Instance.ServerNow)forced=player;
       const playerPosition = player.GetComponent(PositionComponent);
       const distanceSquaredValue = distanceSquared(
         monsterPosition.x,
@@ -2262,7 +2304,7 @@ export class MonsterComponentSystem extends MonsterComponent {
         selectedDistanceSquared = distanceSquaredValue;
       }
     }
-    return selected;
+    return forced??selected;
   }
 
   /** 清理怪物的所有仇恨来源；死亡和回归必须经过这里，保证玩家能离开战斗状态。 / Clears all threat sources so death and leash return also end player combat. */
@@ -2271,6 +2313,7 @@ export class MonsterComponentSystem extends MonsterComponent {
       this.units.Get<PlayerUnit>(unitId)?.GetComponent(CombatStateComponent).RemoveMonster(monster.UnitId, now);
     }
     state.threatByUnitId.clear();
+    state.tauntTargetUnitId=0;state.tauntUntilMs=0;
     state.targetUnitId = 0;
     state.lootOwnerAccount = null;
   }

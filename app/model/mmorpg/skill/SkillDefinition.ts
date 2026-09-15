@@ -46,6 +46,8 @@ export interface SkillDefinition {
   readonly name: string;
   readonly description: string;
   readonly relation: SkillTargetRelationValue;
+  /** 目标生命条件；缺省要求存活，死亡条件用于复活类技能。 / Target life requirement; defaults to alive, dead permits resurrection skills. */
+  readonly targetLife?: "alive" | "dead";
   readonly castTimeMs: number;
   readonly cooldownMs: number;
   readonly globalCooldownMs: number;

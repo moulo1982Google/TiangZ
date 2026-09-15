@@ -3,8 +3,12 @@ import { defineRpc } from "../../../../../core/protocol/rpc";
 import {
   C2G_EnterMap,
   C2G_EnterMapCodec,
+  C2G_EnterPublicMap,
+  C2G_EnterPublicMapCodec,
   C2G_EnterStarterDungeon,
   C2G_EnterStarterDungeonCodec,
+  C2G_ListPublicMaps,
+  C2G_ListPublicMapsCodec,
   C2G_LoginGate,
   C2G_LoginGateCodec,
   C2G_LogoutCharacter,
@@ -85,8 +89,12 @@ import {
   C2S_RegisterCodec,
   G2C_EnterMap,
   G2C_EnterMapCodec,
+  G2C_EnterPublicMap,
+  G2C_EnterPublicMapCodec,
   G2C_EnterStarterDungeon,
   G2C_EnterStarterDungeonCodec,
+  G2C_ListPublicMaps,
+  G2C_ListPublicMapsCodec,
   G2C_LoginGate,
   G2C_LoginGateCodec,
   G2C_LogoutCharacter,
@@ -219,6 +227,10 @@ import {
   M2G_TransferPlayerCodec,
   M2MM_CreateAssignedDynamicMap,
   M2MM_CreateAssignedDynamicMapCodec,
+  M2MM_PublicMapStatus,
+  M2MM_PublicMapStatusCodec,
+  M2MM_ReservePublicMap,
+  M2MM_ReservePublicMapCodec,
   M2M_AbortPlayerTransfer,
   M2M_AbortPlayerTransferCodec,
   M2M_AbortPlayerTransferResponse,
@@ -235,12 +247,24 @@ import {
   M2S_CreateDynamicMapCodec,
   M2S_DisposeDynamicMap,
   M2S_DisposeDynamicMapCodec,
+  M2S_InspectDynamicMap,
+  M2S_InspectDynamicMapCodec,
   MM2M_CreateAssignedDynamicMap,
   MM2M_CreateAssignedDynamicMapCodec,
+  MM2M_PublicMapStatus,
+  MM2M_PublicMapStatusCodec,
+  MM2M_ReservePublicMap,
+  MM2M_ReservePublicMapCodec,
+  MM2S_AcquirePublicMap,
+  MM2S_AcquirePublicMapCodec,
   MM2S_DynamicMapDisposed,
   MM2S_DynamicMapDisposedCodec,
+  MM2S_ListPublicMaps,
+  MM2S_ListPublicMapsCodec,
   MM2S_MapHostHeartbeat,
   MM2S_MapHostHeartbeatCodec,
+  MM2S_PartyAction,
+  MM2S_PartyActionCodec,
   MM2S_RegisterMapHost,
   MM2S_RegisterMapHostCodec,
   S2C_CreateCharacter,
@@ -279,16 +303,24 @@ import {
   S2L_ResolvePlayerLocationsCodec,
   S2L_UnlockPlayerLocation,
   S2L_UnlockPlayerLocationCodec,
+  S2MM_AcquirePublicMap,
+  S2MM_AcquirePublicMapCodec,
   S2MM_DynamicMapDisposed,
   S2MM_DynamicMapDisposedCodec,
+  S2MM_ListPublicMaps,
+  S2MM_ListPublicMapsCodec,
   S2MM_MapHostHeartbeat,
   S2MM_MapHostHeartbeatCodec,
+  S2MM_PartyAction,
+  S2MM_PartyActionCodec,
   S2MM_RegisterMapHost,
   S2MM_RegisterMapHostCodec,
   S2M_CreateDynamicMap,
   S2M_CreateDynamicMapCodec,
   S2M_DisposeDynamicMap,
   S2M_DisposeDynamicMapCodec,
+  S2M_InspectDynamicMap,
+  S2M_InspectDynamicMapCodec,
 } from "./messages";
 import { MsgCode } from "./msgcodes";
 
@@ -652,6 +684,20 @@ export const GateProtocol = {
     requestCodec: C2G_EnterStarterDungeonCodec,
     responseCodec: G2C_EnterStarterDungeonCodec,
   }),
+  EnterPublicMap: defineRpc<C2G_EnterPublicMap, G2C_EnterPublicMap>({
+    name: "Gate.EnterPublicMap",
+    requestCode: MsgCode.C2G_EnterPublicMap,
+    responseCode: MsgCode.G2C_EnterPublicMap,
+    requestCodec: C2G_EnterPublicMapCodec,
+    responseCodec: G2C_EnterPublicMapCodec,
+  }),
+  ListPublicMaps: defineRpc<C2G_ListPublicMaps, G2C_ListPublicMaps>({
+    name: "Gate.ListPublicMaps",
+    requestCode: MsgCode.C2G_ListPublicMaps,
+    responseCode: MsgCode.G2C_ListPublicMaps,
+    requestCodec: C2G_ListPublicMapsCodec,
+    responseCodec: G2C_ListPublicMapsCodec,
+  }),
   MapSnapshotReady: defineRpc<C2G_MapSnapshotReady, G2C_MapSnapshotReady>({
     name: "Gate.MapSnapshotReady",
     requestCode: MsgCode.C2G_MapSnapshotReady,
@@ -714,6 +760,13 @@ export const DynamicMapProtocol = {
     requestCodec: S2M_DisposeDynamicMapCodec,
     responseCodec: M2S_DisposeDynamicMapCodec,
   }),
+  Inspect: defineRpc<S2M_InspectDynamicMap, M2S_InspectDynamicMap>({
+    name: "DynamicMap.Inspect",
+    requestCode: MsgCode.S2M_InspectDynamicMap,
+    responseCode: MsgCode.M2S_InspectDynamicMap,
+    requestCodec: S2M_InspectDynamicMapCodec,
+    responseCodec: M2S_InspectDynamicMapCodec,
+  }),
 };
 
 export const MapHostControlProtocol = {
@@ -744,6 +797,40 @@ export const MapHostControlProtocol = {
     responseCode: MsgCode.MM2S_DynamicMapDisposed,
     requestCodec: S2MM_DynamicMapDisposedCodec,
     responseCodec: MM2S_DynamicMapDisposedCodec,
+  }),
+};
+
+export const PublicMapProtocol = {
+  Acquire: defineRpc<S2MM_AcquirePublicMap, MM2S_AcquirePublicMap>({
+    name: "PublicMap.Acquire",
+    requestCode: MsgCode.S2MM_AcquirePublicMap,
+    responseCode: MsgCode.MM2S_AcquirePublicMap,
+    requestCodec: S2MM_AcquirePublicMapCodec,
+    responseCodec: MM2S_AcquirePublicMapCodec,
+  }),
+  List: defineRpc<S2MM_ListPublicMaps, MM2S_ListPublicMaps>({
+    name: "PublicMap.List",
+    requestCode: MsgCode.S2MM_ListPublicMaps,
+    responseCode: MsgCode.MM2S_ListPublicMaps,
+    requestCodec: S2MM_ListPublicMapsCodec,
+    responseCodec: MM2S_ListPublicMapsCodec,
+  }),
+};
+
+export const PublicMapHostProtocol = {
+  Reserve: defineRpc<MM2M_ReservePublicMap, M2MM_ReservePublicMap>({
+    name: "PublicMapHost.Reserve",
+    requestCode: MsgCode.MM2M_ReservePublicMap,
+    responseCode: MsgCode.M2MM_ReservePublicMap,
+    requestCodec: MM2M_ReservePublicMapCodec,
+    responseCodec: M2MM_ReservePublicMapCodec,
+  }),
+  Status: defineRpc<MM2M_PublicMapStatus, M2MM_PublicMapStatus>({
+    name: "PublicMapHost.Status",
+    requestCode: MsgCode.MM2M_PublicMapStatus,
+    responseCode: MsgCode.M2MM_PublicMapStatus,
+    requestCodec: MM2M_PublicMapStatusCodec,
+    responseCodec: M2MM_PublicMapStatusCodec,
   }),
 };
 
@@ -854,6 +941,16 @@ export const MapHostLifecycleProtocol = {
   }),
 };
 
+export const PartyProtocol = {
+  Action: defineRpc<S2MM_PartyAction, MM2S_PartyAction>({
+    name: "Party.Action",
+    requestCode: MsgCode.S2MM_PartyAction,
+    responseCode: MsgCode.MM2S_PartyAction,
+    requestCodec: S2MM_PartyActionCodec,
+    responseCodec: MM2S_PartyActionCodec,
+  }),
+};
+
 export const LoginMgrProtocol = {
   GetLoginServiceAddr: defineRpc<C2S_GetLoginServiceAddr, S2C_GetLoginServiceAddr>({
     name: "LoginMgr.GetLoginServiceAddr",
@@ -905,6 +1002,10 @@ export const AllRpcDescriptors = [
   MapHostControlProtocol.Register,
   MapHostControlProtocol.Heartbeat,
   MapHostControlProtocol.CreateAssigned,
+  PublicMapProtocol.Acquire,
+  PublicMapProtocol.List,
+  PublicMapHostProtocol.Reserve,
+  PublicMapHostProtocol.Status,
   MapHostControlProtocol.DynamicMapDisposed,
   MapTransferProtocol.Prepare,
   MapTransferProtocol.Commit,
@@ -920,6 +1021,8 @@ export const AllRpcDescriptors = [
   LocationProtocol.Remove,
   LocationProtocol.RecoverOwner,
   MapHostLifecycleProtocol.QueryPlayerOffline,
+  PartyProtocol.Action,
+  DynamicMapProtocol.Inspect,
   LoginMgrProtocol.GetLoginServiceAddr,
   LoginProtocol.Login,
   LoginProtocol.Register,
@@ -927,6 +1030,8 @@ export const AllRpcDescriptors = [
   GateProtocol.LoginGate,
   GateProtocol.EnterMap,
   GateProtocol.EnterStarterDungeon,
+  GateProtocol.EnterPublicMap,
+  GateProtocol.ListPublicMaps,
   GateProtocol.MapSnapshotReady,
   MapProtocol.Probe,
   MapProtocol.FindPath,

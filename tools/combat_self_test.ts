@@ -30,7 +30,7 @@ export async function main(): Promise<void> {
   const { CombatComponentSystem } = await import(
     "../app/hotfix/mmorpg/combat/CombatComponentSystem"
   );
-  const { AdvanceResourceFlow } = await import(
+  const { AdvanceResourceFlow, CombatStateComponentSystem } = await import(
     "../app/hotfix/mmorpg/combat/CombatStateComponentSystem"
   );
   const { CommitSkillResourceCosts, PlanSkillResourceCosts } = await import(
@@ -231,6 +231,29 @@ export async function main(): Promise<void> {
     "a reduced maximum did not clamp the current resource",
   );
 
+  // 默认恢复与显式禁用必须区分，否则模块转图会意外回血。 / Explicit empty flows disable defaults across module player factories.
+  const flowNumeric: Record<number, bigint> = {
+    [NumericType.CurrentHp]: 50n, [NumericType.MaxHp]: 100n,
+    [NumericType.CurrentMp]: 20n, [NumericType.MaxMp]: 100n,
+  };
+  class ResourceOwnerState extends CombatStateComponentSystem {
+    override GetParent<T extends Entity>(): T {
+      return { GetComponent: (ctor: { name: string }) => ctor.name === "NativeUnitRef" ? {alive: 1} : flowNumeric } as unknown as T;
+    }
+  }
+  const state = new ResourceOwnerState();
+  state.TickResources(1000);
+  state.TickResources(19000);
+  assert.equal(flowNumeric[NumericType.CurrentHp], 60n, "untouched player lost default regeneration");
+  assert.equal(flowNumeric[NumericType.CurrentMp], 30n);
+  state.ConfigureResourceFlows("module", []);
+  state.TickResources(199000);
+  assert.equal(flowNumeric[NumericType.CurrentHp], 60n, "empty configured flows unexpectedly restored health");
+  assert.equal(flowNumeric[NumericType.CurrentMp], 30n);
+  assert.throws(() => state.ConfigureResourceFlows("other", []), /already belong/);
+  assert.throws(() => state.ConfigureResourceFlows("module", null as never), /array/);
+  state.TickResources(379000);
+  assert.equal(flowNumeric[NumericType.CurrentHp], 60n, "failed replacement changed existing configuration");
   console.log("combat self-test passed");
 }
 

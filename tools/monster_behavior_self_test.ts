@@ -606,6 +606,18 @@ function verifyAmbientMovementContentAndPlanning(): void {
       }],
     }],
   });
+  const baseDefinition = content.GetDefinitions()[0]!;
+  if (baseDefinition.leashRangeMeters !== undefined) throw new Error("default leash must remain omitted");
+  const leashes = new MonsterContentProfileComponent({});
+  for (const value of [0, -1, NaN, Infinity]) {
+    assertThrows(() => leashes.Register("org.example.leash", {
+      definitions: [{...baseDefinition, id: 9901, leashRangeMeters: value}], spawns: [],
+    }), "leash");
+  }
+  leashes.Register("org.example.leash", {
+    definitions: [{...baseDefinition, id: 9901, leashRangeMeters: 9}], spawns: [],
+  });
+  if (leashes.TryGetDefinition(9901)?.leashRangeMeters !== 9) throw new Error("module leash was not retained");
   const registered = content.GetSpawns()[0];
   if (
     registered.wanderRadius !== 8

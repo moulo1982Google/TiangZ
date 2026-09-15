@@ -18,6 +18,7 @@ const EMPTY_MAP_DISPOSE_DELAY_MS = 5 * 60_000;
  * owns creation and placement.
  */
 export class DynamicMapLifecycleComponent extends Component {
+  private readonly disposing = new Map<bigint,Promise<boolean>>();
   private readonly emptySince = new Map<bigint, number>();
   private mapHost!: MapHostComponent;
   private location!: LocationProxy;
@@ -37,8 +38,11 @@ export class DynamicMapLifecycleComponent extends Component {
 
   /** 每30秒检查空地图，只有连续无人五分钟才触发业务兜底销毁。 / Checks every 30 seconds and reclaims only maps empty for five continuous minutes. */
   protected SweepEmptyMaps(): void {
+    if(this.IsDisposed)return;
+    const owner=this.owner;
     const now = Date.now();
     for (const assignment of this.mapHost.DynamicAssignments()) {
+      if (assignment.channelId) continue;
       const mapInstanceId = assignment.mapInstanceId;
       const map = this.mapHost.GetMap(mapInstanceId);
       if (!map) {
@@ -53,7 +57,7 @@ export class DynamicMapLifecycleComponent extends Component {
       this.emptySince.set(mapInstanceId, since);
       if (now - since < EMPTY_MAP_DISPOSE_DELAY_MS) continue;
       void this.DisposeInstance(mapInstanceId).catch((error) => {
-        this.owner.logger.warn("dynamic map fallback disposal failed", {
+        if(!this.IsDisposed&&!owner.IsDisposed)owner.logger.warn("dynamic map fallback disposal failed", {
           mapInstanceId: mapInstanceId.toString(),
           error,
         });
@@ -61,7 +65,15 @@ export class DynamicMapLifecycleComponent extends Component {
     }
   }
 
-  private async DisposeInstance(mapInstanceId: bigint): Promise<boolean> {
+  /** 合并同实例的并发回收；每个删除路由操作只有一份生命周期续体。 / Deduplicates disposal so each route removal has one lifecycle continuation. */
+  private DisposeInstance(mapInstanceId:bigint):Promise<boolean> {
+    const existing=this.disposing.get(mapInstanceId);if(existing)return existing;
+    const pending=this.DisposeOnce(mapInstanceId).finally(()=>{if(this.disposing.get(mapInstanceId)===pending)this.disposing.delete(mapInstanceId);});
+    this.disposing.set(mapInstanceId,pending);return pending;
+  }
+  private async DisposeOnce(mapInstanceId: bigint): Promise<boolean> {
+    if(this.IsDisposed)return false;
+    const owner=this.owner;
     const map = this.mapHost.GetMap(mapInstanceId);
     if (!map) return false;
     if (!map.IsDynamic) {
@@ -71,14 +83,15 @@ export class DynamicMapLifecycleComponent extends Component {
     try {
       await this.location.RemoveMapInstance({
         mapInstanceId,
-        expectedMapHostName: this.owner.self.name,
+        expectedMapHostName: owner.self.name,
         expectedOwnerGeneration: this.mapHost.OwnerGeneration,
       });
+      if(this.IsDisposed||owner.IsDisposed)return false;
       const disposed = await this.mapHost.DisposeMap(mapInstanceId);
       if (disposed) this.emptySince.delete(mapInstanceId);
       return disposed;
     } catch (error) {
-      this.mapHost.CancelMapDisposal(mapInstanceId);
+      if(!this.IsDisposed&&!owner.IsDisposed)this.mapHost.CancelMapDisposal(mapInstanceId);
       throw error;
     }
   }

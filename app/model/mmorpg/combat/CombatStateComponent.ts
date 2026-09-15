@@ -52,7 +52,7 @@ export interface CombatStateComponent {
   /** 兼容旧怪物调用；新代码使用 RemoveHostile。 / Compatibility alias for existing monster callers; new code uses RemoveHostile. */
   RemoveMonster(monsterUnitId: number, nowMs: number): void;
   Clear(nowMs: number): void;
-  /** 由一个外置内容所有者原子替换本玩家的资源流；定义不包含职业或协议知识。 / Atomically replaces this player's flows for one external content owner without class or protocol knowledge. */
+  /** 由一个外置内容所有者原子替换本玩家的资源流；空列表显式禁用默认恢复，定义不包含职业或协议知识。 / Empty lists disable default regeneration. Atomically replaces this player's flows for one external content owner without class or protocol knowledge. */
   ConfigureResourceFlows(ownerId: string, definitions: readonly ResourceFlowDefinition[]): void;
   TickResources(nowMs: number): void;
 }

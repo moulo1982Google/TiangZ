@@ -36,6 +36,8 @@
 
 模块批量地图内容通过MMORPG层的`MonsterContentProfileComponent`进入现有刷怪运行时：目录只原子保存中立模板与稳定刷点并在地图发布前冻结，`MonsterComponent`继续拥有Unit、AOI、战斗、尸体和重生。具体来源数据库、表结构、坐标转换、地图编号和内容指纹属于模块；不得把外部世界库schema或生成行放入Core。
 
+公共地图分线的目录、宿主分配、准入预留和回收归 TiangZ MMORPG 地图领域；模板内容、每线人数、最低线数及业务进入条件归游戏模块。Gate 负责客户端身份、迁移屏障和路由更新，部署层负责启动进程。分线复用 MapScene/Location 实例链，不在模块另建地图调度器，也不把地图业务塞进 Core。具体接口与验收边界见[公共地图分线](public-map-channels.md)。
+
 ## 2. 当前文件归属
 
 ### ① 框架运行时

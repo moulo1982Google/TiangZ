@@ -1,5 +1,6 @@
 import { Component, component } from "../../../core/public";
 import { SpatialMode } from "../../../generated/model/config";
+import type { MapContentDefinition } from "./MapContentProfileComponent";
 import {
   canOccupyCell,
   cellToWorldMeters,
@@ -41,6 +42,12 @@ export interface MapRuntimeSpatialProfile {
  */
 @component()
 export class MapRuntimeProfileComponent extends Component {
+  private content: Readonly<MapContentDefinition> | undefined;
+  /** 地图工厂提供的准入与 AOI 定义。 / Admission and AOI definition supplied by the map factory. */
+  get Content(): Readonly<MapContentDefinition> { if (!this.content) throw new Error("map content not initialized"); return this.content; }
+  private allowedCharacterIds: readonly bigint[] | undefined;
+  /** 工厂冻结的私有参与者名单；undefined 表示未设置。 / Factory-frozen private participants; undefined means unrestricted. */
+  get AllowedCharacterIds(): readonly bigint[] | undefined { return this.allowedCharacterIds; }
   private mapConfigId = 0;
   private spatial: Readonly<MapRuntimeSpatialProfile> | undefined;
   private spatialOwner = "";
@@ -55,12 +62,14 @@ export class MapRuntimeProfileComponent extends Component {
   }
 
   /** 由MapHost写入一次默认冷配置，游戏模块不得自行创建未初始化的地图资料。 / Initializes cold defaults once in MapHost; game modules must not fabricate an uninitialized profile. */
-  Initialize(mapConfigId: number, profile: MapRuntimeSpatialProfile): void {
+  Initialize(mapConfigId: number, profile: MapRuntimeSpatialProfile, content?: Readonly<MapContentDefinition>, allowedCharacterIds?: readonly bigint[]): void {
     if (this.spatial) throw new Error("map runtime profile is already initialized");
     if (!Number.isSafeInteger(mapConfigId) || mapConfigId <= 0) {
       throw new Error(`map config id must be a positive safe integer: ${mapConfigId}`);
     }
     this.mapConfigId = mapConfigId;
+    this.content = content;
+    this.allowedCharacterIds = allowedCharacterIds ? Object.freeze([...allowedCharacterIds]) : undefined;
     this.spatial = freezeSpatialProfile(profile);
   }
 
@@ -76,7 +85,7 @@ export class MapRuntimeProfileComponent extends Component {
   }
 }
 
-function freezeSpatialProfile(profile: MapRuntimeSpatialProfile): Readonly<MapRuntimeSpatialProfile> {
+export function freezeSpatialProfile(profile: MapRuntimeSpatialProfile): Readonly<MapRuntimeSpatialProfile> {
   if (!profile || typeof profile !== "object") throw new Error("map spatial profile must be an object");
   if (profile.spatialMode !== SpatialMode.Grid2D && profile.spatialMode !== SpatialMode.NavMesh3D) {
     throw new Error(`unsupported map spatial mode: ${profile.spatialMode}`);

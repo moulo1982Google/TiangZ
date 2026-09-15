@@ -15,7 +15,12 @@ export interface SkillProjectile {
   readonly definition: SkillDefinition;
 }
 
+/** 协议中立弹道快照，不暴露效果规则。 / Protocol-neutral detached flight state; effect definitions remain private to the scheduler. */
+export type SkillProjectileSnapshot = Readonly<Omit<SkillProjectile, "definition">>;
+
 export interface SkillMapComponent {
+  /** 读取当前飞行弹道，不暴露可变调度容器。 / Read current flights without exposing the mutable scheduler map. */
+  Projectiles(): readonly SkillProjectileSnapshot[];
   /**
    * 从任意地图Unit提交一次技能。PlayerUnit仍是唯一暴露给客户端RPC的调用方，
    * 怪物/NPC系统则可通过同一权威调度器提交模块拥有的能力。

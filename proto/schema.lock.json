@@ -2012,6 +2012,27 @@
           "type": "uint64",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "channel_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "max_players",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "private_roster",
+          "type": "PrivateMapRoster",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -4219,6 +4240,106 @@
       ]
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#M2MM_PublicMapStatus",
+      "name": "M2MM_PublicMapStatus",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "found",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "player_count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "reserved_count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2MM_ReservePublicMap",
+      "name": "M2MM_ReservePublicMap",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "accepted",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "expires_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "host_occupied",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#M2S_CreateDynamicMap",
       "name": "M2S_CreateDynamicMap",
       "base": "IResponse",
@@ -4264,6 +4385,49 @@
           "number": 1,
           "name": "disposed",
           "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2S_InspectDynamicMap",
+      "name": "M2S_InspectDynamicMap",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "state",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "map_instance_id",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },
@@ -4404,9 +4568,131 @@
           "synthetic": false
         },
         {
+          "number": 4,
+          "name": "channel_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "max_players",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "private_roster",
+          "type": "PrivateMapRoster",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#MM2M_PublicMapStatus",
+      "name": "MM2M_PublicMapStatus",
+      "base": "IRequest",
+      "response": "M2MM_PublicMapStatus",
+      "fields": [
+        {
+          "number": 1,
+          "name": "map_instance_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#MM2M_ReservePublicMap",
+      "name": "MM2M_ReservePublicMap",
+      "base": "IRequest",
+      "response": "M2MM_ReservePublicMap",
+      "fields": [
+        {
+          "number": 1,
+          "name": "map_instance_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#MM2S_AcquirePublicMap",
+      "name": "MM2S_AcquirePublicMap",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "instance",
+          "type": "MapInstanceSnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "channel_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "expires_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
           "repeated": false,
           "synthetic": true
         }
@@ -4449,6 +4735,42 @@
       ]
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#MM2S_ListPublicMaps",
+      "name": "MM2S_ListPublicMaps",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "channels",
+          "type": "PublicMapChannelSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#MM2S_MapHostHeartbeat",
       "name": "MM2S_MapHostHeartbeat",
       "base": "IResponse",
@@ -4459,6 +4781,49 @@
           "name": "registered",
           "type": "bool",
           "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#MM2S_PartyAction",
+      "name": "MM2S_PartyAction",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "party",
+          "type": "PartySnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "invitations",
+          "type": "PartyInvitationSnapshot",
+          "repeated": true,
           "synthetic": false
         },
         {
@@ -4524,6 +4889,135 @@
           "type": "string",
           "repeated": false,
           "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#PartyInvitationSnapshot",
+      "name": "PartyInvitationSnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "invitation_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "party_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "leader_name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "expires_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#PartyMemberSnapshot",
+      "name": "PartyMemberSnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "level",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "map_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "map_instance_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "online",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#PartySnapshot",
+      "name": "PartySnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "party_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "leader_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "revision",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "capacity",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "members",
+          "type": "PartyMemberSnapshot",
+          "repeated": true,
+          "synthetic": false
         }
       ]
     },
@@ -4685,6 +5179,35 @@
           "number": 12,
           "name": "gate_epoch",
           "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#PlayerModuleState",
+      "name": "PlayerModuleState",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "version",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "payload",
+          "type": "bytes",
           "repeated": false,
           "synthetic": false
         }
@@ -4910,6 +5433,71 @@
           "number": 33,
           "name": "display_name",
           "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 34,
+          "name": "module_states",
+          "type": "PlayerModuleState",
+          "repeated": true,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#PrivateMapRoster",
+      "name": "PrivateMapRoster",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "character_ids",
+          "type": "uint64",
+          "repeated": true,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#PublicMapChannelSnapshot",
+      "name": "PublicMapChannelSnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "instance",
+          "type": "MapInstanceSnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "channel_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "player_count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "reserved_count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "max_players",
+          "type": "uint32",
           "repeated": false,
           "synthetic": false
         }
@@ -5589,6 +6177,13 @@
           "synthetic": false
         },
         {
+          "number": 3,
+          "name": "private_roster",
+          "type": "PrivateMapRoster",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -5606,6 +6201,64 @@
         {
           "number": 1,
           "name": "map_instance_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2M_InspectDynamicMap",
+      "name": "S2M_InspectDynamicMap",
+      "base": "IRequest",
+      "response": "M2S_InspectDynamicMap",
+      "fields": [
+        {
+          "number": 1,
+          "name": "request_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2MM_AcquirePublicMap",
+      "name": "S2MM_AcquirePublicMap",
+      "base": "IRequest",
+      "response": "MM2S_AcquirePublicMap",
+      "fields": [
+        {
+          "number": 1,
+          "name": "map_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "preferred_instance_id",
           "type": "uint64",
           "repeated": false,
           "synthetic": false
@@ -5670,6 +6323,28 @@
       ]
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#S2MM_ListPublicMaps",
+      "name": "S2MM_ListPublicMaps",
+      "base": "IRequest",
+      "response": "MM2S_ListPublicMaps",
+      "fields": [
+        {
+          "number": 1,
+          "name": "map_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#S2MM_MapHostHeartbeat",
       "name": "S2MM_MapHostHeartbeat",
       "base": "IRequest",
@@ -5707,6 +6382,105 @@
           "number": 5,
           "name": "player_count",
           "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "max_maps",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "max_players",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "map_config_ids",
+          "type": "uint32",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2MM_PartyAction",
+      "name": "S2MM_PartyAction",
+      "base": "IRequest",
+      "response": "MM2S_PartyAction",
+      "fields": [
+        {
+          "number": 1,
+          "name": "namespace",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "actor",
+          "type": "PartyMemberSnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "action",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "operation_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "party_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "revision",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "target_character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "invitation_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "accept",
+          "type": "bool",
           "repeated": false,
           "synthetic": false
         },
@@ -5768,6 +6542,27 @@
           "synthetic": false
         },
         {
+          "number": 7,
+          "name": "max_maps",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "max_players",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "map_config_ids",
+          "type": "uint32",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -5806,6 +6601,35 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2G_EnterPublicMap",
+      "name": "C2G_EnterPublicMap",
+      "base": "IRequest",
+      "response": "G2C_EnterPublicMap",
+      "fields": [
+        {
+          "number": 1,
+          "name": "map_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "preferred_instance_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2G_EnterStarterDungeon",
       "name": "C2G_EnterStarterDungeon",
       "base": "IRequest",
@@ -5815,6 +6639,28 @@
           "number": 1,
           "name": "operation_id",
           "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2G_ListPublicMaps",
+      "name": "C2G_ListPublicMaps",
+      "base": "IRequest",
+      "response": "G2C_ListPublicMaps",
+      "fields": [
+        {
+          "number": 1,
+          "name": "map_config_id",
+          "type": "uint32",
           "repeated": false,
           "synthetic": false
         },
@@ -7642,6 +8488,49 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_EnterPublicMap",
+      "name": "G2C_EnterPublicMap",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "enter_map",
+          "type": "G2C_EnterMap",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "channel_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#G2C_EnterStarterDungeon",
       "name": "G2C_EnterStarterDungeon",
       "base": "IResponse",
@@ -7814,6 +8703,42 @@
           "type": "ItemSnapshot",
           "repeated": false,
           "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_ListPublicMaps",
+      "name": "G2C_ListPublicMaps",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "channels",
+          "type": "PublicMapLine",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
         }
       ]
     },
@@ -10163,6 +11088,49 @@
           "type": "string",
           "repeated": false,
           "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#PublicMapLine",
+      "name": "PublicMapLine",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "map_instance_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "channel_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "player_count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "reserved_count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "max_players",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },

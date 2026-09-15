@@ -1,5 +1,21 @@
 # TiangZ AI 业务开发手册
 
+2026-09-14 诊断慢客户端时，`slow_client_disconnects` 只统计出站字节/帧/批队列容量拒绝；正常关闭接收端不计入该指标。传输层使用 `ConnectionQueueError` 保留关闭与容量原因，失败回滚本批队列计数，清理连接仍发送原 shutdown 信号。不得通过提高容量掩盖断线误分类。回归同时覆盖直接扇出和聚合批次，游戏模块无需改协议或存储。
+
+2026-09-13 宿主升级 Deno 后，Native 模块需同步检查其 Cargo.toml。组合构建会先用 Cargo metadata 检查正常依赖中的 deno_core crate 身份，发现旧版本或不同来源直接拒绝并标明模块；仅开发测试依赖不参与此生产扩展检查。先调整模块声明并按既有 --check 流程解析组合锁，再进行 --locked 发布构建，不手工修改生成的桥接文件来强转 Extension。
+
+2026-09-13 独立游戏启动建议传 `--runtime-root=<资源目录>`，配置文件的相对路径在该目录下解析。目录必须具有 dist/、configs/，无效路径报错，不能静默加载宿主或另一游戏的 Bundle。省略参数时保持原推断规则。不要把此运行选项塞入业务 Component；它属于部署启动。候选测试应核对日志中的 runtime_root 与 Hotfix 版本。未知启动参数或多个配置路径会被拒绝，完整版本查询仍为 `--version`。
+
+2026-09-11 模块自有交易协议可调用 `PlayerTradeComponent.GetSnapshot/Request/Respond/UpdateOffer/Confirm/Cancel`。需要限制最终背包时，使用 `PlayerTradeEvents.BeforeCommit` 的同步只读否决监听器：事件在双方邮箱内、首次冻结持久化载荷前执行；返回非零错误码拒绝整笔交易，不可拆开保存双方记录。回执恢复不重复准入，计划失败会释放未触库的会话。模块必须确认货币所有权一致；荒原进度金币尚未迁入钱包，因此只允许零金币的物品交换。协议、Model 和事件注册变更需要完整构建重启。
+
+2026-09-10 迁移源端存档保护：MapHost 在 Location 提交成功、安排延迟销毁时立即调用 PlayerPersistenceComponent.RetireTransferredSource。源 Actor 的排队定时存档/离线保存不再写库，业务事务拒绝；标记不进入 Transfer，目标仍可保存。不能仅依赖下一帧销毁来避免旧源快照与新宿主的 revision 冲突。
+
+离线任务事件可用 Model 公开入口 `AdvanceQuestState` 预备 `QuestState`，与在线 `Quest.Advance` 共用目标上限、多目标完成和 revision 推进规则。该函数是纯计算，输入为已校验的任务状态；返回新快照不代表已落库。消费者验证持久接取实例与事件来源后，将 inbox 和任务进度放进同一 CommitRecords，再 ACK。NPC、前置、奖励、事件版本及业务实例 ID 由模块定义。模型/存档结构升级必须声明 Codec 迁移并重建重启，历史已完成任务不自动补发新增奖励。
+
+公共分线回归入口为 `npm run test:public-maps`，已接入 `npm run verify` 的 full 矩阵。2026-09-10 实测 full 11/11、quick 25/25、check 15/15 通过。新增能力的真实 Runtime 验证不代替业务游戏的 DBProxy、怪物与任务链验收。
+
+2026-09-10 开发公共地图时在 MapManagerScene 的模块装配器调用 ConfigurePublicMaps，在 MapHostScene 装配器调用 ConfigureCapacity；规则需完整构建重启。客户端通过生成的 Gate.EnterPublicMap 请求模板与偏好实例，Gate 提供已认证 CharacterId 并复用原传送事务。不要手拼宿主地址，也不要以玩家组件调用 MapComponent.TransferToMap 代替 Gate 屏障。公共分线元数据由宿主重报恢复，旧 staticMapIds 固定实例保持兼容；私人副本继续 DynamicMapProxy。玩法授权（等级、任务、入口距离）仍需游戏接入时校验，容量预留不能代替业务授权。验收包含并发超售、Prepare/回滚、两个真实 MapHost 的迁移与后续 Actor 请求，参见[实现与验证说明](../design/public-map-channels.md)。
+
 2026-09-10 Godot 独立模块客户端只需同步生成的协议 `.gd`，读取器已内嵌，不要再从示例复制或手写 `TzProtoReader`。共享读取器源码是 `client_sdk/godot/proto_reader.gd`；修改后运行 codegen，生成清单会校验该输入。新工程验收必须实际 `load` 并进行编解码，`ResourceLoader.exists` 只能证明文件存在。配置 `GODOT_BIN` 后执行 `node tools/module_protocol_codegen_self_test.mjs` 可在无缓存项目验证两个 SDK，默认缺少 Godot 时仅做静态检查并明确提示跳过实跑。
 
 模块安装/升级/删除先完整构建验证，再运行 `npm run release:package` 生成独立版本目录；此命令自动选择模块 Native 二进制并校验配置/Bundle 身份，不能混用旧二进制。Native 首次组合需先运行 `build:module-native -- --check` 解析并保存组合依赖锁，正式发布使用 `--locked`，制品携带该锁。`--debug` 可生成开发验收制品。命令不会自动切换现有服务；保留旧制品后按现有部署流程优雅重启。迁移写入后旧版 Codec 会拒绝更新已升级记录，数据回退必须单独设计。
@@ -1549,8 +1565,159 @@ MapHost 对没有任何存档的新角色，在 PlayerUnit 的 ordered mailbox �
 
 ## 外置模块的持久事件业务（2026-09-10）
 
+### 独立地图接入检查
+
+1. 在 MapHostScene 的同步扩展中登记 MapContentProfileComponent。空间、出生点、AOI 网格、频率层和准入预算由模块提供；发布后目录不可变，模块 ID 不能与主工程冷表冲突。主工程 MapConfig 不需要占位行。Grid2D 以地图中心为原点，宽深需整除 AOI 网格；客户端像素坐标必须显式转换。
+2. MapScene 扩展登记玩家与内容配置，实际在线状态挂到 PlayerUnit。MapScene 没有 Entity Parent；需要部署身份时读取其 ProcessName。使用 PlayerPersistenceComponent.RegisterPersistenceExtension 让模块状态参与存档、同进程及跨进程迁移，不保留旧 Session 引用。
+3. 模块 Gate 子类复用角色事务、位置路由和 EnterPublicMap/ListPublicMaps。显式转发内部 Probe、MapReady、ClientBroadcast/Batch、KickPlayers 绑定；不要假设装饰器继承。入口必须先验证真实账号和角色，再由服务器构造内部身份。
+4. 换线与传送后签发新输入租约，重置客户端序号；重连按 Location 中的原地图及实例恢复。广播 generation 使用真实 MapInstanceId，客户端拒绝旧实例快照。AOI 附近人数与分线总人数不能混用。
+5. 跨进程迁移信封现为 schemaVersion 11，新增模块状态字段；运行协议 codegen 并重建、重启全部参与进程。验收必须覆盖跨进程血量/死亡/冷却保留、任务 outbox/inbox、冷重启，以及**有玩家时**的正常停机。仅业务断言通过、进程异常退出不算完整通过。
+
+宿主停机通过保留 Promise、排空完成事件、检查结果实现；停止业务 Tick 后仍要提交 Location RPC。不要用无限等待、强杀进程或忽略退出码掩盖生命周期问题。容量数字是配置预算，真实承载量必须另行压测。
+
 独立游戏除构建外，还要运行 `verify_hotfix_boundary.mjs --modules-dir <目录>`。声明的协议生成目录有受限的 `binary/message/rpc` ABI 例外；不要修改生成文件或把手写代码放进生成目录规避 Stable 入口。运行时方法检查使用 `verify_runtime_contracts.mjs --project <模块 tsconfig> --scan-root <模块 src>`。
 
 涉及“状态已写入但异步业务也必须最终执行”的流程，使用 `HostDbProxyRecords.CommitRecords` 一起提交业务回执和 `CreateOutboxEvent`。消费者以 `producer:event_id` 创建持久 inbox（CAS 0），与目标状态 CAS 同事务，成功后才 `HostStreamConsumer.Ack`。旧事件的业务适用条件应在事件产生时保存；不能用消费时的新状态反推死亡时是否已接任务。未知提交结果保留原请求或读取持久回执，失败不 ACK。
 
 每个 Process 部署一个固定 Redis 消费目标、一个领域消费入口，轮询不可重入；业务不接收 Redis URL。补齐 backlog、重复投递、提交后 ACK 失败、重启回收和奖励幂等的真实存储验收，避免只测内存事件。接口与边界见[记录与事件闭环](../design/record-outbox-consumer.md)。
+
+## 外置模块接入真实物品领域（2026-09-10）
+
+ModuleGame 阶段 2 复用 ItemContentProfileComponent 的模块物品目录、ItemComponent/Item 实例、库存规划和 PlayerPersistenceComponent；具体职业、容量、装备位置与消耗规则属于模块。不要用模块 JSON 数组替代已存在的 inventory 领域，冒险记录只保存尚未领取的掉落。
+
+药剂等跨库存和模块状态的操作应一次提交 inventory + runtime，将扣物、生命、冷却和单调操作序号同事务保存。先保存原计划，未知结果先查回执；确认后应用内存计划，旧序号回执不得重复治疗。模块可在其持久化扩展 Capture 中拒绝导出存在待确认资源操作的状态，从而阻止周期保存/迁移覆盖事务结果。恢复必须回到玩家 mailbox 并使用与正常业务相同的锁。不能将框架所有 uncertainOperations 不加区分地视为同一种待确认业务。
+
+掉落可随击杀业务与 outbox 同事务产生，再以稳定掉落 ID 事务发放真实物品，最后 CAS 确认领取；两步之间失败则保留待领取条目并读取旧回执重试。验收应包含满包、并发、归属/版本拒绝、提交成功后丢回包、旧回执重放、冷重启及数据库对账。该接入复用已有稳定 API，没有增加游戏专用 Core 接口。
+
+
+### ModuleGame 阶段 3：战斗内容的框架接入
+
+- 模块通过 MapScene Factory 的 MonsterContentProfile、SkillDefinitionProfile、BuffDefinitionProfile 注册内容；怪物 Unit、仇恨、追击回归、施法冷却和 Buff 生命周期由 MMORPG 领域拥有。模块保留业务伤害公式、首击归属及 DBProxy/outbox 奖励编排。
+- MonsterContentDefinition.leashRangeMeters 可选且必须为有限正数；省略保留 30 米。距离由框架怪物行为结算，不在业务 Tick 中另写怪物 AI。
+- CombatStateComponent.ConfigureResourceFlows(ownerId, []) 显式关闭默认资源恢复；未调用仍使用旧 HP/MP 恢复。所有者冲突仍拒绝，失败替换不得破坏旧定义。需要关闭默认回血的模块在 PlayerUnit Factory 中声明，重建玩家时重新装配。
+- 角色生命统一使用 NumericComponent.CurrentHp；模块升级、换装和持久化恢复必须同步真实数值。模块入门技能目录可授予固有能力，完整学习体系仍走已有技能学习/持久事务接口。
+
+
+### 夜间阶段 4：队伍目录设计
+
+队伍关系归 MMORPG 的 MapManagerScene，模块显式装配并注册 namespace 策略。角色身份来自认证 Session，成员使用 characterId；同步版本化变更不得跨 await。目录暂态、短断线保留，副本所有权与奖励不能依赖目录永久在线。设计见 [队伍目录](../design/party-directory.md)，已通过夜间队伍与副本功能验收，容量测试仍未执行。
+
+
+## 夜间阶段 4：队伍目录与私有动态地图（2026-09-11）
+
+MapManagerScene 可由模块装配 PartyDirectoryComponent，按 namespace 隔离临时队伍。目录拥有成员/队长、修订、邀请和操作回执；同步转换避免 unordered mailbox 的异步交错。角色身份来自已鉴权 MapUnit，客户端不能自报。短暂断线保留成员；Manager 冷重启不恢复队伍。
+
+DynamicMapProxy.Create(requestId, mapConfigId, characterIds?) 新增可选私有名单。提供时必须为 1–40 个不重复的正 uint64；缺省保持旧动态地图语义，显式空数组拒绝。Manager 和宿主均校验重试名单，注册快照恢复名单；MapHost 创建前原子预留整份名单 30 秒，统一玩家工厂检查身份。预留过期释放容量，但白名单持续到实例销毁；迟到成员仍须满足实际容量。预留期间禁止回收。MapScene 工厂可读 MapRuntimeProfileComponent.AllowedCharacterIds 的冻结副本。名单不允许在实例运行中变更。
+
+边界：框架不拥有任务条件、Boss、奖励或强制整队传送。预留原子性不等于跨玩家迁移事务；游戏模块负责参与确认、单人迁移失败提示和副本生命周期。容量压测暂缓。新增内网协议可选 private_roster 字段已显式更新锁并重新生成。
+
+验证进度：队伍与公开/私有地图定向测试 18/18；模块真实网络队伍测试及冷重启、Godot 三种实际窗口尺寸通过。新一轮完整框架验证进行中。
+
+
+私有实例恢复补充：DynamicMapProxy.Inspect(requestId) 只读返回 recovering / unknown / creating / active / lost / disposed 及实例 ID。Manager 启动的宿主租约恢复窗口内，未知私有创建请求拒绝立即分配，查询返回 recovering；已恢复的记录可查询。业务不能仅以 Location 暂时查不到路由为依据判定实例丢失。模块在目录 active/creating/recovering 时提示稍后重试，仅在 unknown/lost/disposed 时结束旧清单；不自动重建旧副本。定向测试 19/19，新增内网查询协议已显式更新锁。
+
+
+### MapHost 异步上报的退出边界（2026-09-11 夜间验收）
+
+MapHost 的 Manager 注册/续租/销毁通知以及 Location 归属重报属于 MMORPG 宿主生命周期。组件定时器取消不能撤回已发出的 RPC；每个异步返回点必须检查组件与所属 Scene 是否仍存活。已销毁的宿主停止后续重报和日志访问，进图等待中的归属发布则明确失败，不得把晚到的响应当作可继续创建 Player 的授权。通用 Core、协议与 DBProxy 无需为此增加特例。
+
+回归覆盖成功/失败响应晚于组件销毁、注册后续动作阻断、销毁通知批次中断，以及进图归属等待失败。客户端短断线恢复仍由模块处理，并通过新输入租约和权威全量快照恢复；服务端不得重放客户端攻击指令。
+
+
+### 外置游戏的失联恢复目的地
+
+GateScene.ResolveRecoveryMapInstance(session) 是 MMORPG 进图恢复的受保护策略点，仅在 Location 确认旧角色路由已失效后调用。默认保留演示地图；外置游戏覆写时可通过 PublicMapProxy 执行自身安全地图分线准入，不能直接构造 Player 或跳过 Location/fencing。等待分线后再次验证当前 Session 路由。EnterPublicMap 已获得准入时复用该目标，不重复申请另一张地图。此改动不增加 Core 特例、不改变协议。
+
+实际游戏进程故障验收发现并修复了旧路径硬编码回到演示地图 1 的问题。营地正常退出和副本宿主强杀后重启均完成真实网络恢复：旧输入拒绝、已提交奖励保留、失效副本回营地并要求新操作显式开新轮。临时网络故障而权威 Location 尚未确认失效时仍等待，不擅自复制角色。新增目的地/fencing 回归 7 项与退出竞态 9 项通过；完整矩阵重新执行以覆盖最终改动。
+
+
+### 多模块客户端 SDK 共用连接
+
+TypeScript 生成客户端只要求 `Pick<RpcSocket, "call" | "send">`，不要求具体 SDK 拷贝中的类身份。两个独立分发的 SDK 可以复用同一底层连接、RPC 序列与认证 Session，避免私有 transport 字段导致名义类型不兼容。生成器自测先复现了旧构造类型的 TS2345，再验证两份 SDK 的同连接调用可以通过严格编译；Godot 新工程双 codec 运行验证也通过。消息码、帧和 wire schema 不变，所有生成客户端由生成器重新输出。
+
+### 2026-09-11 协议声明换行无关性
+
+`codegen_proto.mjs` 支持一个 message 内同一行声明多个字段；解析字段前跳过行注释与块注释，保留带引号的字段选项值。换行排版不应改变锁文件和 SDK 的字段集合。`module_protocol_codegen_self_test.mjs` 覆盖紧凑商店消息的完整 schema 字段列表、注释中的伪字段排除，以及生成 Godot codec 往返；设置 `GODOT_BIN` 执行实际 Godot 验证。
+
+### 2026-09-11 独立客户端弹道投影
+
+`SkillMapComponent.Projectiles()` 返回当前飞行中的 `SkillProjectileSnapshot` 冻结数组和分离元素，包含 Cast/技能/来源/目标 ID 及服务器发射、命中时刻，不包含效果定义或可变容器。独立模块可按自身协议和 Audience 投影表现；技能状态机仍独占发射、取消、命中和伤害结算。读取快照不能延长弹道或修改规则，短于广播间隔的弹道可能不出现在采样快照中。
+
+
+### 外置模块资源与任务事务示例
+
+外置游戏可将 Numeric 中的即时资源值捕获到自己的 runtime 持久扩展，版本化标记首次初始化，避免旧存档、转图和重登时反复补满。物品事务结果未知时，由同一内容所有者暂停 ConfigureResourceFlows；确认后恢复，不能补算冻结时长或重放旧资源值。技能消耗仍通过原生 SkillResourceCost 完成。
+
+模块任务目录、前置关系、追踪选择与业务事件的任务实例集合属于模块。多个匹配目标使用已有 AdvanceQuestState，并与 inbox 在一次 DBProxy CommitRecords 中原子提交；消费者用击杀时冻结的实例集合匹配，不能按消费时才接取的任务回补。旧事件兼容和模块存档 migration 均由模块维护，Core 不认识具体任务 ID。
+
+
+### 动态实例回收与未决结算（2026-09-11）
+
+MapHost 在删除 Location 路由前，对目标 MapScene 发布 `MapLifecycleEvents.BeforeDispose` 同步只读否决事件。默认通过；模块存在未确认奖励、准备事务等时返回非零私有错误码，监听器不得执行异步保存或修改状态。显式 Dispose 和空置五分钟兜底都走同一边界，仍保留玩家/进入预留检查。模块应在自身定时任务完成结算后自然解除否决，不能靠延迟几秒假定数据库成功。
+
+DynamicMapLifecycleComponent 合并同实例并发 Dispose；宿主销毁后，删除路由的迟到响应不再访问已分离父节点或继续销毁。MapManager 对在线且支持目标模板、但名额耗尽的候选返回 MapHostCapacity；无在线/无合适模板宿主返回 MapHostUnavailable。业务可分别提示容量与连接问题，不能把容量拒绝当成新实例创建成功。
+
+副本放弃是模块语义：携带当前 runId，验证拥有者/队长和参与名单，先回收空实例再写终态；同 runId 重试不得影响下一轮。实例消失且中央目录仍在恢复时不提前写终态。Wasteland 使用独立 schema v2，原 v1 清单无损升级，已放弃不发通关奖励。
+
+
+### 单玩家领域事务与 outbox（2026-09-11）
+
+`PlayerPersistenceComponent.ApplyTransaction(operationId, domains, data, result, effects?)` 可附带 outbox / append；effects 会在首次 await 前复制，且要求至少两个不同的领域记录。底层沿用 Repository 的 DBProxy 原子提交，不新增独立发布步骤。单玩家多领域用此入口，多玩家仍用 ApplyMultiTransaction。提交结果未知时用相同 operationId、相同领域集合 LoadTransaction 恢复原始回执，不能重新生成事件 ID。Model 方法形状改变须完整构建并重启。
+
+
+### 2026-09-11 装备上限与有界奖励窗口
+
+Wasteland 0.4.0 将装备品质、槽位、护甲熟练度与属性公式留在外置模块。装备变更从基础/等级/装备重算，库存和裁剪后的当前 HP/MP 通过现有 PlayerPersistence inventory/runtime 事务提交，结果未知先恢复原回执。提高上限不能默认补满。TiangZ Numeric/Combat/Item 继续持有通用运行机制，无需认识装备材质或副本奖励 ID。
+
+模块可用独立、固定大小的奖励溢出记录和角色 head/tail 游标维持有界领取窗口。全员进度、溢出记录、统一 inbox 仍在一次 DBProxy CommitRecords；补入使用 CAS，最终入包沿用原生库存幂等事务。旧 schema 迁移和保留策略属于模块；不能用扩大角色快照数组或提前 ACK 代替持久闭环。
+
+模块内部 JSON 与外部 Protobuf 并存时，uint64 需要明确转换契约：十进制文本运输，编码前恢复 bigint。本次只修改 ModuleGame 业务代码与框架说明，未新增 Core/Rust/DBProxy API。客户端未启动；禁止把历史 Godot 验收结果当作本轮 UI 通过。
+
+
+### 2026-09-11 队伍持久化与冷恢复
+
+PartyDirectoryComponent 属于 MMORPG 通用队伍领域。Register(namespace, {persistent:true, maxMembers, invitationMs, offlineRetentionMs}) 启用持久模式；默认仍为临时模式。认证后的服务端适配器通过异步 Execute 请求，PartyActionHandler 已切换到此入口。同步 Act 只允许临时模式，防止绕过持久化。游戏模块负责启用、职业/副本条件与自己的固定参与名单，Core/Rust/DBProxy 不增加游戏语义。
+
+每个业务 namespace 由一个 MapManager 持有。Execute 经场景命名锁隔离计划，使用现有 HostDbProxyRecords 将 tiangz.party.directory 的名单快照与 tiangz.party.receipt 的操作指纹同事务 CAS 提交，确认成功才发布内存。冲突最多重读四轮；结果未知不假定失败，下一次携带相同操作 ID 和原请求查询持久回执。旧命令重放返回当前视图，不重新建队、不把旧队长操作作用到新队伍。名单保存成员、队长、版本与绝对邀请期限；重建时校验唯一成员归属和合法队长，拒绝损坏数据。
+
+持久模式离线不自动退队或换队长，必须显式退出/踢出/移交。重启先恢复为离线且地图位置为零，认证心跳重新确认在线位置；在线状态和地图路由不落库，未变化心跳不写快照。收到邀请后自行建队会清除收到的邀请。临时模式保留离线超时退出语义。
+
+本版是每 namespace 最多 1 MiB 的有界整体快照，超限拒绝提交；不是分片目录或多 Manager 在线状态共享实现，尚未容量压测。操作回执持久保留，尚无归档/清理策略；不能按邀请过期时间删除幂等回执。后续大规模目录应独立评估分片和索引，不放宽快照上限掩盖问题。
+
+这是 Model/接口变更，必须完整构建并重启对应部署，不能仅热更新。旧版本纯内存队伍不存在可恢复的数据库源；新能力仅保证启用后成功提交的数据。本轮独立后台验收，不切换当前开发集群、不启动 Godot。副本创建时冻结的 participantIds/leaderId 仍由模块维护，恢复队伍不得重写这些字段。
+
+
+### 2026-09-11 组队技能命中与辅助仇恨
+
+SkillEvents.BeforeEffects 在每次实际效果提交前提供同步只读否决；覆盖瞬发、读条结束、弹道和引导 Tick。拒绝不会返还已经接受时扣除的资源/冷却。EffectsResolved 可附 healingByTarget，记录每个实际受治疗目标和有效恢复量，排除过量治疗；不能用配置的名义治疗量替代。
+
+MonsterComponent.AddAssistThreat(source, beneficiary, amount) 将给定辅助仇恨按 UnitId 确定性地均分给仍对受助者保持仇恨的存活怪物，整数余数依序分配；不激活空闲怪、不影响回归怪、不改首击掉落归属。具体治疗系数由游戏模块计算。Taunt 匹配当前最高仇恨并在 1–30000 ms 的有限时间强制选中存活施法者，死亡/离图失效，回归和死亡清理强制状态；结束后使用正常最高仇恨选择。以上属于 MMORPG 领域，不新增 Core 或 Rust 游戏接口。
+
+Wasteland 0.4.1 的 Cast 协议仅追加可选 target_character_id。空值保持自疗，非空时认证 Lobby 校验同队资格；地图以真实 CampPlayer、AOI、距离、生命和事务状态验证目标。队伍资格在接受请求时确定，读条中退队不会追溯撤销已接受法术；命中仍检查目标有效、可见、可治疗及框架配置的距离。治疗实际量的一半向既有交战怪物分配仇恨。战士嘲讽使用模块配置与 EffectsResolved 扩展，ActionType.None 明确表示无基础伤害效果。
+
+Model/事件形状与模块协议发生变化，必须完整构建与协调重启后生效；模块 Factory 拒绝缺少命中否决、辅助仇恨或嘲讽能力的旧框架。原开发部署未切换。功能验收使用独立进程与 wasteland.smoke.events 路由，客户端可以通过 WASTELAND_TEST_PORT 指向隔离服务，不能把测试事件消费组改成开发服组。
+
+牧师护佑复用既有 BuffComponent 的目标级 Refresh 冲突策略，满血友方也可施加；相同减伤不叠加。CampPlayerState.guard_remaining_ms 只随 AOI 可见玩家快照下发，队伍目录不广播远处玩家战斗状态。运行时模块注册版本必须与 manifest 同步到 0.4.1，清单与注册不一致会在启动时拒绝装配。
+
+联机 UI 收尾暴露退出账号与 MapHost 停服并发的最终保存竞争。MapComponent 按 PlayerUnit 对象共享最终保存/Location 移除 Promise；成功保留到该 Unit 回收，失败移除缓存允许重试。清理前后复核 Unit 索引，避免重复销毁或处理替代 Actor。这是 MMORPG 地图生命周期修复，仍需完整构建与重启。
+
+
+### 2026-09-11 协作战斗与任务提交边界（模块 0.4.2）
+
+MMORPG SkillDefinition.targetLife 默认 alive，复活类配置 dead；接受及实际命中均校验生命状态。模块在 BeforeEffects 继续检查事务、AOI、战斗状态，EffectsResolved 执行复活比例和业务清理。BuffEvents.BeforeTick 可同步否决本次周期效果，跳过的 Tick 不补发；TickResolved 提供有效治疗量用于辅助仇恨。效果回调可能移除 Buff，周期处理必须在回调后检查生命周期，禁止继续访问已销毁父节点。
+
+LoadPartyCommitView 封装框架队伍目录存储，返回成员与同内容、期望版本写入 guard。模块把 guard 与击杀记录/outbox 放入同一 DBProxy commit；冲突重读并重新规划。共享任务的队伍成员资格以击杀持久提交为线性化点，空间、存活、近期参战及任务实例候选在怪物死亡时冻结。目录 guard 会推进目录 DB revision，具有跨队伍争用成本；未做容量验证，不能据此宣称大规模吞吐已验证。
+
+monster.killed schema 3 保存冻结的共享任务接收者；一个任务 inbox 和所有成员进度写入同一事务，重放不能重复计数，也不能推进后来重新接取的任务实例。共享只覆盖任务计数；掉落、金币和远征击杀仍遵循各自归属。队伍变更后的事件重投不得重新计算接收者。
+
+怒气、能量、符文与符文能量、毒/缓速/持续治疗的具体数值归属游戏模块。符文六槽保存绝对就绪时间并随角色 vitals v5 持久化和转图，不能转图刷新冷却；v1–v4 数据仍可读取。状态图标随 AOI 快照发送，远处成员不泄露战斗信息。Model/协议变化必须完整构建与协调重启；不得用 Hotfix 替代部署。验收使用隔离服务，现有开发服未切换。
+
+Godot 模块 SDK 同步属于游戏工程的生成边界：`sync_godot_sdk.mjs` 为每个模块复制协议类和客户端配置，并写入 `.module-sdk-manifest.json`，记录模块 ID、版本和输出目录。每次同步都清理生成根目录中不属于当前模块集合的旧目录，并拒绝清洗后的目录冲突；不能留下旧模块 SDK 让客户端静默加载。生成目录不得手工编辑，模块业务仍不能反向进入 Core。
+
+### 2026-09-11 交易模块通知
+
+PlayerTradeEvents.Notification 将邀请、状态变化、关闭结果传给模块监听器，携带单个目标玩家；模块复制快照后，通过 Scene.Tasks 和 Self Audience 发送自有 Event 消息。监听失败不能回滚资产，不在 Gate 转码或修改 Core。主动查询仍只返回临时会话，关闭结果的持久化补查尚待实现；查不到会话不能推断成功或失败。Model/注册变更需要完整构建重启。
+
+### 2026-09-11 历史成交补查
+
+PlayerTradeComponent.QueryResult(player, tradeId, otherCharacterId) 返回 pending / committed / unknown。持久化组件 ReadHistoricalMultiTransaction 强制包含调用者角色，只读取双方 inventory/wallet 的原事务回执，不推进当前 revision、不清除未决集合、不应用旧资产。交易领域解码后校验交易 ID 和双方角色 ID；存储错误向上传递，缺失回执不能解释为失败。查询不要求对方在线，不依赖当前地图会话。调用端保留 tradeId 与对方角色 ID；回执过期或未成交均可能 unknown。此能力不持久化取消结果，不替代客户端重连处理。

@@ -4,11 +4,13 @@ import type { C2M_UpdatePlayerTradeOffer, M2C_ConfirmPlayerTrade, PlayerTradeSna
 
 declare module "../../../model/mmorpg/trade/PlayerTradeComponent" {
   interface PlayerTradeComponent {
+    QueryResult(player: PlayerUnit, tradeId: string, otherCharacterId: bigint): Promise<"pending" | "committed" | "unknown">;
     Request(requester: PlayerUnit, targetUnitId: number): Promise<PlayerTradeSnapshot>;
     Respond(target: PlayerUnit, tradeId: string, accept: boolean): Promise<PlayerTradeSnapshot>;
     UpdateOffer(player: PlayerUnit, request: C2M_UpdatePlayerTradeOffer): Promise<PlayerTradeSnapshot>;
     Confirm(player: PlayerUnit, tradeId: string): Promise<M2C_ConfirmPlayerTrade>;
     Cancel(player: PlayerUnit, tradeId: string): Promise<void>;
+    GetSnapshot(player: PlayerUnit): PlayerTradeSnapshot | undefined;
     RequireCanLeave(player: PlayerUnit): void;
     PlayerLeaving(player: PlayerUnit): void;
     Update1Hz(): void;

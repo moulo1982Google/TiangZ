@@ -51,6 +51,24 @@ function fixture(partial = false) {
 }
 
 describe("player snapshot acknowledgement recovery",()=>{
+  test("queued source snapshots cannot write after ownership transfers",async()=>{
+    const f=fixture(); f.recover();
+    await f.component.SavePeriodic(1);
+    const transfer=f.component.CaptureTransfer();
+    const queued=()=>f.component.SavePeriodic(60000);
+    f.component.RetireTransferredSource();
+    // The destination now owns the next runtime revision. A late source write would conflict.
+    f.revisions.set('7001:runtime',transfer.runtime+1n);
+    f.change(); const writes=f.save.mock.calls.length;
+    await queued(); await f.component.SaveOnOffline('source-cleanup');
+    expect(f.save.mock.calls.length).toBe(writes);
+    expect(f.component.IsPeriodicSaveDue(60000)).toBe(false);
+    await expect(f.component.ApplyTransaction('stale',['wallet'],f.component.Capture('stale'),new Uint8Array())).rejects.toThrow('no longer owns');
+    expect(f.apply).not.toHaveBeenCalled();
+    const destination=fixture().component;
+    destination.RestoreTransfer(transfer);
+    expect(destination.IsPeriodicSaveDue(Number.MAX_SAFE_INTEGER)).toBe(true);
+  });
   test("exhausted retries retain exact batch before saving newer state on offline",async()=>{
     const f=fixture();
     await expect(f.component.SavePeriodic(1)).rejects.toThrow('ACK lost');

@@ -1,3 +1,5 @@
+import { MapLifecycleEvents } from "../map/MapLifecycleEvents";
+import { NormalizePrivateRoster, SamePrivateRoster } from "./MapAdmission";
 import {
   Component,
   EntryScene,
@@ -43,9 +45,11 @@ import type {
 import { MAP_ENTRY_ADMISSION_TIMEOUT_MS } from "../map/MapEntryAdmission";
 import { MapTransferProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
 import { MapComponent } from "../map/MapComponent";
+import { MapAdmission, type MapHostingCapacity } from "./MapAdmission";
 import { MapScene } from "../map/MapScene";
 import { MapAoiComponent } from "../map/MapAoiComponent";
 import { MapRuntimeProfileComponent } from "../map/MapRuntimeProfileComponent";
+import { MapContentProfileComponent } from "../map/MapContentProfileComponent";
 import { MonsterComponent } from "../monster/MonsterComponent";
 import { MonsterContentProfileComponent } from "../monster/MonsterContentProfileComponent";
 import {
@@ -102,9 +106,10 @@ const monotonicNow = (): number => globalThis.performance?.now() ?? Date.now();
 // 玩家跨MapHost快照的生成端与校验端必须引用同一版本，新增可传送Component时只修改这里。
 // The producer and validator of player transfer snapshots must share one version;
 // bump only this constant when a transferable Component changes the wire shape.
-const PLAYER_TRANSFER_SCHEMA_VERSION = 10;
+const PLAYER_TRANSFER_SCHEMA_VERSION = 11;
 
 export class MapHostComponent extends Component<[repository: PlayerRepository]> {
+  private readonly admission = new MapAdmission();
   private readonly ownerGeneration = GlobalIdSystem.Instance.Next();
   private readonly maps = new Map<bigint, MapComponent>();
   private readonly dynamicAssignments = new Map<bigint, DynamicMapAssignmentSnapshot>();
@@ -153,18 +158,18 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
   protected override Awake(repository: PlayerRepository): void {
     this.repository = repository;
     this.location = new LocationProxy(this.owner.scenes);
-    for (const mapConfigId of this.owner.self.staticMapIds ?? []) {
-      this.CreateMap({
-        mapConfigId,
-        mapInstanceId: StaticMapInstanceId(mapConfigId),
-        dynamic: false,
-      });
-    }
     this.NewRepeatedTimer(10_000, "SweepIncomingTransfers");
     this.NewRepeatedTimer(5_000, "RecoverOwnedLocations");
     this.NewOnceTimer(0, "RecoverOwnedLocations");
     this.NewRepeatedTimer(5_000, "RecoverHostedMapInstances");
     this.NewOnceTimer(0, "RecoverHostedMapInstances");
+  }
+
+  /** 模块完成目录与容量装配后创建固定地图。 / Creates fixed maps after module catalog and capacity composition. */
+  InitializeStaticMaps(): void {
+    for (const mapConfigId of this.owner.self.staticMapIds ?? []) {
+      this.CreateMap({ mapConfigId, mapInstanceId: StaticMapInstanceId(mapConfigId), dynamic: false });
+    }
   }
 
   /** 收集每张托管地图的广播快照，不重置计数器。 / Collects one broadcast snapshot per hosted map without resetting counters. */
@@ -837,6 +842,8 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
    * instance survives only until the next timer turn.
    */
   private ScheduleSourceCleanup(map: MapComponent, source: PlayerUnit): void {
+    // Queued periodic saves may execute before the cleanup timer, after ownership has moved.
+    source.GetComponent(PlayerPersistenceComponent).RetireTransferredSource();
     this.pendingSourceCleanup.push({ source, map });
     if (this.sourceCleanupScheduled) return;
     this.sourceCleanupScheduled = true;
@@ -977,6 +984,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       characterId: snapshot.characterId,
       playerConfigId: player.PlayerConfigId,
       displayName: player.DisplayName,
+      moduleStates: [...player.GetComponent(PlayerPersistenceComponent).CapturePersistenceExtensions()],
       sourceMapId: snapshot.mapId,
       targetMapId: targetInstance.mapConfigId,
       gateName: snapshot.gateName,
@@ -1026,18 +1034,20 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
    * process restart; it is not a lease or dead-node failover mechanism.
    */
   protected async RecoverOwnedLocations(): Promise<void> {
-    if (this.recoveringLocations) return;
+    if (this.IsDisposed || this.recoveringLocations) return;
+    const owner = this.owner;
     this.recoveringLocations = true;
     try {
       const recovered = await this.PublishOwnedLocations();
+      if (this.IsDisposed || owner.IsDisposed) return;
       if (recovered.recovered > 0) {
-        this.owner.logger.info("player locations recovered", {
+        owner.logger.info("player locations recovered", {
           recovered: recovered.recovered,
           unchanged: recovered.unchanged,
         });
       }
     } catch (error) {
-      this.owner.logger.warn("player location recovery failed", { error });
+      if (!this.IsDisposed && !owner.IsDisposed) owner.logger.warn("player location recovery failed", { error });
     } finally {
       this.recoveringLocations = false;
     }
@@ -1045,6 +1055,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
 
   /** 进图和迁移在发布当前MapHost代次前不得创建权威Player。 / Entry and transfer cannot create authoritative players before publishing this MapHost generation. */
   private async EnsureLocationOwner(): Promise<void> {
+    if (this.IsDisposed) throw new Error("MapHost disposed before location ownership publication");
     if (this.locationOwnerClaimed) return;
     if (!this.locationOwnerClaim) {
       this.locationOwnerClaim = this.PublishOwnedLocations()
@@ -1054,11 +1065,14 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         });
     }
     await this.locationOwnerClaim;
+    if (this.IsDisposed) throw new Error("MapHost disposed during location ownership publication");
   }
 
   private async PublishOwnedLocations() {
+    if (this.IsDisposed) throw new Error("MapHost disposed before location ownership publication");
+    const owner = this.owner;
     const recovered = await this.location.RecoverOwner({
-      ownerName: this.owner.self.name,
+      ownerName: owner.self.name,
       ownerGeneration: this.ownerGeneration,
       locations: this.players.GetAll().map((player) => ({
         unitId: player.UnitId,
@@ -1066,15 +1080,16 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         characterId: player.CharacterId,
         gateName: player.GetComponent(UnitGateComponent).gateName,
         gateEpoch: player.GetComponent(UnitGateComponent).gateEpoch,
-        mapHostName: this.owner.self.name,
+        mapHostName: owner.self.name,
         mapId: player.MapId,
         mapInstanceId: player.MapInstanceId,
         actorInstanceId: player.InstanceId,
       })),
     });
+    if (this.IsDisposed || owner.IsDisposed) throw new Error("MapHost disposed during location ownership publication");
     this.locationOwnerClaimed = true;
     if (recovered.ownerReplaced) {
-      this.owner.logger.warn("MapHost location ownership replaced stale generation", {
+      owner.logger.warn("MapHost location ownership replaced stale generation", {
         ownerGeneration: this.ownerGeneration.toString(),
         removedStale: recovered.removedStale,
       });
@@ -1091,14 +1106,17 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
    * duplicate static-map ownership.
    */
   protected async RecoverHostedMapInstances(): Promise<void> {
+    if (this.IsDisposed) return;
+    const owner = this.owner;
     for (const map of this.maps.values()) {
+      if (this.IsDisposed || owner.IsDisposed) return;
       if (this.disposingMaps.has(map.MapInstanceId)) continue;
       try {
         await this.location.RegisterMapInstance({
           instance: {
             mapInstanceId: map.MapInstanceId,
             mapConfigId: map.MapId,
-            mapHostName: this.owner.self.name,
+            mapHostName: owner.self.name,
             dynamic: map.IsDynamic,
             mapHost: this.EndpointSnapshot(),
           },
@@ -1106,7 +1124,8 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
           leaseTimeoutMs: map.IsDynamic ? MAP_HOST_LEASE_TIMEOUT_MS : 0,
         });
       } catch (error) {
-        this.owner.logger.warn("map instance route recovery failed", {
+        if (this.IsDisposed || owner.IsDisposed) return;
+        owner.logger.warn("map instance route recovery failed", {
           mapId: map.MapId,
           mapInstanceId: map.MapInstanceId.toString(),
           error,
@@ -1130,6 +1149,8 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     if (!requestId) {
       throw new RpcError(GameErrCode.DynamicMapRequestRequired, "dynamic map requestId is required");
     }
+    const privateRoster = NormalizePrivateRoster(request.privateRoster);
+    if (privateRoster && request.channelId) throw new Error("public channel cannot have a private roster");
     const assignedInstanceId = this.dynamicRequestIds.get(requestId);
     if (assignedInstanceId !== undefined && assignedInstanceId !== request.mapInstanceId) {
       throw new RpcError(
@@ -1141,7 +1162,10 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     if (
       existingAssignment &&
       (existingAssignment.requestId !== requestId ||
-        existingAssignment.mapConfigId !== request.mapConfigId)
+        existingAssignment.mapConfigId !== request.mapConfigId ||
+        (existingAssignment.channelId ?? 0) !== (request.channelId ?? 0) ||
+        (existingAssignment.maxPlayers ?? 0) !== (request.maxPlayers ?? 0) ||
+        !SamePrivateRoster(existingAssignment.privateRoster, privateRoster))
     ) {
       throw new RpcError(
         GameErrCode.DynamicMapRequestConflict,
@@ -1149,15 +1173,30 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       );
     }
 
-    this.CreateMap({
+    if (request.channelId) {
+      this.admission.AddChannel(request.mapInstanceId, request.channelId, request.maxPlayers ?? 0);
+    }
+    if (privateRoster) this.admission.AddPrivate(request.mapInstanceId, privateRoster, this.Occupants());
+    try { this.CreateMap({
+      privateRoster,
+      channelId: request.channelId,
       mapConfigId: request.mapConfigId,
       mapInstanceId: request.mapInstanceId,
       dynamic: true,
-    });
+    }); } catch (error) {
+      if (!this.maps.has(request.mapInstanceId)) {
+        this.admission.Channels.delete(request.mapInstanceId);
+        this.admission.PrivateMaps.delete(request.mapInstanceId);
+      }
+      throw error;
+    }
     const assignment: DynamicMapAssignmentSnapshot = existingAssignment ?? {
+      privateRoster,
       requestId,
       mapConfigId: request.mapConfigId,
       mapInstanceId: request.mapInstanceId,
+      channelId: request.channelId,
+      maxPlayers: request.maxPlayers,
     };
     this.dynamicAssignments.set(request.mapInstanceId, assignment);
     this.dynamicRequestIds.set(requestId, request.mapInstanceId);
@@ -1183,7 +1222,40 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
 
   /** 返回供MapManager恢复幂等状态的只读副本。 / Returns copies of assignments used by MapManager to recover idempotency state. */
   DynamicAssignments(): DynamicMapAssignmentSnapshot[] {
-    return [...this.dynamicAssignments.values()].map((assignment) => ({ ...assignment }));
+    return [...this.dynamicAssignments.values()].map((assignment) => ({ ...assignment, privateRoster: NormalizePrivateRoster(assignment.privateRoster) }));
+  }
+
+  /** 在宿主注册前配置容量和允许的地图模板。 / Configures capacity and allowed templates before host registration. */
+  ConfigureCapacity(capacity: MapHostingCapacity): void { this.admission.Configure(capacity); }
+
+  /** 汇报配置上限，不把未经压测的人数当作默认承载能力。 / Reports configured limits without inventing an untested default capacity. */
+  CapacitySnapshot(): MapHostingCapacity { return this.admission.Capacity(); }
+
+  /** 读取实际和准备中的角色，供同步准入使用。 / Reads actual and prepared characters for synchronous admission. */
+  private Occupants(): Map<bigint, ReadonlySet<bigint>> {
+    return new Map([...this.maps].map(([id, map]) => [id, map.PlayerCharacterIds()]));
+  }
+
+  /** 玩家工厂的唯一准入检查，禁止通过直接传送绕过公共分线预留。 / Guards every player factory against bypassing public-channel admission. */
+  RequirePlayerAdmission(instanceId: bigint, characterId: bigint): void {
+    if (this.disposingMaps.has(instanceId)) throw new RpcError(GameErrCode.MapNotFound, "map is draining");
+    if (!this.admission.RequiresAdmission(instanceId)) return;
+    this.admission.Admit(instanceId, characterId, this.Occupants());
+  }
+
+  /** 为已鉴权角色原子预留席位；不会在失败时超售。 / Atomically reserves an authenticated character seat without overselling. */
+  ReservePublicMap(instanceId: bigint, characterId: bigint): number {
+    if (!this.maps.has(instanceId) || this.disposingMaps.has(instanceId)) return 0;
+    return this.admission.Reserve(instanceId, characterId, this.Occupants());
+  }
+
+  /** 查询公共分线占用；准备中的迁移计入人数，过期预留先清理。 / Reports public-channel occupancy including prepared transfers after expiring reservations. */
+  PublicMapStatus(instanceId: bigint): { found: boolean; playerCount: number; reservedCount: number } {
+    const occupants = this.Occupants();
+    this.admission.Sweep(occupants);
+    const channel = this.admission.Channels.get(instanceId);
+    return { found: !!channel && this.maps.has(instanceId) && !this.disposingMaps.has(instanceId),
+      playerCount: occupants.get(instanceId)?.size ?? 0, reservedCount: channel?.reservations.size ?? 0 };
   }
 
   /**
@@ -1211,6 +1283,9 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       else staticMapCount += 1;
       playerCount += map.PlayerCount;
     }
+    const occupants = this.Occupants();
+    this.admission.Sweep(occupants);
+    playerCount = this.admission.Occupied(occupants).size;
     return { staticMapCount, dynamicMapCount, playerCount };
   }
 
@@ -1233,7 +1308,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       }
       return existing;
     }
-    const mapConfig = GameConfigs.MapConfig.TryGet(definition.mapConfigId);
+    const mapConfig = this.owner.GetComponent(MapContentProfileComponent).Resolve(definition.mapConfigId);
     if (!mapConfig) {
       throw new RpcError(
         GameErrCode.MapNotFound,
@@ -1241,23 +1316,13 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       );
     }
 
+    this.admission.RequireCreation(definition.mapConfigId, this.maps.size);
     const localSceneId = `map:${definition.mapInstanceId}`;
     const scene = this.owner.SpawnChildScene(localSceneId, MapScene);
     try {
       scene.AddComponent(UnitComponent);
       const runtimeProfile = scene.AddComponent(MapRuntimeProfileComponent);
-      runtimeProfile.Initialize(mapConfig.id, {
-        spatialMode: mapConfig.spatialMode,
-        widthCells: mapConfig.widthCells,
-        depthCells: mapConfig.depthCells,
-        cellSizeMeters: mapConfig.cellSizeMeters,
-        spawnX: mapConfig.spawnX,
-        spawnY: mapConfig.spawnY,
-        spawnZ: mapConfig.spawnZ,
-        spawnYaw: mapConfig.spawnYaw,
-        navigationAsset: mapConfig.navigationAsset,
-        navigationHash: mapConfig.navigationHash,
-      });
+      runtimeProfile.Initialize(mapConfig.id, mapConfig.spatial, mapConfig, definition.privateRoster?.characterIds);
       const skillDefinitions = scene.AddComponent(SkillDefinitionProfileComponent);
       const buffDefinitions = scene.AddComponent(BuffDefinitionProfileComponent);
       const monsterContent = scene.AddComponent(MonsterContentProfileComponent);
@@ -1324,7 +1389,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     if (!map.IsDynamic) {
       throw new RpcError(GameErrCode.StaticMapCannotDispose, "static map cannot be disposed");
     }
-    if (map.PlayerCount > 0) {
+    if (map.PlayerCount > 0 || this.admission.ReservedCount(mapInstanceId, this.Occupants()) > 0) {
       throw new Error(
         `map ${mapInstanceId} still has ${map.PlayerCount} player(s); business must transfer them first`,
       );
@@ -1336,6 +1401,8 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     const disposed = this.owner.DespawnChildScene(`map:${mapInstanceId}`);
     if (!disposed) return false;
     this.maps.delete(mapInstanceId);
+    this.admission.Channels.delete(mapInstanceId);
+    this.admission.PrivateMaps.delete(mapInstanceId);
     if (assignment) {
       this.dynamicAssignments.delete(mapInstanceId);
       this.dynamicRequestIds.delete(assignment.requestId);
@@ -1351,12 +1418,14 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     if (!map.IsDynamic) {
       throw new RpcError(GameErrCode.StaticMapCannotDispose, "static map cannot be disposed");
     }
-    if (map.PlayerCount > 0) {
+    if (map.PlayerCount > 0 || this.admission.ReservedCount(mapInstanceId, this.Occupants()) > 0) {
       throw new RpcError(
         GameErrCode.DynamicMapNotEmpty,
         `dynamic map ${mapInstanceId} still has players`,
       );
     }
+    const reason=map.DomainScene().Events.Check(MapLifecycleEvents.BeforeDispose,{mapInstanceId,mapConfigId:map.MapId});
+    if(reason!==0)throw new RpcError(reason,`dynamic map ${mapInstanceId} disposal is blocked by pending module work`);
     this.disposingMaps.add(mapInstanceId);
   }
 
@@ -1427,7 +1496,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     if (snapshot.starterDungeon.cooldownEndAtMs < 0n) {
       throw new Error("invalid Starter dungeon cooldown in transfer snapshot");
     }
-    if (!GameConfigs.MapConfig.TryGet(snapshot.targetMapId)) {
+    if (!this.owner.GetComponent(MapContentProfileComponent).Resolve(snapshot.targetMapId)) {
       throw new RpcError(
         GameErrCode.MapNotFound,
         `map config not found: ${snapshot.targetMapId}`,

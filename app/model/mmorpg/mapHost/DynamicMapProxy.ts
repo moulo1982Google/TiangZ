@@ -1,6 +1,8 @@
+import { NormalizePrivateRoster } from "./MapAdmission";
 import type { SceneMessageHelper } from "../../../core/public";
 import type {
   M2S_CreateDynamicMap,
+  M2S_InspectDynamicMap,
   M2S_DisposeDynamicMap,
 } from "../../../generated/model/server/demo/protocol/messages";
 import { DynamicMapProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
@@ -22,11 +24,17 @@ export class DynamicMapProxy {
   }
 
   /** 使用稳定业务requestId创建或取得同一个副本；调用方不选择MapHost。 / Creates or returns one instance by stable business request ID without selecting a MapHost. */
-  Create(requestId: string, mapConfigId: number): Promise<M2S_CreateDynamicMap> {
+  Create(requestId: string, mapConfigId: number, characterIds?: readonly bigint[]): Promise<M2S_CreateDynamicMap> {
     return this.scenes.callOne("MapManager", DynamicMapProtocol.Create, {
+      privateRoster: NormalizePrivateRoster(characterIds === undefined ? undefined : { characterIds }),
       requestId,
       mapConfigId,
     });
+  }
+
+  /** 查询中央创建账本，供业务区分恢复中、路由暂缺和实例丢失。 / Queries the creation ledger to distinguish recovery, missing routes, and lost instances. */
+  Inspect(requestId:string):Promise<M2S_InspectDynamicMap>{
+    return this.scenes.callOne("MapManager",DynamicMapProtocol.Inspect,{requestId});
   }
 
   /** 只凭实例ID销毁空副本；代理自动解析当前MapHost。 / Disposes an empty instance by ID after resolving its current MapHost. */

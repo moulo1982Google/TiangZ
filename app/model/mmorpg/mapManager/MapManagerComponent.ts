@@ -1,3 +1,4 @@
+import { NormalizePrivateRoster, SamePrivateRoster } from "../mapHost/MapAdmission";
 import {
   Component,
   GlobalIdSystem,
@@ -16,7 +17,9 @@ import type {
   S2MM_MapHostHeartbeat,
   S2MM_RegisterMapHost,
 } from "../../../generated/model/server/demo/protocol/messages";
-import { MapHostControlProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
+import { MapHostControlProtocol, PublicMapHostProtocol, DynamicMapProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
+import type { MM2S_AcquirePublicMap, PublicMapChannelSnapshot, S2MM_AcquirePublicMap } from "../../../generated/model/server/demo/protocol/messages";
+import type { PublicMapPolicy } from "../mapHost/MapAdmission";
 import { GameErrCode } from "../../game/protocol/GameErrCode";
 import {
   MapHostEndpointFromScene,
@@ -27,6 +30,9 @@ import type { SceneConfig } from "../../../core/public";
 import { MAP_HOST_LEASE_TIMEOUT_MS, MAP_HOST_REPORT_INTERVAL_MS } from "../mapHost/MapHostLease";
 
 interface MapHostRecord {
+  maxMaps: number;
+  maxPlayers: number;
+  mapConfigIds: readonly number[];
   endpoint: SceneConfig;
   generation: bigint;
   staticMapCount: number;
@@ -37,6 +43,9 @@ interface MapHostRecord {
 }
 
 interface CreationRecord {
+  privateRoster?: { characterIds: bigint[] };
+  channelId?: number;
+  maxPlayers?: number;
   requestId: string;
   mapConfigId: number;
   mapInstanceId: bigint;
@@ -57,6 +66,11 @@ interface CreationRecord {
  * player transfer. Business code uses only the returned MapInstanceId.
  */
 export class MapManagerComponent extends Component {
+  private readonly publicRecoveryReadyAt = Date.now() + MAP_HOST_LEASE_TIMEOUT_MS;
+  private readonly publicPolicies = new Map<number, PublicMapPolicy>();
+  private readonly publicQueues = new Map<number, Promise<unknown>>();
+  private readonly publicEmptySince = new Map<bigint, number>();
+  private publicMaintenanceRunning = false;
   private readonly hosts = new Map<string, MapHostRecord>();
   private readonly creations = new Map<string, CreationRecord>();
   private readonly leaseMetrics = {
@@ -68,6 +82,7 @@ export class MapManagerComponent extends Component {
 
   protected override Awake(): void {
     this.NewRepeatedTimer(MAP_HOST_REPORT_INTERVAL_MS, "SweepExpiredMapHosts");
+    this.NewRepeatedTimer(MAP_HOST_REPORT_INTERVAL_MS, "MaintainPublicMaps");
   }
 
   /** 注册或刷新MapHost，并从仍存活的宿主恢复创建幂等关系。 / Registers a MapHost and recovers idempotency records from its live assignments. */
@@ -88,15 +103,20 @@ export class MapManagerComponent extends Component {
     }
 
     this.restoreAssignments(endpoint.name, request.generation, request.assignments);
-    this.hosts.set(endpoint.name, {
+    const record: MapHostRecord = {
       endpoint,
+      maxMaps: request.maxMaps ?? 0,
+      maxPlayers: request.maxPlayers ?? 0,
+      mapConfigIds: request.mapConfigIds ?? [],
       generation: request.generation,
       staticMapCount: request.staticMapCount,
       dynamicMapCount: request.dynamicMapCount,
       creatingCount: current?.generation === request.generation ? current.creatingCount : 0,
       playerCount: request.playerCount,
       lastHeartbeatAt: now,
-    });
+    };
+    if (current?.generation === request.generation) Object.assign(current, record);
+    else this.hosts.set(endpoint.name, record);
     this.leaseMetrics.registrations += 1;
     this.owner.logger.info("map host registered", {
       mapHostName: endpoint.name,
@@ -119,6 +139,9 @@ export class MapManagerComponent extends Component {
     host.staticMapCount = request.staticMapCount;
     host.dynamicMapCount = request.dynamicMapCount;
     host.playerCount = request.playerCount;
+    host.maxMaps = request.maxMaps ?? 0;
+    host.maxPlayers = request.maxPlayers ?? 0;
+    host.mapConfigIds = request.mapConfigIds ?? [];
     host.lastHeartbeatAt = Date.now();
     return response(request.rpcId, { registered: true });
   }
@@ -174,7 +197,11 @@ export class MapManagerComponent extends Component {
     if (!requestId) {
       throw new RpcError(GameErrCode.DynamicMapRequestRequired, "dynamic map requestId is required");
     }
+    const privateRoster = NormalizePrivateRoster(request.privateRoster);
     let creation = this.creations.get(requestId);
+    if(privateRoster && !creation && Date.now()<this.publicRecoveryReadyAt) {
+      throw new RpcError(GameErrCode.MapHostUnavailable,"private map directory is recovering; retry after host registration");
+    }
     if (creation?.lost) {
       throw new RpcError(
         GameErrCode.DynamicMapLost,
@@ -187,15 +214,16 @@ export class MapManagerComponent extends Component {
         `dynamic map requestId was already disposed: ${requestId}`,
       );
     }
-    if (creation && creation.mapConfigId !== request.mapConfigId) {
+    if (creation && (creation.mapConfigId !== request.mapConfigId || !SamePrivateRoster(creation.privateRoster, privateRoster))) {
       throw new RpcError(
         GameErrCode.DynamicMapRequestConflict,
         `dynamic map requestId conflicts with map config: ${requestId}`,
       );
     }
     if (!creation) {
-      const host = this.selectHost();
+      const host = this.selectHost(request.mapConfigId);
       creation = {
+        privateRoster,
         requestId,
         mapConfigId: request.mapConfigId,
         mapInstanceId: GlobalIdSystem.Instance.Next(),
@@ -217,6 +245,15 @@ export class MapManagerComponent extends Component {
     return this.creationResponse(request.rpcId, creation);
   }
 
+  /** 只读查看幂等账本；启动恢复窗口中的未知请求不能推断为丢失。 / Inspects the idempotency ledger without treating unknown requests during recovery as lost. */
+  Inspect(requestId:string): { state:string; mapInstanceId:bigint } {
+    if(!requestId.trim())throw new RpcError(GameErrCode.DynamicMapRequestRequired,"dynamic map requestId is required");
+    this.SweepExpiredMapHosts(Date.now());
+    const creation=this.creations.get(requestId.trim());
+    if(!creation)return {state:Date.now()<this.publicRecoveryReadyAt?"recovering":"unknown",mapInstanceId:0n};
+    return {state:creation.disposed?"disposed":creation.lost?"lost":creation.active?"active":"creating",mapInstanceId:creation.mapInstanceId};
+  }
+
   private async createOnAssignedHost(
     creation: CreationRecord,
   ): Promise<void> {
@@ -230,6 +267,9 @@ export class MapManagerComponent extends Component {
           requestId: creation.requestId,
           mapConfigId: creation.mapConfigId,
           mapInstanceId: creation.mapInstanceId,
+          channelId: creation.channelId,
+          maxPlayers: creation.maxPlayers,
+          privateRoster: NormalizePrivateRoster(creation.privateRoster),
         },
       );
       if (
@@ -264,26 +304,26 @@ export class MapManagerComponent extends Component {
           `assigned MapHost lease expired while creating: ${creation.mapHostName}`,
         );
       }
+      if (!creation.active) host.dynamicMapCount += 1;
       creation.active = true;
-      host.dynamicMapCount += 1;
     } finally {
       host.creatingCount -= 1;
     }
   }
 
-  private selectHost(): MapHostRecord {
+  private selectHost(mapConfigId: number, packing = false, excluded = new Set<string>()): MapHostRecord {
     const now = Date.now();
     this.SweepExpiredMapHosts(now);
-    const candidates = [...this.hosts.values()]
-      .filter((host) => now - host.lastHeartbeatAt <= MAP_HOST_LEASE_TIMEOUT_MS)
-      .sort(
-        (left, right) =>
-          left.dynamicMapCount + left.creatingCount - right.dynamicMapCount - right.creatingCount ||
-          left.playerCount - right.playerCount ||
-          left.endpoint.name.localeCompare(right.endpoint.name),
-      );
-    if (candidates.length === 0) {
-      throw new RpcError(GameErrCode.MapHostUnavailable, "no live MapHost is registered");
+    const live=[...this.hosts.values()].filter(host=>now-host.lastHeartbeatAt<=MAP_HOST_LEASE_TIMEOUT_MS);
+    const eligible=live.filter(host=>!excluded.has(host.endpoint.name)&&(!host.mapConfigIds.length||host.mapConfigIds.includes(mapConfigId)));
+    const candidates=eligible
+      .filter(host=>(!host.maxMaps||host.staticMapCount+host.dynamicMapCount+host.creatingCount<host.maxMaps)
+        &&(!host.maxPlayers||host.playerCount<host.maxPlayers))
+      .sort((left,right)=>(packing?-1:1)*(left.dynamicMapCount+left.creatingCount-right.dynamicMapCount-right.creatingCount)
+        ||left.playerCount-right.playerCount||left.endpoint.name.localeCompare(right.endpoint.name));
+    if(!candidates.length){
+      if(eligible.length)throw new RpcError(GameErrCode.MapHostCapacity,`eligible MapHost capacity exhausted for map ${mapConfigId}`);
+      throw new RpcError(GameErrCode.MapHostUnavailable,live.length?`no eligible MapHost for map ${mapConfigId}`:"no live MapHost is registered");
     }
     return candidates[0];
   }
@@ -302,12 +342,17 @@ export class MapManagerComponent extends Component {
     assignments: readonly DynamicMapAssignmentSnapshot[],
   ): void {
     for (const assignment of assignments) {
+      NormalizePrivateRoster(assignment.privateRoster);
+      if (assignment.privateRoster && assignment.channelId) throw new Error("public channel cannot have a private roster");
       const existing = this.creations.get(assignment.requestId);
       if (
         existing &&
         (existing.mapConfigId !== assignment.mapConfigId ||
           existing.mapInstanceId !== assignment.mapInstanceId ||
-          existing.mapHostName !== mapHostName)
+          existing.mapHostName !== mapHostName ||
+          (existing.channelId ?? 0) !== (assignment.channelId ?? 0) ||
+          (existing.maxPlayers ?? 0) !== (assignment.maxPlayers ?? 0) ||
+          !SamePrivateRoster(existing.privateRoster, assignment.privateRoster))
       ) {
         throw new RpcError(
           GameErrCode.DynamicMapRequestConflict,
@@ -336,6 +381,9 @@ export class MapManagerComponent extends Component {
         mapInstanceId: assignment.mapInstanceId,
         mapHostName,
         mapHostGeneration: generation,
+        channelId: assignment.channelId,
+        maxPlayers: assignment.maxPlayers,
+        privateRoster: NormalizePrivateRoster(assignment.privateRoster),
         active: true,
         disposed: false,
         lost: false,
@@ -361,6 +409,146 @@ export class MapManagerComponent extends Component {
         mapHost: MapHostEndpointFromScene(host.endpoint),
       },
     });
+  }
+
+  /** 启动时由游戏登记公共地图规则；规则不允许在在线实例上隐式变更。 / Registers game-owned public-map policy at startup without mutating live instance rules. */
+  ConfigurePublicMaps(policies: readonly PublicMapPolicy[]): void {
+    const ids = new Set<number>();
+    for (const policy of policies) {
+      if (!Number.isSafeInteger(policy.mapConfigId) || policy.mapConfigId <= 0
+        || !Number.isSafeInteger(policy.maxPlayers) || policy.maxPlayers <= 0
+        || !Number.isSafeInteger(policy.minChannels) || policy.minChannels < 1
+        || !Number.isSafeInteger(policy.idleTimeoutMs) || policy.idleTimeoutMs < 30_000
+        || ids.has(policy.mapConfigId) || this.publicPolicies.has(policy.mapConfigId)) throw new Error("invalid or duplicate public map policy");
+      ids.add(policy.mapConfigId);
+    }
+    for (const policy of policies) this.publicPolicies.set(policy.mapConfigId, { ...policy });
+  }
+
+  /** 按模板串行选择及预留，避免并发满线时重复创建大量实例。 / Serializes selection and reservation per template to prevent channel creation stampedes. */
+  AcquirePublicMap(request: S2MM_AcquirePublicMap): Promise<MM2S_AcquirePublicMap> {
+    if (request.characterId <= 0n) throw new Error("character identity is required");
+    return this.WithPublicMap(request.mapConfigId, async () => {
+      const policy = this.RequirePublicPolicy(request.mapConfigId);
+      const channels = this.PublicCreations(request.mapConfigId).sort((a, b) =>
+        Number(b.mapInstanceId === request.preferredInstanceId) - Number(a.mapInstanceId === request.preferredInstanceId)
+        || a.channelId! - b.channelId!);
+      for (const channel of channels) {
+        const acquired = await this.ReserveChannel(channel, request);
+        if (acquired) return acquired;
+      }
+      const created = await this.CreatePublicChannel(policy);
+      const acquired = await this.ReserveChannel(created, request);
+      if (acquired) return acquired;
+      throw new RpcError(GameErrCode.PublicMapUnavailable, "public map capacity unavailable; retry admission");
+    });
+  }
+
+  /** 返回宿主确认的分线快照；未知或失去租约的实例不会出现在目录中。 / Lists host-confirmed channels while excluding lost leases and unready instances. */
+  async ListPublicMaps(mapConfigId: number): Promise<PublicMapChannelSnapshot[]> {
+    this.RequirePublicPolicy(mapConfigId);
+    const channels: PublicMapChannelSnapshot[] = [];
+    for (const creation of this.PublicCreations(mapConfigId)) {
+      if (!creation.active) continue;
+      const host = this.requireActiveHost(creation.mapHostName);
+      const status = await this.owner.scenes.call(host.endpoint, PublicMapHostProtocol.Status, { mapInstanceId: creation.mapInstanceId });
+      if (!status.found) continue;
+      channels.push({ instance: this.creationResponse(undefined, creation).instance,
+        channelId: creation.channelId!, maxPlayers: creation.maxPlayers!, playerCount: status.playerCount, reservedCount: status.reservedCount });
+    }
+    return channels.sort((a, b) => a.channelId - b.channelId);
+  }
+
+  /** 维持最低分线数并回收连续空闲的额外分线；预留和准备中玩家均阻止回收。 / Maintains minimum channels and reclaims idle extras; reservations and staged players prevent reclamation. */
+  protected async MaintainPublicMaps(): Promise<void> {
+    if (this.publicMaintenanceRunning || Date.now() < this.publicRecoveryReadyAt) return;
+    this.publicMaintenanceRunning = true;
+    try {
+      for (const policy of this.publicPolicies.values()) {
+        try {
+          await this.WithPublicMap(policy.mapConfigId, async () => {
+            while (this.PublicCreations(policy.mapConfigId).length < policy.minChannels) await this.CreatePublicChannel(policy);
+            const channels = await this.ListPublicMaps(policy.mapConfigId);
+            let remaining = channels.length;
+            for (const channel of channels.reverse()) {
+              const id = channel.instance.mapInstanceId;
+              if (channel.playerCount + channel.reservedCount > 0) { this.publicEmptySince.delete(id); continue; }
+              const since = this.publicEmptySince.get(id) ?? Date.now();
+              this.publicEmptySince.set(id, since);
+              if (remaining <= policy.minChannels || Date.now() - since < policy.idleTimeoutMs) continue;
+              const creation = [...this.creations.values()].find(value => value.mapInstanceId === id)!;
+              const host = this.requireActiveHost(creation.mapHostName);
+              const result = await this.owner.scenes.call(host.endpoint, DynamicMapProtocol.Dispose, { mapInstanceId: id });
+              if (result.disposed) {
+                if (!creation.disposed) host.dynamicMapCount = Math.max(0, host.dynamicMapCount - 1);
+                creation.active = false; creation.disposed = true;
+                this.publicEmptySince.delete(id); remaining -= 1;
+              }
+            }
+          });
+        } catch (error) { this.owner.logger.warn("public map maintenance deferred", { mapConfigId: policy.mapConfigId, error }); }
+      }
+    } finally { this.publicMaintenanceRunning = false; }
+  }
+
+  /** 隔离不同模板的异步创建与回收顺序，失败不会毒化后续队列。 / Orders creation and reclamation per template without poisoning the queue after failure. */
+  private WithPublicMap<T>(mapConfigId: number, body: () => Promise<T>): Promise<T> {
+    const previous = this.publicQueues.get(mapConfigId) ?? Promise.resolve();
+    const work = previous.catch(() => undefined).then(body);
+    this.publicQueues.set(mapConfigId, work);
+    void work.finally(() => { if (this.publicQueues.get(mapConfigId) === work) this.publicQueues.delete(mapConfigId); }).catch(() => undefined);
+    return work;
+  }
+
+  /** 只使用已登记的业务地图规则。 / Requires a registered business map policy. */
+  private RequirePublicPolicy(mapConfigId: number): PublicMapPolicy {
+    if (Date.now() < this.publicRecoveryReadyAt) throw new RpcError(GameErrCode.PublicMapUnavailable, "public map directory is recovering; retry after host registration");
+    const policy = this.publicPolicies.get(mapConfigId);
+    if (!policy) throw new RpcError(GameErrCode.PublicMapUnavailable, "public map policy not configured");
+    return policy;
+  }
+
+  /** 读取仍有租约的公共实例，包括响应不确定而需重试的创建。 / Reads live public assignments including creations with uncertain responses. */
+  private PublicCreations(mapConfigId: number): CreationRecord[] {
+    this.SweepExpiredMapHosts();
+    return [...this.creations.values()].filter(value => value.mapConfigId === mapConfigId && value.channelId && !value.lost && !value.disposed);
+  }
+
+  /** 复用统一实例创建和Location注册流程，公共分线仅附加准入元数据。 / Reuses instance creation and Location registration with public admission metadata. */
+  private async CreatePublicChannel(policy: PublicMapPolicy): Promise<CreationRecord> {
+    const excluded = new Set<string>();
+    for (;;) {
+      const host = this.selectHost(policy.mapConfigId, true, excluded);
+      const channelId = 1 + Math.max(0, ...[...this.creations.values()].filter(c => c.mapConfigId === policy.mapConfigId).map(c => c.channelId ?? 0));
+      const mapInstanceId = GlobalIdSystem.Instance.Next();
+      const creation: CreationRecord = { requestId: `public:${mapInstanceId}`, mapConfigId: policy.mapConfigId,
+        mapInstanceId, mapHostName: host.endpoint.name, mapHostGeneration: host.generation,
+        channelId, maxPlayers: policy.maxPlayers, active: false, disposed: false, lost: false };
+      this.creations.set(creation.requestId, creation);
+      try {
+        await this.createOnAssignedHost(creation);
+        return creation;
+      } catch (error) {
+        if (!(error instanceof RpcError) || error.code !== GameErrCode.MapHostCapacity) throw error;
+        // 只有宿主明确在创建前拒绝容量才允许换宿主；超时保持原分配供重试。
+        // Only a definite pre-creation capacity rejection permits replacement; timeouts retain their original assignment.
+        creation.disposed = true;
+        excluded.add(host.endpoint.name);
+      }
+    }
+  }
+
+  /** 只在目标宿主确认预留之后返回可用实例；通信结果不确定时不跨线重复分配。 / Returns an instance only after host admission; uncertain RPCs never trigger speculative fallback. */
+  private async ReserveChannel(creation: CreationRecord, request: S2MM_AcquirePublicMap): Promise<MM2S_AcquirePublicMap | undefined> {
+    if (!creation.active) await this.createOnAssignedHost(creation);
+    const host = this.requireActiveHost(creation.mapHostName);
+    const reserved = await this.owner.scenes.call(host.endpoint, PublicMapHostProtocol.Reserve,
+      { mapInstanceId: creation.mapInstanceId, characterId: request.characterId });
+    if (reserved.hostOccupied !== undefined) host.playerCount = reserved.hostOccupied;
+    if (!reserved.accepted) return undefined;
+    this.publicEmptySince.delete(creation.mapInstanceId);
+    return response(request.rpcId, { instance: this.creationResponse(undefined, creation).instance,
+      channelId: creation.channelId!, expiresAtMs: reserved.expiresAtMs });
   }
 
   /**

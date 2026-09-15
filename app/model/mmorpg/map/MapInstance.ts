@@ -10,6 +10,8 @@ export interface MapInstanceDefinition {
   readonly mapConfigId: MapConfigId;
   readonly mapInstanceId: MapInstanceId;
   readonly dynamic: boolean;
+  readonly channelId?: number;
+  readonly privateRoster?: { readonly characterIds: readonly bigint[] };
 }
 
 export interface MapInstanceRoute extends MapInstanceDefinition {

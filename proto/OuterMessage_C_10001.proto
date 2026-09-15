@@ -156,6 +156,39 @@ message G2C_EnterStarterDungeon // IResponse
   uint64 cooldown_end_at_ms = 2;
 }
 
+//ResponseType G2C_EnterPublicMap
+// 公共分线通过Gate事务进入，客户端不能提供角色身份或宿主地址。
+// @ets.msg protocol=Gate method=EnterPublicMap
+message C2G_EnterPublicMap // IRequest
+{
+  uint32 map_config_id = 1;
+  uint64 preferred_instance_id = 2;
+}
+message G2C_EnterPublicMap // IResponse
+{
+  G2C_EnterMap enter_map = 1;
+  uint32 channel_id = 2;
+}
+
+//ResponseType G2C_ListPublicMaps
+// @ets.msg protocol=Gate method=ListPublicMaps
+message C2G_ListPublicMaps // IRequest
+{
+  uint32 map_config_id = 1;
+}
+message PublicMapLine
+{
+  uint64 map_instance_id = 1;
+  uint32 channel_id = 2;
+  uint32 player_count = 3;
+  uint32 reserved_count = 4;
+  uint32 max_players = 5;
+}
+message G2C_ListPublicMaps // IResponse
+{
+  repeated PublicMapLine channels = 1;
+}
+
 // @ets.msg protocol=Client method=MapReady
 message G2C_MapReady // IMessage
 {

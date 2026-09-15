@@ -277,6 +277,16 @@
       "code": 20059
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#M2MM_PublicMapStatus",
+      "name": "M2MM_PublicMapStatus",
+      "code": 20079
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2MM_ReservePublicMap",
+      "name": "M2MM_ReservePublicMap",
+      "code": 20077
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#M2S_CreateDynamicMap",
       "name": "M2S_CreateDynamicMap",
       "code": 20048
@@ -287,9 +297,29 @@
       "code": 20050
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#M2S_InspectDynamicMap",
+      "name": "M2S_InspectDynamicMap",
+      "code": 20083
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#MM2M_CreateAssignedDynamicMap",
       "name": "MM2M_CreateAssignedDynamicMap",
       "code": 20058
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#MM2M_PublicMapStatus",
+      "name": "MM2M_PublicMapStatus",
+      "code": 20078
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#MM2M_ReservePublicMap",
+      "name": "MM2M_ReservePublicMap",
+      "code": 20076
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#MM2S_AcquirePublicMap",
+      "name": "MM2S_AcquirePublicMap",
+      "code": 20073
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#MM2S_DynamicMapDisposed",
@@ -297,9 +327,19 @@
       "code": 20061
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#MM2S_ListPublicMaps",
+      "name": "MM2S_ListPublicMaps",
+      "code": 20075
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#MM2S_MapHostHeartbeat",
       "name": "MM2S_MapHostHeartbeat",
       "code": 20057
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#MM2S_PartyAction",
+      "name": "MM2S_PartyAction",
+      "code": 20081
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#MM2S_RegisterMapHost",
@@ -397,14 +437,34 @@
       "code": 20049
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#S2M_InspectDynamicMap",
+      "name": "S2M_InspectDynamicMap",
+      "code": 20082
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2MM_AcquirePublicMap",
+      "name": "S2MM_AcquirePublicMap",
+      "code": 20072
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#S2MM_DynamicMapDisposed",
       "name": "S2MM_DynamicMapDisposed",
       "code": 20060
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#S2MM_ListPublicMaps",
+      "name": "S2MM_ListPublicMaps",
+      "code": 20074
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#S2MM_MapHostHeartbeat",
       "name": "S2MM_MapHostHeartbeat",
       "code": 20056
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2MM_PartyAction",
+      "name": "S2MM_PartyAction",
+      "code": 20080
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#S2MM_RegisterMapHost",
@@ -417,9 +477,19 @@
       "code": 10010
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2G_EnterPublicMap",
+      "name": "C2G_EnterPublicMap",
+      "code": 10112
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2G_EnterStarterDungeon",
       "name": "C2G_EnterStarterDungeon",
       "code": 10066
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2G_ListPublicMaps",
+      "name": "C2G_ListPublicMaps",
+      "code": 10114
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#C2G_LoginGate",
@@ -667,6 +737,11 @@
       "code": 10011
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_EnterPublicMap",
+      "name": "G2C_EnterPublicMap",
+      "code": 10113
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#G2C_EnterStarterDungeon",
       "name": "G2C_EnterStarterDungeon",
       "code": 10067
@@ -705,6 +780,11 @@
       "key": "proto/OuterMessage_C_10001.proto#G2C_ItemChanged",
       "name": "G2C_ItemChanged",
       "code": 10021
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_ListPublicMaps",
+      "name": "G2C_ListPublicMaps",
+      "code": 10115
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#G2C_LoginGate",

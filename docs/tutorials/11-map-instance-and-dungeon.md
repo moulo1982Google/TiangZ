@@ -2,6 +2,8 @@
 
 本文说明业务开发者如何配置静态地图、创建动态副本、传送玩家和销毁副本。底层事务与失败恢复见[Entity地图迁移](../design/entity-transfer.md)。
 
+业务上长期存在的地图可以使用[公共地图分线](../design/public-map-channels.md)。它按需创建独立运行实例，不受下面固定 `staticMapIds` 一对一编号约定限制；在线客户端使用 `Gate.EnterPublicMap` 统一处理预留、地图迁移及 Gate 路由更新。
+
 ## 两个编号
 
 - `MapConfigId`：Luban `MapConfig`中的地图模板编号，例如地图1和地图2。

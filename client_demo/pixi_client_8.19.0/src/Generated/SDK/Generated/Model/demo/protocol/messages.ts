@@ -2551,6 +2551,227 @@ export const G2C_EnterStarterDungeonCodec = {
   },
 };
 
+export interface C2G_EnterPublicMap extends IRequest {
+  rpcId?: number;
+  mapConfigId: number;
+  preferredInstanceId: bigint;
+}
+
+export const C2G_EnterPublicMapCodec = {
+  decode(payload: Uint8Array): C2G_EnterPublicMap {
+    const reader = new BinaryReader(payload);
+    const value: C2G_EnterPublicMap = {
+      mapConfigId: 0,
+      preferredInstanceId: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.mapConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.preferredInstanceId = reader.uint64();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2G_EnterPublicMap): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.mapConfigId !== undefined) writer.uint32(1, value.mapConfigId);
+    if (value.preferredInstanceId !== undefined) writer.uint64(2, value.preferredInstanceId);
+    return writer.finish();
+  },
+};
+
+export interface G2C_EnterPublicMap extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  enterMap: G2C_EnterMap;
+  channelId: number;
+}
+
+export const G2C_EnterPublicMapCodec = {
+  decode(payload: Uint8Array): G2C_EnterPublicMap {
+    const reader = new BinaryReader(payload);
+    const value: G2C_EnterPublicMap = {
+      enterMap: G2C_EnterMapCodec.decode(new Uint8Array(0)),
+      channelId: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.enterMap = G2C_EnterMapCodec.decode(reader.bytesField());
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.channelId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_EnterPublicMap): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.enterMap !== undefined) writer.bytes(1, G2C_EnterMapCodec.encode(value.enterMap));
+    if (value.channelId !== undefined) writer.uint32(2, value.channelId);
+    return writer.finish();
+  },
+};
+
+export interface C2G_ListPublicMaps extends IRequest {
+  rpcId?: number;
+  mapConfigId: number;
+}
+
+export const C2G_ListPublicMapsCodec = {
+  decode(payload: Uint8Array): C2G_ListPublicMaps {
+    const reader = new BinaryReader(payload);
+    const value: C2G_ListPublicMaps = {
+      mapConfigId: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.mapConfigId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2G_ListPublicMaps): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.mapConfigId !== undefined) writer.uint32(1, value.mapConfigId);
+    return writer.finish();
+  },
+};
+
+export interface PublicMapLine {
+  mapInstanceId: bigint;
+  channelId: number;
+  playerCount: number;
+  reservedCount: number;
+  maxPlayers: number;
+}
+
+export const PublicMapLineCodec = {
+  decode(payload: Uint8Array): PublicMapLine {
+    const reader = new BinaryReader(payload);
+    const value: PublicMapLine = {
+      mapInstanceId: 0n,
+      channelId: 0,
+      playerCount: 0,
+      reservedCount: 0,
+      maxPlayers: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.mapInstanceId = reader.uint64();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.channelId = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.playerCount = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.reservedCount = reader.uint32();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.maxPlayers = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: PublicMapLine): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.mapInstanceId !== undefined) writer.uint64(1, value.mapInstanceId);
+    if (value.channelId !== undefined) writer.uint32(2, value.channelId);
+    if (value.playerCount !== undefined) writer.uint32(3, value.playerCount);
+    if (value.reservedCount !== undefined) writer.uint32(4, value.reservedCount);
+    if (value.maxPlayers !== undefined) writer.uint32(5, value.maxPlayers);
+    return writer.finish();
+  },
+};
+
+export interface G2C_ListPublicMaps extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  channels: readonly PublicMapLine[];
+}
+
+export const G2C_ListPublicMapsCodec = {
+  decode(payload: Uint8Array): G2C_ListPublicMaps {
+    const reader = new BinaryReader(payload);
+    const value: G2C_ListPublicMaps = {
+      channels: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        (value.channels as PublicMapLine[]).push(PublicMapLineCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_ListPublicMaps): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    for (const item of (value.channels ?? [])) writer.bytes(1, PublicMapLineCodec.encode(item), true);
+    return writer.finish();
+  },
+};
+
 export interface G2C_MapReady extends IMessage {
   account: string;
   mapId: number;

@@ -188,6 +188,8 @@ export interface MonsterContentDefinition {
   readonly attackDamage: number;
   readonly moveSpeed: number;
   readonly attackRange: number;
+  /** 可选回归距离（米）；省略时保留30米。 / Optional leash distance in meters; omission preserves 30 meters. */
+  readonly leashRangeMeters?: number;
   readonly attackIntervalMs: number;
   readonly attackMode: number;
   /** 省略时保留旧行为；提供时表示完整玩家模板允许列表。 / Omitted preserves legacy behavior; a present list is the complete player-template allowlist. */
@@ -466,6 +468,7 @@ function freezeDefinition(definition: MonsterContentDefinition): Readonly<Monste
   }
   requireNonNegativeInteger(definition.attackDamage, `monster definition ${definition.id} attack damage`);
   requirePositiveFinite(definition.moveSpeed, `monster definition ${definition.id} move speed`);
+  if (definition.leashRangeMeters !== undefined) requirePositiveFinite(definition.leashRangeMeters, "monster leash range");
   requirePositiveFinite(definition.attackRange, `monster definition ${definition.id} attack range`);
   requirePositiveInteger(
     definition.attackIntervalMs,
@@ -517,6 +520,7 @@ function freezeDefinition(definition: MonsterContentDefinition): Readonly<Monste
     attackDamage: definition.attackDamage,
     moveSpeed: definition.moveSpeed,
     attackRange: definition.attackRange,
+    ...(definition.leashRangeMeters === undefined ? {} : { leashRangeMeters: definition.leashRangeMeters }),
     attackIntervalMs: definition.attackIntervalMs,
     attackMode: definition.attackMode,
     ...(attackablePlayerConfigIds === undefined ? {} : { attackablePlayerConfigIds }),

@@ -1,5 +1,15 @@
 # 玩家交易设计
 
+## 外置模块接入（2026-09-11）
+
+`PlayerTradeEvents.Notification` 在通用邀请、状态变化、关闭广播前同步发出，携带单个接收玩家、交易 ID 和结果；监听失败不否决交易。模块应立即复制快照，再通过 Scene 任务和 Self Audience 发送自有 Event 协议。Gate 仍只转发帧，不转换业务协议。邀请发送失败会关闭会话并补发关闭通知，避免模块客户端残留邀请。通知不能替代持久化结果查询；断线漏收后查不到临时会话，不代表交易失败。
+
+`GetSnapshot(player)` 供模块自己的状态 RPC 获取防御性会话快照，不返回其他角色的会话。快照显示角色 DisplayName。
+
+`PlayerTradeEvents.BeforeCommit` 提供双方玩家、交易前后金币和物品计划。事件在双方 ordered mailbox 内、首次编码提交载荷前同步执行；监听器只读，返回非零码拒绝。已冻结的载荷重试不再次执行业务准入。首次计划或准入失败会关闭会话并释放交易占用；已冻结载荷保留既有持久化恢复路径。
+
+荒原模块持有 12 格背包、穿戴物保护和 pending 库存规则；TiangZ 持有双方邮箱、事务、审计和 outbox。荒原金币还属于独立进度记录，当前禁止金币报价，不能把模块物品交易接入当作经济系统全部完成。
+
 ## 世界观
 
 玩家交易不是两个背包各自保存一次，而是一个临时会话协调两份玩家权威数据，最终由一次跨记录事务完成交换：
@@ -83,3 +93,7 @@ Handler只负责把请求送入`PlayerUnit`的有序Mailbox，再调用地图上
 `npm run test:player-trade:persistent`覆盖正式WebSocket、NPC商店单记录事务、玩家交易双记录事务、TiangZ重启恢复，以及最终确认前首选DBProxy故障后的备用Endpoint提交。Debug验收还会在一次多记录提交成功后丢弃Host响应，确认服务端用同一`operationId`读取原始回执；随后让两个Endpoint同时不可用，确认UseItem失败不修改在线Entity，恢复后重试同一ID只成功一次。测试只创建带时间戳的账号，不直接写PostgreSQL或Redis，也不通过测试后门修改金币。
 
 持久化Process在ready前预连接DBProxy池，因此只保留备用Endpoint重启时，第一个登录RPC不承担连接池冷启动时间。若所有Endpoint都不可用，Process启动失败而不是先ready再让首个业务请求超时。
+
+### 2026-09-11 历史成交补查
+
+PlayerTradeComponent.QueryResult(player, tradeId, otherCharacterId) 返回 pending / committed / unknown。持久化组件 ReadHistoricalMultiTransaction 强制包含调用者角色，只读取双方 inventory/wallet 的原事务回执，不推进当前 revision、不清除未决集合、不应用旧资产。交易领域解码后校验交易 ID 和双方角色 ID；存储错误向上传递，缺失回执不能解释为失败。查询不要求对方在线，不依赖当前地图会话。调用端保留 tradeId 与对方角色 ID；回执过期或未成交均可能 unknown。此能力不持久化取消结果，不替代客户端重连处理。

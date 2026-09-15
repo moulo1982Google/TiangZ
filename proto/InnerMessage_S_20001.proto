@@ -286,6 +286,15 @@ message PlayerTransferSnapshot
   uint32 player_config_id = 31;
   repeated OwnedSummonTransferSnapshot owned_summons = 32;
   optional string display_name = 33;
+  repeated PlayerModuleState module_states = 34;
+}
+
+// 模块拥有的有界状态；框架不解释 payload。
+message PlayerModuleState
+{
+  string id = 1;
+  uint32 version = 2;
+  bytes payload = 3;
 }
 
 message MapInstanceSnapshot
@@ -313,6 +322,9 @@ message DynamicMapAssignmentSnapshot
   string request_id = 1;
   uint32 map_config_id = 2;
   uint64 map_instance_id = 3;
+  optional uint32 channel_id = 4;
+  optional uint32 max_players = 5;
+  optional PrivateMapRoster private_roster = 6;
 }
 
 //ResponseType L2S_ResolveMapInstance
@@ -363,6 +375,7 @@ message S2M_CreateDynamicMap // IRequest
 {
   uint32 map_config_id = 1;
   string request_id = 2;
+  optional PrivateMapRoster private_roster = 3;
 }
 
 message M2S_CreateDynamicMap // IResponse
@@ -392,6 +405,9 @@ message S2MM_RegisterMapHost // IRequest
   uint32 dynamic_map_count = 4;
   uint32 player_count = 5;
   repeated DynamicMapAssignmentSnapshot assignments = 6;
+  optional uint32 max_maps = 7;
+  optional uint32 max_players = 8;
+  repeated uint32 map_config_ids = 9;
 }
 
 message MM2S_RegisterMapHost // IResponse
@@ -409,6 +425,9 @@ message S2MM_MapHostHeartbeat // IRequest
   uint32 static_map_count = 3;
   uint32 dynamic_map_count = 4;
   uint32 player_count = 5;
+  optional uint32 max_maps = 6;
+  optional uint32 max_players = 7;
+  repeated uint32 map_config_ids = 8;
 }
 
 message MM2S_MapHostHeartbeat // IResponse
@@ -423,6 +442,71 @@ message MM2M_CreateAssignedDynamicMap // IRequest
   string request_id = 1;
   uint32 map_config_id = 2;
   uint64 map_instance_id = 3;
+  optional uint32 channel_id = 4;
+  optional uint32 max_players = 5;
+  optional PrivateMapRoster private_roster = 6;
+}
+
+// 公共分线管理只接受内部调用；角色身份由已鉴权业务提供。
+//ResponseType MM2S_AcquirePublicMap
+// @ets.msg protocol=PublicMap method=Acquire
+message S2MM_AcquirePublicMap // IRequest
+{
+  uint32 map_config_id = 1;
+  uint64 character_id = 2;
+  uint64 preferred_instance_id = 3;
+}
+message MM2S_AcquirePublicMap // IResponse
+{
+  MapInstanceSnapshot instance = 1;
+  uint32 channel_id = 2;
+  uint64 expires_at_ms = 3;
+}
+
+//ResponseType MM2S_ListPublicMaps
+// @ets.msg protocol=PublicMap method=List
+message S2MM_ListPublicMaps // IRequest
+{
+  uint32 map_config_id = 1;
+}
+message PublicMapChannelSnapshot
+{
+  MapInstanceSnapshot instance = 1;
+  uint32 channel_id = 2;
+  uint32 player_count = 3;
+  uint32 reserved_count = 4;
+  uint32 max_players = 5;
+}
+message MM2S_ListPublicMaps // IResponse
+{
+  repeated PublicMapChannelSnapshot channels = 1;
+}
+
+//ResponseType M2MM_ReservePublicMap
+// @ets.msg protocol=PublicMapHost method=Reserve
+message MM2M_ReservePublicMap // IRequest
+{
+  uint64 map_instance_id = 1;
+  uint64 character_id = 2;
+}
+message M2MM_ReservePublicMap // IResponse
+{
+  bool accepted = 1;
+  uint64 expires_at_ms = 2;
+  optional uint32 host_occupied = 3;
+}
+
+//ResponseType M2MM_PublicMapStatus
+// @ets.msg protocol=PublicMapHost method=Status
+message MM2M_PublicMapStatus // IRequest
+{
+  uint64 map_instance_id = 1;
+}
+message M2MM_PublicMapStatus // IResponse
+{
+  bool found = 1;
+  uint32 player_count = 2;
+  uint32 reserved_count = 3;
 }
 
 message M2MM_CreateAssignedDynamicMap // IResponse
@@ -734,4 +818,70 @@ message M2G_QueryPlayerOffline // IResponse
 {
   uint32 unit_id = 1;
   bool completed = 2;
+}
+
+
+// MMORPG temporary party directory; identities are supplied only by authenticated server adapters.
+message PartyMemberSnapshot
+{
+  uint64 character_id = 1;
+  string name = 2;
+  uint32 level = 3;
+  uint32 map_id = 4;
+  uint64 map_instance_id = 5;
+  bool online = 6;
+}
+message PartySnapshot
+{
+  uint64 party_id = 1;
+  uint64 leader_id = 2;
+  uint32 revision = 3;
+  uint32 capacity = 4;
+  repeated PartyMemberSnapshot members = 5;
+}
+message PartyInvitationSnapshot
+{
+  string invitation_id = 1;
+  uint64 party_id = 2;
+  string leader_name = 3;
+  uint64 expires_at_ms = 4;
+}
+//ResponseType MM2S_PartyAction
+// @ets.msg protocol=Party method=Action
+message S2MM_PartyAction // IRequest
+{
+  string namespace = 1;
+  PartyMemberSnapshot actor = 2;
+  uint32 action = 3;
+  string operation_id = 4;
+  uint64 party_id = 5;
+  uint32 revision = 6;
+  uint64 target_character_id = 7;
+  string invitation_id = 8;
+  bool accept = 9;
+}
+message MM2S_PartyAction // IResponse
+{
+  PartySnapshot party = 1;
+  repeated PartyInvitationSnapshot invitations = 2;
+}
+
+// 私有副本名单由可信业务提供；缺省保持旧动态地图语义，显式空名单无效。
+message PrivateMapRoster
+{
+  repeated uint64 character_ids = 1;
+}
+
+// 只读查询创建账本；recovering 期间不得把未知请求当成已丢失。
+//ResponseType M2S_InspectDynamicMap
+// @ets.msg protocol=DynamicMap method=Inspect
+message S2M_InspectDynamicMap // IRequest
+{
+  string request_id = 1;
+}
+message M2S_InspectDynamicMap // IResponse
+{
+  // recovering, unknown, creating, active, lost, disposed
+  string state = 1;
+  uint64 map_instance_id = 2;
 }

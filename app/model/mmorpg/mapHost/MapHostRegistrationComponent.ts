@@ -36,28 +36,31 @@ export class MapHostRegistrationComponent extends Component {
 
   /** 心跳发现Manager丢失注册时，下一步立刻发送包含完整assignment的注册消息。 / Falls back to a full registration when a heartbeat finds that Manager lost this host. */
   protected async ReportToMapManager(): Promise<void> {
-    if (this.reporting) return;
-    const manager = this.owner.scenes.one("MapManager");
+    if (this.IsDisposed || this.reporting) return;
+    const owner = this.owner;
+    const manager = owner.scenes.one("MapManager");
     this.reporting = true;
     try {
       if (this.registered) {
-        const heartbeat = await this.owner.scenes.call(
+        const heartbeat = await owner.scenes.call(
           manager,
           MapHostControlProtocol.Heartbeat,
           this.heartbeat(),
         );
+        if (this.IsDisposed || owner.IsDisposed) return;
         this.registered = heartbeat.registered;
       }
       if (!this.registered) {
-        const registered = await this.owner.scenes.call(
+        const registered = await owner.scenes.call(
           manager,
           MapHostControlProtocol.Register,
           this.registration(),
         );
+        if (this.IsDisposed || owner.IsDisposed) return;
         this.registered = registered.accepted;
         if (!registered.accepted) {
-          this.owner.logger.warn("map host registration rejected by an active generation", {
-            mapHostName: this.owner.self.name,
+          owner.logger.warn("map host registration rejected by an active generation", {
+            mapHostName: owner.self.name,
             generation: this.mapHost.OwnerGeneration.toString(),
           });
           return;
@@ -66,7 +69,7 @@ export class MapHostRegistrationComponent extends Component {
       await this.FlushDisposedMaps(manager);
     } catch (error) {
       this.registered = false;
-      this.owner.logger.warn("map host registration report failed", { error });
+      if (!this.IsDisposed && !owner.IsDisposed) owner.logger.warn("map host registration report failed", { error });
     } finally {
       this.reporting = false;
     }
@@ -74,24 +77,29 @@ export class MapHostRegistrationComponent extends Component {
 
   /** 记录本地已完成销毁的动态地图，并触发一次尽快上报；Manager不可用时保留待重试。 / Records locally disposed dynamic maps and retries until MapManager acknowledges them. */
   private QueueDynamicMapDisposed(assignment: DynamicMapAssignmentSnapshot): void {
+    if (this.IsDisposed) return;
     this.pendingDisposedMaps.set(assignment.mapInstanceId.toString(), { ...assignment });
     void this.ReportToMapManager();
   }
 
   /** 按实例号逐个确认销毁；未确认的记录不能丢，避免Manager长期保留旧负载。 / Acknowledges disposals one by one and retains unacknowledged records so Manager cannot keep stale load forever. */
   private async FlushDisposedMaps(manager: import("../../../core/public").SceneConfig): Promise<void> {
+    if (this.IsDisposed) return;
+    const owner = this.owner;
     for (const [key, assignment] of this.pendingDisposedMaps) {
-      const response: MM2S_DynamicMapDisposed = await this.owner.scenes.call(
+      if (this.IsDisposed || owner.IsDisposed) return;
+      const response: MM2S_DynamicMapDisposed = await owner.scenes.call(
         manager,
         MapHostControlProtocol.DynamicMapDisposed,
         {
-          mapHostName: this.owner.self.name,
+          mapHostName: owner.self.name,
           generation: this.mapHost.OwnerGeneration,
           requestId: assignment.requestId,
           mapConfigId: assignment.mapConfigId,
           mapInstanceId: assignment.mapInstanceId,
         },
       );
+      if (this.IsDisposed || owner.IsDisposed) return;
       if (!response.accepted) {
         this.registered = false;
         return;
@@ -109,6 +117,8 @@ export class MapHostRegistrationComponent extends Component {
       dynamicMapCount: load.dynamicMapCount,
       playerCount: load.playerCount,
       assignments: this.mapHost.DynamicAssignments(),
+      ...this.mapHost.CapacitySnapshot(),
+      mapConfigIds: [...this.mapHost.CapacitySnapshot().mapConfigIds],
     };
   }
 
@@ -120,6 +130,8 @@ export class MapHostRegistrationComponent extends Component {
       staticMapCount: load.staticMapCount,
       dynamicMapCount: load.dynamicMapCount,
       playerCount: load.playerCount,
+      ...this.mapHost.CapacitySnapshot(),
+      mapConfigIds: [...this.mapHost.CapacitySnapshot().mapConfigIds],
     };
   }
 

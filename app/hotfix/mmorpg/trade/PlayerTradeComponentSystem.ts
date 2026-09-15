@@ -10,6 +10,7 @@ import {
   PlayerTradeCloseReason,
   PlayerTradeComponent,
   PlayerTradePhase,
+  PlayerTradeEvents,
   PlayerUnit,
   PositionComponent,
   RpcError,
@@ -45,6 +46,29 @@ const TRADE_TIMEOUT_MS = 60_000;
  */
 @systemFor(PlayerTradeComponent)
 export class PlayerTradeComponentSystem extends PlayerTradeComponent {
+  /** 回执补查只返回结果，不恢复历史资产或revision；调用者必须是回执参与者。 / Queries settlement without restoring old assets or revisions and verifies caller membership. */
+  async QueryResult(player: PlayerUnit, tradeId: string, otherCharacterId: bigint): Promise<"pending" | "committed" | "unknown"> {
+    if (!/^trade:[1-9][0-9]{0,19}$/.test(tradeId) || BigInt(tradeId.slice(6)) > 18446744073709551615n ||
+        otherCharacterId <= 0n || otherCharacterId > 18446744073709551615n || otherCharacterId === player.CharacterId) {
+      throw new RpcError(GameErrCode.TradeStateInvalid, "invalid trade result query");
+    }
+    const matches = (left: bigint, right: bigint) =>
+      (left === player.CharacterId && right === otherCharacterId) || (right === player.CharacterId && left === otherCharacterId);
+    const stored = await player.GetComponent(PlayerPersistenceComponent).ReadHistoricalMultiTransaction(
+      `player-trade:${tradeId.slice(6)}`, otherCharacterId, ["inventory", "wallet"],
+    );
+    if (stored) {
+      const receipt = DecodePlayerTradeReceipt(stored.result);
+      if (receipt.tradeId !== tradeId || !matches(receipt.requester.characterId, receipt.target.characterId)) {
+        throw new RpcError(GameErrCode.TradeStateInvalid, "trade receipt identity mismatch");
+      }
+      return "committed";
+    }
+    const session = this.sessions.get(tradeId);
+    return session && session.phase !== PlayerTradePhase.Closed && matches(session.requesterCharacterId, session.targetCharacterId)
+      ? "pending" : "unknown";
+  }
+
   Request(requester: PlayerUnit, targetUnitId: number): Promise<PlayerTradeSnapshot> {
     const target = this.requirePlayer(targetUnitId);
     if (target === requester) throw new RpcError(GameErrCode.TradeTargetInvalid, "cannot trade with self");
@@ -71,8 +95,10 @@ export class PlayerTradeComponentSystem extends PlayerTradeComponent {
     const snapshot = this.toSnapshot(session);
     return this.publishTo(target, ClientBroadcasts.PlayerTradeInvite, { trade: snapshot })
       .then(() => snapshot)
-      .catch((error) => {
+      .catch(async (error) => {
+        session.phase = PlayerTradePhase.Closed;
         this.removeSession(session);
+        await this.publishClosed(session, PlayerTradeCloseReason.Conflict, false, requester, target).catch(() => undefined);
         throw error;
       });
   }
@@ -155,7 +181,16 @@ export class PlayerTradeComponentSystem extends PlayerTradeComponent {
     await this.publishClosed(session, PlayerTradeCloseReason.Cancelled, false, player, other);
   }
 
-  /** 传送前拒绝仍在交易中的玩家；业务必须先取消，避免跨MapHost悬挂会话。 / Rejects map transfer while a player is trading; gameplay must cancel first to avoid a session dangling across MapHosts. */
+  /** 返回防御性快照，模块不得通过读取修改会话。 / Returns a defensive snapshot without exposing mutable session state. */
+  GetSnapshot(player: PlayerUnit): PlayerTradeSnapshot | undefined {
+    const tradeId = this.tradeIdByCharacterId.get(player.CharacterId);
+    if (!tradeId) return undefined;
+    const session = this.sessions.get(tradeId);
+    if (!session || session.phase === PlayerTradePhase.Closed) return undefined;
+    return this.toSnapshot(session);
+  }
+
+  /** 交易未关闭时禁止换图。 / Rejects map transfer while a trade remains active. */
   RequireCanLeave(player: PlayerUnit): void {
     if (this.tradeIdByCharacterId.has(player.CharacterId)) {
       throw new RpcError(GameErrCode.TradeBusy, "cancel the active trade before leaving the map");
@@ -265,6 +300,15 @@ export class PlayerTradeComponentSystem extends PlayerTradeComponent {
           return this.commitSessionWithBothMailboxes(session, requester, target);
         },
       );
+    } catch (error) {
+      // 计划失败尚未触库，结束会话；已冻结持久化载荷必须保留恢复语义。
+      // Planning failed before storage; frozen persistence payloads retain recovery semantics.
+      if (!session.commitPayload && this.sessions.has(session.tradeId)) {
+        session.phase = PlayerTradePhase.Closed;
+        this.removeSession(session);
+        await this.publishClosed(session, PlayerTradeCloseReason.Conflict, false, caller, other).catch(() => undefined);
+      }
+      throw error;
     } finally {
       this.activeCommits.delete(session.tradeId);
     }
@@ -303,6 +347,12 @@ export class PlayerTradeComponentSystem extends PlayerTradeComponent {
         session.targetOffer,
         (itemConfigId) => RequireItemContentDefinition(requester, itemConfigId),
       );
+      const veto = this.DomainScene().Events.Check(PlayerTradeEvents.BeforeCommit, {
+        tradeId: session.tradeId,
+        requester: { player: requester, ...receipt.requester },
+        target: { player: target, ...receipt.target },
+      });
+      if (veto !== 0) throw new RpcError(veto, "trade rejected by module commit rules");
       encoded = EncodePlayerTradeReceipt(receipt);
       session.commitPayload = encoded.slice();
     }
@@ -487,14 +537,14 @@ export class PlayerTradeComponentSystem extends PlayerTradeComponent {
       tradeId: session.tradeId,
       requester: {
         unitId: session.requesterUnitId,
-        displayName: requester?.Account ?? "离线玩家",
+        displayName: requester?.DisplayName ?? "离线玩家",
         gold: session.requesterOffer.gold,
         items: session.requesterOffer.items.map((item) => ({ ...item })),
         confirmed: session.requesterOffer.confirmed,
       },
       target: {
         unitId: session.targetUnitId,
-        displayName: target?.Account ?? "离线玩家",
+        displayName: target?.DisplayName ?? "离线玩家",
         gold: session.targetOffer.gold,
         items: session.targetOffer.items.map((item) => ({ ...item })),
         confirmed: session.targetOffer.confirmed,
@@ -560,6 +610,20 @@ export class PlayerTradeComponentSystem extends PlayerTradeComponent {
     descriptor: import("#tiangz/model").BroadcastDescriptor<TItem, TMessage>,
     item: TItem,
   ): Promise<void> {
+    // 模块通知与通用广播使用同一接收者；订阅失败不会改变资产或事务结果。
+    // Module observers receive the same recipient; observer failures cannot change assets or transaction results.
+    if (descriptor.name === ClientBroadcasts.PlayerTradeClosed.name) {
+      const closed = item as import("#tiangz/model").G2C_PlayerTradeClosed;
+      this.DomainScene().Events.Publish(PlayerTradeEvents.Notification, {
+        player, kind: "closed", tradeId: closed.tradeId, committed: closed.committed, reason: closed.reason,
+      });
+    } else if (descriptor.name === ClientBroadcasts.PlayerTradeInvite.name || descriptor.name === ClientBroadcasts.PlayerTradeChanged.name) {
+      const state = item as import("#tiangz/model").G2C_PlayerTradeChanged;
+      this.DomainScene().Events.Publish(PlayerTradeEvents.Notification, {
+        player, kind: descriptor.name === ClientBroadcasts.PlayerTradeInvite.name ? "invite" : "changed",
+        tradeId: state.trade.tradeId, trade: state.trade, committed: false, reason: 0,
+      });
+    }
     return this.DomainScene().GetComponent(MapComponent).Broadcast.Publish(
       ClientAudience.Self(player.UnitId),
       descriptor,

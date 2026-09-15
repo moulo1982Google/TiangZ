@@ -103,8 +103,8 @@ export class CombatStateComponentSystem extends CombatStateComponent {
     if (this.resourceFlowOwner && this.resourceFlowOwner !== owner) {
       throw new Error(`resource flows already belong to ${this.resourceFlowOwner}`);
     }
-    if (!Array.isArray(definitions) || definitions.length === 0) {
-      throw new Error(`resource flow list must not be empty: ${owner}`);
+    if (!Array.isArray(definitions)) {
+      throw new Error(`resource flow list must be an array: ${owner}`);
     }
     const ids = new Set<number>();
     const frozen = definitions.map((definition, index) => {
@@ -165,7 +165,7 @@ export class CombatStateComponentSystem extends CombatStateComponent {
 
     const numeric = unit.GetComponent(NumericComponent);
     const inCombat = this.IsInCombat();
-    for (const flow of this.resourceFlows.length === 0 ? DEFAULT_RESOURCE_FLOWS : this.resourceFlows) {
+    for (const flow of this.resourceFlowOwner ? this.resourceFlows : DEFAULT_RESOURCE_FLOWS) {
       if (!flowApplies(flow, inCombat)) {
         this.resourceFlowRemainders.delete(flow.id);
         continue;

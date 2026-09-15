@@ -1,6 +1,7 @@
 import {
   EntryScene,
   entryScene,
+  applyEntityExtensions,
   type RuntimeEntrySceneConfig,
   type SceneMetricsSnapshot,
 } from "../../../core/public";
@@ -15,6 +16,7 @@ export class MapManagerScene extends EntryScene {
   constructor(config: RuntimeEntrySceneConfig) {
     super(config);
     this.manager = this.AddComponent(MapManagerComponent);
+    applyEntityExtensions(this);
   }
 
   override metricsSnapshot(): SceneMetricsSnapshot {

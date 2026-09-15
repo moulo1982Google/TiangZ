@@ -52,15 +52,13 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
       mapInstanceId: definition.mapInstanceId.toString(),
       system: "aoi",
     });
-    const config = GameConfigs.MapConfig.Get(definition.mapConfigId);
+    const config = this.DomainScene<MapScene>().GetComponent(MapRuntimeProfileComponent).Content;
     const spatial = this.DomainScene<MapScene>().GetComponent(MapRuntimeProfileComponent).Spatial;
-    const aoi = config.aoiConfigId_ref;
+    const aoi = config.aoi;
     if (!aoi) throw new Error(`map ${config.id} has no AOI config`);
     const fixedUpdateMs = Game.Instance.FixedUpdateMs;
     const ticksPerSecond = 1_000 / fixedUpdateMs;
-    const syncTiers = GameConfigs.AoiSyncTierConfig.GetAll()
-      .filter((tier) => tier.aoiConfigId === aoi.id)
-      .sort((left, right) => left.rangeGrids - right.rangeGrids)
+    const syncTiers = aoi.tiers
       .map((tier) => {
         const intervalTicks = ticksPerSecond / tier.syncHz;
         if (!Number.isSafeInteger(intervalTicks) || intervalTicks <= 0) {

@@ -74,6 +74,9 @@ import {
   SceneConfigFromMapInstance,
 } from "../mapHost/MapHostEndpoint";
 import { DynamicMapProxy } from "../mapHost/DynamicMapProxy";
+import { PublicMapProxy } from "../mapHost/PublicMapProxy";
+import { MapContentProfileComponent } from "../map/MapContentProfileComponent";
+import type { C2G_EnterPublicMap, G2C_EnterPublicMap, C2G_ListPublicMaps, G2C_ListPublicMaps } from "../../../generated/model/server/demo/protocol/messages";
 import { STARTER_DUNGEON_MAP_CONFIG_ID } from "../dungeon/StarterDungeon";
 
 export const GATE_CLIENT_TIMEOUT_MS = 30_000;
@@ -108,6 +111,7 @@ export class GateScene extends EntryScene {
   private readonly finalOfflinePending = new Set<string>();
   private readonly location: LocationProxy;
   private readonly dynamicMaps: DynamicMapProxy;
+  private readonly publicMaps: PublicMapProxy;
   private readonly gateTakeoverMetrics = {
     attempts: 0,
     succeeded: 0,
@@ -125,6 +129,7 @@ export class GateScene extends EntryScene {
     super(config);
     this.location = new LocationProxy(this.scenes);
     this.dynamicMaps = new DynamicMapProxy(this.scenes);
+    this.publicMaps = new PublicMapProxy(this.scenes);
     if (this.scenes.many("MapHost").length === 0) {
       throw new Error("GateScene needs at least one known MapHostScene");
     }
@@ -141,7 +146,7 @@ export class GateScene extends EntryScene {
 
   /** 供Login和其他Gate做低成本存活探测；不暴露玩家状态。 / Lets Login and peer Gates probe liveness without exposing player state. */
   @rpc(GateProtocol.Probe)
-  private Probe(_request: S2G_ProbeGate): G2S_ProbeGate {
+  protected Probe(_request: S2G_ProbeGate): G2S_ProbeGate {
     return { gateName: this.self.name };
   }
 
@@ -391,7 +396,7 @@ export class GateScene extends EntryScene {
   }
 
   @message(GateMessages.MapReady)
-  private MapReady(message: M2G_MapReady): void {
+  protected MapReady(message: M2G_MapReady): void {
     const connectionId = this.routesByAccount.get(message.account)?.connectionId;
     if (connectionId === undefined) {
       this.logger.warn("cannot push MapReady: account has no active connection", {
@@ -410,7 +415,7 @@ export class GateScene extends EntryScene {
   }
 
   @message(GateMessages.ClientBroadcast)
-  private ClientBroadcast(message: S2G_ClientBroadcast): void {
+  protected ClientBroadcast(message: S2G_ClientBroadcast): void {
     const delivery = requireClientFrameDelivery(message.deliveryClass);
     const connectionIds: number[] = [];
     for (const unitId of message.targetUnitIds) {
@@ -433,7 +438,7 @@ export class GateScene extends EntryScene {
    * routes and never decodes or re-encodes business payloads.
    */
   @message(GateMessages.ClientBroadcastBatch)
-  private ClientBroadcastBatch(message: S2G_ClientBroadcastBatch): void {
+  protected ClientBroadcastBatch(message: S2G_ClientBroadcastBatch): void {
     const delivery = requireClientFrameDelivery(message.deliveryClass);
     for (const batch of message.batches) {
       const connectionIds: number[] = [];
@@ -450,7 +455,7 @@ export class GateScene extends EntryScene {
   }
 
   @message(GateMessages.KickPlayers)
-  private KickPlayers(message: M2G_KickPlayers): void {
+  protected KickPlayers(message: M2G_KickPlayers): void {
     for (const target of message.players) {
       const route = this.routesByUnitId.get(target.unitId);
       if (!route) continue;
@@ -571,6 +576,36 @@ export class GateScene extends EntryScene {
     });
   }
 
+  /** 在Gate角色事务内预留公共分线并复用完整进图/迁移屏障。 / Reserves a public channel inside the Gate player transaction and reuses complete entry/transfer barriers. */
+  async EnterPublicMap(session: GateSession, request: C2G_EnterPublicMap): Promise<G2C_EnterPublicMap> {
+    return this.RunPlayerTransaction(session, async () => {
+      const route = this.RequireCurrentRoute(session);
+      let preferred = request.preferredInstanceId || (route.map?.mapId === request.mapConfigId ? route.map.mapInstanceId : 0n);
+      if (!preferred && !route.map) {
+        const located = await this.location.Resolve({ unitId: 0, account: "", characterId: route.characterId });
+        this.AssertCurrentRoute(session, route);
+        if (located.found && located.location.mapId === request.mapConfigId) preferred = located.location.mapInstanceId;
+      }
+      const admission = await this.publicMaps.Acquire(request.mapConfigId, route.characterId, preferred);
+      this.AssertCurrentRoute(session, route);
+      const enterMap = await this.EnterMapCore(session, { mapId: request.mapConfigId,
+        mapInstanceId: admission.instance.mapInstanceId }, undefined, EntrySyncMode.Full, admission.instance.mapInstanceId);
+      if (enterMap.mapInstanceId !== admission.instance.mapInstanceId) {
+        throw new RpcError(GameErrCode.PublicMapUnavailable, "reconnect recovered another map; refresh before selecting a channel");
+      }
+      return { rpcId: request.rpcId, enterMap, channelId: admission.channelId };
+    });
+  }
+
+  /** 向已登录客户端投影分线目录，移除所有内部宿主地址。 / Projects the channel directory to authenticated clients without internal host endpoints. */
+  async ListPublicMaps(session: GateSession, request: C2G_ListPublicMaps): Promise<G2C_ListPublicMaps> {
+    const route = this.RequireCurrentRoute(session);
+    const listed = await this.publicMaps.List(request.mapConfigId);
+    this.AssertCurrentRoute(session, route);
+    return { rpcId: request.rpcId, channels: listed.channels.map(channel => ({ mapInstanceId: channel.instance.mapInstanceId,
+      channelId: channel.channelId, playerCount: channel.playerCount, reservedCount: channel.reservedCount, maxPlayers: channel.maxPlayers })) };
+  }
+
   /** Bench专用入口，可拆分初始视图阶段；正式Handler禁止调用。 / Bench-only entrypoint for isolating initial-view stages; production handlers must not call it. */
   async EnterMapForBenchmark(
     session: GateSession,
@@ -622,27 +657,37 @@ export class GateScene extends EntryScene {
     });
   }
 
+  /**
+   * 权威确认旧宿主路由失效后选择恢复实例；外置游戏可覆写并执行自己的公共分线准入。
+   * 默认保留演示安全地图。只选择实例，后续仍经过统一 Location、进图和 fencing 屏障。
+   * Selects recovery only after authoritative route loss. External games may acquire a public
+   * channel here; Location resolution, entry and fencing remain in the shared pipeline.
+   */
+  protected async ResolveRecoveryMapInstance(_session: GateSession): Promise<bigint> {
+    return BigInt(GameConfigs.PlayerConfig.Get(1).initialMapId);
+  }
+
   /** 统一正式与Bench进图事务，只有调用入口决定初始同步模式。 / Shares the entry transaction while callers select the initial-sync policy. */
   private async EnterMapCore(
     session: GateSession,
     request: C2G_EnterMap,
     spawnOverride: ServerSpawnOverride | undefined,
     entrySyncMode: EntrySyncModeValue,
+    admittedRecoveryInstanceId?: bigint,
   ): Promise<G2C_EnterMap> {
     const route = this.RequireCurrentRoute(session);
     if (route.actorState === "moving") {
       throw new RpcError(SystemErrCode.ActorTransferring, "player transfer is recovering");
     }
-    const safeMapId = GameConfigs.PlayerConfig.Get(1).initialMapId;
-    const safeMapInstanceId = BigInt(safeMapId);
-    const defaultMapId = request.mapId || safeMapId;
+    const defaultMapId = request.mapId || GameConfigs.PlayerConfig.Get(1).initialMapId;
     let targetMapInstanceId = request.mapInstanceId || BigInt(defaultMapId);
     let safeFallback = false;
     if (session.needsSecondEnter && route.map) {
       const resumed = await this.ResumeOrRecoverMapHost(session, route);
       if (resumed.response) return resumed.response;
       if (resumed.routeLost) {
-        targetMapInstanceId = safeMapInstanceId;
+        targetMapInstanceId = admittedRecoveryInstanceId ?? await this.ResolveRecoveryMapInstance(session);
+        this.AssertCurrentRoute(session, route);
         safeFallback = true;
       }
     }
@@ -671,7 +716,8 @@ export class GateScene extends EntryScene {
           const resumed = await this.ResumeOrRecoverMapHost(session, route);
           if (resumed.response) return resumed.response;
           if (resumed.routeLost) {
-            targetMapInstanceId = safeMapInstanceId;
+            targetMapInstanceId = admittedRecoveryInstanceId ?? await this.ResolveRecoveryMapInstance(session);
+            this.AssertCurrentRoute(session, route);
             safeFallback = true;
           }
         }
@@ -682,7 +728,8 @@ export class GateScene extends EntryScene {
         const resumed = await this.ResumeOrRecoverMapHost(session, route);
         if (resumed.response) return resumed.response;
         if (resumed.routeLost) {
-          targetMapInstanceId = safeMapInstanceId;
+          targetMapInstanceId = admittedRecoveryInstanceId ?? await this.ResolveRecoveryMapInstance(session);
+          this.AssertCurrentRoute(session, route);
           safeFallback = true;
         }
       }
@@ -747,7 +794,7 @@ export class GateScene extends EntryScene {
     });
     if (safeFallback) {
       this.dynamicFallbackMetrics.completed += 1;
-      this.logger.warn("player recovered to safe static map", {
+      this.logger.warn("player recovered to safe map instance", {
         account: route.account,
         mapId: mapResponse.mapId,
         mapInstanceId: mapResponse.mapInstanceId.toString(),
@@ -1223,7 +1270,7 @@ export class GateScene extends EntryScene {
    * Uses the account as the Gate state-transaction key. Ping and read-only work
    * must not call this helper, otherwise unrelated messages become serialized again.
    */
-  private RunPlayerTransaction<T>(
+  protected RunPlayerTransaction<T>(
     session: GateSession,
     callback: () => T | Promise<T>,
   ): Promise<T> {
@@ -1240,7 +1287,7 @@ export class GateScene extends EntryScene {
     );
   }
 
-  private RequireCurrentRoute(session: GateSession): GatePlayerRoute {
+  protected RequireCurrentRoute(session: GateSession): GatePlayerRoute {
     const route = session.route;
     if (
       !session.IsAuthenticated ||
@@ -1255,7 +1302,7 @@ export class GateScene extends EntryScene {
   }
 
   /** 在异步Map调用返回后重新校验连接所有权，阻止旧Promise覆盖新连接路由。 / Revalidates ownership after async Map calls so a stale Promise cannot overwrite replacement routing. */
-  private AssertCurrentRoute(session: GateSession, expected: GatePlayerRoute): void {
+  protected AssertCurrentRoute(session: GateSession, expected: GatePlayerRoute): void {
     if (this.RequireCurrentRoute(session) !== expected) {
       throw new RpcError(GameErrCode.GateSessionRequired, "Gate route changed while awaiting Map");
     }
@@ -1380,10 +1427,12 @@ export class GateScene extends EntryScene {
     G2C_EnterMap,
     "spatialMode" | "navigationVersion" | "navigationHash"
   > {
-    const config = GameConfigs.MapConfig.Get(mapId);
+    const custom = this.TryGetComponent(MapContentProfileComponent);
+    custom?.Seal();
+    const config = custom?.Resolve(mapId)?.spatial ?? GameConfigs.MapConfig.Get(mapId);
     return {
       spatialMode: config.spatialMode,
-      navigationVersion: config.navigationVersion,
+      navigationVersion: "navigationVersion" in config ? config.navigationVersion as string : "",
       navigationHash: config.navigationHash,
     };
   }

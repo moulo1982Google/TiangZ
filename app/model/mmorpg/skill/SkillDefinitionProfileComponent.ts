@@ -120,6 +120,7 @@ function freezeSkillDefinition(definition: SkillDefinition): SkillDefinition {
     throw new Error(`external skill ${definition.id} must contain at least one effect`);
   }
   const effects = definition.effects.map((effect, index) => freezeEffect(definition.id, index, effect));
+  if (definition.targetLife !== undefined && definition.targetLife !== "alive" && definition.targetLife !== "dead") throw new Error("invalid skill target life");
   const resourceCosts = freezeResourceCosts(definition.id, definition.resourceCosts);
   return Object.freeze({
     ...definition,

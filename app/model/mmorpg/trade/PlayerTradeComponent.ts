@@ -62,6 +62,10 @@ export interface PlayerTradeComponent {
   UpdateOffer(player: PlayerUnit, request: C2M_UpdatePlayerTradeOffer): Promise<PlayerTradeSnapshot>;
   Confirm(player: PlayerUnit, tradeId: string): Promise<M2C_ConfirmPlayerTrade>;
   Cancel(player: PlayerUnit, tradeId: string): Promise<void>;
+  /** 读取调用者当前地图交易，不修改会话。 / Reads the caller's map-local trade without mutation. */
+  GetSnapshot(player: PlayerUnit): PlayerTradeSnapshot | undefined;
+  /** 只读补查成交事实；没有回执不等于失败。 / Reads durable settlement; an absent receipt does not imply failure. */
+  QueryResult(player: PlayerUnit, tradeId: string, otherCharacterId: bigint): Promise<"pending" | "committed" | "unknown">;
   RequireCanLeave(player: PlayerUnit): void;
   PlayerLeaving(player: PlayerUnit): void;
 }

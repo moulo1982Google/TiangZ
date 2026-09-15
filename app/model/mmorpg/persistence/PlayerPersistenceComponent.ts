@@ -28,6 +28,7 @@ import {
 } from "./PlayerRepository";
 
 export const PLAYER_PERIODIC_SNAPSHOT_INTERVAL_MS = 30_000;
+export type PlayerPersistenceTransfer = PlayerPersistenceRevisions & { readonly extensions?: readonly PlayerPersistenceExtensionState[] };
 const PLAYER_PERIODIC_RETRY_MS = 5_000;
 const MAX_PERSISTENCE_EXTENSION_ID_LENGTH = 128;
 const MAX_PERSISTENCE_EXTENSION_PAYLOAD_BYTES = 1_048_576;
@@ -68,10 +69,11 @@ export class PlayerPersistenceComponent extends Component<[
   private readonly uncertainOperations = new Set<string>();
   private readonly committedPayloads = new Map<PlayerPersistenceDomain, Uint8Array>();
   private pendingSnapshots: readonly PlayerDomainSaveWrite[] = [];
+  private transferredSource = false;
   private readonly persistenceExtensions = new Map<string, PlayerPersistenceExtension>();
   private pendingPersistenceExtensions = new Map<string, PlayerPersistenceExtensionState>();
 
-  /** 保存Repository和领域revision向量；跨图只迁移revision，不迁移Repository引用。 / Captures the Repository and domain revision vector; map transfer moves revisions but never the Repository reference. */
+  /** 保存Repository和领域revision向量；跨图迁移revision与模块扩展状态，不迁移Repository引用。 / Captures the Repository and domain revision vector; transfers revisions and module state, never Repository references. */
   protected override Awake(repository: PlayerRepository, revisions: PlayerPersistenceRevisions): void {
     validateRevisions(revisions);
     this.repository = repository;
@@ -88,14 +90,22 @@ export class PlayerPersistenceComponent extends Component<[
     return ClonePlayerPersistenceRevisions(this.revisions);
   }
 
-  CaptureTransfer(): PlayerPersistenceRevisions {
-    if (this.pendingSnapshots.length > 0) throw new Error("cannot transfer with an unresolved player snapshot");
-    return this.Revisions;
+  /** Location 已提交到目标后立即停止源端写入；源 Actor 可延迟销毁，但排队快照不能再落库。
+   * Retires source writes immediately after transfer commits, before deferred actor disposal.
+   */
+  RetireTransferredSource(): void {
+    this.transferredSource = true;
   }
 
-  RestoreTransfer(revisions: PlayerPersistenceRevisions): void {
+  CaptureTransfer(): PlayerPersistenceTransfer {
+    if (this.pendingSnapshots.length > 0) throw new Error("cannot transfer with an unresolved player snapshot");
+    return { ...this.Revisions, extensions: this.CapturePersistenceExtensions() };
+  }
+
+  RestoreTransfer(revisions: PlayerPersistenceTransfer): void {
     validateRevisions(revisions);
     this.revisions = ClonePlayerPersistenceRevisions(revisions);
+    if (revisions.extensions) this.RestorePersistenceExtensions(revisions.extensions);
   }
 
   /**
@@ -205,10 +215,14 @@ export class PlayerPersistenceComponent extends Component<[
     domains: readonly PlayerPersistenceDomain[],
     data: PlayerSaveData,
     result: Uint8Array,
+    effects?: DbProxyCommitEffects,
   ): Promise<PlayerTransactionResult> {
+    this.requireWritableOwner();
     this.requireTransactionIdentity(data);
-    await this.FlushPendingSnapshots();
     const normalizedDomains = normalizeDomains(domains);
+    if (effects && normalizedDomains.length < 2) throw new Error("player effects require a multi-record transaction");
+    const detachedEffects = effects ? CloneDbProxyCommitEffects(effects) : undefined;
+    await this.FlushPendingSnapshots();
     try {
       const records = normalizedDomains.map((domain) => ({
         domain,
@@ -219,6 +233,7 @@ export class PlayerPersistenceComponent extends Component<[
         operationId,
         records,
         result: result.slice(),
+        effects: detachedEffects,
       }));
       this.applyCommittedRevisions(committed.revisions);
       for (const record of records) this.rememberCommittedPayload(record.domain, record.data);
@@ -256,6 +271,7 @@ export class PlayerPersistenceComponent extends Component<[
     effects?: DbProxyCommitEffects,
   ): Promise<PlayerMultiTransactionResult> {
     const normalized = normalizeParticipants(participants);
+    for (const participant of normalized) participant.persistence.requireWritableOwner();
     for (const participant of normalized) await participant.persistence.FlushPendingSnapshots();
     const records = normalized.flatMap((participant) => {
       participant.persistence.requireTransactionIdentity(participant.data);
@@ -299,6 +315,22 @@ export class PlayerPersistenceComponent extends Component<[
     return participants.some((participant) => participant.uncertainOperations.has(operationId));
   }
 
+  /** 仅查询本角色参与的历史多记录回执，不推进当前revision或修改未决状态。 / Reads historical receipts involving this character without changing revisions or uncertainty. */
+  async ReadHistoricalMultiTransaction(
+    operationId: string,
+    otherCharacterId: bigint,
+    domains: readonly PlayerPersistenceDomain[],
+  ): Promise<PlayerMultiTransactionReceipt | undefined> {
+    const characterId = this.GetParent<PlayerUnit>().CharacterId;
+    if (otherCharacterId <= 0n || otherCharacterId > 18446744073709551615n || otherCharacterId === characterId) {
+      throw new Error("invalid historical transaction participant");
+    }
+    const normalized = normalizeDomains(domains);
+    const keys = [characterId, otherCharacterId].flatMap(id => normalized.map(domain => ({ characterId: id, domain })));
+    const receipt = await Promise.resolve(this.repository.LoadMultiTransaction(keys, operationId));
+    return receipt ? cloneTransactionReceipt(receipt) : undefined;
+  }
+
   /** 查询共享跨记录回执并同步每个在线参与者的领域revision。 / Loads a shared cross-record receipt and synchronizes each online participant's domain revisions. */
   async LoadMultiTransaction(
     operationId: string,
@@ -323,11 +355,12 @@ export class PlayerPersistenceComponent extends Component<[
   }
 
   IsPeriodicSaveDue(nowMs: number): boolean {
-    return !this.finalSavePromise && nowMs >= this.nextPeriodicSaveAtMs;
+    return !this.transferredSource && !this.finalSavePromise && nowMs >= this.nextPeriodicSaveAtMs;
   }
 
   /** ordered mailbox内可靠保存五个领域；单个领域成功后立即推进其revision，后续失败可安全重试。 / Reliably saves five domains inside the ordered mailbox, advancing each successful revision so a later failure can retry safely. */
   async SavePeriodic(nowMs: number): Promise<void> {
+    if (this.transferredSource) return;
     this.nextPeriodicSaveAtMs = nowMs + PLAYER_PERIODIC_SNAPSHOT_INTERVAL_MS;
     try {
       await this.SaveSnapshot("periodic");
@@ -339,6 +372,7 @@ export class PlayerPersistenceComponent extends Component<[
 
   /** 并发最终Flush共享Promise；失败清除缓存以允许恢复后重试，成功不重复保存。 / Concurrent final flushes share one Promise; failures clear the cache for recovery retries while successful saves remain memoized. */
   SaveOnOffline(reason: string): Promise<void> {
+    if (this.transferredSource) return Promise.resolve();
     if (this.finalSavePromise) return this.finalSavePromise;
     const player = this.GetParent<PlayerUnit>();
     this.finalSavePromise = this.SaveSnapshot(reason).then(() => {
@@ -430,6 +464,10 @@ export class PlayerPersistenceComponent extends Component<[
     if (data.player.account !== player.Account || data.player.characterId !== player.CharacterId) {
       throw new Error(`player transaction identity mismatch: ${data.player.account}/${data.player.characterId} != ${player.Account}/${player.CharacterId}`);
     }
+  }
+
+  private requireWritableOwner(): void {
+    if (this.transferredSource) throw new Error("transferred source no longer owns player persistence");
   }
 }
 

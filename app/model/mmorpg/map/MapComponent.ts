@@ -68,6 +68,7 @@ import { SummonedUnit } from "../summon/SummonedUnit";
 import { NpcUnit } from "../npc/NpcUnit";
 import { InteractableUnit } from "../interactable/InteractableUnit";
 import { MapScene } from "./MapScene";
+import { PublicMapProxy } from "../mapHost/PublicMapProxy";
 import {
   UnitPresentationAudience,
   type UnitPresentation,
@@ -196,6 +197,8 @@ interface NumericReplicationSourceDefinition {
 }
 
 export interface PlayerTransferCoordinator {
+  /** 地图宿主实现准入；非宿主测试协调器可省略。 / Map hosts enforce admission; non-host test coordinators may omit it. */
+  RequirePlayerAdmission?(instanceId: bigint, characterId: bigint): void;
   TransferPlayer(source: PlayerUnit, request: G2M_TransferPlayer): Promise<M2G_TransferPlayer>;
   RebindPlayerGate(source: PlayerUnit, request: G2M_RebindPlayerGate): Promise<M2G_RebindPlayerGate>;
   /** 将跨玩家关键操作送入目标玩家真实邮箱；调用方必须已经持有另一参与者的邮箱。 / Enters the target player's real mailbox for a cross-player critical operation; the caller must already own the other participant mailbox. */
@@ -225,6 +228,9 @@ export class MapComponent extends Component<[
   aoi: MapAoiComponent,
 ]> implements IFrameFlush {
   private mapId = 0;
+  private channelId = 0;
+  /** 公共地图展示线号；固定地图和私人副本为零。 / Public channel display number; zero for legacy maps and private instances. */
+  get ChannelId(): number { return this.channelId; }
   private mapInstanceId = 0n;
   private nativeMapKey = 0;
   private dynamic = false;
@@ -239,9 +245,13 @@ export class MapComponent extends Component<[
   private repository!: PlayerRepository;
   private scenes!: SceneMessageHelper;
   private logger!: Logger;
-  private config!: MapConfigData;
+  private config!: Pick<MapConfigData, "entryQueueCapacity" | "entryPlayersPerTick">;
   private spatialProfile!: Readonly<MapRuntimeSpatialProfile>;
   private transferCoordinator!: PlayerTransferCoordinator;
+  private publicMapProxy!: PublicMapProxy;
+
+  /** 提供公共地图选择与传送门面；模块无需反查宿主进程。 / Exposes public-map selection and transfer without host-process lookup. */
+  get PublicMaps(): PublicMapProxy { return this.publicMapProxy; }
   private location!: LocationProxy;
   private nextLocationOperation = 1;
   private lifecycle!: MapLifecycleCoordinator;
@@ -255,6 +265,7 @@ export class MapComponent extends Component<[
   private pendingSpatialMovement: EncodedRouteBroadcast | undefined;
   private readonly pendingPlayerEntries: PendingPlayerEntry[] = [];
   private readonly pendingOfflineCleanup = new Map<number, PlayerUnit>();
+  private readonly offlineOperations = new WeakMap<PlayerUnit, Promise<void>>();
   private offlineCleanupScheduled = false;
   private readonly pendingInitialSnapshots = new Map<number, {
     readonly actorInstanceId: number;
@@ -350,6 +361,11 @@ export class MapComponent extends Component<[
 
   get PlayerCount(): number {
     return this.units.GetAll(PlayerUnit).length;
+  }
+
+  /** 返回包括准备中玩家的角色集合，不暴露可变Unit目录。 / Returns character identities including staged players without exposing the mutable Unit directory. */
+  PlayerCharacterIds(): ReadonlySet<bigint> {
+    return new Set(this.units.GetAll(PlayerUnit).map(player => player.CharacterId));
   }
 
   /** 业务广播唯一入口：只接受逻辑ClientAudience，不暴露Gate与内网路由。 / Sole business broadcast entrypoint accepting logical audiences without exposing Gate routes. */
@@ -735,10 +751,12 @@ export class MapComponent extends Component<[
     aoi: MapAoiComponent,
   ): void {
     this.mapId = definition.mapConfigId;
+    this.channelId = definition.channelId ?? 0;
+    this.publicMapProxy = new PublicMapProxy(scenes);
     this.mapInstanceId = definition.mapInstanceId;
     this.dynamic = definition.dynamic;
     this.nativeMapKey = this.DomainScene().InstanceId;
-    this.config = GameConfigs.MapConfig.Get(this.mapId);
+    this.config = this.DomainScene<MapScene>().GetComponent(MapRuntimeProfileComponent).Content;
     this.spatialProfile = this.DomainScene<MapScene>()
       .GetComponent(MapRuntimeProfileComponent)
       .Spatial;
@@ -1073,6 +1091,7 @@ export class MapComponent extends Component<[
           quest: snapshot.questRevision,
           runtime: snapshot.runtimeRevision,
           wallet: snapshot.walletRevision,
+          extensions: snapshot.moduleStates,
         }],
       ]),
     };
@@ -1164,6 +1183,7 @@ export class MapComponent extends Component<[
     const playerContent = this.DomainScene()
       .GetComponent(PlayerContentProfileComponent)
       .TryGet(request.playerConfigId);
+    this.transferCoordinator.RequirePlayerAdmission?.(this.mapInstanceId, request.characterId);
     const player = this.units.Create(unitId, PlayerUnit, {
       account: request.account,
       characterId: request.characterId,
@@ -1899,14 +1919,17 @@ export class MapComponent extends Component<[
       };
     }
 
+    const unitId = unit.UnitId, actorInstanceId = unit.InstanceId;
     await this.MarkPlayerOffline(unit, message.reason || "client-timeout");
     this.players.RecordOffline({ account: message.account, characterId: message.characterId,
-      unitId: unit.UnitId, actorInstanceId: unit.InstanceId, mapId: this.mapId,
+      unitId, actorInstanceId, mapId: this.mapId,
       mapInstanceId: this.mapInstanceId, gateName: message.gateName, gateEpoch: message.gateEpoch });
     // 只延迟Actor销毁，不延迟权威玩家索引的撤销；下一次恢复报告不得包含已离线玩家。
     // Defer Actor disposal, not authority-index removal: future recovery reports exclude this player.
-    this.players.Remove(unit);
-    this.ScheduleOfflineCleanup(unit);
+    if (this.units.Get<PlayerUnit>(unitId) === unit) {
+      this.players.Remove(unit);
+      this.ScheduleOfflineCleanup(unit);
+    }
     this.logger.info("player left map after Gate timeout", {
       account: message.account,
       unitId: message.unitId,
@@ -2080,7 +2103,11 @@ export class MapComponent extends Component<[
     unit: PlayerUnit,
     reason: string,
   ): Promise<void> {
+    const unitId = unit.UnitId;
+    if (this.units.Get<PlayerUnit>(unitId) !== unit) return;
     await this.MarkPlayerOffline(unit, reason);
+    if (this.units.Get<PlayerUnit>(unitId) !== unit) return;
+    this.pendingOfflineCleanup.delete(unitId);
     const changes = this.RemovePlayer(unit);
     await this.PublishAoiChanges(changes);
   }
@@ -2090,6 +2117,20 @@ export class MapComponent extends Component<[
     unit: PlayerUnit,
     reason: string,
   ): Promise<void> {
+    const existing = this.offlineOperations.get(unit);
+    if (existing) return existing;
+    const operation = this.CommitPlayerOffline(unit, reason);
+    this.offlineOperations.set(unit, operation);
+    try {
+      await operation;
+    } catch (error) {
+      this.offlineOperations.delete(unit);
+      throw error;
+    }
+  }
+
+  /** 共享最终保存与位置移除；成功凭据只随当前 Unit 存活。 / Shared final save/removal; successful evidence lives only as long as this Unit. */
+  private async CommitPlayerOffline(unit: PlayerUnit, reason: string): Promise<void> {
     this.requirePlayer(unit);
     this.DomainScene().GetComponent(PlayerTradeComponent).PlayerLeaving(unit);
     const located = await this.location.Resolve({ unitId: unit.UnitId, account: "", characterId: unit.CharacterId });

@@ -38,6 +38,7 @@ import {
   type SkillDefinition,
   type SkillEffectDefinition,
   type SkillProjectile,
+  type SkillProjectileSnapshot,
   type Unit,
   systemFor,
 } from "#tiangz/model";
@@ -61,6 +62,12 @@ const CHANNEL_DAMAGE_REDUCTION_MS = 800;
  */
 @systemFor(SkillMapComponent)
 export class SkillMapComponentSystem extends SkillMapComponent {
+  Projectiles(): readonly SkillProjectileSnapshot[] {
+    return Object.freeze([...this.projectiles.values()].map(p => Object.freeze({
+      castId:p.castId, skillId:p.skillId, sourceUnitId:p.sourceUnitId, targetUnitId:p.targetUnitId,
+      launchedAtMs:p.launchedAtMs, impactAtMs:p.impactAtMs,
+    })));
+  }
   protected override Awake(map: MapComponent): void {
     this.map = map;
   }
@@ -244,7 +251,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
         const queued = skill.TakeQueued();
         if (definition.channelTicks === 0) {
           const target = this.resolveTarget(caster, cast.targetUnitId, definition);
-          this.validateTargetAlive(target);
+          this.validateTargetAlive(target, definition);
           if (definition.revalidateOnComplete) this.validateTargetRange(caster, target, definition);
           this.validateRequiredAbsentBuff(target, definition);
           this.launchOrResolve(caster, target, definition, cast.castId, now);
@@ -271,7 +278,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
       try {
         const definition = projectile.definition;
         const target = this.resolveTarget(caster, projectile.targetUnitId, definition);
-        this.validateTargetAlive(target);
+        this.validateTargetAlive(target, definition);
         this.resolveEffects(caster, target, definition, projectile.castId);
       } catch (error) {
         this.DomainScene().logger.debug("skill projectile lost target", {
@@ -330,7 +337,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
       processed < 8
     ) {
       const target = this.resolveTarget(caster, cast.targetUnitId, definition);
-      this.validateTargetAlive(target);
+      this.validateTargetAlive(target, definition);
       if (definition.revalidateOnComplete) this.validateTargetRange(caster, target, definition);
       this.resolveEffects(caster, target, definition, cast.castId);
       completed += 1;
@@ -390,6 +397,9 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     definition: SkillDefinition,
     castId: bigint,
   ): void {
+    const veto=this.DomainScene().Events.Check(SkillEvents.BeforeEffects,{caster,target:primaryTarget,definition});
+    if(veto!==0)throw new RpcError(veto,"skill impact rejected by BeforeEffects");
+    const healingByTarget: {targetUnitId:number;amount:bigint}[]=[];
     let damage = 0n;
     let resolvedDamage: bigint | undefined;
     let damageSchool: import("#tiangz/model").DamageSchoolValue = DamageSchool.Physical;
@@ -436,6 +446,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
           }
         }
         if (result.healing) {
+          if(result.healing.restoredHealing>0n)healingByTarget.push({targetUnitId:target.UnitId,amount:result.healing.restoredHealing});
           this.spawnPublish("publish-combat-healing", () => this.map.PublishCombatHealing(
             target,
             caster.UnitId,
@@ -456,6 +467,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     this.DomainScene().Events.Publish(SkillEvents.EffectsResolved, {
       caster,
       target: primaryTarget,
+      healingByTarget,
       definition,
       castId,
       damage,
@@ -554,7 +566,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
   }
 
   private validateTarget(caster: Unit<any[]>, target: Unit<any[]>, definition: SkillDefinition): void {
-    this.validateTargetAlive(target);
+    this.validateTargetAlive(target, definition);
     const playerController = this.playerController(caster);
     if (
       playerController
@@ -579,9 +591,9 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     this.validateTargetRange(caster, target, definition);
   }
 
-  private validateTargetAlive(target: Unit<any[]>): void {
-    if (target.GetComponent(NativeUnitRef).alive === 0) {
-      throw new RpcError(GameErrCode.SkillTargetInvalid, `target is dead: ${target.UnitId}`);
+  private validateTargetAlive(target: Unit<any[]>, definition: SkillDefinition): void {
+    if ((target.GetComponent(NativeUnitRef).alive !== 0) !== (definition.targetLife !== "dead")) {
+      throw new RpcError(GameErrCode.SkillTargetInvalid, `target life does not match skill: ${target.UnitId}`);
     }
   }
 

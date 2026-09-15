@@ -12,13 +12,15 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "2960996b383548962c5b2e0b4fbfc3e1af85f9a1953b52ce2647d661022280a2";
+    public const string Value = "1aad2e7795fe34413112d5e93fa860595df7b52d0e3ea0580db643a122d5f278";
 }
 
 public static class MsgCode
 {
     public const ushort C2G_EnterMap = 10010;
+    public const ushort C2G_EnterPublicMap = 10112;
     public const ushort C2G_EnterStarterDungeon = 10066;
+    public const ushort C2G_ListPublicMaps = 10114;
     public const ushort C2G_LoginGate = 10008;
     public const ushort C2G_LogoutCharacter = 10106;
     public const ushort C2G_MapSnapshotReady = 10029;
@@ -67,6 +69,7 @@ public static class MsgCode
     public const ushort G2C_CombatResult = 10090;
     public const ushort G2C_DemoDoorState = 10041;
     public const ushort G2C_EnterMap = 10011;
+    public const ushort G2C_EnterPublicMap = 10113;
     public const ushort G2C_EnterStarterDungeon = 10067;
     public const ushort G2C_EntityEnter = 10022;
     public const ushort G2C_EntityLeave = 10023;
@@ -75,6 +78,7 @@ public static class MsgCode
     public const ushort G2C_EntityNumeric = 10017;
     public const ushort G2C_EntityState = 10018;
     public const ushort G2C_ItemChanged = 10021;
+    public const ushort G2C_ListPublicMaps = 10115;
     public const ushort G2C_LoginGate = 10009;
     public const ushort G2C_LogoutCharacter = 10107;
     public const ushort G2C_MapReady = 10012;
@@ -174,9 +178,22 @@ public sealed class C2G_EnterMap : IRpcRequest
     public uint RpcId { get; set; }
 }
 
+public sealed class C2G_EnterPublicMap : IRpcRequest
+{
+    public uint MapConfigId { get; set; }
+    public ulong PreferredInstanceId { get; set; }
+    public uint RpcId { get; set; }
+}
+
 public sealed class C2G_EnterStarterDungeon : IRpcRequest
 {
     public string? OperationId { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2G_ListPublicMaps : IRpcRequest
+{
+    public uint MapConfigId { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -598,6 +615,15 @@ public sealed class G2C_EnterMap : IRpcResponse
     public string? Message { get; set; }
 }
 
+public sealed class G2C_EnterPublicMap : IRpcResponse
+{
+    public G2C_EnterMap? EnterMap { get; set; }
+    public uint ChannelId { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
 public sealed class G2C_EnterStarterDungeon : IRpcResponse
 {
     public G2C_EnterMap? EnterMap { get; set; }
@@ -644,6 +670,14 @@ public sealed class G2C_EntityState
 public sealed class G2C_ItemChanged
 {
     public ItemSnapshot? Item { get; set; }
+}
+
+public sealed class G2C_ListPublicMaps : IRpcResponse
+{
+    public List<PublicMapLine> Channels { get; set; } = new List<PublicMapLine>();
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
 }
 
 public sealed class G2C_LoginGate : IRpcResponse
@@ -1264,6 +1298,15 @@ public sealed class PlayerTradeSnapshot
     public ulong ExpireAtMs { get; set; }
 }
 
+public sealed class PublicMapLine
+{
+    public ulong MapInstanceId { get; set; }
+    public uint ChannelId { get; set; }
+    public uint PlayerCount { get; set; }
+    public uint ReservedCount { get; set; }
+    public uint MaxPlayers { get; set; }
+}
+
 public sealed class QuestObjectiveSnapshot
 {
     public uint ObjectiveId { get; set; }
@@ -1617,6 +1660,44 @@ public static class C2G_EnterMapCodec
     }
 }
 
+public static class C2G_EnterPublicMapCodec
+{
+    public static C2G_EnterPublicMap Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2G_EnterPublicMap();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.MapConfigId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.PreferredInstanceId = reader.ReadUInt64();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2G_EnterPublicMap value)
+    {
+        var writer = new BinaryWriter();
+        if (value.MapConfigId != 0) writer.WriteUInt32(1, value.MapConfigId);
+        if (value.PreferredInstanceId != 0) writer.WriteUInt64(2, value.PreferredInstanceId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
 public static class C2G_EnterStarterDungeonCodec
 {
     public static C2G_EnterStarterDungeon Decode(byte[] payload)
@@ -1646,6 +1727,40 @@ public static class C2G_EnterStarterDungeonCodec
     {
         var writer = new BinaryWriter();
         if (!string.IsNullOrEmpty(value.OperationId)) writer.WriteString(1, value.OperationId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2G_ListPublicMapsCodec
+{
+    public static C2G_ListPublicMaps Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2G_ListPublicMaps();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.MapConfigId = reader.ReadUInt32();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2G_ListPublicMaps value)
+    {
+        var writer = new BinaryWriter();
+        if (value.MapConfigId != 0) writer.WriteUInt32(1, value.MapConfigId);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -3872,6 +3987,52 @@ public static class G2C_EnterMapCodec
     }
 }
 
+public static class G2C_EnterPublicMapCodec
+{
+    public static G2C_EnterPublicMap Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new G2C_EnterPublicMap();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.EnterMap = G2C_EnterMapCodec.Decode(reader.ReadBytes());
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.ChannelId = reader.ReadUInt32();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(G2C_EnterPublicMap value)
+    {
+        var writer = new BinaryWriter();
+        if (value.EnterMap != null) writer.WriteMessage(1, G2C_EnterMapCodec.Encode(value.EnterMap));
+        if (value.ChannelId != 0) writer.WriteUInt32(2, value.ChannelId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
 public static class G2C_EnterStarterDungeonCodec
 {
     public static G2C_EnterStarterDungeon Decode(byte[] payload)
@@ -4152,6 +4313,51 @@ public static class G2C_ItemChangedCodec
     {
         var writer = new BinaryWriter();
         if (value.Item != null) writer.WriteMessage(1, ItemSnapshotCodec.Encode(value.Item));
+        return writer.ToArray();
+    }
+}
+
+public static class G2C_ListPublicMapsCodec
+{
+    public static G2C_ListPublicMaps Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new G2C_ListPublicMaps();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.Channels.Add(PublicMapLineCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(G2C_ListPublicMaps value)
+    {
+        var writer = new BinaryWriter();
+        foreach (var item in value.Channels)
+        {
+            writer.WriteMessage(1, item == null ? null : PublicMapLineCodec.Encode(item));
+        }
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
         return writer.ToArray();
     }
 }
@@ -7310,6 +7516,52 @@ public static class PlayerTradeSnapshotCodec
     }
 }
 
+public static class PublicMapLineCodec
+{
+    public static PublicMapLine Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new PublicMapLine();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.MapInstanceId = reader.ReadUInt64();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.ChannelId = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.PlayerCount = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.ReservedCount = reader.ReadUInt32();
+                    break;
+                case 5 when tag.WireType == 0:
+                    value.MaxPlayers = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(PublicMapLine value)
+    {
+        var writer = new BinaryWriter();
+        if (value.MapInstanceId != 0) writer.WriteUInt64(1, value.MapInstanceId);
+        if (value.ChannelId != 0) writer.WriteUInt32(2, value.ChannelId);
+        if (value.PlayerCount != 0) writer.WriteUInt32(3, value.PlayerCount);
+        if (value.ReservedCount != 0) writer.WriteUInt32(4, value.ReservedCount);
+        if (value.MaxPlayers != 0) writer.WriteUInt32(5, value.MaxPlayers);
+        return writer.ToArray();
+    }
+}
+
 public static class QuestObjectiveSnapshotCodec
 {
     public static QuestObjectiveSnapshot Decode(byte[] payload)
@@ -7932,9 +8184,19 @@ public static class GateProtocol
         C2G_EnterMapCodec.Encode, G2C_EnterMapCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2G_EnterPublicMap, G2C_EnterPublicMap> EnterPublicMap = new(
+        "Gate.EnterPublicMap", MsgCode.C2G_EnterPublicMap, MsgCode.G2C_EnterPublicMap,
+        C2G_EnterPublicMapCodec.Encode, G2C_EnterPublicMapCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2G_EnterStarterDungeon, G2C_EnterStarterDungeon> EnterStarterDungeon = new(
         "Gate.EnterStarterDungeon", MsgCode.C2G_EnterStarterDungeon, MsgCode.G2C_EnterStarterDungeon,
         C2G_EnterStarterDungeonCodec.Encode, G2C_EnterStarterDungeonCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2G_ListPublicMaps, G2C_ListPublicMaps> ListPublicMaps = new(
+        "Gate.ListPublicMaps", MsgCode.C2G_ListPublicMaps, MsgCode.G2C_ListPublicMaps,
+        C2G_ListPublicMapsCodec.Encode, G2C_ListPublicMapsCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2G_LoginGate, G2C_LoginGate> LoginGate = new(
@@ -8213,8 +8475,12 @@ public sealed class GateClient
 
     public Task<G2C_EnterMap> EnterMapAsync(C2G_EnterMap request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(GateProtocol.EnterMap, request, cancellationToken);
+    public Task<G2C_EnterPublicMap> EnterPublicMapAsync(C2G_EnterPublicMap request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(GateProtocol.EnterPublicMap, request, cancellationToken);
     public Task<G2C_EnterStarterDungeon> EnterStarterDungeonAsync(C2G_EnterStarterDungeon request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(GateProtocol.EnterStarterDungeon, request, cancellationToken);
+    public Task<G2C_ListPublicMaps> ListPublicMapsAsync(C2G_ListPublicMaps request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(GateProtocol.ListPublicMaps, request, cancellationToken);
     public Task<G2C_LoginGate> LoginGateAsync(C2G_LoginGate request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(GateProtocol.LoginGate, request, cancellationToken);
     public Task<G2C_LogoutCharacter> LogoutCharacterAsync(C2G_LogoutCharacter request, CancellationToken cancellationToken = default) =>

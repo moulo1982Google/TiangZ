@@ -1,0 +1,10 @@
+{
+  "formatVersion": 1,
+  "id": "org.tiangz.fixture.publicmaps",
+  "version": "1.0.0",
+  "description": "Public map admission and real cross-process transfer acceptance fixture.",
+  "engine": { "minVersion": "0.4.0", "maxVersionExclusive": "0.5.0" },
+  "dependencies": [],
+  "capabilities": [],
+  "entries": { "model": "src/model/index.ts", "hotfix": "src/hotfix/index.ts" }
+}

@@ -36,6 +36,9 @@ export interface MonsterCorpseState {
 
 export interface MonsterRuntimeState {
   targetUnitId: number;
+  /** 有限强制目标，死亡和脱战时失效。 / Bounded forced target, invalidated on death and reset. */
+  tauntTargetUnitId?: number;
+  tauntUntilMs?: number;
   /** 只保存战斗运行态；数值是服务端权威伤害产生的仇恨，不进入客户端快照。 / Runtime-only threat values produced by authoritative server damage; never part of client snapshots. */
   threatByUnitId: Map<number, bigint>;
   /** 第一个造成有效伤害的账号；Starter普通掉落按首个有效攻击者归属，未来组队后替换为LootAudience。 / The first account to deal effective damage; Starter regular loot follows this tag until party loot is added. */
@@ -98,7 +101,15 @@ export interface MonsterRuntimePoint {
   readonly z: number;
 }
 
+/** 仅供表现投影的当前意图；冷却归零不保证下一刻命中，距离、目标与否决仍须重新校验。 / Read-only presentation intent; zero cooldown does not promise a hit, since range, target and vetoes are rechecked. */
+export interface MonsterCombatReadiness {
+  readonly targetUnitId: number;
+  readonly attackRemainingMs: number;
+}
+
 export interface MonsterComponent {
+  /** 返回不含仇恨表或掉落归属的冻结副本；死亡、脱战和无效目标返回空闲。 / Returns a frozen view without threat or loot ownership; dead, returning or invalid targets yield idle. */
+  CombatReadiness(monster: MonsterUnit): MonsterCombatReadiness;
   /** 激活一个已登记但当前空闲的稳定刷点。 / Activates a registered stable spawn slot that is currently idle. */
   ActivateSpawn(spawnId: number): void;
   /** 撤销一个已登记刷点的当前实体和旧尸体，不安排普通重生。 / Deactivates a registered slot, its live entity, and old corpses without scheduling a normal respawn. */
@@ -116,6 +127,10 @@ export interface MonsterComponent {
   ApplyUnitDamage(monster: MonsterUnit, request: DamageRequest): DamageResult;
   /** 增加中立的权威仇恨；模块可用它激活配置驱动的遭遇对手。 / Adds neutral authoritative threat; modules may use it to activate configured encounter opponents. */
   AddThreat(monster: MonsterUnit, source: PlayerUnit, amount: bigint): void;
+  /** 将辅助仇恨均分给仍对受助者保持仇恨的怪物，不激活空闲怪。 / Splits assist threat among enemies already engaged with the beneficiary. */
+  AddAssistThreat(source:PlayerUnit, beneficiary:PlayerUnit, amount:bigint):void;
+  /** 匹配最高仇恨并短暂强制目标，不改掉落归属。 / Matches top threat and temporarily forces the target without changing loot ownership. */
+  Taunt(monster:MonsterUnit,source:PlayerUnit,durationMs:number):void;
   InspectLootMonster(player: PlayerUnit, monsterId: number): M2C_InspectLootMonster;
   LootMonster(player: PlayerUnit, monsterId: number, operationId: string, dropId: number, lootAll: boolean): Promise<M2C_LootMonster>;
 }

@@ -7,6 +7,7 @@ declare module "../../../model/mmorpg/monster/MonsterComponent" {
     ActivateSpawn(spawnId: number): void;
     TriggerContentSignal(source: PlayerUnit, monsterId: number, signalId: number): boolean;
     DeactivateSpawn(spawnId: number): void;
+    CombatReadiness(monster: MonsterUnit): import("#tiangz/model").MonsterCombatReadiness;
     Update10Hz(): void;
     Update5Hz(): void;
     Update1Hz(): void;
@@ -17,6 +18,8 @@ declare module "../../../model/mmorpg/monster/MonsterComponent" {
     ApplyPlayerDamage(attacker: PlayerUnit, monster: MonsterUnit, request: DamageRequest): DamageResult;
     ApplyUnitDamage(monster: MonsterUnit, request: DamageRequest): DamageResult;
     AddThreat(monster: MonsterUnit, source: PlayerUnit, amount: bigint): void;
+    AddAssistThreat(source: PlayerUnit, beneficiary: PlayerUnit, amount: bigint): void;
+    Taunt(monster: MonsterUnit, source: PlayerUnit, durationMs: number): void;
   }
 }
 

@@ -238,3 +238,9 @@ position / yaw / speed / alive / numerics
 - 任务、掉落、Buff等系统通过`MonsterComponent.Get/GetAll`取得怪物，不维护第二份怪物集合。
 - 需要广播的内容先区分Snapshot、Numeric Delta和不可丢Event；不要为了一个战斗事件复制整张怪物表。
 - 只有性能证据证明TS或V8边界是瓶颈时，才讨论把怪物计算下沉Rust；不要先把普通AI写进`src/native_data.rs`。
+
+## 只读战斗准备状态（2026-09-15 增补）
+
+外置模块需要客户端警戒姿态时，可调用 `MonsterComponent.CombatReadiness(monster)`。返回冻结副本 `{ targetUnitId, attackRemainingMs }`，不提供运行态、仇恨表或掉落归属。怪物或目标死亡、目标无效、怪物脱战时返回空闲；保留同地图 Unit 边界校验。
+
+冷却归零不承诺下一 Tick 必定命中，原有距离、目标、存活和行为否决仍须校验。调用不推进冷却、不触发攻击；UI 只能解释为准备/警戒状态。消息形状、AOI 投影及动画仍由游戏模块负责，不能用这个视图替代 DamageResolved 或持久击杀事实。

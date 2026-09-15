@@ -48,7 +48,7 @@ const profiles = Object.freeze({
   full: [
     npmStep("verify:quick"),
     ...[
-      "test:runtime", "test:mailbox-parity", "test:backpressure", "test:watcher-graceful",
+      "test:runtime", "test:public-maps", "test:mailbox-parity", "test:backpressure", "test:watcher-graceful",
       "test:hotfix-reload", "test:hotfix-operations", "test:hotfix-barrier",
       "test:game-config-reload", "test:module-native-runtime",
     ].map(npmStep),

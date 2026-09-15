@@ -24,6 +24,7 @@ Object.defineProperty(globalThis, "__tiangzModelExports", {
 });
 
 let processRuntime: ProcessRuntime | undefined;
+let processStopping = false;
 
 function startProcess(configJson: string): Promise<string> {
   const config = JSON.parse(configJson) as ProcessRuntimeConfig;
@@ -39,7 +40,7 @@ function startProcess(configJson: string): Promise<string> {
 async function stopProcess(): Promise<string> {
   if (!processRuntime) return "already stopped";
   const runtime = processRuntime;
-  processRuntime = undefined;
+  processStopping = true;
   const timeoutMs = runtime.StopTimeoutMs;
   try {
     await Promise.race([
@@ -50,7 +51,10 @@ async function stopProcess(): Promise<string> {
     ]);
     return "stopped";
   } finally {
+    flushHostSceneOperations();
     cancelHostSceneOperations("process stopped before host operation completed");
+    processRuntime = undefined;
+    processStopping = false;
   }
 }
 
@@ -94,6 +98,8 @@ function pushHostEventsBinary(batch: Uint8Array): string {
 }
 
 function updateBinary(sampleMetrics: boolean): MaybePromise<string> {
+  // 停机只排空宿主操作，不能重新推进游戏Timer或接收新业务。 / Shutdown drains host work without advancing gameplay timers or new business.
+  if (processStopping) { flushHostSceneOperations(); return "0"; }
   if (!processRuntime) return JSON.stringify({});
   const result = processRuntime.update(sampleMetrics);
   return isPromiseLike(result)

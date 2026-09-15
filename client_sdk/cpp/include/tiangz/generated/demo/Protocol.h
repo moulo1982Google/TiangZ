@@ -3461,6 +3461,297 @@ struct G2C_EnterStarterDungeonCodec {
   }
 };
 
+struct C2G_EnterPublicMap {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t mapConfigId = 0;
+  std::uint64_t preferredInstanceId = 0;
+};
+
+struct C2G_EnterPublicMapCodec {
+  static C2G_EnterPublicMap Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2G_EnterPublicMap value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.mapConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.preferredInstanceId = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2G_EnterPublicMap& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.mapConfigId);
+    writer.UInt64(2, value.preferredInstanceId);
+    return writer.Finish();
+  }
+};
+
+struct G2C_EnterPublicMap {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  G2C_EnterMap enterMap;
+  std::uint32_t channelId = 0;
+};
+
+struct G2C_EnterPublicMapCodec {
+  static G2C_EnterPublicMap Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    G2C_EnterPublicMap value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.enterMap = G2C_EnterMapCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.channelId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const G2C_EnterPublicMap& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.BytesField(1, G2C_EnterMapCodec::Encode(value.enterMap));
+    writer.UInt32(2, value.channelId);
+    return writer.Finish();
+  }
+};
+
+struct C2G_ListPublicMaps {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t mapConfigId = 0;
+};
+
+struct C2G_ListPublicMapsCodec {
+  static C2G_ListPublicMaps Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2G_ListPublicMaps value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.mapConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2G_ListPublicMaps& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.mapConfigId);
+    return writer.Finish();
+  }
+};
+
+struct PublicMapLine {
+  std::uint64_t mapInstanceId = 0;
+  std::uint32_t channelId = 0;
+  std::uint32_t playerCount = 0;
+  std::uint32_t reservedCount = 0;
+  std::uint32_t maxPlayers = 0;
+};
+
+struct PublicMapLineCodec {
+  static PublicMapLine Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    PublicMapLine value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.mapInstanceId = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.channelId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.playerCount = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.reservedCount = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 0) {
+            value.maxPlayers = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const PublicMapLine& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt64(1, value.mapInstanceId);
+    writer.UInt32(2, value.channelId);
+    writer.UInt32(3, value.playerCount);
+    writer.UInt32(4, value.reservedCount);
+    writer.UInt32(5, value.maxPlayers);
+    return writer.Finish();
+  }
+};
+
+struct G2C_ListPublicMaps {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  std::vector<PublicMapLine> channels;
+};
+
+struct G2C_ListPublicMapsCodec {
+  static G2C_ListPublicMaps Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    G2C_ListPublicMaps value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.channels.push_back(PublicMapLineCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const G2C_ListPublicMaps& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    for (const auto& item : value.channels) writer.BytesField(1, PublicMapLineCodec::Encode(item), true);
+    return writer.Finish();
+  }
+};
+
 struct G2C_MapReady {
   std::string account;
   std::uint32_t mapId = 0;
@@ -9683,6 +9974,10 @@ inline constexpr std::uint16_t C2G_EnterMap = 10010;
 inline constexpr std::uint16_t G2C_EnterMap = 10011;
 inline constexpr std::uint16_t C2G_EnterStarterDungeon = 10066;
 inline constexpr std::uint16_t G2C_EnterStarterDungeon = 10067;
+inline constexpr std::uint16_t C2G_EnterPublicMap = 10112;
+inline constexpr std::uint16_t G2C_EnterPublicMap = 10113;
+inline constexpr std::uint16_t C2G_ListPublicMaps = 10114;
+inline constexpr std::uint16_t G2C_ListPublicMaps = 10115;
 inline constexpr std::uint16_t G2C_MapReady = 10012;
 inline constexpr std::uint16_t G2C_SessionReplaced = 10061;
 inline constexpr std::uint16_t C2G_MapSnapshotReady = 10029;
@@ -9805,6 +10100,14 @@ inline constexpr tiangz::client::RpcDescriptor<C2G_EnterMap, G2C_EnterMap, C2G_E
 
 inline constexpr tiangz::client::RpcDescriptor<C2G_EnterStarterDungeon, G2C_EnterStarterDungeon, C2G_EnterStarterDungeonCodec, G2C_EnterStarterDungeonCodec> Gate_EnterStarterDungeon{
   "Gate.EnterStarterDungeon", MsgCode::C2G_EnterStarterDungeon, MsgCode::G2C_EnterStarterDungeon
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2G_EnterPublicMap, G2C_EnterPublicMap, C2G_EnterPublicMapCodec, G2C_EnterPublicMapCodec> Gate_EnterPublicMap{
+  "Gate.EnterPublicMap", MsgCode::C2G_EnterPublicMap, MsgCode::G2C_EnterPublicMap
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2G_ListPublicMaps, G2C_ListPublicMaps, C2G_ListPublicMapsCodec, G2C_ListPublicMapsCodec> Gate_ListPublicMaps{
+  "Gate.ListPublicMaps", MsgCode::C2G_ListPublicMaps, MsgCode::G2C_ListPublicMaps
 };
 
 inline constexpr tiangz::client::RpcDescriptor<C2G_MapSnapshotReady, G2C_MapSnapshotReady, C2G_MapSnapshotReadyCodec, G2C_MapSnapshotReadyCodec> Gate_MapSnapshotReady{

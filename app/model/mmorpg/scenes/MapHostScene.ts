@@ -1,10 +1,12 @@
 import {
   EntryScene,
   entryScene,
+  applyEntityExtensions,
   type RuntimeEntrySceneConfig,
   type SceneMetricsSnapshot,
 } from "../../../core/public";
 import { MapHostComponent } from "../mapHost/MapHostComponent";
+import { MapContentProfileComponent } from "../map/MapContentProfileComponent";
 import { PlayerDirectoryComponent } from "../mapHost/PlayerDirectoryComponent";
 import { DynamicMapLifecycleComponent } from "../mapHost/DynamicMapLifecycleComponent";
 import { MapHostRegistrationComponent } from "../mapHost/MapHostRegistrationComponent";
@@ -16,15 +18,20 @@ export class MapHostScene extends EntryScene {
   protected override readonly mailbox = "unordered" as const;
   private readonly mapHost: MapHostComponent;
 
+
   constructor(config: RuntimeEntrySceneConfig) {
     super(config);
     this.AddComponent(PlayerDirectoryComponent);
+    const mapContent = this.AddComponent(MapContentProfileComponent);
     this.mapHost = this.AddComponent(
       MapHostComponent,
       CreatePlayerRepository(config.process),
     );
     this.AddComponent(DynamicMapLifecycleComponent);
     this.AddComponent(MapHostRegistrationComponent);
+    applyEntityExtensions(this);
+    mapContent.Seal();
+    this.mapHost.InitializeStaticMaps();
   }
 
   override metricsSnapshot(): SceneMetricsSnapshot {

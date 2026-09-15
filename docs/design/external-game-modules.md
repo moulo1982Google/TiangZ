@@ -228,6 +228,8 @@ MMORPG地图在执行`MapScene`装配器前创建`SkillDefinitionProfileComponen
 
 gameConfig 可增加 `client` 对象：`{ "target": "client", "generatedCode": "generated/client/config", "generatedData": "generated/client/data" }`。客户端 target 必须在模块 Luban 工程中显式选择客户端分组，生成器不会把服务端 JSON 直接复制给客户端。
 
+Godot 客户端同步脚本会把每个模块的协议 SDK 和客户端配置复制到 `client/godot/generated/modules/<sanitized-module-id>/`，并写入 `.module-sdk-manifest.json`。清单记录模块 ID、版本、目录、协议类名和是否有客户端配置；每次同步都会清理生成根目录中不属于当前模块集合的旧目录，并拒绝模块 ID 清洗后产生的目录冲突。该目录属于生成物，客户端不得直接编辑。模块卸载后若业务仍硬编码加载该模块，Godot 应在加载阶段明确失败，而不是继续使用陈旧 SDK。
+
 完整构建包含 `codegen:module-config`。模块配置 schema 固定在 Model 中，`build:game-config` 将所有模块数据打包进同一个候选，与既有 `reload-config <candidate>` 一起验证和发布。通过 `ModuleConfigRegistry.Get(moduleId).tables` 读取不可变原始表，也可由模块自己的 Luban Tables 构造领域视图。候选必须包含完整模块集合；任一模块数据验证失败，原目录保持不变。客户端导出独立分发，不由服务端热更自动推送客户端。
 
 配置跨 schema 的处理是重新生成 Tables、构建和重启；不能把新 schema 塞进旧 Model。已捕获的领域 Profile/快照不会自动更新，消费者明确决定何时重读并投影配置。
@@ -239,6 +241,8 @@ gameConfig 可增加 `client` 对象：`{ "target": "client", "generatedCode": "
 Repository Load 遇到旧版本时先完整转换和 Decode 校验，再用原 revision CAS 保存；并发冲突重新加载权威数据，未知或未来版本拒绝。Save 的不明确回执沿用既有同 requestId 重试。这里迁移的是 DBProxy 通用记录 payload，不执行数据库 DDL，也不枚举全库；批量迁移调度和停服窗口由部署方管理。升级写入后，旧版 Codec 会拒绝新版本，不能把代码回滚等同于数据可逆。
 
 ### Native 模块
+
+Native 扩展返回宿主 `deno_core::Extension`，因此必须使用 Cargo 解析出的同一个 deno_core crate，只有版本字符串相同仍不够（不同来源的 crate 具有不同 Rust 类型身份）。组合构建在编译前检查每个模块及其正常依赖的实际图；不兼容时报告模块 ID、模块版本与宿主版本，要求调整模块 Cargo.toml 并重新解析组合锁，不自动改依赖。测试模板读取宿主 Cargo metadata 的依赖要求，避免宿主升级后仍生成旧版本扩展。
 
 ```json
 "native": {

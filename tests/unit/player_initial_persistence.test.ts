@@ -127,3 +127,23 @@ test("losing the initial ACK leaves a complete durable inventory for the next lo
   expect(stored.data.inventory?.items).toEqual(f.data.items);
   expect(stored.data.runtime?.skill.knownSkillIds).toEqual([1001]);
 });
+
+
+test("single-player effects are detached before awaiting snapshot flush", async () => {
+  const f=fixture();
+  let release!:()=>void;
+  vi.spyOn(f.persistence,"FlushPendingSnapshots").mockImplementation(()=>new Promise<void>(r=>release=r));
+  const effects={appends:[],outboxEvents:[]};
+  const pending=f.persistence.ApplyTransaction("effects-1",["inventory","runtime"],f.data,new Uint8Array([7]),effects);
+  release();await pending;
+  expect(f.atomic.mock.calls[0][0].effects).toEqual(effects);
+  expect(f.atomic.mock.calls[0][0].effects).not.toBe(effects);
+  expect(f.atomic.mock.calls[0][0].effects!.outboxEvents).not.toBe(effects.outboxEvents);
+  expect((await f.persistence.LoadTransaction("effects-1",["inventory","runtime"]))!.result).toEqual(new Uint8Array([7]));
+});
+
+test("effects reject one domain before flushing any pending snapshot",async()=>{
+ const f=fixture(),flush=vi.spyOn(f.persistence,"FlushPendingSnapshots");
+ await expect(f.persistence.ApplyTransaction("invalid-effects",["inventory"],f.data,new Uint8Array(),{appends:[],outboxEvents:[]})).rejects.toThrow("multi-record");
+ expect(flush).not.toHaveBeenCalled();expect(f.atomic).not.toHaveBeenCalled();
+});

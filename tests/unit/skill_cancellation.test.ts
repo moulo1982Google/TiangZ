@@ -6,6 +6,7 @@ vi.mock("#tiangz/model", async (original) => ({
 }));
 
 import { SkillMapComponentSystem } from "../../app/hotfix/mmorpg/skill/SkillMapComponentSystem";
+import { ActionType, SkillEffectTarget } from "#tiangz/model";
 import { SkillComponentSystem } from "../../app/hotfix/mmorpg/skill/SkillComponentSystem";
 
 test("cancellation fences stale casts and publishes the matching interruption only once", () => {
@@ -52,4 +53,35 @@ test("cancellation fences stale casts and publishes the matching interruption on
   expect(skill.globalCooldownEndAtMs).toBe(5000);
   expect(cooldowns.get(17)).toBe(9000);
   expect(map.projectiles.get(100n)).toEqual({ target: 9 });
+});
+
+
+test("projectile snapshots detach flight records and never expose effect definitions", () => {
+  const flight = {castId:1n,skillId:17,sourceUnitId:7,targetUnitId:9,launchedAtMs:100,impactAtMs:900,definition:{effects:["private"]}};
+  const map = {projectiles:new Map([[1n,flight]])};
+  const snapshot = () => SkillMapComponentSystem.prototype.Projectiles.call(map as unknown as SkillMapComponentSystem);
+  const first=snapshot();
+  expect(first).toEqual([{castId:1n,skillId:17,sourceUnitId:7,targetUnitId:9,launchedAtMs:100,impactAtMs:900}]);
+  expect(Object.isFrozen(first)).toBe(true);
+  expect(Object.isFrozen(first[0])).toBe(true);
+  expect(first[0]).not.toBe(flight);
+  expect(() => Object.assign(first[0],{impactAtMs:1})).toThrow();
+  flight.impactAtMs=1200;
+  expect(first[0].impactAtMs).toBe(900);
+  expect(snapshot()[0].impactAtMs).toBe(1200);
+  map.projectiles.clear();
+  expect(snapshot()).toEqual([]);
+  expect(first).toHaveLength(1);
+});
+
+
+test("impact veto prevents effects and emitted healing contains only effective restoration",()=>{
+  const caster={UnitId:1},target={UnitId:2},publish=vi.fn(),execute=vi.fn(()=>({healing:{restoredHealing:7n,currentHp:100n}}));
+  let veto=0;
+  const context={DomainScene:()=>({Events:{Check:()=>veto,Publish:publish}}),executeEffect:execute,spawnPublish:vi.fn()};
+  const definition={id:17,effects:[{target:SkillEffectTarget.PrimaryTarget,action:{type:ActionType.Heal,parameters:[90n]}}]};
+  const run=()=> (SkillMapComponentSystem.prototype as any).resolveEffects.call(context,caster,target,definition,4n);
+  veto=32003;expect(run).toThrow(/BeforeEffects/);expect(execute).not.toHaveBeenCalled();expect(publish).not.toHaveBeenCalled();
+  veto=0;run();expect(publish.mock.calls[0]?.[1].healingByTarget).toEqual([{targetUnitId:2,amount:7n}]);
+  execute.mockReturnValue({healing:{restoredHealing:0n,currentHp:100n}});run();expect(publish.mock.calls[1]?.[1].healingByTarget).toEqual([]);
 });

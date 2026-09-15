@@ -69,4 +69,7 @@ export const GameErrCode = {
   InteractableRewardUnavailable: 10068,
   NpcRepairUnavailable: 10069,
   InteractableRequirementNotMet: 10070,
+  MapHostCapacity: 10071,
+  MapAdmissionExpired: 10072,
+  PublicMapUnavailable: 10073,
 } as const;
