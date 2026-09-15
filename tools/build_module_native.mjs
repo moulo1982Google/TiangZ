@@ -4,6 +4,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
 import { moduleNativeFingerprint } from "./module_native.mjs";
+import { assertNativeDenoIdentity } from "./module_native_dependencies.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
@@ -52,10 +53,11 @@ try { await readFile(lock); } catch (error) {
   if (error.code !== "ENOENT") throw error;
   await writeFile(lock, await readFile(path.join(root, "Cargo.lock")));
 }
-if (process.platform === "win32") {
-  const metadata = JSON.parse(run("cargo", ["metadata", "--format-version", "1", "--manifest-path", path.join(directory, "Cargo.toml"),
+const metadata = JSON.parse(run("cargo", ["metadata", "--format-version", "1", "--manifest-path", path.join(directory, "Cargo.toml"),
     "--filter-platform", hostTarget.trim(),
     ...(args.includes("--offline") ? ["--offline"] : []), ...(args.includes("--locked") ? ["--locked"] : [])], { capture: true }));
+assertNativeDenoIdentity(metadata, modules);
+if (process.platform === "win32") {
   const v8 = metadata.packages.find((item) => item.name === "v8");
   if (v8) {
     const source = await realpath(path.dirname(v8.manifest_path));

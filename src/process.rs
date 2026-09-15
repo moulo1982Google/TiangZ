@@ -30,7 +30,7 @@ use crate::health::{
 use crate::host::{
     BinaryOutboundBatch, HostSceneCompletion, call_js_install_game_config,
     call_js_push_host_events, call_js_start_process, call_js_stop_process, call_js_update_binary,
-    configure_host_scene_bridge, create_runtime, pump_js_event_loop_once,
+    configure_host_scene_bridge, create_runtime, poll_js_stop_process, pump_js_event_loop_once,
     take_close_connection_requests,
 };
 use crate::hotfix::{HotfixInstallResult, RuntimeBundles};
@@ -44,9 +44,9 @@ use crate::transport_backend::{
     CONNECTION_OUTBOUND_BYTE_CAPACITY, ConnectionKind, ConnectionWriter, validate_frame_access,
 };
 use crate::transport_backend::{
-    ConnectionWriteBatch, ConnectionWriters, EndpointContext, WRITE_BATCH_BYTE_CAPACITY,
-    WRITE_BATCH_FRAME_CAPACITY, create_io_backend, try_queue_connection_batch,
-    try_queue_connection_frame,
+    ConnectionQueueError, ConnectionWriteBatch, ConnectionWriters, EndpointContext,
+    WRITE_BATCH_BYTE_CAPACITY, WRITE_BATCH_FRAME_CAPACITY, create_io_backend,
+    try_queue_connection_batch, try_queue_connection_frame,
 };
 
 const DEFAULT_PROCESS_EVENT_QUEUE_CAPACITY: usize = 4096;
@@ -1471,8 +1471,38 @@ fn run_process_runtime(
         ));
     }
 
-    let stop_result = call_js_stop_process(&js_event_loop, &mut runtime, &entrypoints)
-        .context("failed to stop TypeScript process")?;
+    let pending_stop = call_js_stop_process(&js_event_loop, &mut runtime, &entrypoints)
+        .context("failed to begin TypeScript shutdown")?;
+    let stop_deadline =
+        Instant::now() + Duration::from_millis(process.lifecycle.stop_timeout_ms + 1000);
+    let stop_result = loop {
+        let mut completions = vec![0; 4];
+        let mut count = 0;
+        // 关闭监听后只接收已有RPC的完成事件；新业务帧不进入停机中的Scene。 / After listeners close, drain existing RPC completions without admitting business frames.
+        for _ in 0..MAX_PENDING_INGRESS_CONTROL_EVENTS {
+            let Ok(event) = event_rx.try_recv_control() else {
+                break;
+            };
+            queue_stats.dequeue(event.kind(), event.ingress_class());
+            if matches!(&event, ProcessEvent::HostSceneCompletion(_)) {
+                push_event(&mut completions, &mut count, event, &queue_stats)?;
+            }
+        }
+        if count > 0 {
+            completions[0..4].copy_from_slice(&count.to_le_bytes());
+            call_js_push_host_events(&mut runtime, &entrypoints, completions)?;
+        }
+        pump_js_event_loop_once(&js_event_loop, &mut runtime)?;
+        // 停机模式的Update只提交RPC队列，不运行游戏Tick。 / Shutdown updates submit RPC queues without running gameplay ticks.
+        call_js_update_binary(&js_event_loop, &mut runtime, &entrypoints, false)?;
+        if let Some(result) = poll_js_stop_process(&mut runtime, &pending_stop)? {
+            break result;
+        }
+        if Instant::now() >= stop_deadline {
+            bail!("TypeScript shutdown exceeded its host drain deadline");
+        }
+        thread::sleep(Duration::from_millis(1));
+    };
     close_requested_connections(take_close_connection_requests(), &writers);
     tracing::info!(target: "tiangz::runtime", process = %process_name, message = %stop_result, "TypeScript process stopped");
 
@@ -2244,7 +2274,7 @@ fn flush_outbound(
     }
 
     let mut writers = writers.lock().expect("connection writer map poisoned");
-    let mut slow_connections = Vec::new();
+    let mut failed_connections = HashMap::new();
     let aggregate_by_connection = outbound
         .iter()
         .map(|batch| batch.connection_ids.len())
@@ -2272,9 +2302,9 @@ fn flush_outbound(
                     .or_default()
                     .push(batch.frame.clone());
             } else if let Some(writer) = writers.get(&connection_id)
-                && try_queue_connection_frame(writer, batch.frame.clone()).is_err()
+                && let Err(error) = try_queue_connection_frame(writer, batch.frame.clone())
             {
-                slow_connections.push(connection_id);
+                failed_connections.entry(connection_id).or_insert(error);
             }
         }
     }
@@ -2291,8 +2321,8 @@ fn flush_outbound(
                     || pending_bytes + frame.len() > WRITE_BATCH_BYTE_CAPACITY)
             {
                 let batch = ConnectionWriteBatch::from_frames(std::mem::take(&mut pending));
-                if try_queue_connection_batch(writer, batch).is_err() {
-                    slow_connections.push(connection_id);
+                if let Err(error) = try_queue_connection_batch(writer, batch) {
+                    failed_connections.entry(connection_id).or_insert(error);
                     break;
                 }
                 pending = Vec::with_capacity(WRITE_BATCH_FRAME_CAPACITY);
@@ -2302,27 +2332,29 @@ fn flush_outbound(
             pending.push(frame);
         }
         if !pending.is_empty()
-            && !slow_connections.contains(&connection_id)
-            && try_queue_connection_batch(writer, ConnectionWriteBatch::from_frames(pending))
-                .is_err()
+            && !failed_connections.contains_key(&connection_id)
+            && let Err(error) =
+                try_queue_connection_batch(writer, ConnectionWriteBatch::from_frames(pending))
         {
-            slow_connections.push(connection_id);
+            failed_connections.entry(connection_id).or_insert(error);
         }
     }
 
-    slow_connections.sort_unstable();
-    slow_connections.dedup();
-    for connection_id in slow_connections {
+    let mut failed_connections: Vec<_> = failed_connections.into_iter().collect();
+    failed_connections.sort_unstable_by_key(|(connection_id, _)| *connection_id);
+    for (connection_id, error) in failed_connections {
         if let Some(writer) = writers.remove(&connection_id) {
             let _ = writer.shutdown_tx.send(true);
-            queue_stats
-                .slow_client_disconnects
-                .fetch_add(1, Ordering::Relaxed);
-            tracing::warn!(
-                target: "tiangz::transport",
-                connection_id,
-                "closing slow connection: outbound queue limit exceeded"
-            );
+            if error == ConnectionQueueError::Closed {
+                tracing::debug!(target: "tiangz::transport", connection_id,
+                    "removing connection whose outbound receiver is closed");
+            } else {
+                queue_stats
+                    .slow_client_disconnects
+                    .fetch_add(1, Ordering::Relaxed);
+                tracing::warn!(target: "tiangz::transport", connection_id, reason = %error,
+                    "closing slow connection: outbound queue limit exceeded");
+            }
         }
     }
     Ok(())
@@ -2513,6 +2545,42 @@ mod tests {
         assert!(!writers.lock().unwrap().contains_key(&7));
         assert!(*shutdown_rx.borrow());
         assert_eq!(stats.slow_client_disconnects.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn closed_connection_is_not_counted_as_slow() {
+        for recipient_count in [1, WRITE_BATCH_FRAME_CAPACITY + 1] {
+            let writers: ConnectionWriters = Arc::new(Mutex::new(HashMap::new()));
+            let (sender, receiver) = tokio_mpsc::channel(1);
+            drop(receiver);
+            let (shutdown_tx, shutdown_rx) = watch::channel(false);
+            let queued_bytes = Arc::new(AtomicUsize::new(0));
+            let queued_frames = Arc::new(AtomicUsize::new(0));
+            writers.lock().unwrap().insert(
+                7,
+                ConnectionWriter {
+                    sender,
+                    queued_bytes: Arc::clone(&queued_bytes),
+                    queued_frames: Arc::clone(&queued_frames),
+                    shutdown_tx,
+                },
+            );
+            let stats = ProcessQueueStats::default();
+            flush_outbound(
+                vec![BinaryOutboundBatch {
+                    connection_ids: vec![7; recipient_count],
+                    frame: Bytes::from_static(&[0, 1]),
+                }],
+                &writers,
+                &stats,
+            )
+            .unwrap();
+            assert!(!writers.lock().unwrap().contains_key(&7));
+            assert!(*shutdown_rx.borrow());
+            assert_eq!(queued_bytes.load(Ordering::Relaxed), 0);
+            assert_eq!(queued_frames.load(Ordering::Relaxed), 0);
+            assert_eq!(stats.slow_client_disconnects.load(Ordering::Relaxed), 0);
+        }
     }
 
     #[test]

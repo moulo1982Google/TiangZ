@@ -764,13 +764,45 @@ pub fn call_js_start_process(
     call_js_function_string(js_event_loop, runtime, &entrypoints.start_process, &[arg])
 }
 
-/// 调用幂等的 TS 停机生命周期，并返回其完成 Future。 / Invokes the idempotent TS stop lifecycle and returns its completion future.
+/// 启动TS停机并保留Promise；调用方继续投递宿主完成事件，禁止同步等待停止的事件队列。 / Starts TS shutdown and retains its Promise while the caller continues delivering host completions.
 pub fn call_js_stop_process(
     js_event_loop: &tokio::runtime::Runtime,
     runtime: &mut JsRuntime,
     entrypoints: &JsEntrypoints,
-) -> Result<String> {
-    call_js_function_string(js_event_loop, runtime, &entrypoints.stop_process, &[])
+) -> Result<v8::Global<v8::Value>> {
+    let _guard = js_event_loop.enter();
+    deno_core::scope!(scope, runtime);
+    let function = entrypoints.stop_process.open(scope);
+    let receiver = v8::undefined(scope).into();
+    let result = function
+        .call(scope, receiver, &[])
+        .context("failed to begin JS shutdown")?;
+    if let Ok(promise) = v8::Local::<v8::Promise>::try_from(result) {
+        promise.mark_as_handled();
+    }
+    Ok(v8::Global::new(scope, result))
+}
+
+/// 观察停机结果而不阻塞V8线程；拒绝结果向Watcher报告失败。 / Polls shutdown without blocking V8 and propagates rejection to the Watcher.
+pub fn poll_js_stop_process(
+    runtime: &mut JsRuntime,
+    pending: &v8::Global<v8::Value>,
+) -> Result<Option<String>> {
+    deno_core::scope!(scope, runtime);
+    let value = v8::Local::new(scope, pending);
+    let value = if let Ok(promise) = v8::Local::<v8::Promise>::try_from(value) {
+        match promise.state() {
+            v8::PromiseState::Pending => return Ok(None),
+            v8::PromiseState::Rejected => anyhow::bail!(
+                "JS shutdown rejected: {}",
+                promise.result(scope).to_rust_string_lossy(scope)
+            ),
+            v8::PromiseState::Fulfilled => promise.result(scope),
+        }
+    } else {
+        value
+    };
+    Ok(Some(value.to_rust_string_lossy(scope)))
 }
 
 /// 将一批打包入站数据传给 TS，Rust 不解码 protobuf。 / Transfers one packed ingress batch into TS without decoding protobuf in Rust.
@@ -833,6 +865,47 @@ pub fn pump_js_event_loop_once(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shutdown_promise_waits_for_host_completion_and_reports_rejection() {
+        let event_loop = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut runtime = create_runtime(false, 0).unwrap();
+        runtime.execute_script("test:shutdown.js", r#"
+          for (const name of ['__etsStartProcess','__etsUpdateBinary','__etsDispatchHostEvents',
+            '__etsBeginHotfix','__etsCommitHotfix','__etsAbortHotfix','__etsInstallGameConfig']) globalThis[name]=()=>'';
+          globalThis.__etsStopProcess=()=>new Promise((resolve,reject)=>{globalThis.finishStop=resolve;globalThis.failStop=reject;});
+        "#).unwrap();
+        let entrypoints = load_js_entrypoints(&mut runtime).unwrap();
+        let pending = call_js_stop_process(&event_loop, &mut runtime, &entrypoints).unwrap();
+        pump_js_event_loop_once(&event_loop, &mut runtime).unwrap();
+        assert!(
+            poll_js_stop_process(&mut runtime, &pending)
+                .unwrap()
+                .is_none()
+        );
+        runtime
+            .execute_script("test:finish.js", "finishStop('stopped')")
+            .unwrap();
+        pump_js_event_loop_once(&event_loop, &mut runtime).unwrap();
+        assert_eq!(
+            poll_js_stop_process(&mut runtime, &pending).unwrap(),
+            Some("stopped".into())
+        );
+        let failed = call_js_stop_process(&event_loop, &mut runtime, &entrypoints).unwrap();
+        runtime
+            .execute_script("test:fail.js", "failStop(new Error('save failed'))")
+            .unwrap();
+        pump_js_event_loop_once(&event_loop, &mut runtime).unwrap();
+        assert!(
+            poll_js_stop_process(&mut runtime, &failed)
+                .unwrap_err()
+                .to_string()
+                .contains("save failed")
+        );
+    }
 
     #[test]
     fn native_item_round_trips_through_v8_ops() {

@@ -1,3 +1,4 @@
+import ts from "typescript";
 import { cp, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -23,7 +24,11 @@ try {
   if (!godotSource.includes("class ProtoReader:") || godotSource.includes("TzProtoReader")) {
     throw new Error("module Godot SDK still depends on a demo/global reader");
   }
+  const schema = JSON.parse(await readFile(path.join(moduleRoot, "proto", "schema.lock.json"), "utf8"));
+  const compact = schema.entries.find(e => e.name === "CompactShop");
+  if (JSON.stringify(compact?.fields.map(f=>f.name)) !== JSON.stringify(["npc_id","name","prices","note"])) throw new Error("compact message fields were silently omitted or comments parsed as fields");
   await verifyStandaloneGodot();
+  await verifySharedTypeScriptTransport();
   const clientSource = await readFile(
     path.join(moduleRoot, "generated", "typescript", "cards", "protocol", "clients.ts"),
     "utf8",
@@ -55,6 +60,29 @@ try {
 
 process.stdout.write("module protocol codegen self-test passed\n");
 
+async function verifySharedTypeScriptTransport() {
+  const first = path.join(moduleRoot, "generated", "typescript");
+  const second = path.join(temporary, "second-sdk");
+  await cp(first, second, { recursive: true });
+  const entry = path.join(temporary, "shared-transport.ts");
+  await writeFile(entry, `import { RpcSocket } from "./modules/cards/generated/typescript/Core/Net/RpcSocket";
+import { CardsClient as First } from "./modules/cards/generated/typescript/cards/protocol/clients";
+import { CardsClient as Second } from "./second-sdk/cards/protocol/clients";
+declare const shared: RpcSocket;
+const first = new First(shared);
+const second = new Second(shared);
+void first.ping({ text: "first" });
+void second.ping({ text: "second" });
+`);
+  const program = ts.createProgram([entry], { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler, strict: true, skipLibCheck: true, noEmit: true, types: [] });
+  const diagnostics = ts.getPreEmitDiagnostics(program);
+  if (diagnostics.length) throw new Error("independent SDKs cannot share a typed connection:\n" + ts.formatDiagnostics(diagnostics, {
+    getCanonicalFileName: file => file, getCurrentDirectory: () => temporary, getNewLine: () => "\n",
+  }));
+  process.stdout.write("independent TypeScript SDKs share one typed transport\n");
+}
+
 async function verifyStandaloneGodot() {
   const godot = process.env.GODOT_BIN;
   if (!godot) {
@@ -73,6 +101,8 @@ async function verifyStandaloneGodot() {
 const Cards = preload("res://CardsProto.gd")
 const Other = preload("res://OtherCardsProto.gd")
 func _initialize() -> void:
+\tvar compact := Cards.decode_compact_shop(Cards.encode_compact_shop({"npc_id":54002,"name":"商人","prices":[15,120,90],"note":"hello"}))
+\tassert(compact.npc_id == 54002 and compact.name == "商人" and compact.prices == [15,120,90] and compact.note == "hello")
 \tvar text := "独立模块 · hello 🌍"
 \tvar payload := Cards.encode_c2s_cards_ping({"text": text})
 \tassert(Cards.decode_c2s_cards_ping(payload).text == text)
@@ -141,6 +171,7 @@ async function writeFixture() {
   await writeFile(path.join(moduleRoot, "src", "model", "index.ts"), "export {};\n", "utf8");
   await writeFile(path.join(moduleRoot, "src", "hotfix", "index.ts"), "export {};\n", "utf8");
   await writeFile(protoFile, `syntax = "proto3";\n\npackage cards;\n\n//ResponseType S2C_CardsPing\n// @ets.msg protocol=Cards method=Ping\nmessage C2S_CardsPing // IRequest\n{\n  string text = 1;\n}\n\nmessage S2C_CardsPing // IResponse\n{\n  string greeting = 1;\n}\n`, "utf8");
+  await writeFile(protoFile, (await readFile(protoFile,"utf8")) + '\nmessage CompactShop { uint32 npc_id = 1; string name = 2; /* uint32 ghost = 99; */ repeated uint32 prices = 3;\n // string fake = 98;\n string note = 4 [deprecated = true]; }\n');
   await writeFile(path.join(moduleRoot, "tiangz.module.json"), `${JSON.stringify({
     formatVersion: 1,
     id: "org.example.cards",

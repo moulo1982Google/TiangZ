@@ -1,12 +1,12 @@
 //! 选择 Watcher 或单进程模式，并将已校验配置接入运行时。 / Selects Watcher or single-process mode and wires validated configuration into the runtime.
 
 use std::env;
-use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
 use crate::config::{is_start_machine_path, load_runtime_config, resolve_startup_path};
 use crate::process::run_runtime_config;
+use crate::runtime_paths::{resolve_runtime_root, startup_options};
 use crate::watcher::run_start_machine;
 
 mod allocator;
@@ -28,6 +28,7 @@ mod module_native {
     include!(concat!(env!("OUT_DIR"), "/module_native.rs"));
 }
 mod process;
+mod runtime_paths;
 mod shutdown;
 mod telemetry;
 mod transport;
@@ -42,9 +43,8 @@ async fn main() -> Result<()> {
         println!("{}", version::display());
         return Ok(());
     }
-    let startup_path =
-        first_arg.unwrap_or_else(|| "configs/local/cluster/StartMachine.json".to_string());
-    let root = resolve_runtime_root();
+    let (startup_path, explicit_root) = startup_options(env::args().skip(1))?;
+    let root = resolve_runtime_root(explicit_root.as_deref())?;
     let resolved_config = resolve_startup_path(&root, startup_path);
     if is_start_machine_path(&resolved_config) {
         let _logging = logging::init(
@@ -52,12 +52,14 @@ async fn main() -> Result<()> {
             "watcher",
             &crate::config::ProcessLoggingConfig::default(),
         )?;
+        tracing::info!(target: "tiangz::runtime", runtime_root = %root.display(), "resolved runtime assets");
         run_start_machine(&root, resolved_config).await?;
         return Ok(());
     }
 
     let config = load_runtime_config(&resolved_config)?;
     let _logging = logging::init(&root, &config.process.name, &config.process.logging)?;
+    tracing::info!(target: "tiangz::runtime", runtime_root = %root.display(), "resolved runtime assets");
     let _telemetry = telemetry::init(
         &config.process.name,
         config
@@ -67,39 +69,4 @@ async fn main() -> Result<()> {
             .and_then(|observability| observability.tracing.as_ref()),
     )?;
     run_runtime_config(&root, &resolved_config, config).await
-}
-
-/// 解析运行时资源根目录，避免把构建机路径带入发布包。
-///
-/// 优先使用当前工作目录，因为正式部署会把它设置为包含 `dist/` 和
-/// `configs/` 的发布目录；其次从可执行文件向上查找，兼容本地直接运行
-/// `target/debug` 或 `target/release` 的场景。编译期目录只作为开发环境的
-/// 最后兜底，不能作为发布包的正常路径来源。
-///
-/// Resolves the runtime asset root without leaking the build-machine path into
-/// release artifacts. The current directory is preferred for deployed bundles,
-/// then executable ancestors are searched for local Cargo layouts. The compile
-/// time directory is only a final development fallback.
-fn resolve_runtime_root() -> PathBuf {
-    if let Ok(current_dir) = env::current_dir()
-        && looks_like_runtime_root(&current_dir)
-    {
-        return current_dir;
-    }
-
-    if let Ok(executable) = env::current_exe() {
-        let mut candidate = executable.parent().map(Path::to_path_buf);
-        while let Some(path) = candidate {
-            if looks_like_runtime_root(&path) {
-                return path;
-            }
-            candidate = path.parent().map(Path::to_path_buf);
-        }
-    }
-
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
-fn looks_like_runtime_root(path: &Path) -> bool {
-    path.join("dist").is_dir() && path.join("configs").is_dir()
 }

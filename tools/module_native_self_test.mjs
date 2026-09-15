@@ -8,6 +8,14 @@ import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
 import { moduleNativeFingerprint } from "./module_native.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
+const hostMetadataResult=spawnSync('cargo',['metadata','--format-version','1','--no-deps','--offline','--locked'],{cwd:root,encoding:'utf8',windowsHide:true});
+assert.equal(hostMetadataResult.status,0,hostMetadataResult.stderr);
+const hostPackage=JSON.parse(hostMetadataResult.stdout).packages.find(item=>path.resolve(item.manifest_path)===path.join(root,'Cargo.toml'));
+function hostRequirement(name){
+  const dependency=hostPackage?.dependencies.find(item=>item.name===name&&item.kind===null);
+  assert(dependency,`host dependency not found: ${name}`);
+  return JSON.stringify(dependency.req);
+}
 const fixture = path.join(root, "temp", "module-native-fixture");
 const modules = path.join(fixture, "modules");
 for (const name of ["left", "right"]) {
@@ -44,8 +52,8 @@ name = "module_native_${name}"
 version = "1.0.0"
 edition = "2024"
 [dependencies]
-deno_core = "=0.410.0"
-deno_error = "=0.7.1"
+deno_core = ${hostRequirement('deno_core')}
+deno_error = ${hostRequirement('deno_error')}
 `);
   await writeFile(path.join(directory, "rust/src/lib.rs"), `pub mod generated;
 pub mod native_data;
@@ -121,6 +129,18 @@ await writeFile(leftFile, left);
 assert.notEqual(rejected.status, 0);
 assert.match(rejected.stdout + rejected.stderr, /Model source changed/);
 if (process.argv.includes("--rust")) {
+  const incompatible=path.join(fixture,'incompatible-deno-core');
+  await mkdir(path.join(incompatible,'src'),{recursive:true});
+  await writeFile(path.join(incompatible,'Cargo.toml'),'[package]\nname="deno_core"\nversion="0.0.0"\nedition="2024"\n');
+  await writeFile(path.join(incompatible,'src/lib.rs'),'pub struct Extension;\n');
+  const leftCargo=path.join(modules,'left/rust/Cargo.toml');
+  const validCargo=await readFile(leftCargo,'utf8');
+  try {
+    await writeFile(leftCargo,validCargo.replace(/^deno_core = .*$/m,`deno_core = { path = ${JSON.stringify(incompatible.replaceAll(path.sep,'/'))} }`));
+    const mismatch=spawnSync(process.execPath,['tools/build_module_native.mjs','--modules-dir',modules,'--check','--offline'],{cwd:root,encoding:'utf8',windowsHide:true});
+    assert.notEqual(mismatch.status,0);
+    assert.match(mismatch.stdout+mismatch.stderr,/Native dependency mismatch: org.example.left/);
+  } finally { await writeFile(leftCargo,validCargo); }
   run(process.execPath, ["tools/build_module_native.mjs", "--modules-dir", modules, "--offline"]);
   const output = path.join(root, "temp/module-native-build", catalog.graphHash);
   const assertions = [];

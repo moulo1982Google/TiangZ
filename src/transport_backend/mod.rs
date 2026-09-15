@@ -61,23 +61,47 @@ impl ConnectionWriteBatch {
 
 pub(crate) type ConnectionWriters = Arc<Mutex<HashMap<u64, ConnectionWriter>>>;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ConnectionQueueError {
+    ByteLimit,
+    FrameLimit,
+    Full,
+    Closed,
+}
+
+impl std::fmt::Display for ConnectionQueueError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::ByteLimit => "connection outbound byte queue is full",
+            Self::FrameLimit => "connection outbound frame queue is full",
+            Self::Full => "connection outbound batch queue is full",
+            Self::Closed => "connection outbound queue is closed",
+        })
+    }
+}
+
 /// 把宿主控制响应放入既有连接写队列，同时遵守每连接字节上限。
 /// Queues a host control response on an existing connection while preserving the per-connection
 /// byte bound.
 pub(crate) fn try_queue_connection_frame(
     writer: &ConnectionWriter,
     frame: Bytes,
-) -> std::result::Result<(), String> {
+) -> std::result::Result<(), ConnectionQueueError> {
     try_queue_connection_batch(writer, ConnectionWriteBatch::single(frame))
 }
 
+/// 失败时撤销本批队列计数，并区分容量拒绝与接收端关闭。
+/// Rolls back this batch's queue accounting and distinguishes capacity from receiver closure.
 pub(crate) fn try_queue_connection_batch(
     writer: &ConnectionWriter,
     batch: ConnectionWriteBatch,
-) -> std::result::Result<(), String> {
+) -> std::result::Result<(), ConnectionQueueError> {
     let frame_count = batch.frames.len();
     if frame_count == 0 {
         return Ok(());
+    }
+    if writer.sender.is_closed() {
+        return Err(ConnectionQueueError::Closed);
     }
     let frame_bytes = batch.frame_bytes;
     let queued = writer
@@ -88,7 +112,7 @@ pub(crate) fn try_queue_connection_batch(
         writer
             .queued_bytes
             .fetch_sub(frame_bytes, std::sync::atomic::Ordering::Relaxed);
-        return Err("connection outbound byte queue is full".to_string());
+        return Err(ConnectionQueueError::ByteLimit);
     }
     let queued_frames = writer
         .queued_frames
@@ -101,18 +125,21 @@ pub(crate) fn try_queue_connection_batch(
         writer
             .queued_bytes
             .fetch_sub(frame_bytes, std::sync::atomic::Ordering::Relaxed);
-        return Err("connection outbound frame queue is full".to_string());
+        return Err(ConnectionQueueError::FrameLimit);
     }
     match writer.sender.try_send(batch) {
         Ok(()) => Ok(()),
-        Err(_) => {
+        Err(error) => {
             writer
                 .queued_frames
                 .fetch_sub(frame_count, std::sync::atomic::Ordering::Relaxed);
             writer
                 .queued_bytes
                 .fetch_sub(frame_bytes, std::sync::atomic::Ordering::Relaxed);
-            Err("connection outbound frame queue is full or stopped".to_string())
+            Err(match error {
+                mpsc::error::TrySendError::Full(_) => ConnectionQueueError::Full,
+                mpsc::error::TrySendError::Closed(_) => ConnectionQueueError::Closed,
+            })
         }
     }
 }
@@ -234,6 +261,44 @@ pub(crate) fn validate_frame_length(length: usize) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn outbound_queue_errors_preserve_existing_accounting() {
+        use std::sync::atomic::Ordering;
+        for (bytes, frames, expected) in [
+            (
+                CONNECTION_OUTBOUND_BYTE_CAPACITY,
+                0,
+                ConnectionQueueError::ByteLimit,
+            ),
+            (
+                0,
+                CONNECTION_OUTBOUND_FRAME_CAPACITY,
+                ConnectionQueueError::FrameLimit,
+            ),
+            (2, 1, ConnectionQueueError::Full),
+        ] {
+            let (sender, _receiver) = mpsc::channel(1);
+            if expected == ConnectionQueueError::Full {
+                sender
+                    .try_send(ConnectionWriteBatch::single(Bytes::from_static(&[0, 1])))
+                    .unwrap();
+            }
+            let (shutdown_tx, _) = watch::channel(false);
+            let writer = ConnectionWriter {
+                sender,
+                queued_bytes: Arc::new(AtomicUsize::new(bytes)),
+                queued_frames: Arc::new(AtomicUsize::new(frames)),
+                shutdown_tx,
+            };
+            assert_eq!(
+                try_queue_connection_frame(&writer, Bytes::from_static(&[2, 3])),
+                Err(expected)
+            );
+            assert_eq!(writer.queued_bytes.load(Ordering::Relaxed), bytes);
+            assert_eq!(writer.queued_frames.load(Ordering::Relaxed), frames);
+        }
+    }
 
     #[test]
     fn decoder_extracts_multiple_frames_and_keeps_partial_tail() {

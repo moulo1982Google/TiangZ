@@ -264,6 +264,7 @@ async fn wait_for_watcher_trigger(
 fn spawn_child(exe: &Path, root: &Path, arg: &Path) -> Result<(Child, Option<ChildStdin>)> {
     let mut child = Command::new(exe)
         .arg(arg)
+        .arg(format!("--runtime-root={}", root.display()))
         .current_dir(root)
         .env("TIANGZ_WATCHER_CONTROL", "stdin")
         .stdin(Stdio::piped())
