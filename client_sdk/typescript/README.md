@@ -27,11 +27,11 @@ index.ts              SDK 公共入口
 npm run codegen
 ```
 
-生成器会更新协议代码和指纹，再把完整 SDK 分发到：
+生成器会更新主工程内的协议代码和指纹。再到独立 `TiangZ-Examples` 执行 `npm run sdk:sync`，按 `tiangz.clients.json` 显式分发到以下目录（相对于主工程）：
 
 ```text
-client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/
-client_demo/pixi_client_8.19.0/src/Generated/SDK/
+../TiangZ-Examples/clients/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/
+../TiangZ-Examples/clients/pixi_client_8.19.0/src/Generated/SDK/
 ```
 
 业务 RPC 使用生成的强类型 Client，不手写 msgcode、编解码或 rpcId：
@@ -48,6 +48,8 @@ const response = await gate.enterMap({ mapId: 1 });
 ```powershell
 npm run test:client-sdk
 npm run test:client-sdk-distribution
+# 以下在 TiangZ-Examples 执行：
+npm run sdk:check
 npm run typecheck:cocos-demo
 npm run typecheck:pixi
 ```

@@ -1135,10 +1135,10 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 
 # 2026-08-03：Godot 4.7.1 3D客户端演示
 
-- 在用户创建的`client_demo/godot-3d-4.7.1`空工程中加入GDScript WebSocket适配层、Proto读取器和Map 100灰盒场景。
+- 在用户创建的`../TiangZ-Examples/clients/godot-3d-4.7.1`空工程中加入GDScript WebSocket适配层、Proto读取器和Map 100灰盒场景。
 - Godot Demo贯通LoginMgr、Login、Gate、Map 100、`G2C_EntityNavigate`、基础AOI、5秒Gate Ping、点击寻路、W/S方向移动、A/D转身和`Map.ToggleDemoDoor`。
 - Godot与TiangZ米制Y-Up坐标直接对齐；表现层只平滑服务端权威位置，不复制Rust NavMesh、TileCache、Agent半径或动态碰撞。
-- Godot协议层已接入`codegen:godot-client-sdk`：从Proto锁文件生成`client_demo/godot-3d-4.7.1/scripts/generated/tiangz_proto.gd`，客户端只手写连接流程、RPC编排和表现适配；TCP/KCP Adapter仍留作后续工作。
+- Godot协议层已接入`codegen:godot-client-sdk`：从Proto锁文件生成`../TiangZ-Examples/clients/godot-3d-4.7.1/scripts/generated/tiangz_proto.gd`，客户端只手写连接流程、RPC编排和表现适配；TCP/KCP Adapter仍留作后续工作。
 
 # 2026-08-03：Phase 4.4最小怪物业务闭环
 

@@ -1,4 +1,5 @@
 import { Singleton, SingletonRegistry } from "./Singleton";
+import { GLOBAL_ID_COUNTER_LIMIT, type GlobalIdCounterSource } from "./GlobalIdLayout";
 
 /** 可合服持久身份；服务端使用 bigint，JSON 边界才转十进制字符串。 / Merge-safe persistent identity kept as bigint on the server and converted to decimal text only at JSON boundaries. */
 export type GlobalId = bigint;
@@ -14,6 +15,8 @@ export interface GlobalIdConfig {
   originServerId?: number;
   /** 同一来源服内并发生成 ID 的 Process 编号。 / ID-generating Process number within one origin server. */
   workerId?: number;
+  /** 显式启用 DBProxy 号段；省略保留旧本地开发模式，不保证跨重启唯一。 / Explicit DBProxy ranges; omission keeps legacy development IDs without restart uniqueness. */
+  allocation?: "local-development" | "dbproxy";
 }
 
 const ORIGIN_BITS = 14n;
@@ -30,14 +33,14 @@ const MAX_TIME = Number((1n << TIME_BITS) - 1n);
  * 生成正数 63 位全局 ID，并把来源服身份编码进高位。
  *
  * 布局为 `[origin:14][seconds:30][worker:7][sequence:12]`。来源服保证合服
- * 不冲突，worker 保证同服多 Process 不冲突；时钟回拨时拒绝继续生成，绝不
- * 静默产生重复 ID。GlobalId 只用于逻辑实体，Timer 等短生命周期对象使用
+ * 不冲突。DBProxy 模式把持久号段计数映射到 seconds/sequence 位，不将它们解释为真实创建时间。
+ * 旧本地开发模式仅检查进程内时钟回拨，不保证跨重启唯一。GlobalId 只用于逻辑实体，Timer 等短生命周期对象使用
  * InstanceIdSystem，避免消耗持久身份空间。
  *
  * Generates positive 63-bit global IDs using
  * `[origin:14][seconds:30][worker:7][sequence:12]`. The origin prevents merge
- * collisions while the worker separates Processes in one server. Clock rollback
- * fails closed instead of silently producing duplicates. Runtime-only objects
+ * collisions. DBProxy ranges map logical counters into seconds/sequence bits, not creation time.
+ * Legacy development mode detects only in-process clock rollback, not restart collisions. Runtime-only objects
  * such as timers use InstanceIdSystem instead.
  */
 export class GlobalIdSystem extends Singleton {
@@ -47,9 +50,10 @@ export class GlobalIdSystem extends Singleton {
   private sequence = 0;
   private configured = false;
   private generated = false;
+  private counterSource: GlobalIdCounterSource | undefined;
 
   /** 在产生第一个ID前配置部署身份；重复配置会重置时钟状态，因此只允许启动阶段调用。 / Configures deployment identity before the first ID; call only during startup because it resets generator state. */
-  Configure(config: GlobalIdConfig = {}): void {
+  Configure(config: GlobalIdConfig = {}, counterSource?: GlobalIdCounterSource): void {
     if (this.configured || this.generated) {
       throw new Error("global id system can only be configured once during Process startup");
     }
@@ -57,6 +61,16 @@ export class GlobalIdSystem extends Singleton {
     this.workerId = config.workerId ?? 0;
     requireIntegerRange(this.originServerId, 1, MAX_ORIGIN_SERVER_ID, "originServerId");
     requireIntegerRange(this.workerId, 0, MAX_WORKER_ID, "workerId");
+    const allocation = config.allocation ?? "local-development";
+    if (allocation !== "local-development" && allocation !== "dbproxy") throw new Error("invalid global id allocation mode");
+    if (allocation === "dbproxy") {
+      if (!counterSource || counterSource.OriginServerId !== this.originServerId || counterSource.WorkerId !== this.workerId) {
+        throw new Error("DBProxy global id mode requires a prepared matching range source");
+      }
+      this.counterSource = counterSource;
+    } else if (counterSource) {
+      throw new Error("local-development global id mode cannot adopt persistent ranges");
+    }
     this.lastSecond = -1;
     this.sequence = 0;
     this.configured = true;
@@ -70,6 +84,13 @@ export class GlobalIdSystem extends Singleton {
   Next(): GlobalId {
     if (!this.configured) {
       throw new Error("global id system must be configured before allocating IDs");
+    }
+    if (this.counterSource) {
+      const counter = this.counterSource.NextCounter();
+      if (!Number.isSafeInteger(counter) || counter < 0 || counter >= GLOBAL_ID_COUNTER_LIMIT) throw new Error("invalid reserved global id counter");
+      this.generated = true;
+      return (BigInt(this.originServerId) << 49n) | (BigInt(Math.floor(counter / 4096)) << 19n)
+        | (BigInt(this.workerId) << 12n) | BigInt(counter % 4096);
     }
     const currentSecond = Math.floor(Date.now() / 1_000) - CUSTOM_EPOCH_SECONDS;
     if (currentSecond < 0 || currentSecond > MAX_TIME) {
@@ -106,6 +127,12 @@ export class GlobalIdSystem extends Singleton {
   static OriginServerId(id: GlobalId): number {
     requireGlobalId(id);
     return Number(id >> (TIME_BITS + WORKER_BITS + SEQUENCE_BITS));
+  }
+
+  /** 销毁时关闭号段源，保留引用也不能继续发号。 / Closes the range source on destruction so retained references cannot allocate. */
+  protected override OnDestroy(): void {
+    this.counterSource?.Dispose();
+    this.configured = false;
   }
 }
 

@@ -46,6 +46,7 @@ try {
   run("tools/codegen_module_configs.mjs", ["--modules-dir", path.dirname(moduleRoot)]);
   const dist = path.join(temporary, "dist");
   const bundleArgs = ["--modules-dir", path.dirname(moduleRoot), "--out-dir", dist];
+  run("tools/prepare_game_modules.mjs", ["--modules-dir", path.dirname(moduleRoot)]);
   run("tools/build_runtime_bundles.mjs", bundleArgs);
   run("tools/build_game_config_data.mjs", ["--out-dir", dist, "--initial"]);
   const context = { TextEncoder, TextDecoder, console, setTimeout, clearTimeout };
@@ -68,7 +69,7 @@ try {
   assert.throws(() => install({ ...hostManifest, moduleConfigsJson: JSON.stringify(invalid) }), /table missing/);
   assert.equal(registry.Get("org.example.cards"), latest);
   assert.equal(registry.Generation, 2);
-  assert.throws(() => install({ ...updated, schemaFingerprint: "0".repeat(64) }), /schema/i);
+  assert.throws(() => install({ ...updated, schemaFingerprint: "0".repeat(64) }), /schema|built-in game config/i);
   assert.equal(registry.Generation, 2);
   const changedSchema = structuredClone(candidates);
   changedSchema[0].schemaFingerprint = "0".repeat(64);
@@ -117,11 +118,12 @@ async function writeFixture(target, id = "org.example.cards") {
   ]);
   await writeFile(path.join(target, "src", "model", "index.ts"), `import { defineGameModule } from "#tiangz/core"; defineGameModule({id: ${JSON.stringify(id)}, version: "1.0.0"});\n`, "utf8");
   await writeFile(path.join(target, "src", "hotfix", "index.ts"), "export {};\n", "utf8");
+  await writeFile(path.join(target, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler", strict: true, skipLibCheck: true }, include: ["src/**/*.ts"] }));
   await writeFile(path.join(target, "tiangz.module.json"), `${JSON.stringify({
     formatVersion: 1,
     id,
     version: "1.0.0",
-    engine: { minVersion: "0.4.0", maxVersionExclusive: "0.5.0" },
+    engine: { minVersion: "0.6.0-alpha.0", maxVersionExclusive: "0.7.0" },
     dependencies: [],
     capabilities: ["example.cards"],
     entries: { model: "src/model/index.ts", hotfix: "src/hotfix/index.ts" },

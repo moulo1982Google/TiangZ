@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import ts from "typescript";
 import { recordGenerator } from "./codegen_manifest.mjs";
+import { generateSystemDeclarations as generateDeclaredSystems } from "./system_declarations.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const root = path.resolve(path.dirname(scriptFile), "..");
@@ -141,7 +142,8 @@ const messageProtocolFiles = await collectFiles(
   serverProtocolSearchRoots,
   isServerProtocolMessagesFile,
 );
-const systemGeneration = await generateSystemDeclarations(systemFiles);
+const systemGeneration = await generateDeclaredSystems({ root, files: systemFiles, modelRoots: sceneSearchRoots,
+  outputRoot: systemDeclarationRoot, publicFile: path.join(root, "app/model/public.ts") });
 const systemDeclarationFiles = systemGeneration.outputs;
 const systemTargetImports = systemGeneration.targets
   .map(
@@ -219,7 +221,7 @@ await recordGenerator(root, {
     { kind: "handler", roots: handlerSearchRoots, paths: handlerFiles },
     { kind: "hotfix-patch", roots: patchSearchRoots, paths: legacyPatchFiles },
     { kind: "hotfix-system", roots: patchSearchRoots, paths: systemFiles },
-    { kind: "system-model", roots: [path.join(root, "app", "model")], paths: systemGeneration.modelFiles },
+    { kind: "system-model", roots: sceneSearchRoots, paths: systemGeneration.modelFiles },
     { kind: "bench-handler", roots: benchHandlerSearchRoots, paths: benchHandlerFiles },
     { kind: "protocol-rpc", roots: serverProtocolSearchRoots, paths: protocolFiles },
     { kind: "protocol-message", roots: serverProtocolSearchRoots, paths: messageProtocolFiles },

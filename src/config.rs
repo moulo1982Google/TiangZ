@@ -131,6 +131,17 @@ pub struct ProcessIdentityConfig {
     pub origin_server_id: u16,
     #[serde(default)]
     pub worker_id: u8,
+    /// DBProxy号段需显式切换，不自动迁移旧生成器。 / DBProxy ranges require explicit opt-in rather than silently migrating legacy generators.
+    #[serde(default)]
+    pub allocation: GlobalIdAllocation,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum GlobalIdAllocation {
+    #[default]
+    LocalDevelopment,
+    Dbproxy,
 }
 
 impl Default for ProcessIdentityConfig {
@@ -138,6 +149,7 @@ impl Default for ProcessIdentityConfig {
         Self {
             origin_server_id: default_origin_server_id(),
             worker_id: 0,
+            allocation: GlobalIdAllocation::LocalDevelopment,
         }
     }
 }
@@ -815,6 +827,11 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     }
     if config.process.identity.worker_id > 127 {
         bail!("process identity.workerId must be between 0 and 127");
+    }
+    if config.process.identity.allocation == GlobalIdAllocation::Dbproxy
+        && config.process.persistence.db_proxy.is_none()
+    {
+        bail!("DBProxy global id mode requires process.persistence.dbProxy");
     }
     let log_file_enabled = config
         .process
@@ -1802,6 +1819,39 @@ mod tests {
             known_scenes: vec![],
         };
         assert!(validate_runtime_config(&config).is_err());
+    }
+
+    #[test]
+    fn global_id_ranges_require_explicit_mode_and_dbproxy() {
+        let legacy: ProcessIdentityConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(legacy.allocation, GlobalIdAllocation::LocalDevelopment);
+        assert!(
+            serde_json::from_str::<ProcessIdentityConfig>(r#"{"allocation":"automatic"}"#).is_err()
+        );
+        let process: ProcessConfig =
+            serde_json::from_str(r#"{"name":"ids","identity":{"allocation":"dbproxy"}}"#).unwrap();
+        let config = RuntimeConfig {
+            process,
+            scenes: vec![scene("map", 7100)],
+            known_scenes: vec![],
+        };
+        assert!(
+            validate_runtime_config(&config)
+                .unwrap_err()
+                .to_string()
+                .contains("requires process.persistence.dbProxy")
+        );
+        let process: ProcessConfig = serde_json::from_str(r#"{"name":"ids","identity":{"allocation":"dbproxy"},"persistence":{"dbProxy":{"endpoint":"127.0.0.1:7800","authTokenEnv":"TEST_ID_TOKEN"}}}"#).unwrap();
+        let config = RuntimeConfig {
+            process,
+            scenes: vec![scene("map", 7100)],
+            known_scenes: vec![],
+        };
+        validate_runtime_config(&config).unwrap();
+        assert_eq!(
+            serde_json::to_value(&config).unwrap()["process"]["identity"]["allocation"],
+            "dbproxy"
+        );
     }
 
     #[test]

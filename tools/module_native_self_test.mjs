@@ -23,7 +23,7 @@ for (const name of ["left", "right"]) {
   for (const folder of ["src/model", "src/hotfix", "native", "rust/src"]) await mkdir(path.join(directory, folder), { recursive: true });
   await writeFile(path.join(directory, "tiangz.module.json"), JSON.stringify({
     formatVersion: 1, id: `org.example.${name}`, version: "1.0.0",
-    engine: { minVersion: "0.4.0", maxVersionExclusive: "0.5.0" }, dependencies: [],
+    engine: { minVersion: "0.6.0-alpha.0", maxVersionExclusive: "0.7.0" }, dependencies: [],
     entries: { model: "src/model/index.ts", hotfix: "src/hotfix/index.ts" },
     native: { source: "native", crate: "rust", crateName: `module_native_${name}`,
       generatedRust: "rust/src/generated", generatedTypeScript: "src/model/generated/native" },
@@ -179,12 +179,14 @@ if (process.argv.includes("--rust")) {
   `);
   const manifest = path.join(output, "Cargo.toml");
   await writeFile(manifest, await readFile(manifest, "utf8") + '\n[[bin]]\nname = "module-native-acceptance"\npath = "acceptance.rs"\n');
-  run("cargo", ["run", "--offline", "--manifest-path", manifest, "--bin", "module-native-acceptance"],
+  run("cargo", ["run", "--offline", "--manifest-path", manifest, "--target-dir", path.join(root, "temp/module-native-target"), "--bin", "module-native-acceptance"],
     { ...process.env, TIANGZ_ENGINE_ROOT: root, TIANGZ_MODULE_NATIVE_BRIDGE: path.join(output, "bridge.rs") });
 }
 process.stdout.write("module Native self-test passed\n");
 
 function run(command, args, env = process.env) {
+  env = { ...env };
+  if (process.platform === "win32") for (const name of ["CC", "CXX"]) if (/^(gcc|g\+\+)(\.exe)?$/i.test(path.basename(env[name] ?? ""))) delete env[name];
   const result = spawnSync(command, args, { cwd: root, env, stdio: "inherit", windowsHide: true });
   if (result.error) throw result.error;
   assert.equal(result.status, 0, `${command} failed`);

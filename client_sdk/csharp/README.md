@@ -14,7 +14,7 @@ Proto 会生成：
 - `Core`：二进制协议、帧、WebSocket RPC、主线程 `Update()` 分发。
 - `Demo/LoginFlow.cs`：LoginMgr -> Login -> Gate -> Map 的演示流程。
 
-生成结果会复制到 `client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime`。Unity 表现代码只能调用生成的 Client 和 `RpcSocket.Update()`，不能手工写 msgcode 或 Codec。
+生成命令只更新主工程 SDK。再到独立 `TiangZ-Examples` 执行 `npm run sdk:sync`，把生成结果复制到其 `clients/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime`。Unity 表现代码只能调用生成的 Client 和 `RpcSocket.Update()`，不能手工写 msgcode 或 Codec。
 
 当前 Unity Adapter 只支持 WebSocket；选择 TCP/KCP 必须由上层明确报错，不能静默降级。
 

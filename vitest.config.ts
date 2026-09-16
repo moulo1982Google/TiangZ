@@ -15,7 +15,6 @@ export default defineConfig({
   oxc,
   test: {
     include: ["tests/**/*.test.ts"],
-    globalSetup: ["./tests/global_setup.ts"],
     fileParallelism: true,
     pool: "forks",
     isolate: true,

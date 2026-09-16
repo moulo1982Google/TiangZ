@@ -1,6 +1,4 @@
 import {
-  InteractableUnit,
-  NpcUnit,
   entityExtensionHandler,
   systemFor,
   type EntityExtensionHandler,
@@ -9,6 +7,8 @@ import {
   GreetingContentMarkerComponent,
   GreetingCounterComponent,
   GreetingEntity,
+  LeftEntity,
+  RightEntity,
 } from "#tiangz/module";
 
 @entityExtensionHandler(GreetingEntity, { id: "org.tiangz.fixture.greeting.counter" })
@@ -18,18 +18,18 @@ class GreetingEntityExtension implements EntityExtensionHandler<GreetingEntity> 
   }
 }
 
-@entityExtensionHandler(NpcUnit, { id: "org.tiangz.fixture.greeting.npc-marker" })
-class GreetingNpcExtension implements EntityExtensionHandler<NpcUnit> {
-  Attach(entity: NpcUnit): void {
+@entityExtensionHandler(LeftEntity, { id: "org.tiangz.fixture.greeting.left-marker" })
+class GreetingLeftExtension implements EntityExtensionHandler<LeftEntity> {
+  Attach(entity: LeftEntity): void {
     entity.AddComponent(GreetingContentMarkerComponent);
   }
 }
 
-@entityExtensionHandler(InteractableUnit, {
-  id: "org.tiangz.fixture.greeting.interactable-marker",
+@entityExtensionHandler(RightEntity, {
+  id: "org.tiangz.fixture.greeting.right-marker",
 })
-class GreetingInteractableExtension implements EntityExtensionHandler<InteractableUnit> {
-  Attach(entity: InteractableUnit): void {
+class GreetingRightExtension implements EntityExtensionHandler<RightEntity> {
+  Attach(entity: RightEntity): void {
     entity.AddComponent(GreetingContentMarkerComponent);
   }
 }

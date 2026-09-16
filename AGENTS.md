@@ -6,7 +6,7 @@
 
 1. 执行 `git status --short`，保留用户已有修改、未跟踪文件和本地配置，不得擅自还原、删除或覆盖。
 2. 先判断请求属于业务、协议、客户端、框架、Rust Runtime、生成器还是性能工具。
-3. 业务需求先查 `docs/patterns` 和 [能力归属表](docs/design/capability-ownership.md)，明确所有者、Entity形态、生命周期、Audience和同步语义，再查找 `app/model/domains` 中可复用的稳定契约，以及 `app/model/mmorpg`、`app/hotfix/mmorpg` 中最接近的领域适配实现。
+3. 业务需求先查 `docs/patterns` 和 [能力归属表](docs/design/capability-ownership.md)，明确所有者、Entity形态、生命周期、Audience和同步语义，再查找 `app/model/domains` 中可复用的稳定契约，以及 `../TiangZ-Examples/modules/mmorpg/src/model`、`../TiangZ-Examples/modules/mmorpg/src/hotfix` 中最接近的领域适配实现。
 4. 当前事实的可信顺序是：运行中的代码与测试 > `README.md`、`docs/tutorials`、`docs/reference`、`docs/design/maintainer-guide.md` > `docs/roadmap.md` > 历史 `phase*_plan/acceptance` 和旧性能报告。
 5. 用户说“讨论”“先看”或“先别改”时，只检查和说明，不修改文件。
 
@@ -32,14 +32,13 @@ Machine
 | 路径 | 职责 | 业务需求默认是否修改 |
 |---|---|---|
 | `app/model/domains` | 跨游戏可复用的稳定领域契约、ChildEntity和Component容器 | 只有多个领域的稳定语义已经验证后才扩展 |
-| `app/model/mmorpg` | MMORPG不可热更的Scene、Entity、Component状态和适配器 | 需要新增MMORPG状态或类型时；修改后必须重启Process |
-| `app/hotfix` | 可热更的Handler和领域方法实现 | 普通服务端行为需求默认修改 |
-| `proto` | 协议源文件 | 需要新消息时 |
-| `client_demo/cocos_client2D_3.8.6/assets/scripts/Demo` | Cocos业务和表现 | 需要客户端行为时 |
-| `client_demo/pixi_client_8.19.0/src` | Pixi/H5验收业务 | 需要跨客户端验收时 |
-| `configs` | Process/Scene部署配置 | 需要新增实例或环境时 |
-| `native_data` | Rust权威数据原型与Native op声明 | 只有明确的数据下沉需求时 |
-| `src/game` | 不可热更的Rust游戏业务模块 | 用户明确选择Rust实现且收益成立时 |
+| `../TiangZ-Examples/modules/mmorpg/src/model` | MMORPG不可热更的Scene、Entity、Component状态和适配器 | 需要新增MMORPG状态或类型时；修改后必须重启Process |
+| 模块的 `src/hotfix` | 可热更的Handler和领域方法实现 | 普通服务端行为需求默认修改；主工程 `app/hotfix` 仅保留宿主入口 |
+| 模块的 `proto` | 模块自有协议与锁 | 需要新业务消息时；不要写入主工程协议目录 |
+| 同级 `TiangZ-Examples/clients` | 独立客户端示例、资源和客户端检查 | 需要客户端行为时；不在主工程重建 client_demo |
+| 游戏工程的 `configs` | Process/Scene部署配置 | 需要新增实例或环境时；主工程不携带示例拓扑 |
+| 模块的 `native`/`native_data` | 模块自有Rust权威数据原型与Native op声明 | 只有明确的数据下沉需求时，以模块清单声明的路径为准 |
+| `../TiangZ-Examples/modules/mmorpg/rust/src/game` | 不可热更的Rust游戏业务模块 | 用户明确选择Rust实现且收益成立时 |
 | `app/core` | TypeScript框架 | 默认不修改 |
 | `src` | Rust Runtime、网络和宿主 | 默认不修改 |
 | `tools` | codegen、检查和维护工具 | 默认不修改 |
@@ -48,7 +47,7 @@ Machine
 
 如果业务可以通过现有Scene、Actor、Component、协议和广播能力完成，不得为了该业务新增Core抽象或Rust特殊分支。确实缺少通用能力时，先说明现有机制为什么无法表达、影响范围和最小扩展方案，再修改框架。
 
-当前MMORPG示例不是Core的定义：`app/model/domains`是跨游戏的稳定契约层，`app/model/mmorpg`、`app/hotfix/mmorpg`和`src/game`是具体领域层；AOI、MapHost、NavMesh、怪物、NPC、目标选择和地图技能调度必须留在MMORPG领域。`app/core`只承载运行时语义。修改分层入口后运行`npm run verify:domain-boundaries`，不要用新的转发层绕过边界。详细规则见[能力归属表](docs/design/capability-ownership.md)。
+当前MMORPG示例不是Core的定义：`app/model/domains`是跨游戏的稳定契约层，`../TiangZ-Examples/modules/mmorpg/src/model`、`../TiangZ-Examples/modules/mmorpg/src/hotfix`和`../TiangZ-Examples/modules/mmorpg/rust/src/game`是具体领域层；AOI、MapHost、NavMesh、怪物、NPC、目标选择和地图技能调度必须留在MMORPG领域。`app/core`只承载运行时语义。修改分层入口后运行`npm run verify:domain-boundaries`，不要用新的转发层绕过边界。详细规则见[能力归属表](docs/design/capability-ownership.md)。
 
 外置游戏模块只通过`tiangz.module.json`、`defineGameModule`、Stable Model/Core入口和显式Model/Hotfix loader接入。给现有Entity贡献Component时，只能在发布前的Factory边界使用强类型`entityExtensionHandler/applyEntityExtensions`；装配器不得异步，也不能代替Entity/Component生命周期。Core可以拥有发现、依赖图、装载与兼容指纹，不能拥有具体模块的协议、地图、职业、技能、任务或内容数据。模块不得携带自动执行的Shell/SQL安装脚本；完整规则见[外置游戏模块](docs/design/external-game-modules.md)。
 
@@ -100,7 +99,7 @@ Hotfix只能通过`#tiangz/model`取得Model与Core的稳定类型，禁止深�
 - 普通业务数据默认先使用TS Component。只有数据量、访问频率、批量编码或热更状态所有权存在明确收益，并且用户同意后，才增加`.native`原型或Native op。
 - 数据下沉后固定为`TS -> generated Fast Op -> Rust Entity Store`；Rust不得回调TS读取权威状态。
 - 不在Update中默认逐实体逐字段跨边界扫描；需要批量处理时设计粗粒度op。但标量getter/setter仍是允许的API，由开发者根据指标决定是否使用。
-- Rust游戏业务只放`src/game/<domain>`；`src/native_data.rs`保留框架Store和受控访问边界，不继续承载Buff、战斗等业务实现。
+- Rust游戏业务只放`src/game/<domain>`；`../TiangZ-Examples/modules/mmorpg/rust/src/native_data.rs`保留框架Store和受控访问边界，不继续承载Buff、战斗等业务实现。
 - Unit/Session/Scene Handler即使由Rust实现业务算法，也必须先经过TS路由与mailbox；只有Ping、握手等明确的基础设施控制帧可以在Rust网络入口消费。
 
 ## 代码和文档约定
@@ -126,7 +125,7 @@ npm run verify
 
 ## 当前技术方向
 
-- TypeScript是默认主业务语言；性能敏感且规则稳定的领域可显式选择`src/game`中的Rust模块，但修改后必须重新编译并重启Process。
+- TypeScript是默认主业务语言；性能敏感且规则稳定的领域可显式选择`../TiangZ-Examples/modules/mmorpg/rust/src/game`中的Rust模块，但修改后必须重新编译并重启Process。
 - Wasm只作为未来重计算模块的候选，例如确定性战斗核心；当前不接入。
 - Rhai只作为未来脚本后端候选；当前不为它增加兼容层。
-- `v0.3.10`质量门已经完成，当前进入`0.4.x` Phase 4开发线；Rust AOI、NavMesh3D运行时和Cocos3D/UE/Unity/Godot演示均已落地，地图空间继续遵循[地图空间与3D坐标契约](docs/design/spatial-world.md)。
+- 当前开发版本为 `0.6.0-alpha.0`，从 0.4.x 直接进入模块化预发布线，尚未完成 0.6 正式发布验收。`v0.3.10`质量门和`0.4.0`空间契约是历史里程碑；Rust AOI、NavMesh3D运行时和Cocos3D/UE/Unity/Godot演示均已落地，地图空间继续遵循[地图空间与3D坐标契约](docs/design/spatial-world.md)。模块宿主版本范围须逐个验证后迁移，不能自动放宽其他游戏声明。

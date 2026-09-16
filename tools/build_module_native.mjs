@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, readFile, writeFile, realpath, symlink } from "node:fs/promises";
+import { mkdir, readFile, writeFile, realpath, symlink, copyFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
@@ -26,19 +26,22 @@ const catalog = await loadGameModuleCatalog({ projectRoot: root,
 const modules = catalog.modules.filter((module) => module.native);
 if (!modules.length) { process.stdout.write("no module Native crates\n"); process.exit(0); }
 const directory = path.join(root, "temp", "module-native-build", catalog.graphHash);
+const targetDirectory = path.join(root, "temp", "module-native-target");
 await mkdir(directory, { recursive: true });
 const fingerprint = await moduleNativeFingerprint(catalog);
 const dependencies = [];
 for (const [index, module] of modules.entries()) {
-  const metadata = run("cargo", ["metadata", "--format-version", "1", "--no-deps", "--manifest-path", path.join(module.native.crate, "Cargo.toml")], { capture: true });
+  const crateRoot = await realpath(module.native.crate);
+  const metadata = run("cargo", ["metadata", "--format-version", "1", "--no-deps", "--manifest-path", path.join(crateRoot, "Cargo.toml")], { capture: true });
   const packages = JSON.parse(metadata).packages;
-  const crate = packages.find((item) => path.resolve(item.manifest_path) === path.join(module.native.crate, "Cargo.toml"));
+  const crate = packages.find((item) => path.resolve(item.manifest_path) === path.join(crateRoot, "Cargo.toml"));
   if (crate?.name !== module.native.crateName) throw new Error(`native crate name mismatch: ${module.id}`);
   if (crate.targets.some((target) => target.kind.includes("custom-build"))) throw new Error(`module Native crates cannot run custom build scripts: ${module.id}`);
-  dependencies.push(`tiangz_module_${index} = { package = ${quote(module.native.crateName)}, path = ${quote(module.native.crate)} }`);
+  dependencies.push(`tiangz_module_${index} = { package = ${quote(module.native.crateName)}, path = ${quote(crateRoot)} }`);
 }
 let manifest = await readFile(path.join(root, "Cargo.toml"), "utf8");
 manifest = manifest.replace("[package]", `[package]\nautobins = false\nbuild = ${quote(path.join(root, "build.rs"))}`)
+  .replace('name = "TiangZ"', 'name = "tiangz-module-host"')
   .replace('path = "src/transport_lib.rs"', `path = ${quote(path.join(root, "src/transport_lib.rs"))}`)
   .replace("[dependencies]", `[dependencies]\n${dependencies.join("\n")}`);
 manifest += `\n[workspace]\n\n[[bin]]\nname = "TiangZ"\npath = ${quote(path.join(root, "src/main.rs"))}\n`;
@@ -47,6 +50,7 @@ const bridge = path.join(directory, "bridge.rs");
 await writeFile(bridge,
   `pub(crate) const FINGERPRINT: &str = ${quote(fingerprint)};\n` +
   `pub(crate) fn extensions() -> Vec<deno_core::Extension> { vec![${modules.map((_, index) => `tiangz_module_${index}::extension()`).join(",")}] }\n` +
+  `pub(crate) fn configure_project_root(root: &std::path::Path) -> anyhow::Result<()> { let _ = root; ${modules.map((module, index) => module.native.relative.configureProjectRoot ? `tiangz_module_${index}::configure_project_root(root).map_err(|error| anyhow::anyhow!("module {} resource root: {}", ${quote(module.id)}, error))?;` : "").join("\n")} Ok(()) }\n` +
   `pub(crate) fn bootstraps() -> &'static [(&'static str, &'static str)] { &[${modules.map((module, index) => `(${quote(module.id)}, tiangz_module_${index}::BOOTSTRAP)`).join(",")}] }\n`);
 const lock = path.join(directory, "Cargo.lock");
 try { await readFile(lock); } catch (error) {
@@ -61,7 +65,7 @@ if (process.platform === "win32") {
   const v8 = metadata.packages.find((item) => item.name === "v8");
   if (v8) {
     const source = await realpath(path.dirname(v8.manifest_path));
-    const link = path.join(directory, "target", profile, "gn_root");
+    const link = path.join(targetDirectory, profile, "gn_root");
     if (path.parse(source).root.toLowerCase() !== path.parse(link).root.toLowerCase()) {
       // V8跨盘构建需要同盘视图；目录联接不要求Windows符号链接特权。
       // V8 cross-drive builds need a same-drive view; junctions require no Windows symlink privilege.
@@ -74,14 +78,17 @@ if (process.platform === "win32") {
   }
 }
 run("cargo", [args.includes("--check") ? "check" : "build", "--bin", "TiangZ", "--manifest-path", path.join(directory, "Cargo.toml"),
-  "--target-dir", path.join(directory, "target"), ...(args.includes("--offline") ? ["--offline"] : []),
+  "--target-dir", targetDirectory, ...(args.includes("--offline") ? ["--offline"] : []),
   ...(args.includes("--release") ? ["--release"] : []), ...(args.includes("--locked") ? ["--locked"] : [])], {
   env: { ...buildEnvironment, TIANGZ_ENGINE_ROOT: root, TIANGZ_MODULE_NATIVE_BRIDGE: bridge },
 });
-const binary = path.join(directory, "target", profile, process.platform === "win32" ? "TiangZ.exe" : "TiangZ");
+const binary = path.join(directory, "bin", profile, process.platform === "win32" ? "TiangZ.exe" : "TiangZ");
 if (!args.includes("--check")) {
+  await mkdir(path.dirname(binary), { recursive: true });
+  await copyFile(path.join(targetDirectory, profile, path.basename(binary)), binary);
   await writeFile(path.join(directory, `${profile}.manifest.json`), JSON.stringify({
     formatVersion: 1, moduleGraphHash: catalog.graphHash, nativeModuleHash: fingerprint,
+    binaryPath: path.relative(directory, binary).replaceAll(path.sep, "/"),
     binaryHash: createHash("sha256").update(await readFile(binary)).digest("hex"),
     cargoLockHash: createHash("sha256").update(await readFile(lock)).digest("hex"),
   }, null, 2) + "\n");

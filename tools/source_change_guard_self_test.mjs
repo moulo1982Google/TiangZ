@@ -1,0 +1,46 @@
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, readFile, writeFile, rename, rm, utimes } from "node:fs/promises";
+import path from "node:path";
+import { sourceFingerprint, createSourceChangeGuard } from "./source_change_guard.mjs";
+
+const engine = path.resolve(import.meta.dirname, "..");
+await mkdir(path.join(engine, "temp"), { recursive: true });
+const root = await mkdtemp(path.join(engine, "temp", "source-guard-"));
+let guard;
+try {
+  const source = path.join(root, "model");
+  await mkdir(source);
+  const file = path.join(source, "Counter.ts");
+  await writeFile(file, "export class Counter {}\n");
+  const targets = [{ source, recursive: true, extensions: [".ts"] }];
+  const baseline = await sourceFingerprint(targets);
+  await utimes(file, new Date(), new Date());
+  await writeFile(path.join(source, "Counter.ts.tmp"), "editor temporary content");
+  assert.equal(await sourceFingerprint(targets), baseline);
+  const changes = []; const errors = [];
+  guard = await createSourceChangeGuard(targets, source => changes.push(source), error => errors.push(error), 10);
+  await writeFile(file, await readFile(file));
+  guard.notify(file); await guard.ready();
+  assert.equal(changes.length, 0, "saving identical content should not require restart");
+  const staging = path.join(source, "Counter.ts.tmp");
+  await writeFile(staging, await readFile(file));
+  await rename(staging, file);
+  guard.notify(file); await guard.ready();
+  assert.equal(changes.length, 0, "atomic editor save with identical content should not require restart");
+  await writeFile(file, "export class Counter { value = 1; }\n");
+  guard.notify(file); guard.notify(file);
+  await guard.ready();
+  assert.deepEqual(changes, [file]);
+  assert.equal(errors.length, 0);
+  guard.notify(file);
+  const pending = guard.ready();
+  guard.close(); await pending;
+  const modules = path.join(root, "modules"); await mkdir(modules); await mkdir(path.join(modules, "one"));
+  const listing = [{ source: modules, listingOnly: true }];
+  const first = await sourceFingerprint(listing);
+  await writeFile(path.join(modules, "one/hotfix.ts"), "changed behavior");
+  assert.equal(await sourceFingerprint(listing), first, "module membership is not nested source content");
+  await mkdir(path.join(modules, "two"));
+  assert.notEqual(await sourceFingerprint(listing), first);
+  console.log("source change guard passed: identical and atomic saves, temporary files, true changes, membership and shutdown waiters");
+} finally { guard?.close(); await rm(root, { recursive: true, force: true }); }

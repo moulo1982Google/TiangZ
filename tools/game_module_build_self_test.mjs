@@ -39,38 +39,25 @@ try {
     throw new Error("neutral fixture Hotfix does not use the immutable module Model bridge");
   }
   for (const extensionId of [
-    "org.tiangz.fixture.greeting.npc-marker",
-    "org.tiangz.fixture.greeting.interactable-marker",
+    "org.tiangz.fixture.greeting.left-marker",
+    "org.tiangz.fixture.greeting.right-marker",
   ]) {
     if (!hotfixBundle.includes(extensionId)) {
       throw new Error(`neutral fixture Hotfix omitted ${extensionId}`);
     }
   }
-  await verifyEntityFactoryExtensionOrder(
-    "app/hotfix/mmorpg/npc/NpcComponentSystem.ts",
-    "const npc = this.units.Create",
-    "applyEntityExtensions(npc)",
-    "this.npcs.set(npc.UnitId, npc)",
-  );
-  await verifyEntityFactoryExtensionOrder(
-    "app/hotfix/mmorpg/interactable/InteractableComponentSystem.ts",
-    "const interactable = this.units.Create",
-    "applyEntityExtensions(interactable)",
-    "this.interactables.set(interactable.UnitId, interactable)",
-  );
 
   const customHotfixOutput = path.join(output, "custom-hotfix-entry");
-  await run([
+  const customRejected = await run([
     "tools/build_runtime_bundles.mjs",
     "--hotfix-only",
     "--out-dir", output,
     "--modules-dir", modulesDirectory,
     "--hotfix-entry", "app/hotfix/main.ts",
     "--hotfix-out", customHotfixOutput,
-  ]);
-  const customHotfixBundle = await readFile(path.join(customHotfixOutput, "hotfix.js"), "utf8");
-  if (!customHotfixBundle.includes("org.tiangz.fixture.greeting.counter")) {
-    throw new Error("custom Hotfix entry omitted installed game module loaders");
+  ], true);
+  if (customRejected.code === 0 || !customRejected.stderr.includes("does not accept a built-in Hotfix entry")) {
+    throw new Error("module host accepted an undeclared built-in Hotfix entry");
   }
 
   await run([

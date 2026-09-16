@@ -2,76 +2,11 @@
 import { registerKnownRpcs } from "../../core/protocol/rpc";
 import { registerKnownMessages } from "../../core/protocol/message";
 import { HotfixSystem } from "../../core/hotReload/HotfixSystem";
-import { AllRpcDescriptors as RpcDescriptors0 } from "../model/server/demo/protocol/rpcs";
-import { AllMessageDescriptors as MessageDescriptors0 } from "../model/server/demo/protocol/messageDescriptors";
-import "../../model/mmorpg/scenes/GateScene";
-import "../../model/mmorpg/scenes/LocationScene";
-import "../../model/mmorpg/scenes/LoginMgrScene";
-import "../../model/mmorpg/scenes/LoginScene";
-import "../../model/mmorpg/scenes/MapHostScene";
-import "../../model/mmorpg/scenes/MapManagerScene";
-import { Buff as SystemTarget0 } from "../../model/domains/buff/Buff";
-import { BuffComponent as SystemTarget1 } from "../../model/domains/buff/BuffComponent";
-import { CombatComponent as SystemTarget2 } from "../../model/mmorpg/combat/CombatComponent";
-import { CombatStateComponent as SystemTarget3 } from "../../model/mmorpg/combat/CombatStateComponent";
-import { CurrencyComponent as SystemTarget4 } from "../../model/domains/currency/CurrencyComponent";
-import { DirectionalMovementProfileComponent as SystemTarget5 } from "../../model/mmorpg/movement/DirectionalMovementProfileComponent";
-import { InteractableComponent as SystemTarget6 } from "../../model/mmorpg/interactable/InteractableComponent";
-import { InteractableUnit as SystemTarget7 } from "../../model/mmorpg/interactable/InteractableUnit";
-import { Item as SystemTarget8 } from "../../model/domains/item/Item";
-import { ItemComponent as SystemTarget9 } from "../../model/domains/item/ItemComponent";
-import { LoginComponent as SystemTarget10 } from "../../model/mmorpg/login/LoginComponent";
-import { MonsterComponent as SystemTarget11 } from "../../model/mmorpg/monster/MonsterComponent";
-import { MonsterUnit as SystemTarget12 } from "../../model/mmorpg/monster/MonsterUnit";
-import { NpcComponent as SystemTarget13 } from "../../model/mmorpg/npc/NpcComponent";
-import { NpcRepairComponent as SystemTarget14 } from "../../model/mmorpg/repair/NpcRepairComponent";
-import { NpcShopComponent as SystemTarget15 } from "../../model/mmorpg/shop/NpcShopComponent";
-import { NpcUnit as SystemTarget16 } from "../../model/mmorpg/npc/NpcUnit";
-import { NumericComponent as SystemTarget17 } from "../../model/domains/numeric/NumericComponent";
-import { NumericRegenerationComponent as SystemTarget18 } from "../../model/mmorpg/numeric/NumericRegenerationComponent";
-import { PartyDirectoryComponent as SystemTarget19 } from "../../model/mmorpg/party/PartyDirectoryComponent";
-import { PlayerTradeComponent as SystemTarget20 } from "../../model/mmorpg/trade/PlayerTradeComponent";
-import { PlayerUnit as SystemTarget21 } from "../../model/mmorpg/map/PlayerUnit";
-import { ProgressionComponent as SystemTarget22 } from "../../model/mmorpg/progression/ProgressionComponent";
-import { Quest as SystemTarget23 } from "../../model/domains/quest/Quest";
-import { QuestComponent as SystemTarget24 } from "../../model/domains/quest/QuestComponent";
-import { SkillComponent as SystemTarget25 } from "../../model/mmorpg/skill/SkillComponent";
-import { SkillMapComponent as SystemTarget26 } from "../../model/mmorpg/skill/SkillMapComponent";
-import { SpawnSelectionComponent as SystemTarget27 } from "../../model/mmorpg/spawn/SpawnSelectionComponent";
-import { SummonComponent as SystemTarget28 } from "../../model/mmorpg/summon/SummonComponent";
-import { SummonedUnit as SystemTarget29 } from "../../model/mmorpg/summon/SummonedUnit";
-import { TrainerComponent as SystemTarget30 } from "../../model/mmorpg/trainer/TrainerComponent";
 
-registerKnownRpcs(RpcDescriptors0);
-registerKnownMessages(MessageDescriptors0);
-HotfixSystem.RequireType(SystemTarget0);
-HotfixSystem.RequireType(SystemTarget1);
-HotfixSystem.RequireType(SystemTarget2);
-HotfixSystem.RequireType(SystemTarget3);
-HotfixSystem.RequireType(SystemTarget4);
-HotfixSystem.RequireType(SystemTarget5);
-HotfixSystem.RequireType(SystemTarget6);
-HotfixSystem.RequireType(SystemTarget7);
-HotfixSystem.RequireType(SystemTarget8);
-HotfixSystem.RequireType(SystemTarget9);
-HotfixSystem.RequireType(SystemTarget10);
-HotfixSystem.RequireType(SystemTarget11);
-HotfixSystem.RequireType(SystemTarget12);
-HotfixSystem.RequireType(SystemTarget13);
-HotfixSystem.RequireType(SystemTarget14);
-HotfixSystem.RequireType(SystemTarget15);
-HotfixSystem.RequireType(SystemTarget16);
-HotfixSystem.RequireType(SystemTarget17);
-HotfixSystem.RequireType(SystemTarget18);
-HotfixSystem.RequireType(SystemTarget19);
-HotfixSystem.RequireType(SystemTarget20);
-HotfixSystem.RequireType(SystemTarget21);
-HotfixSystem.RequireType(SystemTarget22);
-HotfixSystem.RequireType(SystemTarget23);
-HotfixSystem.RequireType(SystemTarget24);
-HotfixSystem.RequireType(SystemTarget25);
-HotfixSystem.RequireType(SystemTarget26);
-HotfixSystem.RequireType(SystemTarget27);
-HotfixSystem.RequireType(SystemTarget28);
-HotfixSystem.RequireType(SystemTarget29);
-HotfixSystem.RequireType(SystemTarget30);
+
+
+
+
+
+
+

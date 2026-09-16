@@ -19,7 +19,7 @@ fn main() {
         );
         std::fs::read_to_string(file).expect("cannot read module Native bridge")
     } else {
-        "pub(crate) const FINGERPRINT: &str = \"\";\npub(crate) fn extensions() -> Vec<deno_core::Extension> { vec![] }\npub(crate) fn bootstraps() -> &'static [(&'static str, &'static str)] { &[] }\n".to_string()
+        "pub(crate) const FINGERPRINT: &str = \"\";\npub(crate) fn extensions() -> Vec<deno_core::Extension> { vec![] }\npub(crate) fn bootstraps() -> &'static [(&'static str, &'static str)] { &[] }\npub(crate) fn configure_project_root(_root: &std::path::Path) -> anyhow::Result<()> { Ok(()) }\n".to_string()
     };
     let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR missing"));
     std::fs::write(output.join("module_native.rs"), bridge)

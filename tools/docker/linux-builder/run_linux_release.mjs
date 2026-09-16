@@ -230,33 +230,6 @@ function shouldCopySource(source) {
   if (relative.startsWith("tools/third_party/luban/4.10.2")) return false;
   if (/codegen\.manifest\.json\.(?:lock|tmp)/u.test(relative)) return false;
   if (relative.endsWith(".log")) return false;
-  if (relative.startsWith("client_demo/")) {
-    const segments = new Set(relative.split("/"));
-    for (const generated of [
-      ".godot",
-      ".vs",
-      "Binaries",
-      "Build",
-      "Builds",
-      "DerivedDataCache",
-      "Intermediate",
-      "Library",
-      "Logs",
-      "Saved",
-      "Temp",
-      "UserSettings",
-      "build",
-      "library",
-      "local",
-      "native",
-      "node_modules",
-      "obj",
-      "profiles",
-      "temp",
-    ]) {
-      if (segments.has(generated)) return false;
-    }
-  }
   return true;
 }
 

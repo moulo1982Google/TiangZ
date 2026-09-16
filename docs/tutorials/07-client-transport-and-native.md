@@ -1,5 +1,8 @@
 # 客户端传输协议与 Cocos Native
 
+> 2026-09-16 ??????????? Cocos/Pixi/Godot ???????????????????? TiangZ-Examples ?????? codegen ??? canonical SDK?????????? npm run sdk:sync???????? TiangZ ???
+
+
 ## 一套 RPC，三种传输
 
 客户端 RPC 与 protobuf 不直接依赖 WebSocket、TCP 或 KCP。`RpcSocket` 只依赖 `ClientTransport`，创建连接时通过 `ClientEndpoint.transport` 选择协议：
@@ -64,7 +67,7 @@ Native Adapter 位于：
 ```powershell
 $creatorRoot = Split-Path -Parent $env:COCOS_CREATOR_386
 & "$creatorRoot\resources\tools\cmake\bin\cmake.exe" `
-  --build client_demo/cocos_client2D_3.8.6\build\tiangz-kcp-native\proj `
+  --build ../TiangZ-Examples/clients/cocos_client2D_3.8.6\build\tiangz-kcp-native\proj `
   --config Debug --parallel 8
 ```
 

@@ -1,0 +1,7 @@
+namespace example;
+
+// 生成器要求的抽象根；示例不创建具体实体。
+abstract entity Entity { readonly id: u32; @transient readonly instanceId: u32; }
+
+// 无状态示例；不创建实体或持有游戏数据。
+op Add(left: f64, right: f64): f64;

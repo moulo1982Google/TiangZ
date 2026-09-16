@@ -201,8 +201,8 @@ C2M_ToggleAutoAttackHandler
 Cocos3D演示的快捷键和UI位于：
 
 ```text
-client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/GameBootstrap3D.ts
-client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_AutoAttackStateHandler.ts
+../TiangZ-Examples/clients/cocos_client3D_3.8.8/assets/scripts/Demo/GameBootstrap3D.ts
+../TiangZ-Examples/clients/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_AutoAttackStateHandler.ts
 ```
 
 协议增加后执行：

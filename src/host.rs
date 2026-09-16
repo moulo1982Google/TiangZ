@@ -501,7 +501,6 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
         ets_runtime_host::init(),
         crate::dbproxy::init(),
         crate::event_stream::init(),
-        crate::generated::native_ops::init(),
     ];
     extensions.extend(crate::module_native::extensions());
     let mut runtime = JsRuntime::new(RuntimeOptions {
@@ -592,10 +591,6 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
     runtime.execute_script(
         "ets-runtime:event-stream.js",
         crate::event_stream::BOOTSTRAP_SOURCE,
-    )?;
-    runtime.execute_script(
-        "ets-runtime:native-ops.js",
-        crate::generated::native_ops::BOOTSTRAP_SOURCE,
     )?;
     for &(name, source) in crate::module_native::bootstraps() {
         runtime.execute_script(name.to_string(), source)?;
@@ -760,8 +755,32 @@ pub fn call_js_start_process(
     entrypoints: &JsEntrypoints,
     config_json: &str,
 ) -> Result<String> {
+    validate_global_id_bootstrap(runtime, config_json)?;
     let arg = v8_string_arg(runtime, config_json)?;
     call_js_function_string(js_event_loop, runtime, &entrypoints.start_process, &[arg])
+}
+
+/// 拒绝让旧Model静默忽略已启用的号段配置；标记不是对不可信业务代码的沙箱。 / Rejects old Model bundles that ignore range mode; this marker is not a sandbox for untrusted game code.
+fn validate_global_id_bootstrap(runtime: &mut JsRuntime, config_json: &str) -> Result<()> {
+    let config: serde_json::Value = serde_json::from_str(config_json)?;
+    if config
+        .pointer("/process/identity/allocation")
+        .and_then(|value| value.as_str())
+        != Some("dbproxy")
+    {
+        return Ok(());
+    }
+    let supported = runtime.execute_script(
+        "tiangz:global-id-capability",
+        "globalThis.__tiangzGlobalIdRangesVersion === 1",
+    )?;
+    deno_core::scope!(scope, runtime);
+    if !supported.open(scope).boolean_value(scope) {
+        anyhow::bail!(
+            "DBProxy global id mode requires rebuilt Model with range bootstrap v1; legacy bundles are refused"
+        );
+    }
+    Ok(())
 }
 
 /// 启动TS停机并保留Promise；调用方继续投递宿主完成事件，禁止同步等待停止的事件队列。 / Starts TS shutdown and retains its Promise while the caller continues delivering host completions.
@@ -908,54 +927,25 @@ mod tests {
     }
 
     #[test]
-    fn native_item_round_trips_through_v8_ops() {
-        let event_loop = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        let _guard = event_loop.enter();
+    fn dbproxy_global_ids_refuse_legacy_model_bootstrap() {
         let mut runtime = create_runtime(false, 0).unwrap();
+        let config = r#"{"process":{"identity":{"allocation":"dbproxy"}}}"#;
+        validate_global_id_bootstrap(&mut runtime, "{}").unwrap();
+        assert!(validate_global_id_bootstrap(&mut runtime, config).is_err());
         runtime
             .execute_script(
-                "test:native-item.js",
-                r#"
-                const handle = __etsNativeOps.entityCreate(
-                  2,
-                  new Float64Array([100, 200, 3001, 2, 0, 1, 1]),
-                );
-                if (__etsNativeOps.entityGetNumber(handle, 3) !== 3001) {
-                  throw new Error("Item configId did not round-trip");
-                }
-                __etsNativeOps.entitySetNumber(handle, 4, 3);
-                if (__etsNativeOps.entityGetNumber(handle, 4) !== 3) {
-                  throw new Error("Item count did not round-trip");
-                }
-                __etsNativeOps.entityDestroy(handle);
-                let rejected = false;
-                try { __etsNativeOps.entityGetNumber(handle, 4); } catch (_) { rejected = true; }
-                if (!rejected) throw new Error("stale Item handle was accepted");
-                "ok";
-                "#,
+                "test:id-capability",
+                "globalThis.__tiangzGlobalIdRangesVersion = 0",
             )
             .unwrap();
-    }
-
-    #[test]
-    fn generated_native_bridge_rejects_uint32_wraparound() {
-        let event_loop = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        let _guard = event_loop.enter();
-        let mut runtime = create_runtime(false, 0).unwrap();
-        let error = runtime
+        assert!(validate_global_id_bootstrap(&mut runtime, config).is_err());
+        runtime
             .execute_script(
-                "test:native-op-validation.js",
-                r#"__etsNativeOps.entityDestroy(-1);"#,
+                "test:id-capability-v1",
+                "globalThis.__tiangzGlobalIdRangesVersion = 1",
             )
-            .unwrap_err();
-        assert!(error.to_string().contains("handle"));
-        assert!(error.to_string().contains("integer"));
+            .unwrap();
+        validate_global_id_bootstrap(&mut runtime, config).unwrap();
     }
 
     #[test]

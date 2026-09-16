@@ -1,5 +1,8 @@
 # 调试、测试与部署
 
+> 2026-09-16 ??????????? Cocos/Pixi/Godot ???????????????????? TiangZ-Examples ?????? codegen ??? canonical SDK?????????? npm run sdk:sync???????? TiangZ ???
+
+
 ## 调试一个 Process
 
 ```powershell
@@ -52,7 +55,7 @@ Rust 定期输出每个 EntryScene 的处理数、失败数、队列和 Handler 
 
 Nginx站点模板见`configs/deploy/cocos3d-nginx.conf.example`。它在443和五个公网游戏端口终止TLS，再把WSS转发到回环WebSocket；Process之间的Inner TCP仍直接连接`127.0.0.1`。外网Cocos配置必须设置`secure=true`，本机预览保持`secure=false`。
 
-Cocos3D的外网地址放在资源文件`client_demo/cocos_client3D_3.8.8/assets/resources/Config/tiangz-external.json`，只保存LoginMgr的公网主机和端口；
+Cocos3D的外网地址放在资源文件`../TiangZ-Examples/clients/cocos_client3D_3.8.8/assets/resources/Config/tiangz-external.json`，只保存LoginMgr的公网主机和端口；
 不要把云服务器内网地址写进前端，也不要把密码写入仓库。构建Web包后由Nginx托管，入口通常是：
 
 ```text
@@ -111,7 +114,7 @@ npm run build:cocos3d:web
 ```
 
 上面的固定命令是Release构建；产物位于
-`client_demo/cocos_client3D_3.8.8/build/standard-web/`，发布到网站根路径。
+`../TiangZ-Examples/clients/cocos_client3D_3.8.8/build/standard-web/`，发布到网站根路径。
 需要在编辑器中调试时才使用：
 
 ```powershell
@@ -125,7 +128,7 @@ npm run build:cocos3d:mobile
 ```
 
 上面的固定命令是横屏Release构建；产物位于
-`client_demo/cocos_client3D_3.8.8/build/standard-mobile/`，部署到Nginx的`/m/`路径。
+`../TiangZ-Examples/clients/cocos_client3D_3.8.8/build/standard-mobile/`，部署到Nginx的`/m/`路径。
 Mobile Debug构建对应`npm run build:cocos3d:mobile:debug`。
 手机端当前控制方式是左下虚拟摇杆、右侧单指环视、双指捏合缩放、点击地面寻路和动态门按钮；
 桌面端仍使用键鼠。手机Web和桌面Web共用同一份协议、SDK和公网LoginMgr配置。
@@ -139,8 +142,8 @@ npm run build:cocos3d:external
 命令会重新构建两个目标并整理为：
 
 ```text
-client_demo/cocos_client3D_3.8.8/build/external/desktop/  -> Nginx网站根路径 /
-client_demo/cocos_client3D_3.8.8/build/external/m/        -> Nginx网站 /m/
+../TiangZ-Examples/clients/cocos_client3D_3.8.8/build/external/desktop/  -> Nginx网站根路径 /
+../TiangZ-Examples/clients/cocos_client3D_3.8.8/build/external/m/        -> Nginx网站 /m/
 ```
 
 不要把`m`目录部署到根路径；根路径必须使用桌面`web-desktop`包，只有`/m/`使用

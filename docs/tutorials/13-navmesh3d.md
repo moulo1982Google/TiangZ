@@ -1,5 +1,8 @@
 # NavMesh3D运行时与Cocos灰盒
 
+> 2026-09-16 ??????????? Cocos/Pixi/Godot ???????????????????? TiangZ-Examples ?????? codegen ??? canonical SDK?????????? npm run sdk:sync???????? TiangZ ???
+
+
 Phase 4.2采用“制作期烘焙、运行期只读”的NavMesh流程。你现在不需要寻找正式3D地图，也不需要在Cocos中手工点击Bake；固定灰盒已经贯通离线资源、Map Runtime、Actor RPC和Cocos 3D预览。
 
 ## 一键烘焙
@@ -57,7 +60,7 @@ Phase 4.3接入真实Cocos 3D地图时，制作流程应从同一场景导出两
 cargo run --bin TiangZ -- configs/local/all-in-one.json
 ```
 
-2. 使用Cocos Creator 3.8.8打开`client_demo/cocos_client3D_3.8.8`，打开`assets/scene.scene`并运行浏览器预览。
+2. 使用Cocos Creator 3.8.8打开`../TiangZ-Examples/clients/cocos_client3D_3.8.8`，打开`assets/scene.scene`并运行浏览器预览。
 3. Demo会自动登录并进入Map 100。看到绿色地面、中央障碍和蓝发玩家角色后，点击地面请求服务端路径；按`E`关闭红色动态门，再点击门后方可以观察绕行，再按`E`开门后恢复直线路径。
 
 浏览器预览使用WebSocket；Native构建使用KCP。状态栏会显示Map和导航版本，资源Hash不一致时拒绝进入。灰盒几何由客户端代码绘制，只负责展示；服务端仍以`navigation.bin`为权威导航资源。
@@ -74,7 +77,7 @@ Cocos导入`assets/resources/Demo/Characters/Player/blue_chibi/BlueChibi.glb`后
 npm run asset:cocos3d:blue-chibi
 ```
 
-命令需要Blender 5.2 LTS，或通过`BLENDER_PATH`指定兼容版本。可编辑源文件位于`client_demo/cocos_client3D_3.8.8/art/BlueChibi.blend`，生成脚本是`tools/assets/generate_blue_chibi.py`。攻击动画尚未加入；后续应在同一骨架增加`Attack`片段，并由服务端平A状态驱动表现，不能让动画关键帧直接结算伤害。
+命令需要Blender 5.2 LTS，或通过`BLENDER_PATH`指定兼容版本。可编辑源文件位于`../TiangZ-Examples/clients/cocos_client3D_3.8.8/art/BlueChibi.blend`，生成脚本是`tools/assets/generate_blue_chibi.py`。攻击动画尚未加入；后续应在同一骨架增加`Attack`片段，并由服务端平A状态驱动表现，不能让动画关键帧直接结算伤害。
 
 服务端业务查询保持简单：
 

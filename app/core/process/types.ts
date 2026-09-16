@@ -132,6 +132,8 @@ export interface ProcessIdentityConfig {
   originServerId?: number;
   /** 同一来源服内生成持久 ID 的 Process 编号。 / Persistent-ID worker number inside one origin server. */
   workerId?: number;
+  /** dbproxy 模式必须在 Scene 创建前领取号段，失败不回退。 / DBProxy mode reserves before Scene construction and never falls back on failure. */
+  allocation?: "local-development" | "dbproxy";
 }
 
 export interface ProcessLifecycleConfig {

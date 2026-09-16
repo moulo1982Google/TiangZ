@@ -13,3 +13,10 @@ class NamespaceHandler {
 
 void AliasHandler;
 void NamespaceHandler;
+
+function rpcHandler() { return (_target: Function): void => {}; }
+@rpcHandler()
+class UnrelatedDecoratorClass {
+  private count = 0;
+}
+void UnrelatedDecoratorClass;

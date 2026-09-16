@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, access } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -94,11 +94,9 @@ async function verifyTypeScriptBoundaries() {
 }
 
 async function verifyRustGameBoundary() {
-  const files = await walk(path.join(root, "src/game"), (file) => file.endsWith(".rs"));
-  const forbidden = /crate::(?:allocator|config|health|host|hotfix|logging|process|shutdown|transport|watcher)\b/;
-  for (const file of files) {
-    const source = await readFile(file, "utf8");
-    if (forbidden.test(source)) report(relative(file), "src/game may not depend on Runtime host modules");
+  for (const directory of ["src/game", "app/model/mmorpg", "app/hotfix/mmorpg", "client_demo"]) {
+    try { await access(path.join(root, directory)); report(directory, "game examples belong in external modules, not the engine source tree"); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
   }
 }
 

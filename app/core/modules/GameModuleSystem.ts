@@ -1,4 +1,5 @@
 import { HotfixSystem } from "../hotReload/HotfixSystem";
+import type { ProcessConfig } from "../process/types";
 
 type GameModuleModelType = abstract new (...args: any[]) => object;
 
@@ -9,6 +10,10 @@ export interface GameModuleDefinition<
   readonly version: string;
   readonly modelExports?: TModelExports;
   readonly requiredSystems?: readonly GameModuleModelType[];
+  readonly processServices?: {
+    readonly configure: (config: ProcessConfig) => void;
+    readonly takeMetrics: () => Readonly<Record<string, object>>;
+  };
 }
 
 export interface GameModuleIdentity {
@@ -20,6 +25,7 @@ interface RegisteredGameModule {
   readonly identity: GameModuleIdentity;
   readonly modelExports: Readonly<Record<string, unknown>>;
   readonly requiredSystems: readonly GameModuleModelType[];
+  readonly processServices?: GameModuleDefinition["processServices"];
 }
 
 const MODULE_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9][a-z0-9-]*)+$/;
@@ -42,6 +48,14 @@ export function defineGameModule<
   validateIdentity(definition);
   if (registeredModules.some((module) => module.identity.id === definition.id)) {
     throw new Error(`duplicate game module registration: ${definition.id}`);
+  }
+  if (definition.processServices) {
+    for (const name of ["configure", "takeMetrics"] as const) {
+      const method = definition.processServices[name];
+      if (typeof method !== "function" || method.constructor.name === "AsyncFunction") {
+        throw new Error(`module process service must be synchronous: ${definition.id}:${name}`);
+      }
+    }
   }
 
   const modelExports = copyModelExports(definition.modelExports ?? {}, definition.id);
@@ -69,7 +83,34 @@ export function defineGameModule<
     identity: Object.freeze({ id: definition.id, version: definition.version }),
     modelExports: Object.freeze(modelExports),
     requiredSystems: Object.freeze(requiredSystems),
+    processServices: definition.processServices ? Object.freeze({ ...definition.processServices }) : undefined,
   });
+}
+
+/** 在 Process 启动边界同步配置模块服务，不创建或替代 Scene 生命周期。 / Configures module services synchronously at Process startup without replacing Scene lifecycles. */
+export function configureGameModuleServices(config: ProcessConfig): void {
+  if (!sealed) throw new Error("module services require a sealed module graph");
+  for (const module of registeredModules) {
+    const result: unknown = module.processServices?.configure(config);
+    if (result !== undefined) throw new Error(`module process configure must return void synchronously: ${module.identity.id}`);
+  }
+}
+
+/** 采样模块诊断，拒绝覆盖其他模块或宿主指标。 / Samples module diagnostics without overwriting another module or host metric. */
+export function takeGameModuleMetrics(): Readonly<Record<string, object>> {
+  const metrics: Record<string, object> = Object.create(null);
+  const reserved = new Set(["metrics", "game", "actorMailbox", "pendingAsync", "pendingIngress"]);
+  for (const module of registeredModules) {
+    const sample = module.processServices?.takeMetrics();
+    if (!sample) continue;
+    if (typeof sample !== "object" || "then" in sample || Array.isArray(sample)) throw new Error(`invalid module metric sample: ${module.identity.id}`);
+    for (const [key, value] of Object.entries(sample)) {
+      if (reserved.has(key) || Object.hasOwn(metrics, key)) throw new Error(`duplicate or reserved module metric: ${module.identity.id}:${key}`);
+      if (!value || typeof value !== "object" || "then" in value) throw new Error(`invalid module metric: ${module.identity.id}:${key}`);
+      metrics[key] = value;
+    }
+  }
+  return metrics;
 }
 
 /** 仅供构建生成的Model组合入口封闭模块图；业务代码不得调用。 / Seals the module graph from the generated Model composition entry only. */

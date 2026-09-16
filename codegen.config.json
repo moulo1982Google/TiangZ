@@ -1,63 +1,37 @@
 {
   "serverBundles": {
-    "sceneSearchRoots": ["app/model/mmorpg"],
-    "handlerSearchRoots": ["app/hotfix/mmorpg"],
-    "patchSearchRoots": ["app/hotfix/mmorpg"],
-    "benchHandlerSearchRoots": ["app/hotfix/bench"],
-    "serverProtocolSearchRoots": ["app/generated/model/server/demo"]
+    "sceneSearchRoots": [],
+    "handlerSearchRoots": [],
+    "patchSearchRoots": [],
+    "benchHandlerSearchRoots": [],
+    "serverProtocolSearchRoots": []
   },
   "typescriptClientSdk": {
     "enabled": true,
     "sourceRoot": "client_sdk/typescript",
     "distributionExcludes": ["Generated/Model/bench"],
-    "outputRoots": [
-      "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK",
-      "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK",
-      "client_demo/pixi_client_8.19.0/src/Generated/SDK"
-    ]
+    "outputRoots": []
   },
   "cppClientSdk": {
     "enabled": true,
     "protocolOutputRoot": "client_sdk/cpp/include/tiangz/generated",
     "sourceRoot": "client_sdk/cpp/include",
-    "outputRoots": [
-      "client_demo/ue_client3D_5.4.4/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include"
-    ]
+    "outputRoots": []
   },
   "csharpClientSdk": {
-    "enabled": true,
+    "enabled": false,
     "sourceRoot": "client_sdk/csharp",
-    "outputRoots": [
-      "client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime"
-    ]
+    "outputRoots": []
   },
   "godotClientSdk": {
     "enabled": true,
-    "protocolOutput": "client_demo/godot-3d-4.7.1/scripts/generated/tiangz_proto.gd",
+    "protocolOutput": "client_sdk/godot/generated/tiangz_proto.gd",
     "outputRoots": [
-      "client_demo/godot-3d-4.7.1/scripts/generated"
+      "client_sdk/godot/generated"
     ]
   },
   "clientHotfix": {
     "enabled": true,
-    "targets": [
-      {
-        "name": "cocos",
-        "handlerSearchRoots": ["client_demo/cocos_client2D_3.8.6/assets/scripts"],
-        "handlerOutput": "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/Hotfix/handlers.ts"
-      },
-      {
-        "name": "pixi",
-        "handlerSearchRoots": ["client_demo/pixi_client_8.19.0/src"],
-        "handlerOutput": "client_demo/pixi_client_8.19.0/src/Generated/Hotfix/handlers.ts"
-      },
-      {
-        "name": "cocos3d",
-        "handlerSearchRoots": [
-          "client_demo/cocos_client3D_3.8.8/assets/scripts"
-        ],
-        "handlerOutput": "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/Hotfix/handlers.ts"
-      }
-    ]
+    "targets": []
   }
 }

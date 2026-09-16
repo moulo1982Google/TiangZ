@@ -1,6 +1,8 @@
 import { Component, Entity, component, defineGameModule } from "#tiangz/core";
 
 export class GreetingEntity extends Entity {}
+export class LeftEntity extends Entity {}
+export class RightEntity extends Entity {}
 
 @component()
 export class GreetingCounterComponent extends Component {
@@ -18,6 +20,6 @@ export interface GreetingCounterComponent {
 defineGameModule({
   id: "org.tiangz.fixture.greeting",
   version: "1.0.0",
-  modelExports: { GreetingContentMarkerComponent, GreetingCounterComponent, GreetingEntity },
+  modelExports: { GreetingContentMarkerComponent, GreetingCounterComponent, GreetingEntity, LeftEntity, RightEntity },
   requiredSystems: [GreetingCounterComponent],
 });

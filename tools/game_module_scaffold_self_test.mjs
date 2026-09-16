@@ -15,6 +15,10 @@ try {
     "--path", target,
   ]);
   const manifest = JSON.parse(await readFile(path.join(target, "tiangz.module.json"), "utf8"));
+  const host = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+  if (manifest.engine.minVersion !== host.version) {
+    throw new Error("scaffold must preserve the current host version, including prerelease identifiers");
+  }
   if (manifest.id !== "org.example.greeting" || manifest.version !== "1.2.3-beta.10+fixture.1") {
     throw new Error(`scaffold manifest mismatch: ${JSON.stringify(manifest)}`);
   }

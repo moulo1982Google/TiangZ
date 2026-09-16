@@ -2,11 +2,14 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { execFileSync } from "node:child_process";
 
 import { build } from "esbuild";
 import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
 import { resolveModuleApi } from "./game_module_imports.mjs";
 import { moduleNativeFingerprint } from "./module_native.mjs";
+import { moduleHostConfig } from "./module_host_config.mjs";
+import { resolveHostProfile } from "./host_profile.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const requestedOutputDirectory = argumentValue("--out-dir");
@@ -17,7 +20,11 @@ const debug = process.argv.includes("--debug");
 const hotfixOnly = process.argv.includes("--hotfix-only");
 const requestedHotfixOut = argumentValue("--hotfix-out");
 const requestedHotfixEntry = argumentValue("--hotfix-entry");
-const buildMode = bench ? "bench" : "demo";
+const hostProfile = resolveHostProfile();
+if (bench && hostProfile !== "demo") throw new Error("--bench cannot use the modules host profile");
+const modulesOnly = hostProfile === "modules";
+if (modulesOnly && requestedHotfixEntry) throw new Error("modules host does not accept a built-in Hotfix entry");
+const buildMode = modulesOnly ? "modules" : bench ? "bench" : "demo";
 const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 const moduleCatalog = await loadGameModuleCatalog({
   projectRoot: root,
@@ -31,9 +38,13 @@ const moduleProtocolLockFiles = moduleCatalog.modules
   .flatMap((module) => [module.protocol.opcodeLock, module.protocol.schemaLock]);
 const nativeModules = moduleCatalog.modules.filter((module) => module.native);
 const nativeModuleHash = nativeModules.length ? await moduleNativeFingerprint(moduleCatalog) : "";
-const gameConfigManifest = JSON.parse(
+const gameConfigManifest = modulesOnly ? moduleHostConfig().manifest : JSON.parse(
   await readFile(path.join(root, "game_config", "generated", "game-config.manifest.json"), "utf8"),
 );
+
+if (modulesOnly) execFileSync(process.execPath, [path.join(root, "tools/typecheck_game_modules.mjs"),
+  "--host-profile", "modules", "--modules-dir", moduleCatalog.directory],
+  { cwd: root, stdio: "inherit", windowsHide: true });
 
 if ((requestedHotfixOut || requestedHotfixEntry) && !hotfixOnly) {
   throw new Error("--hotfix-out and --hotfix-entry require --hotfix-only");
@@ -57,6 +68,7 @@ await mkdir(hotfixOutputDirectory, { recursive: true });
 await rm(hotfixCandidateFile, { force: true });
 
 const common = {
+  metafile: modulesOnly,
   bundle: true,
   platform: "neutral",
   target: "es2022",
@@ -97,9 +109,10 @@ if (hotfixOnly) {
     plugins: [modelModuleBoundaryPlugin(moduleCatalog)],
   });
   builtModelBytes = result.outputFiles[0].contents;
+  if (modulesOnly) assertModuleHostInputs(result.metafile);
 }
 
-await build({
+const hotfixBuild = await build({
   ...common,
   format: "iife",
   banner: {
@@ -135,6 +148,7 @@ await build({
   outfile: hotfixCandidateFile,
   plugins: [hotfixModuleBoundaryPlugin(moduleCatalog)],
 });
+if (modulesOnly) assertModuleHostInputs(hotfixBuild.metafile);
 
 const modelBytes = builtModelBytes ?? await readFile(path.join(dist, "model.js"));
 const hotfixBytes = await readFile(hotfixCandidateFile);
@@ -145,14 +159,13 @@ if (!hotfixOnly) {
     modelFingerprint: sha256(modelBytes),
     modelSourceHash,
     protocolFingerprint: await hashFiles([
-      path.join(root, "proto", "opcode.lock.json"),
-      path.join(root, "proto", "schema.lock.json"),
+      ...(modulesOnly ? [] : [path.join(root, "proto", "opcode.lock.json"), path.join(root, "proto", "schema.lock.json")]),
       ...moduleProtocolLockFiles,
     ]),
     stableCoreApiHash: await hashFiles([
       path.join(root, "app", "core", "public-api.lock.json"),
     ]),
-    nativeSchemaHash: sha256(`${await hashDirectory(path.join(root, "native_data"), ".native")}:${nativeModuleHash}`),
+    nativeSchemaHash: sha256(`${modulesOnly ? "" : await hashDirectory(path.join(root, "native_data"), ".native")}:${nativeModuleHash}`),
     nativeModuleHash,
     gameConfigSchemaFingerprint: gameConfigManifest.schemaFingerprint,
     moduleConfigSchemas: Object.fromEntries(await Promise.all(moduleCatalog.modules.filter((module) => module.gameConfig).map(async (module) => [
@@ -195,15 +208,17 @@ if (automaticCandidate) {
 process.stdout.write(
   `[build:runtime] ${buildMode} modules=${moduleCatalog.modules.length} graph=${moduleCatalog.graphHash.slice(0, 12)} model=${modelManifest.modelFingerprint.slice(0, 12)} hotfix=${hotfixManifest.hotfixHash.slice(0, 12)} output=${path.relative(root, publishedDirectory).replaceAll(path.sep, "/")}\n`,
 );
+process.stdout.write(`[build:runtime:result] ${JSON.stringify({ formatVersion: 1, kind: hotfixOnly && automaticCandidate ? "hotfix" : "bundle", candidateDirectory: publishedDirectory, buildMode })}\n`);
 
 function modelEntrySource(catalog, includeBench) {
   const configModules = catalog.modules.filter((module) => module.gameConfig);
   const configImports = configModules.map((module, index) =>
     `import { Tables as ModuleTables${index} } from ${JSON.stringify(importSpecifier(path.join(module.gameConfig.generatedCode, "schema.ts")))};\n` +
-    `import { ModuleGameConfigSchemaFingerprint as ModuleSchema${index} } from ${JSON.stringify(importSpecifier(path.join(module.gameConfig.generatedCode, "fingerprint.ts")))};`
+    `import { ModuleGameConfigSchemaFingerprint as ModuleSchema${index} } from ${JSON.stringify(importSpecifier(path.join(module.gameConfig.generatedCode, "fingerprint.ts")))};` +
+    (module.gameConfig.validator ? `\nimport { validate as ModuleValidate${index} } from ${JSON.stringify(importSpecifier(module.gameConfig.validator.file))};` : "")
   ).join("\n");
   const configSchemas = configModules.map((module, index) =>
-    `{ moduleId: ${JSON.stringify(module.id)}, schemaFingerprint: ModuleSchema${index}, validate: (tables) => { new ModuleTables${index}((name) => { if (!Object.hasOwn(tables, name)) throw new Error("module config table missing: " + name); return tables[name]; }); } }`
+    `{ moduleId: ${JSON.stringify(module.id)}, schemaFingerprint: ModuleSchema${index}, validate: (tables, previous) => { new ModuleTables${index}((name) => { if (!Object.hasOwn(tables, name)) throw new Error("module config table missing: " + name); return tables[name]; }); ${module.gameConfig.validator ? `ModuleValidate${index}(tables, previous);` : ""} } }`
   ).join(",\n");
   const publicModules = catalog.modules.filter((module) => module.publicApi);
   const apiImports = publicModules.map((module, index) =>
@@ -229,7 +244,16 @@ ${protocolImports}
 ${protocolModules.map((_, index) => `registerKnownRpcs(ModuleRpcDescriptors${index});\nregisterKnownMessages(ModuleMessageDescriptors${index});`).join("\n")}`
     : "";
   const expected = catalog.modules.map((module) => ({ id: module.id, version: module.version }));
-  return `${protocolRegistration}${protocolRegistration ? "\n" : ""}import ${JSON.stringify(includeBench ? "./app/model/main.bench.ts" : "./app/model/main.ts")};
+  const hostEntry = modulesOnly ? `import * as CorePublic from "./app/model/public.ts";
+import { installProcessBootstrap } from "./app/core/process/ProcessBootstrap.ts";
+import { installEmptyHostConfig } from "./app/core/content/EmptyHostConfig.ts";
+import { configureGameModuleServices, takeGameModuleMetrics } from "./app/core/modules/GameModuleSystem.ts";
+installProcessBootstrap({ modelExports: CorePublic,
+  configureProcess: configureGameModuleServices,
+  takeMetrics: takeGameModuleMetrics,
+  installGameConfig: (manifest, data) => installEmptyHostConfig(${JSON.stringify(gameConfigManifest.schemaFingerprint)}, manifest, data),
+});` : `import ${JSON.stringify(includeBench ? "./app/model/main.bench.ts" : "./app/model/main.ts")};`;
+  return `${protocolRegistration}${protocolRegistration ? "\n" : ""}${hostEntry}
 import { sealGameModules } from "./app/core/modules/GameModuleSystem.ts";
 import { ModuleConfigRegistry } from "./app/core/content/ModuleConfigRegistry.ts";
 ${imports}
@@ -256,7 +280,7 @@ function hotfixEntrySource(catalog, entry) {
   const imports = catalog.modules
     .map((module) => `import ${JSON.stringify(importSpecifier(module.entries.hotfix))};`)
     .join("\n");
-  return `import ${JSON.stringify(importSpecifier(entry))};
+  return `${modulesOnly ? "" : `import ${JSON.stringify(importSpecifier(entry))};`}
 ${imports}
 `;
 }
@@ -269,8 +293,9 @@ function modelModuleBoundaryPlugin(catalog) {
       buildApi.onResolve({ filter: /^#tiangz\/core$/ }, () => ({
         path: path.join(root, "app", "core", "public.ts"),
       }));
+      buildApi.onResolve({ filter: /^#tiangz\/domains$/ }, () => ({ path: path.join(root, "app/model/domains/public.ts") }));
       buildApi.onResolve({ filter: /^#tiangz\/model$/ }, () => ({
-        path: path.join(root, "app", "model", "public.ts"),
+        path: path.join(root, modulesOnly ? "app/model/public.ts" : "app/model/public.ts"),
       }));
       buildApi.onResolve({ filter: /^#tiangz\/(?:core|model)\// }, (args) => ({
         errors: [{ text: `Game module Model must use a Stable entrypoint, not ${args.path}` }],
@@ -364,10 +389,10 @@ function validateModuleRelativeImport(catalog, args, layer) {
   if (layer === "model" && owner.gameConfig && isWithin(owner.gameConfig.generatedCode, args.importer) && isWithin(owner.gameConfig.generatedCode, target)) return undefined;
   if (
     owner.protocol &&
-    isWithin(owner.protocol.serverOutput, args.importer) &&
+    [owner.protocol.serverOutput, path.join(owner.realRoot, owner.protocol.relative.serverOutput)].some(directory => isWithin(directory, args.importer)) &&
     (
       isWithin(owner.protocol.serverOutput, target) ||
-      isWithin(path.join(root, "app", "core"), target)
+      ["protocol/binary", "protocol/message", "protocol/rpc", "broadcast/index"].some(file => target.replace(/\.ts$/, "") === path.join(root, "app/core", file))
     )
   ) {
     return undefined;
@@ -389,6 +414,12 @@ function importSpecifier(file) {
   return relative.startsWith(".") ? relative : `./${relative}`;
 }
 
+function assertModuleHostInputs(metafile) {
+  const forbidden = Object.keys(metafile.inputs).filter(file =>
+    /(?:^|\/)app\/(?:model\/mmorpg|hotfix\/mmorpg|generated\/model\/config|generated\/model\/server\/demo)\//.test(file.replaceAll("\\", "/")));
+  if (forbidden.length) throw new Error(`module-only host includes built-in game content:\n${forbidden.join("\n")}`);
+}
+
 function isWithin(directory, target) {
   const relative = path.relative(path.resolve(directory), path.resolve(target));
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
@@ -402,12 +433,13 @@ async function hashDirectory(directory, extension) {
 async function hashModelSources() {
   const baseFiles = [
     ...await collect(path.join(root, "app", "core"), ".ts"),
+    ...(modulesOnly ? [path.join(root, "app/model/public.ts"), ...await collect(path.join(root, "app/model/domains"), ".ts")] : [
     ...await collect(path.join(root, "app", "model"), ".ts"),
     ...await collect(path.join(root, "app", "generated", "model"), ".ts"),
     ...await collect(path.join(root, "app", "generated", "bootstrap"), ".ts"),
-    ...await collect(path.join(root, "native_data"), ".native"),
-    path.join(root, "proto", "opcode.lock.json"),
-    path.join(root, "proto", "schema.lock.json"),
+    ]),
+    ...(modulesOnly ? [] : [...await collect(path.join(root, "native_data"), ".native"),
+      path.join(root, "proto", "opcode.lock.json"), path.join(root, "proto", "schema.lock.json")]),
     path.join(root, "app", "core", "public-api.lock.json"),
   ];
   const entries = [...new Set(baseFiles)]
@@ -417,6 +449,7 @@ async function hashModelSources() {
       file,
     }));
   entries.push({ label: "game-modules/graph.json", content: moduleCatalog.canonicalGraph });
+  entries.push({ label: "host-profile", content: `${buildMode}:${gameConfigManifest.schemaFingerprint}` });
   entries.push({ label: "game-modules/native-fingerprint", content: nativeModuleHash });
   for (const module of moduleCatalog.modules) {
     entries.push({

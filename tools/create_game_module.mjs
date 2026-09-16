@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { resolveHostProfile } from "./host_profile.mjs";
+import { scaffoldModuleNative } from "./scaffold_module_native.mjs";
+const rustFlags = process.argv.slice(2).filter(arg => arg.startsWith("--with-rust"));
+if (rustFlags.length > 1 || rustFlags.some(arg => arg !== "--with-rust")) throw new Error("--with-rust is a flag and must appear at most once");
+const withRust = rustFlags.length === 1;
+const modulesOnly = resolveHostProfile() === "modules";
 
 const root = path.resolve(import.meta.dirname, "..");
 const id = requiredArgument("--id");
@@ -19,6 +25,7 @@ if (target === root || isWithin(target, root)) {
   throw new Error(`game module path must not contain the TiangZ project root: ${target}`);
 }
 const parent = path.dirname(target);
+if (await lstat(target).catch(error => { if (error.code === "ENOENT") return undefined; throw error; })) throw new Error(`game module target already exists; refusing overwrite: ${target}`);
 await mkdir(parent, { recursive: true });
 const building = path.join(parent, `.${path.basename(target)}.building-${randomUUID()}`);
 try {
@@ -33,12 +40,14 @@ try {
     engine: window,
     dependencies: [],
     capabilities: [],
+    ...(withRust ? { native: await scaffoldModuleNative(root, building, id, version) } : {}),
     entries: {
       model: "src/model/index.ts",
       hotfix: "src/hotfix/index.ts",
     },
   }, null, 2)}\n`, "utf8");
   await writeFile(path.join(building, "src", "model", "index.ts"), `import { defineGameModule } from "#tiangz/core";
+${withRust ? 'import { NativeExample } from "./NativeExample";\nexport { NativeExample };' : ""}
 
 export const ModuleIdentity = Object.freeze({
   id: ${JSON.stringify(id)},
@@ -47,7 +56,7 @@ export const ModuleIdentity = Object.freeze({
 
 defineGameModule({
   ...ModuleIdentity,
-  modelExports: { ModuleIdentity },
+  modelExports: { ModuleIdentity${withRust ? ", NativeExample" : ""} },
 });
 `, "utf8");
   await writeFile(path.join(building, "src", "hotfix", "index.ts"), `import { ModuleIdentity } from "#tiangz/module";
@@ -59,7 +68,7 @@ if (ModuleIdentity.id !== ${JSON.stringify(id)}) {
 export {};
 `, "utf8");
   const corePath = relativeImport(building, path.join(root, "app", "core", "public.ts"));
-  const modelPath = relativeImport(building, path.join(root, "app", "model", "public.ts"));
+  const modelPath = relativeImport(building, path.join(root, "app/model/public.ts"));
   const systemDeclarations = relativeImport(
     building,
     path.join(root, "app", "generated", "bootstrap", "systems", "**", "*.d.ts"),
@@ -75,17 +84,19 @@ export {};
       skipLibCheck: true,
       paths: {
         "#tiangz/core": [corePath],
+        "#tiangz/domains": [relativeImport(building, path.join(root, "app/model/domains/public.ts"))],
         "#tiangz/model": [modelPath],
         "#tiangz/module": ["./src/model/index.ts"],
       },
     },
-    include: ["src/**/*.ts", systemDeclarations],
+    include: ["src/**/*.ts", ...(modulesOnly ? [] : [systemDeclarations])],
   }, null, 2)}\n`, "utf8");
   await writeFile(path.join(building, "README.md"), `# ${id}
 
 TiangZ外置游戏模块。Model状态放在\`src/model\`，Hotfix System/Handler及其显式loader放在\`src/hotfix\`。
 
 模块增删、manifest或Model变化需要完整构建并重启Process；已有行为变化才允许Hotfix。
+${withRust ? "\n包含 Rust 扩展；先阅读 RUST.md，运行 Native codegen 后再类型检查。" : ""}
 `, "utf8");
   await rename(building, target);
 } catch (error) {
@@ -101,8 +112,8 @@ function engineWindow(value) {
   const major = Number(match[1]);
   const minor = Number(match[2]);
   return major === 0
-    ? { minVersion: `${major}.${minor}.0`, maxVersionExclusive: `${major}.${minor + 1}.0` }
-    : { minVersion: `${major}.0.0`, maxVersionExclusive: `${major + 1}.0.0` };
+    ? { minVersion: value, maxVersionExclusive: `${major}.${minor + 1}.0` }
+    : { minVersion: value, maxVersionExclusive: `${major + 1}.0.0` };
 }
 
 function isSemVer(value) {

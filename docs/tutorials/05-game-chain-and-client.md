@@ -1,5 +1,8 @@
 # 登录、Gate、地图与 Cocos 链路
 
+> 2026-09-16 ??????????? Cocos/Pixi/Godot ???????????????????? TiangZ-Examples ?????? codegen ??? canonical SDK?????????? npm run sdk:sync???????? TiangZ ???
+
+
 ## Demo Scene 职责
 
 ```text
@@ -50,7 +53,7 @@ Map -> 清除旧移动意图 -> 返回全量权威快照
 
 1. 运行 `npm run build`。
 2. 运行 `cargo run --bin TiangZ -- configs/local/all-in-one.json`。
-3. 用 Cocos Creator 打开 `client_demo/cocos_client2D_3.8.6`。
+3. 用 Cocos Creator 打开 `../TiangZ-Examples/clients/cocos_client2D_3.8.6`。
 4. Preview 后进入游戏，多开页面可观察玩家互见和移动；按`T`在Map1/Map2间传送。
 
 `npm run test:runtime` 会在无 Cocos 环境下验证同一条协议和地图生命周期。

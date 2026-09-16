@@ -6,8 +6,9 @@ const MODULE_FILE = "tiangz.module.json";
 const MODULE_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9][a-z0-9-]*)+$/;
 const CAPABILITY_ID = /^[a-z][a-z0-9]*(?:[.:/-][a-z0-9][a-z0-9-]*)*$/;
 const ENTRY_KEYS = new Set(["model", "hotfix", "modelRoots", "hotfixRoots"]);
-const GAME_CONFIG_KEYS = new Set(["project", "target", "generatedCode", "generatedData", "client"]);
+const GAME_CONFIG_KEYS = new Set(["project", "target", "generatedCode", "generatedData", "client", "validator"]);
 const PROTOCOL_KEYS = new Set([
+  "generateGodot",
   "source",
   "opcodeLock",
   "schemaLock",
@@ -95,7 +96,7 @@ export async function loadGameModuleCatalog({
     moduleForFile(file) {
       const absolute = path.resolve(file);
       return ordered.find((module) =>
-        isWithin(module.root, absolute) || isWithin(module.realRoot, absolute)
+        isWithin(module.root, absolute) || isWithin(module.installedRoot, absolute)
       );
     },
   };
@@ -131,7 +132,11 @@ async function discoverModuleRoots(directory) {
 }
 
 async function readModule(root, engineVersion) {
+  const installedRoot = root;
   const realRoot = await realpath(root);
+  // 生成物必须以源码真实位置计算路径，不能随安装联接深度改变。
+  // Generated imports use the physical source location, not installation depth.
+  root = realRoot;
   const manifestFile = path.join(root, MODULE_FILE);
   const manifestDetails = await lstat(manifestFile).catch((error) => {
     throw new Error(`game module manifest does not exist: ${manifestFile}`, { cause: error });
@@ -261,13 +266,17 @@ async function readModule(root, engineVersion) {
   if (value.native !== undefined) {
     const label = `${manifestFile}: native`;
     requireObject(value.native, label);
-    rejectUnknownKeys(value.native, new Set(["source", "crate", "crateName", "generatedRust", "generatedTypeScript"]), label);
+    rejectUnknownKeys(value.native, new Set(["source", "crate", "crateName", "generatedRust", "generatedTypeScript", "configureProjectRoot"]), label);
     const relative = {};
     for (const name of ["source", "crate", "generatedRust", "generatedTypeScript"]) {
       relative[name] = normalizeRelative(requireSafeRelativePath(value.native[name], `native.${name}`, manifestFile));
     }
     if (typeof value.native.crateName !== "string" || !/^[a-z][a-z0-9_-]*$/.test(value.native.crateName)) throw new Error(`${label}.crateName is invalid`);
     relative.crateName = value.native.crateName;
+    if (value.native.configureProjectRoot !== undefined) {
+      if (typeof value.native.configureProjectRoot !== "boolean") throw new Error(`${label}.configureProjectRoot must be boolean`);
+      relative.configureProjectRoot = value.native.configureProjectRoot;
+    }
     native = { relative, crateName: relative.crateName };
     for (const name of ["source", "crate", "generatedRust", "generatedTypeScript"]) native[name] = path.resolve(root, relative[name]);
     await requireContainedDirectory(root, native.source, label);
@@ -289,6 +298,14 @@ async function readModule(root, engineVersion) {
   for (let index = 0; index < generatedOutputs.length; index++) {
     const output = generatedOutputs[index];
     await requireSafeOutput(root, output, manifestFile);
+    if ([...modelRoots, ...hotfixRoots, model, hotfix, ...(publicApi ? [publicApi.file] : [])]
+      .some(source => isWithin(output, source))) {
+      throw new Error(`${manifestFile}: generated output must not contain source roots or module entries: ${output}`);
+    }
+    if (protocol && [protocol.typescriptOutput, protocol.godotOutput].includes(output)
+      && [...modelRoots, ...hotfixRoots].some(source => isWithin(source, output))) {
+      throw new Error(`${manifestFile}: client protocol output must not overlap source roots: ${output}`);
+    }
     for (const other of generatedOutputs.slice(index + 1)) {
       if (isWithin(output, other) || isWithin(other, output)) throw new Error(`${manifestFile}: generated outputs must not overlap`);
     }
@@ -297,6 +314,7 @@ async function readModule(root, engineVersion) {
   return {
     root: path.resolve(root),
     realRoot,
+    installedRoot,
     manifestFile,
     id,
     version,
@@ -341,6 +359,9 @@ async function requireProtocol(root, value, modelRoots, manifestFile) {
   const label = `${manifestFile}: protocol`;
   requireObject(value, label);
   rejectUnknownKeys(value, PROTOCOL_KEYS, label);
+  if (value.generateGodot !== undefined && typeof value.generateGodot !== "boolean") {
+    throw new Error(`${label}.generateGodot must be a boolean`);
+  }
   const sourceRelative = requireSafeRelativePath(
     value.source ?? "proto",
     "protocol.source",
@@ -383,6 +404,8 @@ async function requireProtocol(root, value, modelRoots, manifestFile) {
   const typescriptOutput = path.resolve(root, typescriptOutputRelative);
   const godotOutput = path.resolve(root, godotOutputRelative);
   await requireContainedDirectory(root, source, `${label}.source`);
+  await requireSymlinkFreeSourceTree(root, source, `${label}.source`);
+  if (opcodeLock === schemaLock) throw new Error(`${label}: opcode and schema locks must be distinct`);
   for (const [name, output] of [
     ["serverOutput", serverOutput],
     ["typescriptOutput", typescriptOutput],
@@ -405,10 +428,16 @@ async function requireProtocol(root, value, modelRoots, manifestFile) {
   for (const [name, lock] of [["opcodeLock", opcodeLock], ["schemaLock", schemaLock]]) {
     if (!isWithin(source, lock)) throw new Error(`${label}.${name} must be inside protocol.source`);
   }
-  const modelOutputAllowed = modelRoots.some((directory) => isWithin(directory, serverOutput));
+  const modelOutputAllowed = modelRoots.some((directory) => directory !== serverOutput && isWithin(directory, serverOutput));
   if (!modelOutputAllowed) {
     throw new Error(`${label}.serverOutput must be inside a declared Model source root`);
   }
+  for (const output of [typescriptOutput, godotOutput]) {
+    if (modelRoots.some(directory => isWithin(directory, output) || isWithin(output, directory))) {
+      throw new Error(`${label}: client output must not overlap Model roots`);
+    }
+  }
+  await requireGeneratedProtocolTree(serverOutput, label);
   return {
     source,
     opcodeLock,
@@ -418,6 +447,7 @@ async function requireProtocol(root, value, modelRoots, manifestFile) {
     godotOutput,
     godotClassName,
     relative: {
+      ...(value.generateGodot === false ? { generateGodot: false } : {}),
       source: normalizeRelative(sourceRelative),
       opcodeLock: normalizeRelative(opcodeLockRelative),
       schemaLock: normalizeRelative(schemaLockRelative),
@@ -427,6 +457,21 @@ async function requireProtocol(root, value, modelRoots, manifestFile) {
       godotClassName,
     },
   };
+}
+
+async function requireGeneratedProtocolTree(directory, label) {
+  const entries = await readdir(directory, { withFileTypes: true }).catch(error => {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  });
+  for (const entry of entries) {
+    const file = path.join(directory, entry.name);
+    if (entry.isSymbolicLink()) throw new Error(`${label}: symbolic link in generated protocol: ${file}`);
+    if (entry.isDirectory()) await requireGeneratedProtocolTree(file, label);
+    else if (!entry.isFile() || !(await readFile(file, "utf8")).startsWith("// Generated by tools/codegen_")) {
+      throw new Error(`${label}: refusing to overwrite non-generated protocol file: ${file}`);
+    }
+  }
 }
 
 async function requireGameConfig(root, value, sourceRoots, hotfixRoots, manifestFile) {
@@ -455,11 +500,11 @@ async function requireGameConfig(root, value, sourceRoots, hotfixRoots, manifest
   for (const [name, output] of [["generatedCode", generatedCode], ["generatedData", generatedData]]) {
     if (!isWithin(root, output)) throw new Error(`${label}.${name} escapes the module root`);
   }
-  const codeAllowed = hotfixRoots.some((directory) =>
+  const codeAllowed = sourceRoots.some((directory) =>
     path.resolve(directory) !== generatedCode && isWithin(directory, generatedCode)
   );
   if (!codeAllowed) {
-    throw new Error(`${label}.generatedCode must be inside a declared Hotfix source root`);
+    throw new Error(`${label}.generatedCode must be inside a declared source root`);
   }
   if (sourceRoots.some((directory) =>
     isWithin(directory, generatedData) || isWithin(generatedData, directory)
@@ -500,18 +545,30 @@ async function requireGameConfig(root, value, sourceRoots, hotfixRoots, manifest
       }
     }
   }
+  let validator;
+  if (value.validator !== undefined) {
+    const relative = requireSafeRelativePath(value.validator, "gameConfig.validator", manifestFile);
+    const file = path.resolve(root, relative);
+    await requireContainedFile(root, file, `${label}.validator`);
+    if (!file.endsWith(".ts") || !sourceRoots.some(directory => isWithin(directory, file)) || hotfixRoots.some(directory => isWithin(directory, file))) {
+      throw new Error(`${label}.validator must be inside Model roots`);
+    }
+    validator = { file, relative: normalizeRelative(relative) };
+  }
   return {
     project,
     generatedCode,
     generatedData,
     target,
     client,
+    validator,
     relative: {
       project: normalizeRelative(projectRelative),
       target,
       generatedCode: normalizeRelative(generatedCodeRelative),
       generatedData: normalizeRelative(generatedDataRelative),
       ...(client ? { client: client.relative } : {}),
+      ...(validator ? { validator: validator.relative } : {}),
     },
   };
 }

@@ -11,9 +11,9 @@ const requestedModuleRoot = argumentValue("--module-root");
 const moduleRoot = requestedModuleRoot ? path.resolve(requestedModuleRoot) : undefined;
 const moduleMode = Boolean(moduleRoot);
 const protoOwnerRoot = moduleRoot ?? root;
-const protoDir = path.join(protoOwnerRoot, "proto");
-const opcodeLockFile = path.join(protoDir, "opcode.lock.json");
-const schemaLockFile = path.join(protoDir, "schema.lock.json");
+const protoDir = path.resolve(argumentValue("--proto-source") ?? path.join(protoOwnerRoot, "proto"));
+const opcodeLockFile = path.resolve(argumentValue("--opcode-lock") ?? path.join(protoDir, "opcode.lock.json"));
+const schemaLockFile = path.resolve(argumentValue("--schema-lock") ?? path.join(protoDir, "schema.lock.json"));
 const internalFrameProtocolFile = path.join(root, "app", "core", "process", "InternalFrameProtocol.ts");
 const internalFrameMsgCodes = await readInternalFrameMsgCodes(internalFrameProtocolFile);
 const generatedModelDir = moduleMode
@@ -33,7 +33,7 @@ const codegenConfig = JSON.parse(
 const typescriptClientSdk = moduleMode
   ? resolveModuleTypescriptClientSdk(requiredArgument("--typescript-output"))
   : resolveTypescriptClientSdk(codegenConfig.typescriptClientSdk);
-const cppClientSdk = moduleMode ? undefined : resolveCppClientSdk(codegenConfig.cppClientSdk);
+const cppClientSdk = moduleMode ? (argumentValue("--cpp-output") ? { protocolOutputRoot: path.resolve(argumentValue("--cpp-output")) } : undefined) : resolveCppClientSdk(codegenConfig.cppClientSdk);
 const appRuntimeFiles = {
   binary: path.join(appDir, "core", "protocol", "binary.ts"),
   broadcast: path.join(appDir, "core", "broadcast", "index.ts"),
@@ -255,7 +255,7 @@ function resolveTypescriptClientSdk(config) {
 function resolveModuleTypescriptClientSdk(output) {
   const protocolOutputRoot = path.resolve(output);
   const sourceRoot = path.join(root, "client_sdk", "typescript");
-  const runtimeOutputRoot = path.join(protocolOutputRoot, "Core");
+  const runtimeOutputRoot = argumentValue("--typescript-runtime-output") ? path.resolve(argumentValue("--typescript-runtime-output")) : path.join(protocolOutputRoot, "Core");
   return {
     protocolOutputRoot,
     runtimeSourceRoot: path.join(sourceRoot, "Core"),
@@ -598,7 +598,11 @@ async function enforceOpcodeLock(protocols, update, lock) {
     );
   }
 
-  if (!update || missing.length === 0) return;
+  if (!update) return;
+  if (missing.length === 0) {
+    try { await readFile(opcodeLockFile); return; }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
   for (const message of missing) {
     entries.set(message.key, message);
     owners.set(message.code, message.key);
@@ -1365,21 +1369,25 @@ function emitCppMessageDescriptor(descriptor) {
 }
 
 async function writeProtocol(protocol, outputDir, runtimeFiles) {
+  // 暂存生成时按最终目录计算服务端导入。 / Resolve staged server imports from their final location.
+  const importDir = moduleMode && !runtimeFiles.socket && argumentValue("--server-import-root")
+    ? path.join(path.resolve(argumentValue("--server-import-root")), path.relative(generatedModelDir, outputDir))
+    : outputDir;
   await mkdir(outputDir, { recursive: true });
   await writeFile(
     path.join(outputDir, "messages.ts"),
-    emitMessages(protocol, outputDir, runtimeFiles),
+    emitMessages(protocol, importDir, runtimeFiles),
     "utf8",
   );
   await writeFile(path.join(outputDir, "msgcodes.ts"), emitMsgCodes(protocol), "utf8");
   await writeFile(
     path.join(outputDir, "rpcs.ts"),
-    emitRpcs(protocol, outputDir, runtimeFiles),
+    emitRpcs(protocol, importDir, runtimeFiles),
     "utf8",
   );
   await writeFile(
     path.join(outputDir, "messageDescriptors.ts"),
-    emitMessageDescriptors(protocol, outputDir, runtimeFiles),
+    emitMessageDescriptors(protocol, importDir, runtimeFiles),
     "utf8",
   );
   if (runtimeFiles.socket) {
@@ -1392,7 +1400,7 @@ async function writeProtocol(protocol, outputDir, runtimeFiles) {
   if (protocol.target === "server" && runtimeFiles.broadcast) {
     await writeFile(
       path.join(outputDir, "broadcastDescriptors.ts"),
-      emitBroadcastDescriptors(protocol, outputDir, runtimeFiles),
+      emitBroadcastDescriptors(protocol, importDir, runtimeFiles),
       "utf8",
     );
   }

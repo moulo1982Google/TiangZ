@@ -20,8 +20,8 @@ try {
   const config = JSON.parse(await readFile(path.join(root, "tools/fixtures/game-modules/greeting/tsconfig.json"), "utf8"));
   config.include = ["src/**/*.ts", path.join(staleRoot, "*.d.ts").replaceAll("\\", "/")];
   await writeFile(path.join(moduleRoot, "tsconfig.json"), JSON.stringify(config));
-  const source = 'import type { ItemComponent, ItemSnapshot } from "#tiangz/model";\n' +
-    'export function snapshot(item: ItemComponent): readonly ItemSnapshot[] { const marker: LocalMarker = "preserved"; return item.Snapshot(); }\n';
+  const source = 'import type { Entity } from "#tiangz/model";\n' +
+    'export function snapshot(item: Entity): boolean { const marker: LocalMarker = "preserved"; return item.IsDisposed; }\n';
   const entry = path.join(moduleRoot, "src/hotfix/index.ts");
   await writeFile(entry, source);
   const check = () => spawnSync(process.execPath, [path.join(root, "tools/typecheck_game_modules.mjs"),
@@ -32,7 +32,7 @@ try {
   const localError = check();
   assert.notEqual(localError.status, 0);
   assert.match(localError.stderr, /not assignable/);
-  await writeFile(entry, source.replace('return item.Snapshot();', 'const invalid: string = item.Snapshot(); return [];'));
+  await writeFile(entry, source.replace('return item.IsDisposed;', 'const invalid: string = item.IsDisposed; return false;'));
   const methodError = check();
   assert.notEqual(methodError.status, 0);
   assert.match(methodError.stderr, /not assignable/);

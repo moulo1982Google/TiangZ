@@ -7,6 +7,11 @@ import { fileURLToPath } from "node:url";
 const scriptFile = fileURLToPath(import.meta.url);
 const root = path.resolve(path.dirname(scriptFile), "..");
 const npmExecPath = process.env.npm_execpath;
+const childEnvironment = { ...process.env };
+// MSVC目标不能继承其他开发环境设置的GCC编译器。 / Do not pass inherited GCC compilers to an MSVC build.
+if (process.platform === "win32") {
+  for (const key of ["CC", "CXX"]) if (/^(gcc|g\+\+)(\.exe)?$/i.test(path.basename(childEnvironment[key] ?? ""))) delete childEnvironment[key];
+}
 const executionFixtureSteps = Object.freeze([
   commandStep("intentional failure", process.execPath, ["-e", "process.exit(7)"]),
   commandStep("continues after failure", process.execPath, ["-e", "process.exit(0)"]),
@@ -18,29 +23,29 @@ const profiles = Object.freeze({
     npmStep("verify:runtime-contracts"),
     npmStep("build"),
     npmStep("test:unit:typecheck"),
-    npmStep("test:unit:coverage"),
-    commandStep("cargo native-data tests", "cargo", ["test", "--bin", "TiangZ", "native_data::tests"]),
-    commandStep("game config action validation", process.execPath, [
-      "tools/codegen_game_config.mjs",
-      "--self-test-action-validation",
-    ]),
+    npmStep("test:unit"),
+    npmStep("test:module-host"),
     npmStep("test:client-sdk-distribution"),
-    ...[
-      "typecheck:cocos-net", "typecheck:cocos-demo", "typecheck:cocos3d-demo",
-      "check:godot-demo", "typecheck:pixi", "check:cocos-demo", "check:cocos3d-demo",
-    ].map(npmStep),
+    npmStep("test:client-sdk-publish"),
   ],
   quick: [
     ...[
       "codegen", "verify:codegen", "verify:comments", "verify:version",
       "verify:dependency-policy", "verify:no-local-traces", "verify:hotfix-boundary",
-      "verify:runtime-contracts", "verify:domain-boundaries", "verify:observability:assets",
-      "verify:production-deploy", "verify:design-rule-sync", "check:project",
+      "verify:runtime-contracts", "verify:domain-boundaries",
+      "verify:design-rule-sync", "check:project",
       "test:protocol-locks", "check", "test:hotfix", "test:game-modules", "test:module-extensions",
       "test:dev-runtime", "test:runtime-contract-verifier",
       "test:matrix-runner",
+      "test:module-inspector",
+      "test:module-component",
+      "test:module-native-scaffold",
+      "test:browser-transport",
+      "test:source-change-guard",
+      "test:build-result",
     ].map(npmStep),
-    commandStep("chaos recovery acceptance", process.execPath, ["--test", "tools/chaos/recovery_acceptance.test.mjs"]),
+    commandStep("realm merge plan", process.execPath, ["--test", "tools/realm_merge_plan.test.mjs"]),
+    commandStep("local replica controller", process.execPath, ["--test", "tools/local_replica_controller.test.mjs"]),
     commandStep("module typecheck host selection", process.execPath, ["tools/module_typecheck_host_self_test.mjs"]),
     commandStep("cargo fmt", "cargo", ["fmt", "--all", "--", "--check"]),
     commandStep("cargo clippy", "cargo", ["clippy", "--all-targets", "--", "-D", "warnings"]),
@@ -48,10 +53,12 @@ const profiles = Object.freeze({
   ],
   full: [
     npmStep("verify:quick"),
+    npmStep("test:module-host"),
+    npmStep("test:game-project"),
+    npmStep("test:game-project-dev"),
     ...[
-      "test:runtime", "test:public-maps", "test:mailbox-parity", "test:backpressure", "test:watcher-graceful",
-      "test:hotfix-reload", "test:hotfix-operations", "test:hotfix-barrier",
-      "test:game-config-reload", "test:module-native-runtime",
+      "test:module-native-runtime",
+      "test:module-native-scaffold-runtime",
     ].map(npmStep),
   ],
 });
@@ -81,7 +88,7 @@ async function runProfile(profileName, explicitSteps) {
     console.log(`[test-matrix] START ${index + 1}/${steps.length} ${step.name}`);
     const outcome = spawnSync(step.command, step.args, {
       cwd: root,
-      env: process.env,
+      env: childEnvironment,
       stdio: "inherit",
       shell: false,
     });

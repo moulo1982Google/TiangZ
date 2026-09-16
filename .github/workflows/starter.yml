@@ -18,7 +18,9 @@ jobs:
         with:
           toolchain: 1.97.1
       - run: npm install
-      - run: npm run starter:acceptance
+      - run: npm run build:runtime:debug
+      - run: npm run test:game-project
+      - run: npm run test:game-project-dev
       - name: Upload failure logs
         if: failure()
         uses: actions/upload-artifact@v4

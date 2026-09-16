@@ -3,7 +3,10 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const engine = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const projectIndex = process.argv.indexOf("--project");
+if (projectIndex >= 0 && (!process.argv[projectIndex + 1] || process.argv[projectIndex + 1].startsWith("--"))) throw new Error("--project requires a directory");
+const root = projectIndex >= 0 ? path.resolve(process.argv[projectIndex + 1]) : engine;
 const manifestPath = path.join(root, "codegen.manifest.json");
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 const errors = [];
@@ -13,6 +16,7 @@ if (manifest.version !== 1 || typeof manifest.generators !== "object") {
 }
 
 for (const [generator, descriptor] of Object.entries(manifest.generators)) {
+  if (descriptor.implementationFingerprint && descriptor.implementationFingerprint !== hashText(await readFile(path.join(engine, "tools/codegen_manifest.mjs"), "utf8"))) errors.push(`${generator}: generator implementation changed`);
   await verifyHashes(generator, "input", descriptor.contentInputs);
   await verifyHashes(generator, "output", descriptor.outputs);
   for (const outputRoot of descriptor.outputRoots) {

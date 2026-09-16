@@ -319,7 +319,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 ## Phase 4：MMORPG 业务扩展
 
-状态：已进入`0.4.x`开发线；Phase 4.0空间契约、Phase 4.1 Rust AOI、Phase 4.2.5导航动态障碍、Phase 4.4怪物/战斗/技能闭环和首版任务系统已完成；Phase 4.5已接通首个DBProxy玩家快照，关键经济事务与故障接管继续推进。
+状态：Phase 4 起于 `0.4.x`，当前产品版本已直接转入 `0.6.0-alpha.0` 模块化开发预发布线（不代表 0.6 正式发布验收完成）；Phase 编号不等同于产品版本。Phase 4.0空间契约、Phase 4.1 Rust AOI、Phase 4.2.5导航动态障碍、Phase 4.4怪物/战斗/技能闭环和首版任务系统已完成；Phase 4.5已接通首个DBProxy玩家快照，关键经济事务与故障接管继续推进。
 
 计划：
 

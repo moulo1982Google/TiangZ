@@ -1,0 +1,13 @@
+syntax = "proto3";
+package starter;
+
+//ResponseType S2C_Increment
+// @ets.msg protocol=Starter method=Increment
+message C2S_Increment // IRequest
+{
+}
+
+message S2C_Increment // IResponse
+{
+  uint32 count = 1;
+}

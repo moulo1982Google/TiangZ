@@ -13,7 +13,8 @@ run("rustc", ["--version"]);
 run("npm", ["run", "build"]);
 run("cargo", ["test", "--locked", "--lib"]);
 run("cargo", ["build", "--locked", "--bin", "TiangZ"]);
-run("node", ["tools/smoke_runtime.mjs", "--mode", "both"]);
+run("node", ["tools/module_host_self_test.mjs", "--runtime"]);
+run("node", ["tools/game_project_self_test.mjs", "--runtime"]);
 
 console.log(
   `[linux-smoke] passed system=${osRelease.ID ?? "unknown"} version=${osRelease.VERSION_ID ?? "unknown"}`,
@@ -42,4 +43,3 @@ function parseOsRelease(content) {
   }
   return result;
 }
-

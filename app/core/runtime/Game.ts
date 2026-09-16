@@ -12,6 +12,7 @@ import {
   type GlobalIdConfig,
 } from "./IdSystem";
 import { CoroutineLockSystem } from "./CoroutineLockSystem";
+import type { GlobalIdCounterSource } from "./GlobalIdLayout";
 
 // 默认游戏逻辑帧为 20Hz。Runtime Pump 仍由网络事件即时唤醒，两者不是同一个频率。
 export const DEFAULT_FIXED_UPDATE_MS = 50;
@@ -96,6 +97,7 @@ export class Game extends Singleton {
 export function InitializeGameSingletons(
   config: GameUpdateConfig = {},
   idConfig: GlobalIdConfig = {},
+  idSource?: GlobalIdCounterSource,
 ): void {
   if (SingletonRegistry.TryGet(Game)) {
     throw new Error("game runtime singletons are already initialized");
@@ -112,7 +114,7 @@ export function InitializeGameSingletons(
     if (!SingletonRegistry.TryGet(InstanceIdSystem)) {
       add(InstanceIdSystem);
     }
-    add(GlobalIdSystem).Configure(idConfig);
+    add(GlobalIdSystem).Configure(idConfig, idSource);
     add(TimerSystem);
     add(CoroutineLockSystem);
     add(UpdateSystem);

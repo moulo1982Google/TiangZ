@@ -11,7 +11,7 @@ export interface ModuleConfigCandidate {
 interface ModuleConfigSchema {
   readonly moduleId: string;
   readonly schemaFingerprint: string;
-  readonly validate: (tables: Readonly<Record<string, unknown>>) => void;
+  readonly validate: (tables: Readonly<Record<string, unknown>>, previous?: Readonly<Record<string, unknown>>) => void;
 }
 
 /** 进程内模块配置目录；每次发布整组不可变快照，旧引用继续有效。
@@ -67,7 +67,7 @@ export class ModuleConfigRegistry {
       const tables = cloneJson(input.tables);
       if (!tables || Array.isArray(tables) || typeof tables !== "object") throw new Error("module config tables must be an object");
       freezeJson(tables);
-      schema.validate(tables as Record<string, unknown>);
+      schema.validate(tables as Record<string, unknown>, this.snapshots.get(input.moduleId)?.tables);
       next.set(input.moduleId, Object.freeze({ ...input, tables }) as ModuleConfigCandidate);
     }
     const generation = this.generation;

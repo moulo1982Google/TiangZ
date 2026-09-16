@@ -5,107 +5,18 @@
     "client-handlers": {
       "command": "npm run codegen:client-handlers",
       "contentInputs": {
-        "codegen.config.json": "e83f410fa579e69cfcdf71f10e32482c07ee46cb4d62d0e4fa43bda8656727bf",
+        "codegen.config.json": "d2fd836964c11fc89753933d7e57b1ec87603c29ca9bd3cff31dc8f3d40bbc06",
         "tools/codegen_client_handlers.mjs": "6c0403a5fa6182ae0c6b4e52d8dd45c122106ca4063c2f297dfd3ff7b04eebb1",
-        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
+        "tools/codegen_manifest.mjs": "3821d68ef1d1dda4b989134be4c4db98b41bb4be267519e1fa880606c77c07d1"
       },
-      "selections": [
-        {
-          "kind": "client-handler",
-          "roots": [
-            "client_demo/cocos_client2D_3.8.6/assets/scripts"
-          ],
-          "paths": [
-            "client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Handlers/G2C_AoiDeltaHandler.ts",
-            "client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Handlers/G2C_BuffAddedHandler.ts",
-            "client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Handlers/G2C_BuffDetailHandler.ts",
-            "client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Handlers/G2C_BuffRemovedHandler.ts",
-            "client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Handlers/G2C_EntityEnterHandler.ts",
-            "client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Handlers/G2C_EntityLeaveHandler.ts",
-            "client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Handlers/G2C_EntityMoveHandler.ts",
-            "client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Handlers/G2C_EntityNumericHandler.ts",
-            "client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Handlers/G2C_EntityStateHandler.ts",
-            "client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Handlers/G2C_ItemChangedHandler.ts"
-          ]
-        },
-        {
-          "kind": "client-handler",
-          "roots": [
-            "client_demo/cocos_client3D_3.8.8/assets/scripts"
-          ],
-          "paths": [
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_AoiDeltaHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_AutoAttackStateHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_BuffAddedHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_BuffRemovedHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_CombatResultHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_DemoDoorStateHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_EntityNavigateHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_EntityNumericHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_EntityStateHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_ItemChangedHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_PlayerTradeChangedHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_PlayerTradeClosedHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_PlayerTradeInviteHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_ProgressionChangedHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_QuestProgressHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_SkillCastStateHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_SkillImpactHandler.ts",
-            "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_SkillProjectileHandler.ts"
-          ]
-        },
-        {
-          "kind": "client-handler",
-          "roots": [
-            "client_demo/pixi_client_8.19.0/src"
-          ],
-          "paths": [
-            "client_demo/pixi_client_8.19.0/src/Map/Handlers/G2C_AoiDeltaHandler.ts",
-            "client_demo/pixi_client_8.19.0/src/Map/Handlers/G2C_BuffAddedHandler.ts",
-            "client_demo/pixi_client_8.19.0/src/Map/Handlers/G2C_BuffDetailHandler.ts",
-            "client_demo/pixi_client_8.19.0/src/Map/Handlers/G2C_BuffRemovedHandler.ts",
-            "client_demo/pixi_client_8.19.0/src/Map/Handlers/G2C_EntityEnterHandler.ts",
-            "client_demo/pixi_client_8.19.0/src/Map/Handlers/G2C_EntityLeaveHandler.ts",
-            "client_demo/pixi_client_8.19.0/src/Map/Handlers/G2C_EntityMoveHandler.ts",
-            "client_demo/pixi_client_8.19.0/src/Map/Handlers/G2C_EntityNumericHandler.ts",
-            "client_demo/pixi_client_8.19.0/src/Map/Handlers/G2C_EntityStateHandler.ts",
-            "client_demo/pixi_client_8.19.0/src/Map/Handlers/G2C_ItemChangedHandler.ts"
-          ]
-        }
-      ],
-      "outputs": {
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/Hotfix/handlers.ts": "f26536abf6f2784bfd293315e749f7ce60d33a028f8e463b0ba1fd1a3306750f",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/Hotfix/handlers.ts": "2366672b3407ab8bf960fdfc4f08e6452375eb767420d7da78abae94041c8f5a",
-        "client_demo/pixi_client_8.19.0/src/Generated/Hotfix/handlers.ts": "a464c8dae78b1298bf7fec4307c5abb099c942d34c80352781584e634bc6f402"
-      },
-      "outputRoots": [
-        {
-          "path": "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/Hotfix",
-          "extensions": [
-            ".ts"
-          ],
-          "ignore": []
-        },
-        {
-          "path": "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/Hotfix",
-          "extensions": [
-            ".ts"
-          ],
-          "ignore": []
-        },
-        {
-          "path": "client_demo/pixi_client_8.19.0/src/Generated/Hotfix",
-          "extensions": [
-            ".ts"
-          ],
-          "ignore": []
-        }
-      ]
+      "selections": [],
+      "outputs": {},
+      "outputRoots": []
     },
     "client-sdk": {
       "command": "npm run codegen:client-sdk",
       "contentInputs": {
-        "client_sdk/typescript/Core/Net/BrowserWebSocketTransport.ts": "09e32ea6f862c989e36bc3f83573c13fd82d5451b53e0727838eabd65fce746b",
+        "client_sdk/typescript/Core/Net/BrowserWebSocketTransport.ts": "e1698412440990bffd77ba7804577a54acd3d201825b23ce1fdbd705a8cff1a0",
         "client_sdk/typescript/Core/Net/ClientError.ts": "02053d15dedfd7d6a4252ee4434d560a6dd231c3c1b85baa3ac848e8114a31de",
         "client_sdk/typescript/Core/Net/ClientMessageDispatcher.ts": "35af20e07a591857f36b35ff50a5cef64db74908f173d2070fbeb6edb50347ca",
         "client_sdk/typescript/Core/Net/ClientTransport.ts": "7a2923323c2d7122b9021c0a0f18aede2022f898e09c7e248b863dafbef673f1",
@@ -117,120 +28,16 @@
         "client_sdk/typescript/Core/Protocol/OperationId.ts": "ef12a2cf474446d7981d08939893af5f907413eaf441b7031d88ad4aca57ea18",
         "client_sdk/typescript/Core/Protocol/Rpc.ts": "2939921e0ca29e6423030aed02c2e3179abce6563b9254edd0317d840cfc0705",
         "client_sdk/typescript/Core/Protocol/RpcError.ts": "415eebdc817af86d51c5d62b1408a68d64164c28c709a6ecb34e61df4717850c",
-        "client_sdk/typescript/Demo/BuffStateStore.ts": "687fc0944a34b24c61d0a1940a12c1b645fc1aa60efe9c3b8630b96b256952b8",
-        "client_sdk/typescript/Demo/LoginFlow.ts": "93413b9898803a8da8fccd0cd8891c65030314ff4c629f200e07da768760b097",
-        "client_sdk/typescript/Generated/Config/GameConfigs.ts": "7ba1734c06e660a602752042851cdff6b0e9102f9ce24ab571c3203d3dc3be2f",
-        "client_sdk/typescript/Generated/Config/index.ts": "5e2c19b0e6f86a3085ed76deb33b4f5368b6e3d72f5a717b513f7a68318b2981",
-        "client_sdk/typescript/Generated/Config/schema.ts": "72b6524b2e54728aca67c5da3554f6ba4682a199191e814f27deab17fd8c5d9d",
-        "client_sdk/typescript/Generated/Model/demo/protocol/clients.ts": "c6a52e26f92e5952124fb4b38e7d2d0cb0a072210cbf42fcb229e301e2b45b9f",
-        "client_sdk/typescript/Generated/Model/demo/protocol/messageDescriptors.ts": "9702fb2ecc7e37040abeb7978525183f12e2b89ae0f9c8347894d9306b3ff4d9",
-        "client_sdk/typescript/Generated/Model/demo/protocol/messages.ts": "74f6e34f3208ae81b986af0373a171da8892a21004227b7d2861d0b160a875ac",
-        "client_sdk/typescript/Generated/Model/demo/protocol/msgcodes.ts": "32acab8b5ab3b4ccdf29cc354799dde26fb7da01d3c2b6699bde334c9b5c04e2",
-        "client_sdk/typescript/Generated/Model/demo/protocol/rpcs.ts": "b52d941e5321743c0453b0b06e507689f86b137bdec24c9589c1760d86bb32b0",
-        "client_sdk/typescript/index.ts": "ae9732b0f3dac59ac5eecb4a24ffabd889564ed5b1cef7bfe45031c983621b4b",
-        "codegen.config.json": "e83f410fa579e69cfcdf71f10e32482c07ee46cb4d62d0e4fa43bda8656727bf",
+        "client_sdk/typescript/index.ts": "f5d86778714d268879f9343bb65790b19f2f4e6101e645636a07de3336185d42",
+        "codegen.config.json": "d2fd836964c11fc89753933d7e57b1ec87603c29ca9bd3cff31dc8f3d40bbc06",
         "tools/codegen_client_sdk.mjs": "9612282dd74ba1031610583ea5013961f6739c1469d2f7e36bb01cc7d5f506f0",
-        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
+        "tools/codegen_manifest.mjs": "3821d68ef1d1dda4b989134be4c4db98b41bb4be267519e1fa880606c77c07d1"
       },
       "selections": [],
       "outputs": {
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Core/Net/BrowserWebSocketTransport.ts": "09e32ea6f862c989e36bc3f83573c13fd82d5451b53e0727838eabd65fce746b",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Core/Net/ClientError.ts": "02053d15dedfd7d6a4252ee4434d560a6dd231c3c1b85baa3ac848e8114a31de",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Core/Net/ClientMessageDispatcher.ts": "35af20e07a591857f36b35ff50a5cef64db74908f173d2070fbeb6edb50347ca",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Core/Net/ClientTransport.ts": "7a2923323c2d7122b9021c0a0f18aede2022f898e09c7e248b863dafbef673f1",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Core/Net/NativeTransport.ts": "c8bb89579c3752fd5f237fde3451ded764258a71af65c57cebd92fe7030f911e",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Core/Net/RpcSocket.ts": "a21587c6671c3524e7f89458ebffd20ec366a1a49d1fd7df1742ec040c7b4c41",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Core/Protocol/Binary.ts": "657614b2037718858429b3d19200c5ab17eeca6c13e8158d7b1d15c9a7fbd6e7",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Core/Protocol/Frame.ts": "2e1c245952555c1c8df1d60682b783f0f4dd9c5d6a356d47ebf3f807b9a788ae",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Core/Protocol/Message.ts": "40482902a6a836fc4544cea4acd97adf61f051692c09a541f5800271d164f1d6",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Core/Protocol/OperationId.ts": "ef12a2cf474446d7981d08939893af5f907413eaf441b7031d88ad4aca57ea18",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Core/Protocol/Rpc.ts": "2939921e0ca29e6423030aed02c2e3179abce6563b9254edd0317d840cfc0705",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Core/Protocol/RpcError.ts": "415eebdc817af86d51c5d62b1408a68d64164c28c709a6ecb34e61df4717850c",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Demo/BuffStateStore.ts": "687fc0944a34b24c61d0a1940a12c1b645fc1aa60efe9c3b8630b96b256952b8",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Demo/LoginFlow.ts": "93413b9898803a8da8fccd0cd8891c65030314ff4c629f200e07da768760b097",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Generated/Config/GameConfigs.ts": "7ba1734c06e660a602752042851cdff6b0e9102f9ce24ab571c3203d3dc3be2f",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Generated/Config/index.ts": "5e2c19b0e6f86a3085ed76deb33b4f5368b6e3d72f5a717b513f7a68318b2981",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Generated/Config/schema.ts": "72b6524b2e54728aca67c5da3554f6ba4682a199191e814f27deab17fd8c5d9d",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/clients.ts": "c6a52e26f92e5952124fb4b38e7d2d0cb0a072210cbf42fcb229e301e2b45b9f",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/messageDescriptors.ts": "9702fb2ecc7e37040abeb7978525183f12e2b89ae0f9c8347894d9306b3ff4d9",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/messages.ts": "74f6e34f3208ae81b986af0373a171da8892a21004227b7d2861d0b160a875ac",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/msgcodes.ts": "32acab8b5ab3b4ccdf29cc354799dde26fb7da01d3c2b6699bde334c9b5c04e2",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/rpcs.ts": "b52d941e5321743c0453b0b06e507689f86b137bdec24c9589c1760d86bb32b0",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/Generated/ProtocolFingerprint.ts": "e600336680eb052103c3189d2d82ebd9966720eaccca285921de420a20ac071c",
-        "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/index.ts": "ae9732b0f3dac59ac5eecb4a24ffabd889564ed5b1cef7bfe45031c983621b4b",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Core/Net/BrowserWebSocketTransport.ts": "09e32ea6f862c989e36bc3f83573c13fd82d5451b53e0727838eabd65fce746b",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Core/Net/ClientError.ts": "02053d15dedfd7d6a4252ee4434d560a6dd231c3c1b85baa3ac848e8114a31de",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Core/Net/ClientMessageDispatcher.ts": "35af20e07a591857f36b35ff50a5cef64db74908f173d2070fbeb6edb50347ca",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Core/Net/ClientTransport.ts": "7a2923323c2d7122b9021c0a0f18aede2022f898e09c7e248b863dafbef673f1",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Core/Net/NativeTransport.ts": "c8bb89579c3752fd5f237fde3451ded764258a71af65c57cebd92fe7030f911e",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Core/Net/RpcSocket.ts": "a21587c6671c3524e7f89458ebffd20ec366a1a49d1fd7df1742ec040c7b4c41",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Core/Protocol/Binary.ts": "657614b2037718858429b3d19200c5ab17eeca6c13e8158d7b1d15c9a7fbd6e7",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Core/Protocol/Frame.ts": "2e1c245952555c1c8df1d60682b783f0f4dd9c5d6a356d47ebf3f807b9a788ae",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Core/Protocol/Message.ts": "40482902a6a836fc4544cea4acd97adf61f051692c09a541f5800271d164f1d6",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Core/Protocol/OperationId.ts": "ef12a2cf474446d7981d08939893af5f907413eaf441b7031d88ad4aca57ea18",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Core/Protocol/Rpc.ts": "2939921e0ca29e6423030aed02c2e3179abce6563b9254edd0317d840cfc0705",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Core/Protocol/RpcError.ts": "415eebdc817af86d51c5d62b1408a68d64164c28c709a6ecb34e61df4717850c",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Demo/BuffStateStore.ts": "687fc0944a34b24c61d0a1940a12c1b645fc1aa60efe9c3b8630b96b256952b8",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Demo/LoginFlow.ts": "93413b9898803a8da8fccd0cd8891c65030314ff4c629f200e07da768760b097",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Generated/Config/GameConfigs.ts": "7ba1734c06e660a602752042851cdff6b0e9102f9ce24ab571c3203d3dc3be2f",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Generated/Config/index.ts": "5e2c19b0e6f86a3085ed76deb33b4f5368b6e3d72f5a717b513f7a68318b2981",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Generated/Config/schema.ts": "72b6524b2e54728aca67c5da3554f6ba4682a199191e814f27deab17fd8c5d9d",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/clients.ts": "c6a52e26f92e5952124fb4b38e7d2d0cb0a072210cbf42fcb229e301e2b45b9f",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/messageDescriptors.ts": "9702fb2ecc7e37040abeb7978525183f12e2b89ae0f9c8347894d9306b3ff4d9",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/messages.ts": "74f6e34f3208ae81b986af0373a171da8892a21004227b7d2861d0b160a875ac",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/msgcodes.ts": "32acab8b5ab3b4ccdf29cc354799dde26fb7da01d3c2b6699bde334c9b5c04e2",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/rpcs.ts": "b52d941e5321743c0453b0b06e507689f86b137bdec24c9589c1760d86bb32b0",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/Generated/ProtocolFingerprint.ts": "e600336680eb052103c3189d2d82ebd9966720eaccca285921de420a20ac071c",
-        "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK/index.ts": "ae9732b0f3dac59ac5eecb4a24ffabd889564ed5b1cef7bfe45031c983621b4b",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Core/Net/BrowserWebSocketTransport.ts": "09e32ea6f862c989e36bc3f83573c13fd82d5451b53e0727838eabd65fce746b",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Core/Net/ClientError.ts": "02053d15dedfd7d6a4252ee4434d560a6dd231c3c1b85baa3ac848e8114a31de",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Core/Net/ClientMessageDispatcher.ts": "35af20e07a591857f36b35ff50a5cef64db74908f173d2070fbeb6edb50347ca",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Core/Net/ClientTransport.ts": "7a2923323c2d7122b9021c0a0f18aede2022f898e09c7e248b863dafbef673f1",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Core/Net/NativeTransport.ts": "c8bb89579c3752fd5f237fde3451ded764258a71af65c57cebd92fe7030f911e",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Core/Net/RpcSocket.ts": "a21587c6671c3524e7f89458ebffd20ec366a1a49d1fd7df1742ec040c7b4c41",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Core/Protocol/Binary.ts": "657614b2037718858429b3d19200c5ab17eeca6c13e8158d7b1d15c9a7fbd6e7",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Core/Protocol/Frame.ts": "2e1c245952555c1c8df1d60682b783f0f4dd9c5d6a356d47ebf3f807b9a788ae",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Core/Protocol/Message.ts": "40482902a6a836fc4544cea4acd97adf61f051692c09a541f5800271d164f1d6",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Core/Protocol/OperationId.ts": "ef12a2cf474446d7981d08939893af5f907413eaf441b7031d88ad4aca57ea18",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Core/Protocol/Rpc.ts": "2939921e0ca29e6423030aed02c2e3179abce6563b9254edd0317d840cfc0705",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Core/Protocol/RpcError.ts": "415eebdc817af86d51c5d62b1408a68d64164c28c709a6ecb34e61df4717850c",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Demo/BuffStateStore.ts": "687fc0944a34b24c61d0a1940a12c1b645fc1aa60efe9c3b8630b96b256952b8",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Demo/LoginFlow.ts": "93413b9898803a8da8fccd0cd8891c65030314ff4c629f200e07da768760b097",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Generated/Config/GameConfigs.ts": "7ba1734c06e660a602752042851cdff6b0e9102f9ce24ab571c3203d3dc3be2f",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Generated/Config/index.ts": "5e2c19b0e6f86a3085ed76deb33b4f5368b6e3d72f5a717b513f7a68318b2981",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Generated/Config/schema.ts": "72b6524b2e54728aca67c5da3554f6ba4682a199191e814f27deab17fd8c5d9d",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Generated/Model/demo/protocol/clients.ts": "c6a52e26f92e5952124fb4b38e7d2d0cb0a072210cbf42fcb229e301e2b45b9f",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Generated/Model/demo/protocol/messageDescriptors.ts": "9702fb2ecc7e37040abeb7978525183f12e2b89ae0f9c8347894d9306b3ff4d9",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Generated/Model/demo/protocol/messages.ts": "74f6e34f3208ae81b986af0373a171da8892a21004227b7d2861d0b160a875ac",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Generated/Model/demo/protocol/msgcodes.ts": "32acab8b5ab3b4ccdf29cc354799dde26fb7da01d3c2b6699bde334c9b5c04e2",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Generated/Model/demo/protocol/rpcs.ts": "b52d941e5321743c0453b0b06e507689f86b137bdec24c9589c1760d86bb32b0",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/Generated/ProtocolFingerprint.ts": "e600336680eb052103c3189d2d82ebd9966720eaccca285921de420a20ac071c",
-        "client_demo/pixi_client_8.19.0/src/Generated/SDK/index.ts": "ae9732b0f3dac59ac5eecb4a24ffabd889564ed5b1cef7bfe45031c983621b4b",
-        "client_sdk/typescript/Generated/ProtocolFingerprint.ts": "e600336680eb052103c3189d2d82ebd9966720eaccca285921de420a20ac071c"
+        "client_sdk/typescript/Generated/ProtocolFingerprint.ts": "b2cd574d67c0a4bf181bfdb5ee15c4ba21e7dde8d03f5f35be753ea8947f2943"
       },
-      "outputRoots": [
-        {
-          "path": "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK",
-          "extensions": [
-            ".ts"
-          ],
-          "ignore": []
-        },
-        {
-          "path": "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK",
-          "extensions": [
-            ".ts"
-          ],
-          "ignore": []
-        },
-        {
-          "path": "client_demo/pixi_client_8.19.0/src/Generated/SDK",
-          "extensions": [
-            ".ts"
-          ],
-          "ignore": []
-        }
-      ]
+      "outputRoots": []
     },
     "cpp-client-sdk": {
       "command": "npm run codegen:cpp-client-sdk",
@@ -240,149 +47,31 @@
         "client_sdk/cpp/include/tiangz/client/Protocol.h": "4c88cf0b3f4c1f52ed5422f632ac131313f75ea18fdbc6387a17188647f20b68",
         "client_sdk/cpp/include/tiangz/client/RpcSocket.h": "0d9a79e9d90b8ab2af56389a7ba7314e124e4a163496a81354fcf646d1453963",
         "client_sdk/cpp/include/tiangz/client/Transport.h": "ac823789d8631148072661481712d3db0fd0efc62d0203ed22fe33259639d9b4",
-        "client_sdk/cpp/include/tiangz/generated/bench/Protocol.h": "fa54b89172aa06cfece573606c9271d5be6976af02967c7a8c885f8d4806c0b0",
-        "client_sdk/cpp/include/tiangz/generated/demo/Protocol.h": "1fbc2fd9ff647cc9aced5113ff75104b0e5ae59d173b78d11983e349789921e0",
-        "codegen.config.json": "e83f410fa579e69cfcdf71f10e32482c07ee46cb4d62d0e4fa43bda8656727bf",
+        "codegen.config.json": "d2fd836964c11fc89753933d7e57b1ec87603c29ca9bd3cff31dc8f3d40bbc06",
         "tools/codegen_cpp_client_sdk.mjs": "56f785970b9b7144ac9aefa3b0ca7b509b675c1d531d5ae5010f0e457b9043d8",
-        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
+        "tools/codegen_manifest.mjs": "3821d68ef1d1dda4b989134be4c4db98b41bb4be267519e1fa880606c77c07d1"
       },
       "selections": [],
-      "outputs": {
-        "client_demo/ue_client3D_5.4.4/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include/tiangz/client/Binary.h": "ac62a72b24094a272d578d55f81fa831bb85882fddb280eae2c1f66ee94d6048",
-        "client_demo/ue_client3D_5.4.4/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include/tiangz/client/Frame.h": "03f62486b1e6354abb82b2525addb9233575138ef34dbab2670e05f39a930733",
-        "client_demo/ue_client3D_5.4.4/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include/tiangz/client/Protocol.h": "4c88cf0b3f4c1f52ed5422f632ac131313f75ea18fdbc6387a17188647f20b68",
-        "client_demo/ue_client3D_5.4.4/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include/tiangz/client/RpcSocket.h": "0d9a79e9d90b8ab2af56389a7ba7314e124e4a163496a81354fcf646d1453963",
-        "client_demo/ue_client3D_5.4.4/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include/tiangz/client/Transport.h": "ac823789d8631148072661481712d3db0fd0efc62d0203ed22fe33259639d9b4",
-        "client_demo/ue_client3D_5.4.4/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include/tiangz/generated/bench/Protocol.h": "fa54b89172aa06cfece573606c9271d5be6976af02967c7a8c885f8d4806c0b0",
-        "client_demo/ue_client3D_5.4.4/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include/tiangz/generated/demo/Protocol.h": "1fbc2fd9ff647cc9aced5113ff75104b0e5ae59d173b78d11983e349789921e0"
-      },
-      "outputRoots": [
-        {
-          "path": "client_demo/ue_client3D_5.4.4/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include",
-          "extensions": [
-            ".h"
-          ],
-          "ignore": []
-        }
-      ]
-    },
-    "csharp-client-sdk": {
-      "command": "npm run codegen:csharp-client-sdk",
-      "contentInputs": {
-        "client_sdk/csharp/Core/Binary.cs": "e62e3dd8b4bb4b51ec425fa018e258e354d4c80ef3da0d2c0502eed5a2a96b79",
-        "client_sdk/csharp/Core/Frame.cs": "f8f068d2dd1ff91b70112be2e538c00be9f5e60ca2a7a43e8161e74b15d7a522",
-        "client_sdk/csharp/Core/Protocol.cs": "239d8654884f3aeebdea12a9b895d10f2b18eb1023c8d4b939db4efe81e61642",
-        "client_sdk/csharp/Core/RpcSocket.cs": "d813c8c6ead3fdf400c23c52e10a967cc739f07d3ee3a01815ad1c264a200ac8",
-        "client_sdk/csharp/Demo/LoginFlow.cs": "5107a12a5700c658d132f4be4fd6274e59bf1b134b032c6238eaec5d57a6c18d",
-        "client_sdk/csharp/Generated/Demo/Protocol.cs": "5775daa78d6959f0aac480aa24c781d2ce70ea55f55d746cb8e7fc6aa7946372",
-        "codegen.config.json": "e83f410fa579e69cfcdf71f10e32482c07ee46cb4d62d0e4fa43bda8656727bf",
-        "proto/DataDefine_CS_50001.proto": "256c1a2b893ccdb9b880c2e29b0d51bc58cf72e7dfb364ebd35d71c4450f98fb",
-        "proto/opcode.lock.json": "afcc441773c77967d9630f2e0af05d209da72a4a1e0ff74dac9476605f1ba5de",
-        "proto/OuterMessage_C_10001.proto": "272062a7b02eabb926a900dbe1efea0e64934943b7cc72ac8246de956251e886",
-        "proto/schema.lock.json": "2f56775c58b914bc345a348dece734cba13260b995458c60e3e4c9fd342a87fb",
-        "tools/codegen_csharp_client_sdk.mjs": "480c24cdacdd59e40185dda493cca5d785ea8083573d5569de88f7934d563195",
-        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
-      },
-      "selections": [],
-      "outputs": {
-        "client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/Core/Binary.cs": "e62e3dd8b4bb4b51ec425fa018e258e354d4c80ef3da0d2c0502eed5a2a96b79",
-        "client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/Core/Frame.cs": "f8f068d2dd1ff91b70112be2e538c00be9f5e60ca2a7a43e8161e74b15d7a522",
-        "client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/Core/Protocol.cs": "239d8654884f3aeebdea12a9b895d10f2b18eb1023c8d4b939db4efe81e61642",
-        "client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/Core/RpcSocket.cs": "d813c8c6ead3fdf400c23c52e10a967cc739f07d3ee3a01815ad1c264a200ac8",
-        "client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/Demo/LoginFlow.cs": "5107a12a5700c658d132f4be4fd6274e59bf1b134b032c6238eaec5d57a6c18d",
-        "client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/Generated/Demo/Protocol.cs": "5775daa78d6959f0aac480aa24c781d2ce70ea55f55d746cb8e7fc6aa7946372"
-      },
-      "outputRoots": [
-        {
-          "path": "client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime",
-          "extensions": [
-            ".cs"
-          ],
-          "ignore": []
-        }
-      ]
-    },
-    "game-config": {
-      "command": "npm run codegen:game-config",
-      "contentInputs": {
-        "game_config/Datas/__tables__.xlsx": "0d0f0c91b5a39e183dd4b5bdb23f33a51b2305c4616fbec17a39a4af5d7d8910",
-        "game_config/Datas/AoiConfig.xlsx": "f5e1ebd0939ea604c618eab722f80cdde8932136f1d4f40cd49e3a94be3446d8",
-        "game_config/Datas/AoiSyncTierConfig.xlsx": "f26b1ca306126e77ec5d551eac2c60d708a6958d10e01c51f03c11383cb6d179",
-        "game_config/Datas/BuffConfig.xlsx": "7322ad5c0cf811c3e5a46b98977bf7ad9f7c70bfa8ef4b58ad60594ff55dec98",
-        "game_config/Datas/ConfigTablePolicy.xlsx": "fd09b8c4f1f289cc023ff06eb240b7c1131a5142b8274358ba7f65eb2913fb43",
-        "game_config/Datas/DropTableConfig.xlsx": "8b7faec2fc6cfb9979e11d85a6c70d1ffc0647103ccf4ee53c9f69c6fdd5633c",
-        "game_config/Datas/ItemConfig.xlsx": "3731d9e8f12f910731c1a971269452fa9e81eddfb9e0a6e16ca1a56ed37c03eb",
-        "game_config/Datas/MapConfig.xlsx": "b67a49d3b321b63e1b721405544461d816d6866b995852b2253155797c61c763",
-        "game_config/Datas/MonsterAreaConfig.xlsx": "a0d9300916467dc90fcc9c0338028545935ca38fc76f76665fc698e7714c48e3",
-        "game_config/Datas/MonsterConfig.xlsx": "409a7d0684ab76adf7bbb9f63468c9dc710fe10eadf60e9e69b0ce029e07c9c7",
-        "game_config/Datas/PlayerConfig.xlsx": "154bd7645348aa945d1576b8a0da543354e87b1413370d5b68ce3b9083c6986a",
-        "game_config/Datas/QuestConfig.xlsx": "9805ee5688b67254a218fb88b7be907b9d3e7f4ff2263e55ef72850980bf59b2",
-        "game_config/Datas/QuestObjectiveConfig.xlsx": "d61f02e82606556817e5d9cecbd90779401ab60b17522e21c707034f62180d3c",
-        "game_config/Datas/SkillConfig.xlsx": "b8b6313f010c51b4c87110342ce8b6cb5d7864da659b3438a0f4eb440fbc88cb",
-        "game_config/Datas/SkillEffectConfig.xlsx": "d26e50f74539c3c354e9023a63ac7623e7fe1d93c4d185030edbe00354b59b73",
-        "game_config/Defines/builtin.xml": "4f62ec4a31f80cc78f2fa1c85ace3f01d24543cb4b633bbfa32ccab13a882a01",
-        "game_config/luban.conf": "eb2527f701f2aaca4df688d3120bb1e992aa287997aeec5707c8a98e66badd7c",
-        "tools/codegen_game_config.mjs": "176eea7785010ee628092bb1eb4e03e4f99128b323e43466b8077b1aa72a12a2",
-        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
-        "tools/third_party/luban/4.10.2/Luban.dll": "9639581e0abe31f43f8175155a82319f942bbe495c4ee9bd8d3baeaee3bd1028"
-      },
-      "selections": [],
-      "outputs": {
-        "app/generated/model/config/GameConfigs.ts": "03495ec55b742c38a1b1465fd5ecb337e60de0b2779b721816602dce9431b420",
-        "app/generated/model/config/index.ts": "5e2c19b0e6f86a3085ed76deb33b4f5368b6e3d72f5a717b513f7a68318b2981",
-        "app/generated/model/config/schema.ts": "05aa5cdaaf6c23e94862fe7b17fa59539a8c6768714bbaf9cd12dd4f15574430",
-        "client_sdk/typescript/Generated/Config/GameConfigs.ts": "7ba1734c06e660a602752042851cdff6b0e9102f9ce24ab571c3203d3dc3be2f",
-        "client_sdk/typescript/Generated/Config/index.ts": "5e2c19b0e6f86a3085ed76deb33b4f5368b6e3d72f5a717b513f7a68318b2981",
-        "client_sdk/typescript/Generated/Config/schema.ts": "72b6524b2e54728aca67c5da3554f6ba4682a199191e814f27deab17fd8c5d9d",
-        "game_config/generated/client.cold.json": "23eea46f85f92d9885a2edf783e4121fee3ecc89230e1b91ae2a35126de908c7",
-        "game_config/generated/client.hot.json": "fd3e376eee2920c97d3fed0dcca1d3e3790e4a0bd320397e653910c9255f4345",
-        "game_config/generated/client.json": "64e37d55f435caaf7c7e020106186118dc4bcb9644f4cacecbed18241225058f",
-        "game_config/generated/game-config.manifest.json": "7cd52a36f250e1867554b13fbe1e5f7400a82c02cfab124b610d31e30d576618",
-        "game_config/generated/server.cold.json": "09a2e87e7150c4e299116567c27309de0853adefab81f67d529ab19bb20c4e4f",
-        "game_config/generated/server.hot.json": "9b3d54a5ef8337d8256519b610433e921936957043bd26a94f2637b8be26fdf9",
-        "game_config/generated/server.json": "3b2e08e52e3fb5257148524303ad6ad492797e3e85399c65a41064a849ec4f62"
-      },
-      "outputRoots": [
-        {
-          "path": "app/generated/model/config",
-          "extensions": [
-            ".ts"
-          ],
-          "ignore": []
-        },
-        {
-          "path": "client_sdk/typescript/Generated/Config",
-          "extensions": [
-            ".ts"
-          ],
-          "ignore": []
-        },
-        {
-          "path": "game_config/generated",
-          "extensions": [
-            ".json"
-          ],
-          "ignore": []
-        }
-      ]
+      "outputs": {},
+      "outputRoots": []
     },
     "godot-client-sdk": {
       "command": "npm run codegen:godot-client-sdk",
       "contentInputs": {
         "client_sdk/godot/proto_reader.gd": "99b7e16eb972e3025bddfd3a5e6339b125b046dda05981ebe524875a06cb9df3",
-        "codegen.config.json": "e83f410fa579e69cfcdf71f10e32482c07ee46cb4d62d0e4fa43bda8656727bf",
-        "proto/opcode.lock.json": "afcc441773c77967d9630f2e0af05d209da72a4a1e0ff74dac9476605f1ba5de",
-        "proto/schema.lock.json": "2f56775c58b914bc345a348dece734cba13260b995458c60e3e4c9fd342a87fb",
+        "codegen.config.json": "d2fd836964c11fc89753933d7e57b1ec87603c29ca9bd3cff31dc8f3d40bbc06",
+        "proto/opcode.lock.json": "7c1051f6e2bc3943b7c1dbe4da229694455681b8875a346c99279e555edb733f",
+        "proto/schema.lock.json": "7c1051f6e2bc3943b7c1dbe4da229694455681b8875a346c99279e555edb733f",
         "tools/codegen_godot_client_sdk.mjs": "7c4564ae6f7c3d190622a224127c8b9c1d2db53c2e2ecab24eb8cec48a7c4afc",
-        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
+        "tools/codegen_manifest.mjs": "3821d68ef1d1dda4b989134be4c4db98b41bb4be267519e1fa880606c77c07d1"
       },
       "selections": [],
       "outputs": {
-        "client_demo/godot-3d-4.7.1/scripts/generated/tiangz_proto.gd": "8d1a8d86ba0dc086b7938c8c2b55ec72bd6ff94357f4d3f011b64a032792652d"
+        "client_sdk/godot/generated/tiangz_proto.gd": "defa0c534d2122393ac2109935c6c453342c286a6094e8a46de2646a55be4c25"
       },
       "outputRoots": [
         {
-          "path": "client_demo/godot-3d-4.7.1/scripts/generated",
+          "path": "client_sdk/godot/generated",
           "extensions": [
             ".gd"
           ],
@@ -393,25 +82,12 @@
     "native-data": {
       "command": "npm run codegen:native-data",
       "contentInputs": {
-        "native_data/core/EntityOps.native": "71cbf421bc2fe8f48696536d0f977b4274612a942d50544ebd1323b5e59fb16d",
-        "native_data/mmorpg/Entity.native": "a60177b986be81104e0f9800ea064df253a1836f3dc4f71c91214eadf507b009",
-        "native_data/mmorpg/Item.native": "b8115687e4b6919be0dc310fe9833f05f4506e644dd214999acbca68a9233e40",
-        "native_data/mmorpg/MapOps.native": "7003fa578c7bf49a0517c0b08cd8dabc78d5c8369931a5abf81af092a5f68d3b",
-        "native_data/mmorpg/Unit.native": "727df50b194ce207e0b59b43cf74180773d173a9608147b11e9c64d8731a4429",
-        "package.json": "3dd9d1307e87404769a159658881cf3d89baecc1d9a1733f51e424509aeecdc6",
-        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
-        "tools/codegen_native_data.mjs": "2d2a900111ec146a98db232cf9dd5f61efcb0f8ade3dcdba21ffd0fa06b11a0b"
+        "package.json": "a8aa453ade005d6b5807040aeb4d6b1c6a1c179d650ad5a47162c91dd98f5603",
+        "tools/codegen_manifest.mjs": "3821d68ef1d1dda4b989134be4c4db98b41bb4be267519e1fa880606c77c07d1",
+        "tools/codegen_native_data.mjs": "267f844863431b362f7c8aa74d52029171d49e5d8fbc0cf55a4468f16dd5dc6e"
       },
       "selections": [],
-      "outputs": {
-        "app/generated/model/native/NativeItemPersistence.ts": "dfd1162936149b92e20734f9beb98a4f41e238ed5ebd550c2b28009d46a47caf",
-        "app/generated/model/native/NativeItemRef.ts": "47abb3166b30399b6503b9bc095ef08421cdde887f2f13bf9e3012ab535f1697",
-        "app/generated/model/native/NativeOps.ts": "08cbeb9c25ad892601ca0cc554deda79249cfe8e2d8eb0a4cb9c4dbfacf5fc4b",
-        "app/generated/model/native/NativeUnitRef.ts": "bf39a96342138250887a0e8529b476ffb9f75aaaefea549e8f89823d67f14f11",
-        "src/generated/native_data.rs": "d1dbdfd640dea47c9a6d7c69bbb39decaf3993d555910769b47b1517823ed5c2",
-        "src/generated/native_ops_bootstrap.js": "f05ca9edb03828822f724a873a2dfe1d075e8d446d3869d02bb3b712c03c63f4",
-        "src/generated/native_ops.rs": "e9e605249e3531a01314e61b50fea9bb7fe169f3af1173b8154acbdb055e59d5"
-      },
+      "outputs": {},
       "outputRoots": [
         {
           "path": "app/generated/model/native",
@@ -436,42 +112,14 @@
       "command": "npm run codegen:proto",
       "contentInputs": {
         "app/core/process/InternalFrameProtocol.ts": "8fde04d87a5d858a7d8549cdc5388ab1c560e8f743c5978075374c3810e253b6",
-        "codegen.config.json": "e83f410fa579e69cfcdf71f10e32482c07ee46cb4d62d0e4fa43bda8656727bf",
-        "proto/BenchInner_S_25001.proto": "ed3190c3d98c9e6b72bcdd14a8b752e041ae1195fa0f40cdd2889baabd3c1fbb",
-        "proto/BenchMessage_C_15001.proto": "b8ec4d8c56bb8417331616f222c5ef071002f4553b74abc1120a293270c05b74",
-        "proto/DataDefine_CS_50001.proto": "256c1a2b893ccdb9b880c2e29b0d51bc58cf72e7dfb364ebd35d71c4450f98fb",
-        "proto/InnerMessage_S_20001.proto": "cffa677d7b5d533074f2944360822388be4f655a6b7d34ea0164881744c9af05",
-        "proto/opcode.lock.json": "afcc441773c77967d9630f2e0af05d209da72a4a1e0ff74dac9476605f1ba5de",
-        "proto/OuterMessage_C_10001.proto": "272062a7b02eabb926a900dbe1efea0e64934943b7cc72ac8246de956251e886",
-        "proto/schema.lock.json": "2f56775c58b914bc345a348dece734cba13260b995458c60e3e4c9fd342a87fb",
-        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
-        "tools/codegen_proto.mjs": "57214fdb0faa8ea0a27d9050d8d3a4a93b6ce72acfd810bbac21d35a95f9feca"
+        "codegen.config.json": "d2fd836964c11fc89753933d7e57b1ec87603c29ca9bd3cff31dc8f3d40bbc06",
+        "proto/opcode.lock.json": "7c1051f6e2bc3943b7c1dbe4da229694455681b8875a346c99279e555edb733f",
+        "proto/schema.lock.json": "7c1051f6e2bc3943b7c1dbe4da229694455681b8875a346c99279e555edb733f",
+        "tools/codegen_manifest.mjs": "3821d68ef1d1dda4b989134be4c4db98b41bb4be267519e1fa880606c77c07d1",
+        "tools/codegen_proto.mjs": "6ee85f63a2614b7d4bd2a8b08db1e5b2ced43cf9484db4c08eab0cd753af9f81"
       },
       "selections": [],
-      "outputs": {
-        "app/generated/model/server/bench/protocol/broadcastDescriptors.ts": "caf91767d7e615caba3ab3a228494b7e5644eb5d715e6b05e366f141c84b8c3e",
-        "app/generated/model/server/bench/protocol/messageDescriptors.ts": "ba50d00677ed62c2d97470333b6cfbf2ce3b27cf828d91358401a2953bb7ca0b",
-        "app/generated/model/server/bench/protocol/messages.ts": "483047b472a316276cdd18531bb0257eac4f79dce1882eb394cfbb37bf9c4620",
-        "app/generated/model/server/bench/protocol/msgcodes.ts": "9dde4100434437f2a016803715a5324c6786e6e162d7425c29e4e286b9b00eed",
-        "app/generated/model/server/bench/protocol/rpcs.ts": "4e77733648410bbd1dba1ad46cf71dfd229020298739cb3912dd1313c00f88f4",
-        "app/generated/model/server/demo/protocol/broadcastDescriptors.ts": "470022cf20d2d8d0ee82c433a7f57c16886aa2db52276f8acee0f1c1c05ad6b9",
-        "app/generated/model/server/demo/protocol/messageDescriptors.ts": "0eb9df9248e17186746456be469b374fd254f9d88ece922c225cdb7b40219c53",
-        "app/generated/model/server/demo/protocol/messages.ts": "0b474897dadb14afc7d0f9ad6ae0503627aad009a49e443359ab25491ed4a10f",
-        "app/generated/model/server/demo/protocol/msgcodes.ts": "e527ec005e9373493836f7021b9a5bd2802f512d8fd59e769129af7eacc70bb4",
-        "app/generated/model/server/demo/protocol/rpcs.ts": "b102b591d4e198768a2470cce7a3fc77d440e9d2ef30d582ebb004580385653d",
-        "client_sdk/cpp/include/tiangz/generated/bench/Protocol.h": "fa54b89172aa06cfece573606c9271d5be6976af02967c7a8c885f8d4806c0b0",
-        "client_sdk/cpp/include/tiangz/generated/demo/Protocol.h": "1fbc2fd9ff647cc9aced5113ff75104b0e5ae59d173b78d11983e349789921e0",
-        "client_sdk/typescript/Generated/Model/bench/protocol/clients.ts": "e184e47ec9b4531511ec385d255c9906d9bd13bb88c7afa6da32271959d694e9",
-        "client_sdk/typescript/Generated/Model/bench/protocol/messageDescriptors.ts": "ba50d00677ed62c2d97470333b6cfbf2ce3b27cf828d91358401a2953bb7ca0b",
-        "client_sdk/typescript/Generated/Model/bench/protocol/messages.ts": "4104c0b968f3ecbc6dfe9598fe21b3155be871761b6adbef667381e7fdbb11a2",
-        "client_sdk/typescript/Generated/Model/bench/protocol/msgcodes.ts": "e77335c0d7749be4b7f3b66db4438c03d1c0d8d578cca73e5ea092d232418aa2",
-        "client_sdk/typescript/Generated/Model/bench/protocol/rpcs.ts": "8ee6a43650f76be56cd990d070926c6739bcbe7f88482dc44f7fd39c5a61f410",
-        "client_sdk/typescript/Generated/Model/demo/protocol/clients.ts": "c6a52e26f92e5952124fb4b38e7d2d0cb0a072210cbf42fcb229e301e2b45b9f",
-        "client_sdk/typescript/Generated/Model/demo/protocol/messageDescriptors.ts": "9702fb2ecc7e37040abeb7978525183f12e2b89ae0f9c8347894d9306b3ff4d9",
-        "client_sdk/typescript/Generated/Model/demo/protocol/messages.ts": "74f6e34f3208ae81b986af0373a171da8892a21004227b7d2861d0b160a875ac",
-        "client_sdk/typescript/Generated/Model/demo/protocol/msgcodes.ts": "32acab8b5ab3b4ccdf29cc354799dde26fb7da01d3c2b6699bde334c9b5c04e2",
-        "client_sdk/typescript/Generated/Model/demo/protocol/rpcs.ts": "b52d941e5321743c0453b0b06e507689f86b137bdec24c9589c1760d86bb32b0"
-      },
+      "outputs": {},
       "outputRoots": [
         {
           "path": "app/generated/model/server",
@@ -499,522 +147,57 @@
     "scenes": {
       "command": "npm run codegen:scenes",
       "contentInputs": {
-        "app/hotfix/mmorpg/buff/BuffComponentSystem.ts": "6ce1a83cb9ed29157104d3e7ced019302ff2e1fb04877bea883c38b343e9fbc7",
-        "app/hotfix/mmorpg/buff/BuffSystem.ts": "572cb6e04d9b07ea790899711cbb560c6f78327f310a44d996318d924a616d89",
-        "app/hotfix/mmorpg/combat/CombatComponentSystem.ts": "5d065eed9e2e73a433f7769be09186155ea42b39bde3a785a4f16f4fa6249cec",
-        "app/hotfix/mmorpg/combat/CombatStateComponentSystem.ts": "37e6825ebca9aa0b6190ae50a2263fbec53b6e1e3d923e8d7e32cd444d0683c3",
-        "app/hotfix/mmorpg/currency/CurrencyComponentSystem.ts": "278d44f15322f33e84c4779693ba6180cfa14a755987d4e39a4001642fa44e6f",
-        "app/hotfix/mmorpg/interactable/InteractableComponentSystem.ts": "75ffebb90cbd69ec91246acfd5a1b8d8980d79e43eaea170c50dcf19a9de74a4",
-        "app/hotfix/mmorpg/interactable/InteractableUnitSystem.ts": "2e4d0c1133bf3df3e73e017380489b0b4b102385cf239876b91fbeecb4c61cc1",
-        "app/hotfix/mmorpg/item/ItemComponentSystem.ts": "72577eafa3ff9145da96f8d6592542e749f836dcfe4dadc99e186c6ccb71fbdc",
-        "app/hotfix/mmorpg/item/ItemSystem.ts": "762f8d0db28bde3f03f02e22b069544612b7dff01db0119ce3d30472d0d6a660",
-        "app/hotfix/mmorpg/login/LoginComponentSystem.ts": "733fcfb80153a439880b96fb573ed2bbaf5e5ce90466cff4fea1088098e6bfd6",
-        "app/hotfix/mmorpg/map/PlayerUnitSystem.ts": "bf0088009fd6aaaef5ff1f24d7e08312e216d9849a2fe330f831ebf0c62a33ec",
-        "app/hotfix/mmorpg/monster/MonsterComponentSystem.ts": "d06d3a1e494eed18bee49bbe025b6c0cf7a0b9e3e8ed897712ee7f789aad5dcf",
-        "app/hotfix/mmorpg/monster/MonsterUnitSystem.ts": "abbb497323df922382cbe97555df490d0f5e0ac3906550bbfaf7435fba3c6613",
-        "app/hotfix/mmorpg/movement/DirectionalMovementProfileComponentSystem.ts": "c8691a351a9d9cfea4f70033a1735d715bdd37d3c7e12e86c867ab3edd67e5ed",
-        "app/hotfix/mmorpg/npc/NpcComponentSystem.ts": "a20aaa0b75fab27e8203b90041005ad8896d23802f2139b0da0d4d4e3be5b04d",
-        "app/hotfix/mmorpg/npc/NpcUnitSystem.ts": "06d5d5d078e56d17274916b7feab0463d386dd22244937314320d09bde70e2a4",
-        "app/hotfix/mmorpg/numeric/NumericComponentSystem.ts": "987d44efedf9e8f5c0cf512283db3e8433593dcf21a5a1e46bbfbe1f03810a64",
-        "app/hotfix/mmorpg/numeric/NumericRegenerationComponentSystem.ts": "0787cd8e4f374e766f37cae3f2e7832f2019da1d9fdd7b01766340b5d6ab4b09",
-        "app/hotfix/mmorpg/party/PartyDirectoryComponentSystem.ts": "26f704af8df802bf6a18f0df88bb7b1751ec6c1c648b9498212fff69b71be3aa",
-        "app/hotfix/mmorpg/progression/ProgressionComponentSystem.ts": "b1054834ec883fa3f8ec7478b02231e9e9566b24d9085e59990c2c7f2a850083",
-        "app/hotfix/mmorpg/quest/QuestComponentSystem.ts": "d4d596cd765e40945dddee74a4d4a6f9631b0c729a7e851331b332151f2453b6",
-        "app/hotfix/mmorpg/quest/QuestSystem.ts": "0589dc42eeaf5cc37e2f41ec73b4245cc94d4877a6782d80666018ebf763a503",
-        "app/hotfix/mmorpg/repair/NpcRepairComponentSystem.ts": "bd4c4f3b32955af3b80a63833035a8a9aaf2867465ec9a2a805eeb7541d44749",
-        "app/hotfix/mmorpg/shop/NpcShopComponentSystem.ts": "6316a0bda2812c0b35c3a9d991e9f69f3be57e49c3e427c31eed388097d87e48",
-        "app/hotfix/mmorpg/skill/SkillComponentSystem.ts": "153ca4d86b1f347b2a64ea5bae304707f4c408a8902057065fd2c7304e0ed8ed",
-        "app/hotfix/mmorpg/skill/SkillMapComponentSystem.ts": "017f03faa5964e6579816c46ac6b6a7829b419d22e71e1e699363e90b3863549",
-        "app/hotfix/mmorpg/spawn/SpawnSelectionComponentSystem.ts": "e85486774a64f2c83630384b65ca1e7a63b3caa9e04a63a8b6bac09fc69de69b",
-        "app/hotfix/mmorpg/summon/SummonComponentSystem.ts": "6013bf9fce6711307fbcddc34becee5f9a4109236d8dac506dbf58c96c76c48b",
-        "app/hotfix/mmorpg/summon/SummonedUnitSystem.ts": "9e25be333f82da00abd3554b9f67a178487d56dc92cc56e3519390a52a2487e1",
-        "app/hotfix/mmorpg/trade/PlayerTradeComponentSystem.ts": "38dad185e6957ac01dd8eef0042fbb2bc14def8cacf09f386b9db7b7d531aa16",
-        "app/hotfix/mmorpg/trainer/TrainerComponentSystem.ts": "993d3ec19197e318d1c98d400062260c4503a1d73ecbe9a087e4da97cb4036ba",
-        "app/model/bench/bootstrap.ts": "cc6f3a2b5920e327d9ffbe5e26e9608c2dd9012cb96422128c92c66b833b3677",
-        "app/model/bench/scenes/BenchScene.ts": "29f19d7e95de7094c802927ea9322df52672eb8f1e1298593c517ccf52929929",
-        "app/model/bench/scenes/MailboxParityScene.ts": "8c815708f3c6838520475f47b0cb98d891ed0979b6fcc9202c44e6c7377900b4",
-        "app/model/domains/action/ActionDefinition.ts": "894dbdff2e2c50bc79cefe39686c6d936a52e6af70cf733dff03d44d45b10801",
-        "app/model/domains/buff/Buff.ts": "569cabb22639a1c9c0c97d68fd515196be9212a9d6c2b68f501d289b0e836cda",
-        "app/model/domains/buff/BuffComponent.ts": "1a7f574572fb1974bc25b95073f3a5268ab6c7406cba478c5fbc9f6fcb628bb4",
-        "app/model/domains/currency/CurrencyComponent.ts": "8d50217377576b85120cdc6dc958e97d3e9dc4bd3e8c4198ddc39b558c29654f",
-        "app/model/domains/item/Item.ts": "94dcb3d0dab693486ff75666ad7eec84f0bc9d1b9a7270ac1853d9ad5eec84b1",
-        "app/model/domains/item/ItemComponent.ts": "695c13336a0af77c0706820cedcba5631994192111ad21e3a3b04ae560ea9586",
-        "app/model/domains/item/ItemTypes.ts": "ae97dd6aea31eed22e1285da65511f2206c0fc6fbf1540727cb1ace4d312df0e",
-        "app/model/domains/numeric/NumericComponent.ts": "1232d5eb95e6e44f5ce523920a9c41cadccf373315b157e94305ab2e31c5c095",
-        "app/model/domains/numeric/NumericType.ts": "f680bf15af8192a03868377f228740ee6916538fa93e95decbba67485350798c",
-        "app/model/domains/quest/Quest.ts": "701dc4a3facead9c922d7a97ab67971f79a1b9df6d7cd307498c6494322dd2b3",
-        "app/model/domains/quest/QuestComponent.ts": "3576580eecd5c3300e4e32c5c3ed0614bb3022a2b32cd3e10a116c8d12b6ee24",
-        "app/model/domains/quest/QuestProgress.ts": "dc40cac7b89152cc6123e8f1957fe952c041be9621e6d3623481c52797aefef8",
-        "app/model/domains/reward/RewardPlan.ts": "6ba2e99c2162c124807b6af3d144d1a4e6091a96ce4a1290c51896e3d06e4d85",
-        "app/model/game/protocol/GameErrCode.ts": "762034f0861f3ec90ade070efb9d5af63e417c0a0e8ced0953f7a850813ee548",
-        "app/model/main.bench.ts": "9c62ab5989b0b19cc9ba7642f2aa84429c006ccd641379e98d9dea7807791987",
-        "app/model/main.ts": "4cad600ea60cffaac5c9d8d9411eac3d853477be023a37585ff9ef0cd5a111f1",
-        "app/model/mmorpg/action/ActionType.ts": "b8e18e1c5c2d3441add59f3dd6d31622db8b13a95d8c277d65d0b4110023ce6c",
-        "app/model/mmorpg/broadcast/MapClientRouteResolver.ts": "f97d5d2e4fa35f9a9b4bbc2b7bfab3e2ab2c916a683aa75f14034e56e9654a81",
-        "app/model/mmorpg/broadcast/SceneBroadcastTransport.ts": "a37b6ad63cfeb1b364b58cddba98c6aa05de57a5f51e98ee8c2efc3bda420757",
-        "app/model/mmorpg/buff/Buff.ts": "4fdf8640495eee84cfb5e73f81fe8ee5389fc14dd0829b159f76488f1ca1883f",
-        "app/model/mmorpg/buff/BuffComponent.ts": "d60c60d6d0f6b504b912d29b1cc0c96c271440561c93ab72fbd54c15c65ad463",
-        "app/model/mmorpg/buff/BuffDefinitionProfileComponent.ts": "e2e985901fcecb55d3dcc4644eabb80aae71f67dbbfdb5fc97d8bd2d97676720",
-        "app/model/mmorpg/buff/BuffEvents.ts": "607f1a267dcb0a060d0512e45d1f0fdff16f3da5051bda0cfd7c009200729cbf",
-        "app/model/mmorpg/combat/CombatComponent.ts": "b1e0ea0d490703041dfa737aa8e7d775861e800cbf5ffc061619f6dce139e17e",
-        "app/model/mmorpg/combat/CombatEvents.ts": "02a71d824f5e99d78ba6428fbf204772bee019e59171bf900963ed535ed44d44",
-        "app/model/mmorpg/combat/CombatStateComponent.ts": "4b7a4721af3f1eb627473e212675bb7905a0584622adb9f155df9a7d10a8ac91",
-        "app/model/mmorpg/combat/ContentCombatLevelStats.ts": "59507dc2369ccce5e624908847554554cd87ff552b382a4872cfeb714a46f6bd",
-        "app/model/mmorpg/dungeon/StarterDungeon.ts": "53bb4a53221c69795c96ded0ac8329e04f37a0ee04995acf08ba2112305df558",
-        "app/model/mmorpg/gate/GateHealth.ts": "81e336ea469b684a0e8698d58c248977f4fbdc04a0045f2e941b8d176ceb516d",
-        "app/model/mmorpg/gate/GatePlayerRoute.ts": "23fe13d315f47c2ec824a25f1b47ecf37215af928c4c68f3269e2c2d43efc45a",
-        "app/model/mmorpg/gate/GateSession.ts": "34761b2124b8709817a8bafcb5d871aeba0b8f17f6c1fb0654f8157c2ec882aa",
-        "app/model/mmorpg/interactable/InteractableComponent.ts": "f3b58c04cc1baf3741486467d8ebec7e86930ca3e32bc41b8d0ccd923ef636a5",
-        "app/model/mmorpg/interactable/InteractableContentProfileComponent.ts": "e9ede016229f407b74ad4f5e0c38b3881339e0fe38120bc868deaa4c8ad28877",
-        "app/model/mmorpg/interactable/InteractableEvents.ts": "42c939956f0897aeead822550772f8b80a3044f97151dd09967b38b0f98c54c9",
-        "app/model/mmorpg/interactable/InteractableUnit.ts": "53797ad7503fda94b49dbca0aa9410157ac7cb3a14f7419d07eca8653e55cd53",
-        "app/model/mmorpg/item/Item.ts": "9b96531ba715acc1bf1a37b445d118cd728b83708b56c9c537d5a7804dcf33b7",
-        "app/model/mmorpg/item/ItemComponent.ts": "fa5bcdb2afc6b43bdf3768920c6e553e57903ad9f30c5854fc04b756e347144f",
-        "app/model/mmorpg/item/ItemContentProfileComponent.ts": "56ce4cf99a21d4bce4ae4c3aad53df7eedd96cdc060da11028574d66f4afa804",
-        "app/model/mmorpg/item/ItemEvents.ts": "0499adad90ae9a04a71b573f338d04068f7e0bbdb82781e582f242f2d8be6f13",
-        "app/model/mmorpg/location/LocationComponent.ts": "f9a760c98ca4126bdc3b17202171a41e4d201b95e6e35760913024e8bea331d8",
-        "app/model/mmorpg/location/LocationProxy.ts": "f0b0b95b82e2ea749408a0a9b92fd3e58862fd00d4289cb83fbe0151d2f8513e",
-        "app/model/mmorpg/location/MapInstanceDirectoryComponent.ts": "0bd1df6196071e6b6974acb9e70e75c77be9ff463dd86dbdd266c9a0cd7cee4b",
-        "app/model/mmorpg/location/MessageHelper.ts": "ea9ac17e811f2f0aab5cbad05003c7c812f2b40d4c163e38fa0cdc7454af75cf",
-        "app/model/mmorpg/login/CharacterRepository.ts": "87c2c8d33a4fb405e728063dfda94e81e1742255ebc9a38a89ec7381be2a02ce",
-        "app/model/mmorpg/login/GateSelector.ts": "bca7d40f16a3e043349428bbfcbd461fa8c3143bd30653e60ffce9c9a0b0fd71",
-        "app/model/mmorpg/login/LoginComponent.ts": "c97241a72bfbc8ce8d6d194731820aacb26863e56b47bb9bc7fad960eaa67549",
-        "app/model/mmorpg/login/LoginToken.ts": "824f2a225ffb829f17973fc6d2d88fbb011b06ae99d688540e9b6a7b66f5b993",
-        "app/model/mmorpg/login/PasswordHash.ts": "36025e842e72a500f08b32e9cf936a1f159a432d42b9f489b0def22e16811a37",
-        "app/model/mmorpg/login/PlayerContentProfileComponent.ts": "2f4ca3b734353bb49492c8ed36a64df6a86bd34ed1ada1cb1a8e9cb80a8374a4",
-        "app/model/mmorpg/loot/LootContainer.ts": "776d2eff3a6076be15e713e5a5d1ad33fbe00881fa7be977ab2d88a0a3193f17",
-        "app/model/mmorpg/loot/LootContentProfileComponent.ts": "55f3c77db21c4f3430d3a90228fee69b4aafbf0da3fa6e952fbb45c4e96b5861",
-        "app/model/mmorpg/map/AoiVisibility.ts": "1961b47a08dd15eef4c424da3bcbcc00088092d77b170c1abd511a0772e17115",
-        "app/model/mmorpg/map/EntrySyncMode.ts": "979aca35c1fecd4b91a9b4d649af73fdcb7126acd9533d7243028f7d460a3abb",
-        "app/model/mmorpg/map/MapAoiComponent.ts": "c0624152b079f8bc3cc6dc3cbe64f90250a2ee3d36f20ecc820b45f53dfed049",
-        "app/model/mmorpg/map/MapComponent.ts": "20f40abb5172bd14d66ab96b28e430261527ab4efb361d60fb60ea5cbe8ec4cc",
-        "app/model/mmorpg/map/MapContentProfileComponent.ts": "7f24aee217a57ad0dc238a7049eb4bd594cc42aacfa97afdde28843de1f2bb04",
-        "app/model/mmorpg/map/MapEntryAdmission.ts": "b8952b228b0b9997ac5c4d23b52bef897a481ee46c5ebb12a5c970c135d11b40",
-        "app/model/mmorpg/map/MapInstance.ts": "03ee1c3a120bcb556d65839d75cb2d26b5220636a7d27af4c4dbbf9995026add",
-        "app/model/mmorpg/map/MapLifecycleEvents.ts": "57644f3bc5c062332c956c2c8b6e681d68f5bf7da019c2aac2b7f98a08198c40",
-        "app/model/mmorpg/map/MapRuntimeProfileComponent.ts": "b07b33033e2265ee4ae2338ac67c927e09e8bbb306e1116cc507dc8c8fb74511",
-        "app/model/mmorpg/map/MapScene.ts": "73d80a46b5eae31fa1bb67b61551bbdc66682434194406a71824a12fccecfebb",
-        "app/model/mmorpg/map/PlayerUnit.ts": "1da0032e415cb9132e6aa3a1455b30fd50da96429af7b97eb71f4801faf9ee39",
-        "app/model/mmorpg/map/PositionComponent.ts": "357054cc5e297793dc3fabd44882cdf70184d5db90d28631102930111a6a2762",
-        "app/model/mmorpg/map/UnitActionComponent.ts": "66c7c46d020972042cd1b3b8fe07374bbf9a50d4335572b3595e55a8d58fed50",
-        "app/model/mmorpg/map/UnitGateComponent.ts": "411bfb9863fabfab37b0eade5515a9648f0c1ef6bcc40c4a04fdbbadbe3635e0",
-        "app/model/mmorpg/map/UnitPresentation.ts": "2a2ffd41a73a886256ad2fb386ca864ee8d45917eaeae092508314a3c1a7a4e5",
-        "app/model/mmorpg/mapHost/DynamicMapLifecycleComponent.ts": "38c4701d304b39d255edf6ad8e8de112b35d5949c01dbc39b6d35c98ded3e7fb",
-        "app/model/mmorpg/mapHost/DynamicMapProxy.ts": "4d62d06ac0e3394d5154078a5edaac0ec72a13e7947b78db2a868d02dedd8045",
-        "app/model/mmorpg/mapHost/MapAdmission.ts": "fc6e046210303e6162b2ac2b779b59616e511b734755ba941939b74460a0c56e",
-        "app/model/mmorpg/mapHost/MapHostComponent.ts": "e54f2b7e116ac78029ace0242327387ecd48a37e28a9f36b77208f84187a4c6a",
-        "app/model/mmorpg/mapHost/MapHostEndpoint.ts": "57d7e03e00cb76782cf70eb422e7db4674ca7191763a149ba9d1775c7f4932c2",
-        "app/model/mmorpg/mapHost/MapHostLease.ts": "5ae74eb9d0f40d7dd6bb82a9b4600a4a3071b37a57ee44605eb3ead5aed6b728",
-        "app/model/mmorpg/mapHost/MapHostRegistrationComponent.ts": "784a5326e161c4e77ed9fe90d73bec1f59014e0f8ee088b6b643a8816af2319c",
-        "app/model/mmorpg/mapHost/PlayerDirectoryComponent.ts": "d706fc154ad55ce428147774280388e74f6b26d1ee9f790389190be58a73a3ee",
-        "app/model/mmorpg/mapHost/PlayerOfflineReceipts.ts": "4d2d855adf9f38cfefc00bf57136d450c908c72992338a1eeecc4ed2ddd7d9ad",
-        "app/model/mmorpg/mapHost/PublicMapProxy.ts": "3f8c7e11b6f5b8e7bffdd42b32a214ec505d0544569fc5f8e8b0e7efb0887c5e",
-        "app/model/mmorpg/mapManager/MapManagerComponent.ts": "eb1794f44c7cbcb637a4bf17e13a5367005786b6d7bfc85d87b8907a5dcab080",
-        "app/model/mmorpg/monster/MonsterComponent.ts": "5010d5b6587a92335a8ed7ebedecf6aecfd4a3ce56de9a883fb43e685e8a3878",
-        "app/model/mmorpg/monster/MonsterContentProfileComponent.ts": "e31d9ebf6f9be950d531d49602d1aa621fcd2558195a574ca1304014975d7f3a",
-        "app/model/mmorpg/monster/MonsterEvents.ts": "67845d6377d5724d35153567126572cca387ad76723df5948e9fea001549acf0",
-        "app/model/mmorpg/monster/MonsterSpawnProfileComponent.ts": "9021bd7ef341af7f786c6218f2dc4d05b43c2a96ed3c6af20d7ef18ba701e2ef",
-        "app/model/mmorpg/monster/MonsterUnit.ts": "c40a2f0d39ee055cf40639bdbe6bc88b8f75419692db371ce13d3d0644c53e01",
-        "app/model/mmorpg/movement/CellMovement.ts": "be21e24aa1db08f77e2b2dd8d42d9cdae8d6279cbcea0c955b53715a85349b1f",
-        "app/model/mmorpg/movement/DirectionalMovementProfileComponent.ts": "6bf3f5bbbdefc7ff19769778f5856aeebea71f72fa0924924355cb37a4b18a05",
-        "app/model/mmorpg/movement/index.ts": "d0b8b1f6dc252ff8a098aeb1862f180f231d20b00f7f9c6ea3f83ee06b2defb4",
-        "app/model/mmorpg/native/NativeData.ts": "f2e39e4ae8f823cc4a8a11eeabaccbba4a589b10b806a5f575bd263524586704",
-        "app/model/mmorpg/npc/NpcComponent.ts": "7d2f9a36edd8b5a18989026a6550b2531119ce686e4381088984f4f763492568",
-        "app/model/mmorpg/npc/NpcContentProfileComponent.ts": "63c4dbea75e18308112514f7a56f7116f6853af15b2e81c59fb82adb3a4ded04",
-        "app/model/mmorpg/npc/NpcEvents.ts": "aa806292364820d68c5dbaa606cca75ad286a5aac1b1ab095d5da96e58835615",
-        "app/model/mmorpg/npc/NpcUnit.ts": "ca1ef9287cf4b967e6bafc857aec886e9b40936308b67bb98ebd4233e3b880d4",
-        "app/model/mmorpg/numeric/AttributeNumeric.ts": "29dd5dcad14afc96c8a5f8068d960a946dc2e0bccd77eff94540d72ef390efc7",
-        "app/model/mmorpg/numeric/MovementNumeric.ts": "5adf207ac4d380c2574bdaa5b5783b3d39273a1f11b06a22876368af4aff55e6",
-        "app/model/mmorpg/numeric/NumericComponent.ts": "406ed3ff049f28c4c2153fc8ae46de23ecf652c8a6fe8b799019eb56d25e9024",
-        "app/model/mmorpg/numeric/NumericRegenerationComponent.ts": "4d9e86175218e376547e3cc8362cf8e693c88dc6884a26be0c7e4832c8673d1f",
-        "app/model/mmorpg/numeric/NumericReplication.ts": "db43db6cd37e5abc92a5c820a86727214389866312ff13ea1ba777e687568042",
-        "app/model/mmorpg/numeric/NumericType.ts": "065a12f80321b44a91b643fd20568a43f8f38121e2896387aeca2b7c9ca89f76",
-        "app/model/mmorpg/party/PartyCommitView.ts": "3b58febb8e483efcb56ca4ae4f2c0aaf18d4298279ab482a5691e0c6bb986ddd",
-        "app/model/mmorpg/party/PartyDirectoryComponent.ts": "e26b1cef067eedaf269f78e4fc3b51e9c41c0524232101394eebc8482746cf08",
-        "app/model/mmorpg/persistence/DbProxyPlayerRepository.ts": "1baf7a7ee018a7b4ef0113ad941fe24194b81f7513c17868641169f69bff0367",
-        "app/model/mmorpg/persistence/PlayerPersistenceCodec.ts": "61c08373b4be2abd284624706d4260d12aece52dd7ca25ca41ec745a25b9cc28",
-        "app/model/mmorpg/persistence/PlayerPersistenceComponent.ts": "e92e7247d5c551b6f1ef29bb928e632950bc4b6752d947e2882a25852fc8d07a",
-        "app/model/mmorpg/persistence/PlayerRepository.ts": "216f4dcd79d48a915a4ccf64136ba3d92f7eb6a0fc4761e196e9da6f4db677f9",
-        "app/model/mmorpg/progression/ProgressionComponent.ts": "7937aceb8f1e01bcbca2013374ad1b9640c0892ca1db9c50edff7e113d14d92d",
-        "app/model/mmorpg/quest/Quest.ts": "fe4bba6ac30c0e81d87ff6273abfc7146baff5dfb7dbbf665c2d1948d7910f4d",
-        "app/model/mmorpg/quest/QuestComponent.ts": "49a97bcaf3e5f113406ccfb4354ef507cc921faa1519e86f7b4e02af6ea25dfc",
-        "app/model/mmorpg/quest/QuestContentProfileComponent.ts": "e9a3df249ad5b5763445ad9eefaeb6d40f7d33a86d3baf8c45e4db2e835b1579",
-        "app/model/mmorpg/quest/QuestEvents.ts": "107537e75cf9205bbb714a43981492dc1e88db3fda6d9187ea6fc24cd562b41b",
-        "app/model/mmorpg/repair/NpcRepairComponent.ts": "d0a66a3e72f671dd24e90a697393d4a5ef3c45f49c00781bb66e6ef1c12c7e2b",
-        "app/model/mmorpg/reward/Reward.ts": "e22dc65f36b4c0c61d5bfdd214f67729fa406e76d1fb2c1e97b0b7c1ee8f6207",
-        "app/model/mmorpg/scenes/GateScene.ts": "57839314653dbaf8b1f2aa8f1db74648347bb43c12fd713b83c2b426f7c8e982",
-        "app/model/mmorpg/scenes/LocationScene.ts": "c6273ac2bafa035d8776e6c1fefb089ec18322770defc13e25ae0ceac1dfa7d8",
-        "app/model/mmorpg/scenes/LoginMgrScene.ts": "a39f9eda53bb4110ea0c0fdcfe24cb83379792e135bc6a52b6ad4139fb34709c",
-        "app/model/mmorpg/scenes/LoginScene.ts": "26578e05fe59e7bf0206f7a70fffb0fa8ad529a940156941c35fa50f8ce89adb",
-        "app/model/mmorpg/scenes/MapHostScene.ts": "ae8062576f9dc8d6516053c4e366144dbeeabe4e23a8a7c8b9e70dacbc34220b",
-        "app/model/mmorpg/scenes/MapManagerScene.ts": "95868b22db1d7f67537da9a91d8ef42f40296c3023ae6d12a5f48019d10f8a95",
-        "app/model/mmorpg/shop/NpcShopComponent.ts": "c65210620f782b1af60f58376ed2e5e43b673b43186e3023304ca4668faf0cff",
-        "app/model/mmorpg/skill/SkillComponent.ts": "6da99c4d2e2f88a081166c2207c911b9dcd5191358505a09e7c12bd20a858af4",
-        "app/model/mmorpg/skill/SkillDefinition.ts": "8dd12cd9c88b35c35afaaea85ccaa1c1074e911a57aa501667b08f70b144abe8",
-        "app/model/mmorpg/skill/SkillDefinitionProfileComponent.ts": "86c350728ac3dc39a92be7fec88381c7921ee32c83aaec3e31798f3dc524d2c2",
-        "app/model/mmorpg/skill/SkillEvents.ts": "191857033b0f67f9e0864ab73c0032718ac7c538e2750d6056110d517f9faee1",
-        "app/model/mmorpg/skill/SkillMapComponent.ts": "3caa27f98b9405e9e5b4640dffc47eacb9139562093edd73cc9a04117bdac491",
-        "app/model/mmorpg/spawn/SpawnSelectionComponent.ts": "fe473a385c711b30b3b2e084a945e1fe12a73b40dcf12605e85d8f01a4493cb5",
-        "app/model/mmorpg/spawn/SpawnSelectionContentProfileComponent.ts": "dc122525425c003c83f2874c6bfdc0bff81fbc22e1d06f51ca5a2563d2421484",
-        "app/model/mmorpg/summon/SummonComponent.ts": "e51c31223d6a6c3f913f266b93019337e0837f20e6664100c26d15e5b850e08d",
-        "app/model/mmorpg/summon/SummonedUnit.ts": "cdc4eec080233a8ac896c6a7743773db32acbe583f66d2f634c239300e19d42d",
-        "app/model/mmorpg/trade/PlayerTradeComponent.ts": "5f4902ca4afe9d09968ed199463109acd17d4632f8efffd6fab19d3c973cf5c0",
-        "app/model/mmorpg/trade/PlayerTradeEvents.ts": "4359df0e676913c1de274380a7cc3fc26b2009ae7dec1f235a5a39ca6e3e64aa",
-        "app/model/mmorpg/trainer/TrainerComponent.ts": "7c76204228e1f81ddd0be2255e793a67bf25d904f114daf90c9d03ecb7a7e0d3",
-        "app/model/mmorpg/trainer/TrainerContentProfileComponent.ts": "45fbbeb9b38253f5f33eecaf8f4f98eeb672f93edfdd8d59fa26acf06f312aec",
-        "app/model/public.ts": "8e8319c4b1adaf5530fe3b9a87d2d92d9c5c96da1db16b1011a2608f3b65f090",
-        "codegen.config.json": "e83f410fa579e69cfcdf71f10e32482c07ee46cb4d62d0e4fa43bda8656727bf",
-        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
-        "tools/codegen_scenes.mjs": "19d9e8953a81593622baf3e949248e7e931c79e99d042687557d460ff4a54b68"
+        "codegen.config.json": "d2fd836964c11fc89753933d7e57b1ec87603c29ca9bd3cff31dc8f3d40bbc06",
+        "tools/codegen_manifest.mjs": "3821d68ef1d1dda4b989134be4c4db98b41bb4be267519e1fa880606c77c07d1",
+        "tools/codegen_scenes.mjs": "328dfbdf7cf906c377dc0c1d8cd8ee66f62671a9083c356ab6f3616e3dbb2740"
       },
       "selections": [
         {
           "kind": "bench-handler",
-          "roots": [
-            "app/hotfix/bench"
-          ],
-          "paths": [
-            "app/hotfix/bench/handlers/C2G_MapCapacityEnterHandler.ts",
-            "app/hotfix/bench/handlers/C2M_MapCapacityPlaceHandler.ts",
-            "app/hotfix/bench/handlers/C2M_StateSyncBenchHandler.ts"
-          ]
+          "roots": [],
+          "paths": []
         },
         {
           "kind": "handler",
-          "roots": [
-            "app/hotfix/mmorpg"
-          ],
-          "paths": [
-            "app/hotfix/mmorpg/dungeon/handlers/StarterDungeonBossKilledHandler.ts",
-            "app/hotfix/mmorpg/gate/handlers/C2G_EnterMapHandler.ts",
-            "app/hotfix/mmorpg/gate/handlers/C2G_EnterPublicMapHandler.ts",
-            "app/hotfix/mmorpg/gate/handlers/C2G_EnterStarterDungeonHandler.ts",
-            "app/hotfix/mmorpg/gate/handlers/C2G_ListPublicMapsHandler.ts",
-            "app/hotfix/mmorpg/gate/handlers/C2G_LoginGateHandler.ts",
-            "app/hotfix/mmorpg/gate/handlers/C2G_LogoutCharacterHandler.ts",
-            "app/hotfix/mmorpg/gate/handlers/C2G_MapSnapshotReadyHandler.ts",
-            "app/hotfix/mmorpg/gate/handlers/C2G_PingHandler.ts",
-            "app/hotfix/mmorpg/item/handlers/BeforeUseItemVetoHandlers.ts",
-            "app/hotfix/mmorpg/location/handlers/LocationHandlers.ts",
-            "app/hotfix/mmorpg/login/handlers/C2S_CreateCharacterHandler.ts",
-            "app/hotfix/mmorpg/login/handlers/C2S_LoginHandler.ts",
-            "app/hotfix/mmorpg/login/handlers/C2S_RegisterHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_AcceptQuestHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_AttackMonsterHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_BuyNpcShopItemHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_CancelPlayerTradeHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_CancelSkillHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_CastSkillHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_CommandOwnedUnitHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_CompleteQuestHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_ConfirmPlayerTradeHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_FindPathHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_InspectLootMonsterHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_InvokeUnitActionHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_LearnTrainerSkillHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_LootMonsterHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_MapProbeHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_MoveHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_NavigateInputHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_NavigateToHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_OpenNpcShopHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_ReleaseDeadPlayerHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_RepairItemsHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_RequestPlayerTradeHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_RespondPlayerTradeHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_RevivePlayerHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_SellItemHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_ToggleAutoAttackHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_ToggleDemoDoorHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_TriggerMonsterSignalHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_TriggerNpcInteractionHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_UpdatePlayerTradeOfferHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_UseInteractableHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/C2M_UseItemHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/DynamicMapHandlers.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/G2M_ClaimStarterDungeonEntryHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/G2M_EnterMapHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/G2M_InitialSnapshotHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/G2M_PlayerOfflineHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/G2M_QueryPlayerOfflineHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/G2M_RebindPlayerGateHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/G2M_SecondEnterMapHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/G2M_TransferPlayerHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/M2M_AbortPlayerTransferHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/M2M_CommitPlayerTransferHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/M2M_PreparePlayerTransferHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/PublicMapStatusHandler.ts",
-            "app/hotfix/mmorpg/mapHost/handlers/ReservePublicMapHandler.ts",
-            "app/hotfix/mmorpg/mapManager/handlers/AcquirePublicMapHandler.ts",
-            "app/hotfix/mmorpg/mapManager/handlers/InspectDynamicMapHandler.ts",
-            "app/hotfix/mmorpg/mapManager/handlers/ListPublicMapsHandler.ts",
-            "app/hotfix/mmorpg/mapManager/handlers/MapHostControlHandlers.ts",
-            "app/hotfix/mmorpg/monster/handlers/MonsterKillExperienceHandler.ts",
-            "app/hotfix/mmorpg/npc/handlers/NpcQuestInteractionEventHandler.ts",
-            "app/hotfix/mmorpg/npc/handlers/NpcQuestRewardInteractionEventHandler.ts",
-            "app/hotfix/mmorpg/party/handlers/PartyActionHandler.ts",
-            "app/hotfix/mmorpg/quest/handlers/BeforeAcceptQuestVetoHandlers.ts",
-            "app/hotfix/mmorpg/quest/handlers/QuestProgressEventHandler.ts",
-            "app/hotfix/mmorpg/skill/handlers/BeforeCastVetoHandlers.ts",
-            "app/hotfix/mmorpg/summon/handlers/SummonCombatHandlers.ts"
-          ]
+          "roots": [],
+          "paths": []
         },
         {
           "kind": "hotfix-patch",
-          "roots": [
-            "app/hotfix/mmorpg"
-          ],
+          "roots": [],
           "paths": []
         },
         {
           "kind": "hotfix-system",
-          "roots": [
-            "app/hotfix/mmorpg"
-          ],
-          "paths": [
-            "app/hotfix/mmorpg/buff/BuffComponentSystem.ts",
-            "app/hotfix/mmorpg/buff/BuffSystem.ts",
-            "app/hotfix/mmorpg/combat/CombatComponentSystem.ts",
-            "app/hotfix/mmorpg/combat/CombatStateComponentSystem.ts",
-            "app/hotfix/mmorpg/currency/CurrencyComponentSystem.ts",
-            "app/hotfix/mmorpg/interactable/InteractableComponentSystem.ts",
-            "app/hotfix/mmorpg/interactable/InteractableUnitSystem.ts",
-            "app/hotfix/mmorpg/item/ItemComponentSystem.ts",
-            "app/hotfix/mmorpg/item/ItemSystem.ts",
-            "app/hotfix/mmorpg/login/LoginComponentSystem.ts",
-            "app/hotfix/mmorpg/map/PlayerUnitSystem.ts",
-            "app/hotfix/mmorpg/monster/MonsterComponentSystem.ts",
-            "app/hotfix/mmorpg/monster/MonsterUnitSystem.ts",
-            "app/hotfix/mmorpg/movement/DirectionalMovementProfileComponentSystem.ts",
-            "app/hotfix/mmorpg/npc/NpcComponentSystem.ts",
-            "app/hotfix/mmorpg/npc/NpcUnitSystem.ts",
-            "app/hotfix/mmorpg/numeric/NumericComponentSystem.ts",
-            "app/hotfix/mmorpg/numeric/NumericRegenerationComponentSystem.ts",
-            "app/hotfix/mmorpg/party/PartyDirectoryComponentSystem.ts",
-            "app/hotfix/mmorpg/progression/ProgressionComponentSystem.ts",
-            "app/hotfix/mmorpg/quest/QuestComponentSystem.ts",
-            "app/hotfix/mmorpg/quest/QuestSystem.ts",
-            "app/hotfix/mmorpg/repair/NpcRepairComponentSystem.ts",
-            "app/hotfix/mmorpg/shop/NpcShopComponentSystem.ts",
-            "app/hotfix/mmorpg/skill/SkillComponentSystem.ts",
-            "app/hotfix/mmorpg/skill/SkillMapComponentSystem.ts",
-            "app/hotfix/mmorpg/spawn/SpawnSelectionComponentSystem.ts",
-            "app/hotfix/mmorpg/summon/SummonComponentSystem.ts",
-            "app/hotfix/mmorpg/summon/SummonedUnitSystem.ts",
-            "app/hotfix/mmorpg/trade/PlayerTradeComponentSystem.ts",
-            "app/hotfix/mmorpg/trainer/TrainerComponentSystem.ts"
-          ]
+          "roots": [],
+          "paths": []
         },
         {
           "kind": "protocol-message",
-          "roots": [
-            "app/generated/model/server/demo"
-          ],
-          "paths": [
-            "app/generated/model/server/demo/protocol/messageDescriptors.ts"
-          ]
+          "roots": [],
+          "paths": []
         },
         {
           "kind": "protocol-rpc",
-          "roots": [
-            "app/generated/model/server/demo"
-          ],
-          "paths": [
-            "app/generated/model/server/demo/protocol/rpcs.ts"
-          ]
+          "roots": [],
+          "paths": []
         },
         {
           "kind": "scene",
-          "roots": [
-            "app/model/mmorpg"
-          ],
-          "paths": [
-            "app/model/mmorpg/scenes/GateScene.ts",
-            "app/model/mmorpg/scenes/LocationScene.ts",
-            "app/model/mmorpg/scenes/LoginMgrScene.ts",
-            "app/model/mmorpg/scenes/LoginScene.ts",
-            "app/model/mmorpg/scenes/MapHostScene.ts",
-            "app/model/mmorpg/scenes/MapManagerScene.ts"
-          ]
+          "roots": [],
+          "paths": []
         },
         {
           "kind": "system-model",
-          "roots": [
-            "app/model"
-          ],
-          "paths": [
-            "app/model/bench/bootstrap.ts",
-            "app/model/bench/scenes/BenchScene.ts",
-            "app/model/bench/scenes/MailboxParityScene.ts",
-            "app/model/domains/action/ActionDefinition.ts",
-            "app/model/domains/buff/Buff.ts",
-            "app/model/domains/buff/BuffComponent.ts",
-            "app/model/domains/currency/CurrencyComponent.ts",
-            "app/model/domains/item/Item.ts",
-            "app/model/domains/item/ItemComponent.ts",
-            "app/model/domains/item/ItemTypes.ts",
-            "app/model/domains/numeric/NumericComponent.ts",
-            "app/model/domains/numeric/NumericType.ts",
-            "app/model/domains/quest/Quest.ts",
-            "app/model/domains/quest/QuestComponent.ts",
-            "app/model/domains/quest/QuestProgress.ts",
-            "app/model/domains/reward/RewardPlan.ts",
-            "app/model/game/protocol/GameErrCode.ts",
-            "app/model/main.bench.ts",
-            "app/model/main.ts",
-            "app/model/mmorpg/action/ActionType.ts",
-            "app/model/mmorpg/broadcast/MapClientRouteResolver.ts",
-            "app/model/mmorpg/broadcast/SceneBroadcastTransport.ts",
-            "app/model/mmorpg/buff/Buff.ts",
-            "app/model/mmorpg/buff/BuffComponent.ts",
-            "app/model/mmorpg/buff/BuffDefinitionProfileComponent.ts",
-            "app/model/mmorpg/buff/BuffEvents.ts",
-            "app/model/mmorpg/combat/CombatComponent.ts",
-            "app/model/mmorpg/combat/CombatEvents.ts",
-            "app/model/mmorpg/combat/CombatStateComponent.ts",
-            "app/model/mmorpg/combat/ContentCombatLevelStats.ts",
-            "app/model/mmorpg/dungeon/StarterDungeon.ts",
-            "app/model/mmorpg/gate/GateHealth.ts",
-            "app/model/mmorpg/gate/GatePlayerRoute.ts",
-            "app/model/mmorpg/gate/GateSession.ts",
-            "app/model/mmorpg/interactable/InteractableComponent.ts",
-            "app/model/mmorpg/interactable/InteractableContentProfileComponent.ts",
-            "app/model/mmorpg/interactable/InteractableEvents.ts",
-            "app/model/mmorpg/interactable/InteractableUnit.ts",
-            "app/model/mmorpg/item/Item.ts",
-            "app/model/mmorpg/item/ItemComponent.ts",
-            "app/model/mmorpg/item/ItemContentProfileComponent.ts",
-            "app/model/mmorpg/item/ItemEvents.ts",
-            "app/model/mmorpg/location/LocationComponent.ts",
-            "app/model/mmorpg/location/LocationProxy.ts",
-            "app/model/mmorpg/location/MapInstanceDirectoryComponent.ts",
-            "app/model/mmorpg/location/MessageHelper.ts",
-            "app/model/mmorpg/login/CharacterRepository.ts",
-            "app/model/mmorpg/login/GateSelector.ts",
-            "app/model/mmorpg/login/LoginComponent.ts",
-            "app/model/mmorpg/login/LoginToken.ts",
-            "app/model/mmorpg/login/PasswordHash.ts",
-            "app/model/mmorpg/login/PlayerContentProfileComponent.ts",
-            "app/model/mmorpg/loot/LootContainer.ts",
-            "app/model/mmorpg/loot/LootContentProfileComponent.ts",
-            "app/model/mmorpg/map/AoiVisibility.ts",
-            "app/model/mmorpg/map/EntrySyncMode.ts",
-            "app/model/mmorpg/map/MapAoiComponent.ts",
-            "app/model/mmorpg/map/MapComponent.ts",
-            "app/model/mmorpg/map/MapContentProfileComponent.ts",
-            "app/model/mmorpg/map/MapEntryAdmission.ts",
-            "app/model/mmorpg/map/MapInstance.ts",
-            "app/model/mmorpg/map/MapLifecycleEvents.ts",
-            "app/model/mmorpg/map/MapRuntimeProfileComponent.ts",
-            "app/model/mmorpg/map/MapScene.ts",
-            "app/model/mmorpg/map/PlayerUnit.ts",
-            "app/model/mmorpg/map/PositionComponent.ts",
-            "app/model/mmorpg/map/UnitActionComponent.ts",
-            "app/model/mmorpg/map/UnitGateComponent.ts",
-            "app/model/mmorpg/map/UnitPresentation.ts",
-            "app/model/mmorpg/mapHost/DynamicMapLifecycleComponent.ts",
-            "app/model/mmorpg/mapHost/DynamicMapProxy.ts",
-            "app/model/mmorpg/mapHost/MapAdmission.ts",
-            "app/model/mmorpg/mapHost/MapHostComponent.ts",
-            "app/model/mmorpg/mapHost/MapHostEndpoint.ts",
-            "app/model/mmorpg/mapHost/MapHostLease.ts",
-            "app/model/mmorpg/mapHost/MapHostRegistrationComponent.ts",
-            "app/model/mmorpg/mapHost/PlayerDirectoryComponent.ts",
-            "app/model/mmorpg/mapHost/PlayerOfflineReceipts.ts",
-            "app/model/mmorpg/mapHost/PublicMapProxy.ts",
-            "app/model/mmorpg/mapManager/MapManagerComponent.ts",
-            "app/model/mmorpg/monster/MonsterComponent.ts",
-            "app/model/mmorpg/monster/MonsterContentProfileComponent.ts",
-            "app/model/mmorpg/monster/MonsterEvents.ts",
-            "app/model/mmorpg/monster/MonsterSpawnProfileComponent.ts",
-            "app/model/mmorpg/monster/MonsterUnit.ts",
-            "app/model/mmorpg/movement/CellMovement.ts",
-            "app/model/mmorpg/movement/DirectionalMovementProfileComponent.ts",
-            "app/model/mmorpg/movement/index.ts",
-            "app/model/mmorpg/native/NativeData.ts",
-            "app/model/mmorpg/npc/NpcComponent.ts",
-            "app/model/mmorpg/npc/NpcContentProfileComponent.ts",
-            "app/model/mmorpg/npc/NpcEvents.ts",
-            "app/model/mmorpg/npc/NpcUnit.ts",
-            "app/model/mmorpg/numeric/AttributeNumeric.ts",
-            "app/model/mmorpg/numeric/MovementNumeric.ts",
-            "app/model/mmorpg/numeric/NumericComponent.ts",
-            "app/model/mmorpg/numeric/NumericRegenerationComponent.ts",
-            "app/model/mmorpg/numeric/NumericReplication.ts",
-            "app/model/mmorpg/numeric/NumericType.ts",
-            "app/model/mmorpg/party/PartyCommitView.ts",
-            "app/model/mmorpg/party/PartyDirectoryComponent.ts",
-            "app/model/mmorpg/persistence/DbProxyPlayerRepository.ts",
-            "app/model/mmorpg/persistence/PlayerPersistenceCodec.ts",
-            "app/model/mmorpg/persistence/PlayerPersistenceComponent.ts",
-            "app/model/mmorpg/persistence/PlayerRepository.ts",
-            "app/model/mmorpg/progression/ProgressionComponent.ts",
-            "app/model/mmorpg/quest/Quest.ts",
-            "app/model/mmorpg/quest/QuestComponent.ts",
-            "app/model/mmorpg/quest/QuestContentProfileComponent.ts",
-            "app/model/mmorpg/quest/QuestEvents.ts",
-            "app/model/mmorpg/repair/NpcRepairComponent.ts",
-            "app/model/mmorpg/reward/Reward.ts",
-            "app/model/mmorpg/scenes/GateScene.ts",
-            "app/model/mmorpg/scenes/LocationScene.ts",
-            "app/model/mmorpg/scenes/LoginMgrScene.ts",
-            "app/model/mmorpg/scenes/LoginScene.ts",
-            "app/model/mmorpg/scenes/MapHostScene.ts",
-            "app/model/mmorpg/scenes/MapManagerScene.ts",
-            "app/model/mmorpg/shop/NpcShopComponent.ts",
-            "app/model/mmorpg/skill/SkillComponent.ts",
-            "app/model/mmorpg/skill/SkillDefinition.ts",
-            "app/model/mmorpg/skill/SkillDefinitionProfileComponent.ts",
-            "app/model/mmorpg/skill/SkillEvents.ts",
-            "app/model/mmorpg/skill/SkillMapComponent.ts",
-            "app/model/mmorpg/spawn/SpawnSelectionComponent.ts",
-            "app/model/mmorpg/spawn/SpawnSelectionContentProfileComponent.ts",
-            "app/model/mmorpg/summon/SummonComponent.ts",
-            "app/model/mmorpg/summon/SummonedUnit.ts",
-            "app/model/mmorpg/trade/PlayerTradeComponent.ts",
-            "app/model/mmorpg/trade/PlayerTradeEvents.ts",
-            "app/model/mmorpg/trainer/TrainerComponent.ts",
-            "app/model/mmorpg/trainer/TrainerContentProfileComponent.ts",
-            "app/model/public.ts"
-          ]
+          "roots": [],
+          "paths": []
         }
       ],
       "outputs": {
-        "app/generated/bootstrap/scenes.ts": "280828d17ae0eaa53fd7f1eab7606cf9f870bb1bf30e934769b73bc886656e0e",
-        "app/generated/bootstrap/systems/BuffComponentSystem.d.ts": "c04ca0897d6a3c79ff16806e558750d19d0c18d4b0c835d1c6585bd9d98de82d",
-        "app/generated/bootstrap/systems/BuffSystem.d.ts": "2ff531320271a7bab678525c33c32382ec867e9de1e896ee40a9b32000d9a3a5",
-        "app/generated/bootstrap/systems/CombatComponentSystem.d.ts": "413dc13ae48ddf81bf7f3dfe500f10d8eb0a97569ffce9f073381f0c74d16ba4",
-        "app/generated/bootstrap/systems/CombatStateComponentSystem.d.ts": "56a87aef81e25e4798e3038f2833c565099ad7f94f444b0e2e96d242038a9893",
-        "app/generated/bootstrap/systems/CurrencyComponentSystem.d.ts": "13c6d69b09fe9e6e2ee8fbd7c3720487ea48c89c99bde7ca4641c9b30c9b284d",
-        "app/generated/bootstrap/systems/DirectionalMovementProfileComponentSystem.d.ts": "b3f260f2d34d1522cdcfd9ce064e88741ac84c91c4fea0cc529fb670c9f46a0e",
-        "app/generated/bootstrap/systems/InteractableComponentSystem.d.ts": "0ac506c7a00f60b3f8b40300f9b5d8d14271df2c4b11e85e583861227856c33a",
-        "app/generated/bootstrap/systems/InteractableUnitSystem.d.ts": "3c38139cc73295985ab2bfde91573a6a068bc2aa6a712752ef32ea0e4a691bbb",
-        "app/generated/bootstrap/systems/ItemComponentSystem.d.ts": "a94d3c805eb356310a7a171c7d2d651d7a5e702268d1c80028ae1120cb6fd7e9",
-        "app/generated/bootstrap/systems/ItemSystem.d.ts": "b646b8b430043fc5805cb7fe8013daa7fee499240998480d55afdda6aa083223",
-        "app/generated/bootstrap/systems/LoginComponentSystem.d.ts": "a3daa16d6d4906dfbebab4f46a1547676aafb219ee5e1b0931a8b715b49d86ea",
-        "app/generated/bootstrap/systems/MonsterComponentSystem.d.ts": "b7a7429432b47220fa0317f3a85bc4b1891d63dca8b2c75deff0a48505e7e13b",
-        "app/generated/bootstrap/systems/MonsterUnitSystem.d.ts": "3a54356794423b2e259b2428d1b14a62cf261b59d2a9c1b11ffd1fe0501e4698",
-        "app/generated/bootstrap/systems/NpcComponentSystem.d.ts": "e45118289caa75d739c96b437fb5113247c845ed4ea0cd266ff0d21b4ea36fd0",
-        "app/generated/bootstrap/systems/NpcRepairComponentSystem.d.ts": "34497fc6adc9fc1eaa4aef6d4361ca320e8694f43925ee731ddd1082aec59726",
-        "app/generated/bootstrap/systems/NpcShopComponentSystem.d.ts": "4fbd2cc3296b89d7ddd4bd9490dde2fecbc64e3899100577a82e5dad2503d9cd",
-        "app/generated/bootstrap/systems/NpcUnitSystem.d.ts": "45908c9aea814fe376caab83a45d089920afb1fd2e5697390c6047ca0b45ce13",
-        "app/generated/bootstrap/systems/NumericComponentSystem.d.ts": "a99eb66952df9e6c2c8819f57b4ff9e13218fedf1f6179a82c45aa65abb8987e",
-        "app/generated/bootstrap/systems/NumericRegenerationComponentSystem.d.ts": "9f89239820b811f32e840147a434b7a1464a1e0f2c0a8abf2fcff787e52abc01",
-        "app/generated/bootstrap/systems/PartyDirectoryComponentSystem.d.ts": "0dd678245105e154b8b24e4bdbdbb5c1099ab9a44c2b6fcd765a2db26a622416",
-        "app/generated/bootstrap/systems/PlayerTradeComponentSystem.d.ts": "c4452c748b109077f105634deb9247107716d3f01e7ec0b64e0ea46a12369025",
-        "app/generated/bootstrap/systems/PlayerUnitSystem.d.ts": "a218c409e1519e40633de1e455727cadc257d3b2dddc271c09da92299c360da0",
-        "app/generated/bootstrap/systems/ProgressionComponentSystem.d.ts": "d84ced1fde4078cccff2820b1950d665750efe96d72a7fb388f20e5e9bf6f35c",
-        "app/generated/bootstrap/systems/QuestComponentSystem.d.ts": "e5d3d99243f549dbf8e4d2a254a35f12bd78b31fd74a485b7315eeb52a9c1f21",
-        "app/generated/bootstrap/systems/QuestSystem.d.ts": "406cffb30dacbbf07c91312736b95f568f48b43e902cc306661f4d4b2bab6d65",
-        "app/generated/bootstrap/systems/SkillComponentSystem.d.ts": "7428cfdbf3319652a67e465f086ed0a2e625ea23506f9d41779d752cb3846c0b",
-        "app/generated/bootstrap/systems/SkillMapComponentSystem.d.ts": "e09e1720307a7d53d1128aba67142c1e0e3e72063b56b4b8c1e58379e11ab886",
-        "app/generated/bootstrap/systems/SpawnSelectionComponentSystem.d.ts": "2e3d1ebb1702dc53ae2de9581e26fa3ed47e8fb50f3129a1b1bd5d6ea7da941c",
-        "app/generated/bootstrap/systems/SummonComponentSystem.d.ts": "7bff0d48e80f7730a88bd0f4e31e95a1573e4287ba16b23270a6b46f451a109b",
-        "app/generated/bootstrap/systems/SummonedUnitSystem.d.ts": "aeb3f8c9a607bd1bdcf1a79dd5f87d7ec46cd3f8293ee72c4fcb4a0d4a58cc4b",
-        "app/generated/bootstrap/systems/TrainerComponentSystem.d.ts": "66488faf3bd276e33a86f9ce0f866b1cb967c54fe40ea232e07494cf4a9a2ae4",
-        "app/generated/hotfix/handlers.bench.ts": "eac4f02c0a21593918c3de1ead22304b46b50770b317559fc1b85906dd5c432a",
-        "app/generated/hotfix/handlers.ts": "1349a52b1d58a706c28aa32071ffd74993d38be7be43c5e037a3d3a9137ecb55",
-        "app/generated/hotfix/patches.ts": "671b9d102fcddd221bb899e7e6061d571df0a48759546d7153880a25c0e23ee8"
+        "app/generated/bootstrap/scenes.ts": "d808ee4b576ed4a914159f2edb4cc754e2e3e51d5f34de76b68e717bd28b7914",
+        "app/generated/hotfix/handlers.bench.ts": "e0747c167fd3affe5019082a362b111d3f7f7c2f0f6a600d670ae9cfeeaeb2eb",
+        "app/generated/hotfix/handlers.ts": "e0747c167fd3affe5019082a362b111d3f7f7c2f0f6a600d670ae9cfeeaeb2eb",
+        "app/generated/hotfix/patches.ts": "e0747c167fd3affe5019082a362b111d3f7f7c2f0f6a600d670ae9cfeeaeb2eb"
       },
       "outputRoots": [
         {

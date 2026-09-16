@@ -16,8 +16,10 @@ const sources = await Promise.all(schemaFiles.map(async (file) => ({
   text: await readFile(file, "utf8"),
 })));
 const schema = assertValidNativeWorkspace(sources);
-const generatedFiles = generateNativeFiles(schema);
+const generatedFiles = sources.length ? generateNativeFiles(schema) : [];
 const outputs = [];
+await mkdir(path.join(root, "src/generated"), { recursive: true });
+await mkdir(path.join(root, "app/generated/model/native"), { recursive: true });
 
 for (const generatedFile of generatedFiles) {
   const output = resolveOutputPath(generatedFile.relativePath);

@@ -1,6 +1,37 @@
 # 外置游戏模块
 
-更新时间：2026-09-03。
+更新时间：2026-09-15。当前宿主开发基线：`0.6.0-alpha.0`。
+
+## 宿主装配模式
+
+2026-09-16：`modules:create` / `project:create` 支持 `--with-rust` 生成 Native 扩展壳。独立工程显式 setup/check/host-build/build/start/smoke 已接入组合构建与二进制校验；自动 dev 仍不支持 Native。参见[入门教程](../tutorials/module-starter.md)。只有 op、没有具体实体的 schema 保留生成器要求的抽象 Entity 根，不输出无意义的 Rust 实体 Store。
+
+当前工作重点是完善 TiangZ 的通用开发流程；SLG 仅作接入验证，不以增加 SLG 玩法代替框架改进。
+
+`--host-profile modules` 选择只装配 Core 和显式外置模块的 TypeScript 宿主，也是当前默认且唯一支持的模式；旧 `demo` 明确报错。宿主通过 `ProcessBootstrap` 提供进程生命周期、事件投递、出站打包和 Hotfix 屏障。
+
+在 TiangZ 根目录执行（路径仅为示例）：
+
+```powershell
+node tools/create_game_module.mjs --id org.example.game --path ../MyGame/modules/game --host-profile modules
+node tools/prepare_game_modules.mjs --modules-dir ../MyGame/modules --host-profile modules
+node tools/typecheck_game_modules.mjs --modules-dir ../MyGame/modules --host-profile modules
+node tools/build_runtime_bundles.mjs --modules-dir ../MyGame/modules --out-dir ../MyGame/dist --host-profile modules
+node tools/build_game_config_data.mjs --modules-dir ../MyGame/modules --out-dir ../MyGame/dist --initial
+```
+
+业务 Scene、模块协议和配置仍按下文定义及生成；空脚手架不自带可运行游戏 Scene。启动沿用显式 `--runtime-root` 与游戏自己的进程配置。
+
+新手应优先使用 `npm run project:create -- --path ../MyGame --id org.example.game` 创建可运行教学工程，而不是从空模块拼接启动流程。工程通过 `tiangz.project.json` 和宿主通用工具保持上述模块/宿主模式一致；详见[模块入门工程](../tutorials/module-starter.md)。
+
+- `modules` 模式不注册内置 Scene、不装配 MMORPG Hotfix、不公开 `NpcUnit/PlayerUnit` 等示例类型；`#tiangz/model` 对应宿主 Model/Core/通用领域稳定契约。脚手架、编辑器 paths、类型检查和 Bundle 构建使用同一个模式。
+- 构建器在发布前检查类型和实际打包输入，禁止带入 MMORPG 和内置配置；选择错误的模式会明确报错，不静默兜底。
+- 配置仍使用现有 Rust 校验的数据包信封：内置表为空，模块表继续由 ModuleConfigRegistry 校验并提交，不新增数据库或第二套配置系统。
+- `buildMode=modules` 同时进入 Model/Hotfix 清单及源码指纹；切换模式必须成对构建并重启。Hotfix-only 命令也必须带相同的 `--host-profile modules`。
+- Rust 宿主也不再注册内置 MMORPG ops；模块通过 Native 组合构建提供扩展，保留 Native 指纹和二进制哈希检查。
+- `dev_runtime.mjs --project <工程目录>` 读取 tiangz.project.json，TS 模块复用同一 Watcher/候选发布循环；创建的入门工程通过 `npm run dev` 调用。旧 demo 宿主已移除，默认且唯一受支持的装配模式为 modules。该入口目前拒绝 Native 组合模块，不冒充生产部署工具；Model/协议/模块或启动配置变化提示停止并重启，不自动迁移或清空状态。
+
+框架验收使用 `npm run test:module-host`：生成不含 SLG 内容的最小模块，检查独立构建、真实进程启停、内置 Scene 拒绝、示例类型误用和跨模式 Hotfix 拒绝。该项已加入完整 `npm run verify`。
 
 TiangZ 的模块机制用于让一个独立游戏或功能包复用同一 Runtime，而不把领域源码放进 `app/core`。模块是构建与发布单元，不是新的 Actor 类型，也不是绕过 Scene、mailbox、Hotfix 和 DBProxy 边界的插件后门。
 
@@ -31,6 +62,7 @@ npm run dev
 ```
 
 模块目录被发现后不能静默跳过错误：缺 manifest、重复 ID、未知字段、路径逃逸、版本不兼容、依赖缺失或循环依赖都会在构建前失败。
+模块根联接解析后，源码、协议输出和编辑器 paths 均以真实源码目录为基准；安装目录仅保留为 installedRoot，用于识别安装位置。相同模块换一个安装深度不应改写生成导入或依赖路径。模块内部的文件/目录联接仍受原有安全限制。
 每个模块还必须提供自己的`tsconfig.json`；普通构建和Hotfix候选都会先独立类型检查全部已安装模块。`TIANGZ_MODULES_DIR`让构建、目录工具和开发宿主使用同一模块集合，开发宿主也会监听这些模块声明的Hotfix源码根。
 
 ## 代码模块与运行时数据包
@@ -67,11 +99,13 @@ npm run dev
 
 `project`和两个输出目录都必须位于模块根内，`generatedCode`还必须位于声明的Hotfix源码根内。执行`npm run modules:codegen-config -- --module-root <模块目录>`会调用Core固定的Luban版本，开启`validationFailAsError`，生成模块自己的`schema.ts`、`fingerprint.ts`、聚合`server.json`和`module-game-config.manifest.json`；追加`--check`只验证提交/构建产物没有过期。生成清单同时记录schema、数据与源文件SHA-256。
 
-这不是第二套配置系统。宿主`game_config/`与模块`game_config/`使用同一Luban编译能力，只是schema所有权和发布范围不同：宿主表属于TiangZ内置领域，模块表属于对应游戏。模块应使用生成的`Tables`解析自己的payload，再投影到Core已有的中立Profile；不得把原始导入JSON直接强转为业务类型。`RuntimeDataPack`仍然只是部署信封，负责发现、所有权、大小、哈希和冻结，不取代Luban schema。来源数据库、Excel或第三方服务器导入器只负责产出模块Luban源数据，不能成为运行时格式。
+这不是第二套配置系统。宿主`game_config/`与模块`game_config/`使用同一Luban编译能力，只是schema所有权和发布范围不同：宿主内置信封为空，游戏表全部属于对应模块。模块应使用生成的`Tables`解析自己的payload，再投影到Core已有的中立Profile；不得把原始导入JSON直接强转为业务类型。`RuntimeDataPack`仍然只是部署信封，负责发现、所有权、大小、哈希和冻结，不取代Luban schema。来源数据库、Excel或第三方服务器导入器只负责产出模块Luban源数据，不能成为运行时格式。
 
-模块配置目前与运行时数据包一样是冷发布：schema或数据改变后重新生成、重新打包并重启Process。Core内置`GameConfig`的冷热表Reload机制不会自动套用到外置模块。
+模块配置 schema 改变后必须重新生成、完整构建并重启 Process；同 schema 的数据更新可通过完整配置候选走既有 `reload-config`，详见下文“配置导出与运行时更新”。这与启动时载入、仍需重启的 `RuntimeDataPack` 不同；已捕获的数据快照也不会自动更新。
 
 ## Manifest v1
+
+只使用 TypeScript 客户端的模块可在 `protocol` 中设置 `"generateGodot": false`。省略或设为 true 保留原双 SDK 生成行为；false 时不生成、不检查、不发布 Godot 输出，产物清单不再列出 Godot。关闭不会自动删除旧目录，避免误删用户文件；确认不再使用后单独归档。该选项进入模块图，切换后须重新生成、构建并重启。
 
 ```json
 {
@@ -80,8 +114,8 @@ npm run dev
   "version": "1.0.0",
   "description": "Example module",
   "engine": {
-    "minVersion": "0.4.0",
-    "maxVersionExclusive": "0.5.0"
+    "minVersion": "0.6.0-alpha.0",
+    "maxVersionExclusive": "0.7.0"
   },
   "dependencies": [],
   "capabilities": ["example.greeting"],
@@ -198,6 +232,18 @@ MMORPG地图在执行`MapScene`装配器前创建`SkillDefinitionProfileComponen
 
 ## 模块自有 Protobuf 与客户端 SDK
 
+### 开发工具保障（2026-09-15）
+
+`modules:typecheck` 还会核对模块 Hotfix 从 `#tiangz/module` 的命名值导入是否出现在入口的 `defineGameModule.modelExports` 中；缺失时报告文件、行号和名称。仅用于类型的值应显式使用 `import type`。这项检查覆盖入口中可识别的注册调用和命名导入；间接注册、动态访问仍依赖运行时验证。
+
+`npm run modules:prepare -- --modules-dir <目录>` 根据当前宿主和直接依赖同步模块 `tsconfig.json` 的 TiangZ paths 与宿主方法声明，使普通 TypeScript/编辑器也能解析跨模块公开 API。命令保留其他配置项；当前要求严格 JSON，遇到 JSONC 会明确拒绝，避免丢失注释。追加 `--check` 只检查配置是否需要同步。切换宿主、添加或删除依赖后重新运行；运行时和构建仍独立校验依赖权限。
+
+模块协议生成先在模块内的临时目录完成所有输出和锁候选，再验证整个模块集合的 opcode。`codegen:module-protocol -- --check` 比较实际产物，不修复过期文件，也不修改锁。正常生成仅替换有变化的目标；发布失败恢复旧产物和锁，回滚失败时保留临时备份并报告路径。该机制提供命令失败回滚，不提供进程崩溃或多个并发生成命令间的事务保证，应串行运行生成命令。
+
+协议源目录与两个锁文件名均使用 manifest 声明。服务端输出不能覆盖 Model 根、模块入口或已有手写文件；客户端输出不能覆盖 Model 源码。生成目录是生成器专有目录，不应存放业务文件。
+
+`npm run dev` 会监听模块 Luban 工程所在目录，忽略声明的配置生成目录，生成模块配置后与宿主配置一起构建候选。schema 变化仍要求完整构建和重启。工程目录以外的额外输入应通过显式生成命令处理。
+
 模块可以在 `tiangz.module.json.protocol` 中声明自己的 Proto 源目录、opcode/schema 锁、服务端生成目录、TypeScript 客户端 SDK 目录和 Godot 输出目录：
 
 ```json
@@ -278,7 +324,17 @@ npm run verify:hotfix-boundary
 npm run verify:core-api
 ```
 
-中立夹具位于 `tools/fixtures/game-modules/greeting`，只验证通用 Component/System，不包含 MMORPG 或 WoW 概念。
+`tools/fixtures/game-modules/greeting` 是框架自有中立组件与实体扩展夹具，不依赖 MMORPG。纯模块宿主验收由 `test:module-host` 的独立夹具完成。
+
+### 只读模块导航
+
+`npm run modules:inspect -- --modules-dir <目录>` 列出模块入口、公开 API、带装饰器的状态类型与行为绑定，以及未静态连接入口的声明。`--json` 输出版本化 JSON（位置从 1 开始计数），供 Developer Tools 展示导航；模块目录、版本、依赖和路径规则复用构建目录校验，不另写一套插件规则。
+
+导航不执行模块代码、不写文件、不构建、不启动进程。静态相对值 import/export 用于标记文件是否从入口可达，type-only 导入不计入；动态装配、间接装饰器和条件执行无法由此证明，告警不是类型检查或热更许可。实际发布继续使用类型、构建、冻结指纹和运行时检查。
+
+System/Handler 的本模块目标可经静态命名导入、别名、命名空间与 re-export 定位，结果带 targetLocation；插件据真实源位置关联状态/行为，不按同名类型猜测。跨模块目标、动态表达式和无法唯一解析的导出标记 unresolved。该导航不是另一个 TypeScript 类型检查器。
+
+职责边界：TiangZ Runtime 拥有运行语义；TiangZ 通用开发工具拥有模板、构建和确定性检查/解析；Developer Tools 插件拥有引导、导航、任务入口与错误呈现。终端和 CI 不依赖插件即可调用通用工具；插件不能静默修改协议锁或绕过热更边界。
 
 数据库实跑需要明确指定独立验收实例：`npm run test:module-dbproxy-migration -- --endpoint <地址:端口> --env-file <环境文件>`，也可通过 `TIANGZ_DBPROXY_AUTH_TOKEN` 注入令牌。此验收在 `org.tiangz.module-migration.acceptance` namespace 留下独立记录，覆盖旧数据升级、第二个 TiangZ 进程重读及旧 Codec 写入拒绝；不会停止 DBProxy 容器或扫描其他 namespace。故障与并发竞争由普通单测注入，数据库实跑不默认包含在本机无数据库的验证矩阵中。
 

@@ -6,6 +6,16 @@
 
 ## 1. 三层边界
 
+2026-09-16：Kubernetes 最小练习的镜像、Pod 配置、启动/信号转换、受控缩容入口属于 Examples/packages/slg/validation/battle/k8s。战斗管理器继续只拥有注册、任务与排空语义，不持有 K8s 凭据，不创建容器；通用 Core 不增加战斗或 Kubernetes 特例。该练习不等于生产自动扩容/恢复能力。
+
+2026-09-16：本地执行进程扩缩容验证的 LocalReplicaController 属于 tools，只拥有期望数量、上下限、串行启动、退避、排空确认与停止回调。战斗节点注册、任务语义、Rust 模拟算法属于 Examples/packages/slg/validation/battle，不进入 Core，也不借用 MMORPG 地图协议。案例无持久结算、故障恢复或 Kubernetes，SLG 未来可独立拥有副本机制。
+
+2026-09-16：持久 ID 号段属于 Core 启动与身份层，通过版本化 SDK/DBProxy CAS 推进高水位；DBProxy 不解释位布局或游戏类型。玩家当前 realmId 属于领域归属记录，不从 GlobalId 来源位推导。号段模式须显式启用并完整重启，详见[身份号段](global-id-ranges.md)。
+
+2026-09-16：合服通用工具只拥有区服目录、代次、计划指纹与阶段准入条件；具体保留/重建/结算规则属于游戏模块的纯 JSON 策略声明。声明不等于执行器，也不新增 Core 玩法分支。Developer Tools 只呈现同一计划，DBProxy 仍只负责通用持久化。见[租户与区服边界](tenant-realm-foundation.md)。
+
+2026-09-15：进程启动桥接已抽到 Core 的 `ProcessBootstrap`，示例入口仅注入 MMORPG Native 初始化、指标与配置适配。`--host-profile modules` 使用相同生命周期桥接但不注入这些示例能力；Core 不反向导入 MMORPG。模块专属协议/配置仍归模块。当前未裁剪 Rust 二进制内的示例 Native ops。
+
 ```text
 ① 框架运行时
    app/core + src
@@ -16,7 +26,7 @@
    Numeric / Action / Reward / Item / Quest / Buff 的稳定状态形状
 
 ③ 具体游戏领域
-   app/model/mmorpg + app/hotfix/mmorpg + src/game
+   ../TiangZ-Examples/modules/mmorpg/src/model + ../TiangZ-Examples/modules/mmorpg/src/hotfix + src/game
    AOI / MapHost / NavMesh / Monster / NPC / 目标选择 / 配置和协议适配
 ```
 
@@ -24,7 +34,7 @@
 |---|---|---|---|
 | 框架运行时 | `app/core/`、`src/` | 生命周期、mailbox、路由、传输、宿主、热更和Native Store | AOI、地图、怪物、任务、技能、战斗规则 |
 | 可复用领域契约 | `app/model/domains/` | 跨游戏稳定的数据结构、Component容器、ChildEntity形状、Action数据 | Luban配置、具体协议、Map、PlayerUnit、Gate、Native游戏句柄 |
-| MMORPG领域 | `app/model/mmorpg/`、`app/hotfix/mmorpg/`、`src/game/` | 地图、AOI、移动、NavMesh、刷怪、仇恨、NPC、目标选择、协议投影和配置适配 | 运行时底座和第二套“万能”框架入口 |
+| MMORPG领域 | `../TiangZ-Examples/modules/mmorpg/src/model/`、`../TiangZ-Examples/modules/mmorpg/src/hotfix/`、`src/game/` | 地图、AOI、移动、NavMesh、刷怪、仇恨、NPC、目标选择、协议投影和配置适配 | 运行时底座和第二套“万能”框架入口 |
 
 “准框架”不是 Core。它是已经被多个游戏形态验证后，才可能复用的业务模式；当前只冻结契约，不提前承诺第二个游戏一定能直接复用全部执行代码。
 
@@ -63,14 +73,14 @@
 | Item | `app/model/domains/item/` | Item ChildEntity、背包集合的稳定状态形状 |
 | Quest | `app/model/domains/quest/` | Quest ChildEntity、活动任务和完成记录的容器 |
 | Buff | `app/model/domains/buff/` | Buff ChildEntity、生命周期数据和集合容器 |
-| Combat | `app/model/mmorpg/combat/` | 当前MMORPG的伤害、治疗、护盾和普通攻击状态；尚未冻结为跨游戏契约 |
-| Skill | `app/model/mmorpg/skill/` | 当前MMORPG的读条、引导、CD和技能效果；尚未冻结为跨游戏契约 |
+| Combat | `../TiangZ-Examples/modules/mmorpg/src/model/combat/` | 当前MMORPG的伤害、治疗、护盾和普通攻击状态；尚未冻结为跨游戏契约 |
+| Skill | `../TiangZ-Examples/modules/mmorpg/src/model/skill/` | 当前MMORPG的读条、引导、CD和技能效果；尚未冻结为跨游戏契约 |
 
-这些目录只能依赖 `app/core/public.ts` 和同一 `domains` 层。它们不能依赖 `app/model/mmorpg`、生成协议、Luban配置或某个游戏的Native句柄。当前 Combat/Skill 的执行状态仍与MMORPG的伤害学校、平A、施法和引导语义绑定，因此保留在 `mmorpg`，不为了目录对称制造一份“类型影子”。`npm run verify:domain-boundaries` 会检查这条规则。
+这些目录只能依赖 `app/core/public.ts` 和同一 `domains` 层。它们不能依赖 `../TiangZ-Examples/modules/mmorpg/src/model`、生成协议、Luban配置或某个游戏的Native句柄。当前 Combat/Skill 的执行状态仍与MMORPG的伤害学校、平A、施法和引导语义绑定，因此保留在 `mmorpg`，不为了目录对称制造一份“类型影子”。`npm run verify:domain-boundaries` 会检查这条规则。
 
 ### ③ MMORPG 适配层
 
-`app/model/mmorpg/`保留当前游戏的稳定适配：
+`../TiangZ-Examples/modules/mmorpg/src/model/`保留当前游戏的稳定适配：
 
 - `map/`、`mapHost/`、`mapManager/`、`location/`、`movement/`：地图、AOI、传送和NavMesh。
 - `monster/`、`npc/`：刷怪、仇恨、NPC交互、Monster/NPC Unit与模块怪物内容目录。
@@ -78,7 +88,7 @@
 - `persistence/`、`native/`：当前Player快照、协议投影和MMORPG Native facade。
 - `skill/SkillMapComponent`、`skill/SkillDefinitionProfileComponent`、`numeric/MovementNumeric`：地图调度、模块技能资料边界和移动单位适配。
 
-`app/hotfix/mmorpg/`保留当前游戏的可热更执行器、Handler和配置适配。例如 `ActionExecutor`、`RewardExecutor`、`SkillMapComponentSystem` 仍然会读取 MMORPG 的 `ActionType`、生成配置、Combat/PlayerUnit和地图目标。它们不能为了“看起来通用”搬进 Core。
+`../TiangZ-Examples/modules/mmorpg/src/hotfix/`保留当前游戏的可热更执行器、Handler和配置适配。例如 `ActionExecutor`、`RewardExecutor`、`SkillMapComponentSystem` 仍然会读取 MMORPG 的 `ActionType`、生成配置、Combat/PlayerUnit和地图目标。它们不能为了“看起来通用”搬进 Core。
 
 ## 3. Numeric 的空间同步拆分
 
@@ -88,17 +98,17 @@ Numeric 本身是通用字典，不应认识地图坐标或 AOI：
 app/model/domains/numeric/NumericType.ts
   CurrentHp / MaxHp / Attack / AttackSpeed / Level ...
 
-app/model/mmorpg/numeric/MovementNumeric.ts
+../TiangZ-Examples/modules/mmorpg/src/model/numeric/MovementNumeric.ts
   MoveSpeed / 米每秒 -> Rust Numeric 的毫米每秒换算
 
-app/hotfix/mmorpg/numeric/NumericComponentSystem.ts
+../TiangZ-Examples/modules/mmorpg/src/hotfix/numeric/NumericComponentSystem.ts
   Rust getter/setter、脏标记、MoveSpeed写入后同步 Position
 
-app/model/mmorpg/numeric/NumericRegenerationComponent.ts
-app/hotfix/mmorpg/numeric/NumericRegenerationComponentSystem.ts
+../TiangZ-Examples/modules/mmorpg/src/model/numeric/NumericRegenerationComponent.ts
+../TiangZ-Examples/modules/mmorpg/src/hotfix/numeric/NumericRegenerationComponentSystem.ts
   任意当前值/上限字段的固定量或 Numeric 动态量脉冲恢复运行态，不包含具体资源语义或公式
 
-app/model/mmorpg/movement/DirectionalMovementProfileComponent.ts
+../TiangZ-Examples/modules/mmorpg/src/model/movement/DirectionalMovementProfileComponent.ts
   PlayerUnit拥有的前进/后退/横移服务端倍率；不保存按键，也不接受客户端速度
 ```
 
@@ -134,7 +144,7 @@ const reward: RewardPlan = {
 };
 ```
 
-`ActionType` 是 MMORPG 配置枚举的适配器；`ActionDefinition` 和 `RewardPlan` 不依赖它。执行仍在 `app/hotfix/mmorpg/action/ActionExecutor.ts` 和 `reward/RewardExecutor.ts`，因为执行时必须知道当前游戏的 Combat、Buff、Inventory、PlayerPersistence 和协议结果。
+`ActionType` 是 MMORPG 配置枚举的适配器；`ActionDefinition` 和 `RewardPlan` 不依赖它。执行仍在 `../TiangZ-Examples/modules/mmorpg/src/hotfix/action/ActionExecutor.ts` 和 `reward/RewardExecutor.ts`，因为执行时必须知道当前游戏的 Combat、Buff、Inventory、PlayerPersistence 和协议结果。
 
 当前 `RewardDefinition` 是 `RewardPlan` 的兼容类型别名。旧任务/掉落代码可以继续使用原名称，新模块优先使用 `RewardPlan`。关键奖励仍须走：
 
@@ -175,8 +185,8 @@ Handler 仍然保持：
 服务端业务目录已经统一为：
 
 ```text
-app/model/mmorpg/
-app/hotfix/mmorpg/
+../TiangZ-Examples/modules/mmorpg/src/model/
+../TiangZ-Examples/modules/mmorpg/src/hotfix/
 native_data/mmorpg/
 ```
 

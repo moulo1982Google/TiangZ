@@ -19,6 +19,7 @@ import { CoreLogger } from "../logging/Logger";
 import { CoroutineLockSystem } from "../runtime/CoroutineLockSystem";
 import { ConfigureTraceContext } from "../telemetry/TraceContext";
 import { InitializeRuntimeDataPacks } from "../content/RuntimeDataPackRegistry";
+import type { GlobalIdCounterSource } from "../runtime/GlobalIdLayout";
 
 export interface ProcessUpdateResult {
   outbound: OutboundBatch[];
@@ -52,13 +53,13 @@ export class ProcessRuntime implements LocalSceneRouter {
   private scenePumpCursor = 0;
   private readonly maxIngressFramesPerPump: number;
 
-  constructor(private readonly config: ProcessRuntimeConfig) {
+  constructor(private readonly config: ProcessRuntimeConfig, idSource?: GlobalIdCounterSource) {
     this.entryScenes = [];
     this.maxIngressFramesPerPump = resolveMaxEventsPerUpdate(config.process.scheduling);
     ConfigureTraceContext(config.process.observability?.tracing);
     let processHost: ProcessHost | undefined;
     try {
-      InitializeGameSingletons(config.process.game, config.process.identity);
+      InitializeGameSingletons(config.process.game, config.process.identity, idSource);
       InitializeRuntimeDataPacks(config.dataPacks);
       processHost = new ProcessHost(config.process.name);
       this.processHost = processHost;
@@ -91,6 +92,7 @@ export class ProcessRuntime implements LocalSceneRouter {
         this.entryScenes.push(instance);
       }
     } catch (error) {
+      idSource?.Dispose();
       try {
         processHost?.Dispose();
       } catch (cleanupError) {

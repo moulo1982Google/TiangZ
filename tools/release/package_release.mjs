@@ -52,7 +52,9 @@ if (!options.skipBuild) {
 
 const executable = process.platform === "win32" ? "TiangZ.exe" : "TiangZ";
 const nativeBuild = path.join(root, "temp/module-native-build", catalog.graphHash);
-const binary = path.join(hasNative ? nativeBuild : root, "target", profile, executable);
+const nativeManifest = hasNative ? JSON.parse(readFileSync(path.join(nativeBuild, `${profile}.manifest.json`), "utf8")) : undefined;
+const binary = hasNative ? path.resolve(nativeBuild, nativeManifest.binaryPath ?? path.join("target", profile, executable)) : path.join(root, "target", profile, executable);
+if (hasNative && !binary.startsWith(nativeBuild + path.sep)) throw new Error("Native release binary is stale: path escapes composition directory");
 const model = JSON.parse(readFileSync(path.join(bundles, "model.manifest.json"), "utf8"));
 const hotfix = JSON.parse(readFileSync(path.join(bundles, "hotfix.manifest.json"), "utf8"));
 const config = JSON.parse(readFileSync(path.join(bundles, "game-config/game-config.manifest.json"), "utf8"));
@@ -96,12 +98,10 @@ for (const runtimeFile of [
 ]) {
   copyRequired(path.join(bundles, runtimeFile), path.join(output, "dist", runtimeFile));
 }
-copyRequired(path.join(bundles, "smoke_client.cjs"), path.join(output, "dist", "smoke_client.cjs"));
 cpSync(path.join(bundles, "game-config"), path.join(output, "dist", "game-config"), { recursive: true });
 cpSync(path.join(root, "configs"), path.join(output, "configs"), { recursive: true });
-// 导航网格是运行时创建 3D 空间和动态障碍所需的发布资源，不能只在源码目录中存在。
-// Navigation meshes are runtime assets for 3D spatial scenes and dynamic obstacles; ship them with the release.
-cpSync(path.join(root, "navigation"), path.join(output, "navigation"), { recursive: true });
+// 游戏地图与部署实例由游戏工程打包，不把宿主的导航测试夹具当作默认内容。
+// Game projects package their maps and instances; host navigation fixtures are not default game content.
 copyRequired(path.join(root, "README.md"), path.join(output, "README.md"));
 copyRequired(path.join(root, "LICENSE"), path.join(output, "LICENSE"));
 
@@ -171,62 +171,12 @@ async function capture(command, args) {
   });
 }
 
-/** 在最终制品目录中启动Runtime并完成登录、进图和协议校验。 / Starts the packaged Runtime and verifies login, map entry, and protocol flow. */
+/** 验证无游戏宿主制品可执行；游戏联机验收由消费工程负责。 / Verifies the neutral host artifact executes; consumers own gameplay smoke tests. */
 async function smokeRelease(directory, executable) {
-  console.log("[release] smoke testing packaged artifact");
-  const runtime = spawn(path.join(directory, executable), ["configs/local/all-in-one.json"], {
-    cwd: directory,
-    env: { ...process.env, TIANGZ_WATCHER_CONTROL: "stdin" },
-    stdio: ["pipe", "pipe", "pipe"],
-    windowsHide: true,
-  });
-  let outputText = "";
-  runtime.stdout.setEncoding("utf8").on("data", (chunk) => outputText += chunk);
-  runtime.stderr.setEncoding("utf8").on("data", (chunk) => outputText += chunk);
-  try {
-    await Promise.all([7000, 7001, 7002, 7201, 7301].map((port) => waitForPort(port, runtime)));
-    await run(process.execPath, [path.join(directory, "dist", "smoke_client.cjs")], directory);
-  } catch (error) {
-    throw new Error(`${error.message}\n[release runtime]\n${outputText}`);
-  } finally {
-    await stopRuntime(runtime);
-  }
-}
-
-function waitForPort(port, runtime, timeoutMs = 15_000) {
-  const deadline = Date.now() + timeoutMs;
-  return new Promise((resolve, reject) => {
-    const attempt = () => {
-      if (runtime.exitCode !== null) {
-        reject(new Error(`packaged Runtime exited before port ${port} was ready`));
-        return;
-      }
-      const socket = net.createConnection({ host: "127.0.0.1", port });
-      socket.setTimeout(300);
-      socket.once("connect", () => {
-        socket.destroy();
-        resolve();
-      });
-      const retry = () => {
-        socket.destroy();
-        if (Date.now() >= deadline) reject(new Error(`timed out waiting for port ${port}`));
-        else setTimeout(attempt, 50);
-      };
-      socket.once("error", retry);
-      socket.once("timeout", retry);
-    };
-    attempt();
-  });
-}
-
-async function stopRuntime(runtime) {
-  if (runtime.exitCode !== null || runtime.signalCode !== null) return;
-  runtime.stdin.end("shutdown\n");
-  await Promise.race([
-    new Promise((resolve) => runtime.once("close", resolve)),
-    new Promise((resolve) => setTimeout(resolve, 15_000)),
-  ]);
-  if (runtime.exitCode === null && runtime.signalCode === null) runtime.kill("SIGKILL");
+  const output = await capture(path.join(directory, executable), ["--version"]);
+  const version = JSON.parse(readFileSync(path.join(directory, "VERSION.json"), "utf8")).version;
+  if (!output.includes(version)) throw new Error("packaged runtime version mismatch");
+  console.log("[release] packaged binary version probe passed (not a gameplay acceptance)");
 }
 
 function parseOptions(args) {

@@ -39,7 +39,9 @@ Phase 3.10对应目标版本`0.3.10`。开发阶段使用SemVer预发布版本�
 
 Phase 3.10.1、3.10.2等是工作项，不使用四段版本号。客户端协议兼容性仍由Protocol Fingerprint判断，不能用产品版本代替协议指纹。
 
-Phase 4使用`0.4.x`版本线。`0.4.0`包含一次明确记录的空间协议破坏性升级；此后普通协议演进仍必须兼容schema lock，不能把`0.x`版本当作随意改写既有字段的理由。
+Phase 4历史上使用`0.4.x`版本线。`0.4.0`包含一次明确记录的空间协议破坏性升级；此后普通协议演进仍必须兼容schema lock，不能把`0.x`版本当作随意改写既有字段的理由。
+
+当前开发版本为 `0.6.0-alpha.0`，从 0.4.x 直接转入模块化开发预发布，不代表存在 0.5 正式发布，也不代表 0.6 正式发布验收完成。外置模块必须逐个验证宿主版本范围；原 `<0.5.0` 上限不能接受本版本。升级需要重新生成、完整构建并重启，版本号不能代替协议或 Model 兼容指纹。见[版本记录](../../CHANGELOG.md)。
 
 ## 四类代码边界
 
@@ -84,8 +86,8 @@ Internal调整不要求业务迁移说明，但必须继续通过公共API夹具
 ```text
 app/generated/
 src/generated/
-client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/
-client_demo/pixi_client_8.19.0/src/Generated/
+../TiangZ-Examples/clients/cocos_client2D_3.8.6/assets/scripts/Generated/
+../TiangZ-Examples/clients/pixi_client_8.19.0/src/Generated/
 ```
 
 Generated不是Stable或Internal源码，禁止手工编辑。稳定契约来自proto、`.native`原型、生成器版本、opcode/schema锁和Protocol Fingerprint。
@@ -126,6 +128,8 @@ npm run verify:core-api
 ## 迁移记录
 
 ### 开发中
+
+- 新增 `modules` 宿主装配模式，HotfixManifest.buildMode 增加同名值；仅显式选择时生效，默认 demo/bench 保持原行为。模式不匹配的 Hotfix 必须拒绝；模式切换需要完整构建与 Process 重启，不更新协议字段或绕过兼容指纹。
 
 - Stable Core新增`defineGameModule`以及`entityExtensionHandler/applyEntityExtensions`：前者只允许不可变Model装载期登记模块ID、版本、显式Model导出和必需System，后者只在未发布Entity的Factory边界同步装配强类型Component；构建期模块图与Hotfix完整装配器集合均被冻结。具体模块及其领域Component/Handler不属于Core。
 - Stable Core新增只读`RuntimeDataPackRegistry`与`RuntimeDataPack/RuntimeDataPackInput`类型。宿主在Scene创建前装入严格JSON信封，Core校验封闭模块所有权、命名空间与纯JSON payload并深冻结；Stable API只提供`Count/List/Get/TryGet`读取，不提供运行期写入、卸载或业务schema解释。

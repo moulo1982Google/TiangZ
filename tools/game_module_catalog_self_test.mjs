@@ -138,7 +138,7 @@ try {
     id: "org.example.invalid-game-config",
     gameConfig: { generatedCode: "generated/config" },
   });
-  await assertRejects(invalidGameConfig, "must be inside a declared Hotfix source root");
+  await assertRejects(invalidGameConfig, "must be inside a declared source root");
 
   const destructiveGameConfig = path.join(temporary, "destructive-game-config");
   await writeModule(destructiveGameConfig, {

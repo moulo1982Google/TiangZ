@@ -1,5 +1,7 @@
 import ts from "typescript";
-import { cp, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, rm, stat, writeFile, rename } from "node:fs/promises";
+import assert from "node:assert/strict";
+import { publishProtocolOutputs } from "./module_protocol_publish.mjs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -38,6 +40,47 @@ try {
   }
 
   await runGenerator(["--check"]);
+  const generatedClient = path.join(moduleRoot, "generated/typescript/cards/protocol/clients.ts");
+  const originalClient = await readFile(generatedClient, "utf8");
+  const originalMtime = (await stat(generatedClient)).mtimeMs;
+  await runGenerator(["--check"]);
+  assert.equal((await stat(generatedClient)).mtimeMs, originalMtime, "check rewrote unchanged output");
+  await writeFile(generatedClient, "// deliberately stale output\n");
+  const staleOutput = await runGenerator(["--check"], true);
+  assert.notEqual(staleOutput.code, 0, "check accepted stale output");
+  assert.equal(await readFile(generatedClient, "utf8"), "// deliberately stale output\n", "check repaired output");
+  await runGenerator([]);
+  assert.equal(await readFile(generatedClient, "utf8"), originalClient);
+  const manifestPath = path.join(moduleRoot, "tiangz.module.json");
+  const manifestText = await readFile(manifestPath, "utf8");
+  const typescriptOnly = JSON.parse(manifestText);
+  typescriptOnly.protocol.generateGodot = false;
+  const godotDirectory = path.join(moduleRoot, "generated/godot");
+  await rename(godotDirectory, path.join(temporary, "old-godot"));
+  await writeFile(manifestPath, JSON.stringify(typescriptOnly));
+  await runGenerator([]);
+  await runGenerator(["--check"]);
+  await assert.rejects(stat(godotDirectory), { code: "ENOENT" });
+  const selectedOutputs = JSON.parse(await readFile(path.join(moduleRoot, "protocol.manifest.json"), "utf8")).outputs;
+  assert.equal(selectedOutputs.godot, undefined);
+  assert.ok(selectedOutputs.typescript);
+  typescriptOnly.protocol.generateGodot = "false";
+  await writeFile(manifestPath, JSON.stringify(typescriptOnly));
+  assert.notEqual((await runGenerator([], true)).code, 0, "invalid SDK selection accepted");
+  await writeFile(manifestPath, manifestText);
+  await runGenerator([]);
+  await stat(godotDirectory);
+  const unsafe = JSON.parse(manifestText);
+  unsafe.protocol.serverOutput = "src/model";
+  await writeFile(manifestPath, JSON.stringify(unsafe));
+  assert.notEqual((await runGenerator([], true)).code, 0, "generator accepted Model root output");
+  assert.equal(await readFile(path.join(moduleRoot, "src/model/index.ts"), "utf8"), "export {};\n");
+  await writeFile(manifestPath, manifestText);
+  const handwritten = path.join(moduleRoot, "src/model/generated/protocol/handwritten.ts");
+  await writeFile(handwritten, "export const business = 1;\n");
+  assert.notEqual((await runGenerator([], true)).code, 0, "generator accepted handwritten source");
+  await rm(handwritten);
+  await verifyRollback();
   await runGenerator([], false, "verify_hotfix_boundary.mjs");
   const modelEntry = path.join(moduleRoot, "src", "model", "index.ts");
   const internalBinary = path.join(root, "app", "core", "protocol", "binary").replaceAll(path.sep, "/");
@@ -54,11 +97,47 @@ try {
   if (stale.code === 0 || !`${stale.stdout}\n${stale.stderr}`.includes("schema lock is missing")) {
     throw new Error("module protocol --check did not reject a schema change without a lock update");
   }
+  // 自定义源目录与锁名必须贯穿整个生成链。 / Custom source and lock paths must reach every generator.
+  await rename(path.join(moduleRoot, "proto"), path.join(moduleRoot, "wire"));
+  await rename(path.join(moduleRoot, "wire/opcode.lock.json"), path.join(moduleRoot, "wire/codes.json"));
+  await rename(path.join(moduleRoot, "wire/schema.lock.json"), path.join(moduleRoot, "wire/shapes.json"));
+  const custom = JSON.parse(manifestText);
+  Object.assign(custom.protocol, { source: "wire", opcodeLock: "wire/codes.json", schemaLock: "wire/shapes.json" });
+  await writeFile(manifestPath, JSON.stringify(custom));
+  await runGenerator(["--update-locks"]);
+  await runGenerator(["--check"]);
+  assert.match(await readFile(generatedClient, "utf8"), /CardsClient/);
+  const otherRoot = path.join(modulesDirectory, "other");
+  await cp(moduleRoot, otherRoot, { recursive: true });
+  await writeFile(path.join(otherRoot, "tiangz.module.json"), JSON.stringify({ ...custom, id: "org.example.other" }));
+  const lockFile = path.join(moduleRoot, "wire/shapes.json");
+  const previousLock = await readFile(lockFile, "utf8");
+  const previousManifest = await readFile(path.join(moduleRoot, "protocol.manifest.json"), "utf8");
+  const customProto = path.join(moduleRoot, "wire/Cards_C_31000.proto");
+  await writeFile(customProto, (await readFile(customProto, "utf8")).replace("uint32 score = 2;", "uint32 score = 2;\n  uint32 gold = 3;"));
+  const collision = await runGenerator(["--update-locks"], true);
+  assert.notEqual(collision.code, 0);
+  assert.match(collision.stdout + collision.stderr, /msgcode collision/);
+  assert.equal(await readFile(lockFile, "utf8"), previousLock, "failed generation changed protocol lock");
+  assert.equal(await readFile(path.join(moduleRoot, "protocol.manifest.json"), "utf8"), previousManifest);
 } finally {
   await rm(temporary, { recursive: true, force: true });
 }
 
 process.stdout.write("module protocol codegen self-test passed\n");
+
+async function verifyRollback() {
+  const directory = path.join(temporary, "publish-rollback");
+  await mkdir(directory);
+  const entries = [0, 1].map(i => ({ staged: path.join(directory, `new-${i}`), target: path.join(directory, `old-${i}`) }));
+  for (const entry of entries) { await writeFile(entry.staged, "new"); await writeFile(entry.target, "old"); }
+  let calls = 0;
+  await assert.rejects(publishProtocolOutputs(entries, false, async (...args) => {
+    if (++calls === 4) throw new Error("injected publication failure");
+    await rename(...args);
+  }), /injected publication failure/);
+  for (const entry of entries) assert.equal(await readFile(entry.target, "utf8"), "old");
+}
 
 async function verifySharedTypeScriptTransport() {
   const first = path.join(moduleRoot, "generated", "typescript");
@@ -126,8 +205,8 @@ func _initialize() -> void:
   // 独立 SDK 实跑之后再引入旧示例入口，避免全局类掩盖独立依赖缺失。
   // Add the legacy alias only after standalone validation, so global classes cannot mask missing dependencies.
   await mkdir(path.join(project, "scripts", "generated"), { recursive: true });
-  await cp(path.join(root, "client_demo/godot-3d-4.7.1/scripts/generated/tiangz_proto.gd"), path.join(project, "scripts/generated/tiangz_proto.gd"));
-  await cp(path.join(root, "client_demo/godot-3d-4.7.1/scripts/proto_reader.gd"), path.join(project, "scripts/proto_reader.gd"));
+  await cp(path.join(root, "client_sdk/godot/generated/tiangz_proto.gd"), path.join(project, "scripts/generated/tiangz_proto.gd"));
+  await cp(path.join(root, "client_sdk/godot/proto_reader.gd"), path.join(project, "scripts/proto_reader.gd"));
   await writeFile(path.join(project, "legacy.gd"), `extends SceneTree
 const Cards = preload("res://CardsProto.gd")
 const Legacy = preload("res://scripts/proto_reader.gd")
@@ -176,7 +255,7 @@ async function writeFixture() {
     formatVersion: 1,
     id: "org.example.cards",
     version: "1.0.0",
-    engine: { minVersion: "0.4.0", maxVersionExclusive: "0.5.0" },
+    engine: { minVersion: "0.6.0-alpha.0", maxVersionExclusive: "0.7.0" },
     dependencies: [],
     capabilities: ["example.cards"],
     entries: { model: "src/model/index.ts", hotfix: "src/hotfix/index.ts" },

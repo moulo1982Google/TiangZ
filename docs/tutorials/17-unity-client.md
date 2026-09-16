@@ -1,5 +1,8 @@
 # Unity 2022.3 C#客户端
 
+> 2026-09-16 ??????????? Cocos/Pixi/Godot ???????????????????? TiangZ-Examples ?????? codegen ??? canonical SDK?????????? npm run sdk:sync???????? TiangZ ???
+
+
 本教程把Unity当作TiangZ的一个客户端表现层。协议、登录、Gate、Map、AOI和权威移动仍由服务端决定；Unity只负责输入、相机、场景对象和渲染。
 
 ## 工程与生成
@@ -7,7 +10,7 @@
 Unity示例工程是：
 
 ```text
-client_demo/Unity2022.3.62f3c1_demo/
+../TiangZ-Examples/clients/Unity2022.3.62f3c1_demo/
 ```
 
 C# SDK唯一源码在主工程：
@@ -26,7 +29,7 @@ dotnet build client_sdk/csharp/TiangZ.Client.csproj
 生成器会把可运行的C#源码复制到：
 
 ```text
-client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/
+../TiangZ-Examples/clients/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/
 ```
 
 这里的文件是Generated副本，不要直接修改。Unity业务代码放在`Assets/TiangZClient/Demo`或自己的业务目录。

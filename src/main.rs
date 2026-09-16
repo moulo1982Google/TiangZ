@@ -10,20 +10,16 @@ use crate::runtime_paths::{resolve_runtime_root, startup_options};
 use crate::watcher::run_start_machine;
 
 mod allocator;
-mod aoi;
 mod config;
 mod data_pack;
 mod dbproxy;
 mod event_stream;
-mod game;
 mod game_config;
-mod generated;
 mod health;
 mod host;
 mod hotfix;
 mod inspector;
 mod logging;
-mod native_data;
 mod module_native {
     include!(concat!(env!("OUT_DIR"), "/module_native.rs"));
 }

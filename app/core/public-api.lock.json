@@ -198,7 +198,7 @@
     "utf8Encode",
     "vetoEventHandler"
   ],
-  "apiSurfaceHash": "8dccd3e17a6e760610039f3ea683631b0622844392e3eacb22bcbfef786b177f",
+  "apiSurfaceHash": "02b24b3d890c2b5ce7752559c85b5bbf8ce952fc1a65c563289731cbb16a8a18",
   "apiSurface": [
     {
       "name": "ActorId",
@@ -479,7 +479,7 @@
     {
       "name": "GameModuleDefinition",
       "declarations": [
-        "export interface GameModuleDefinition<TModelExports extends Readonly<Record<string, unknown>> = Readonly<Record<string, unknown>>> {\nreadonly id: string;\nreadonly version: string;\nreadonly modelExports?: TModelExports;\nreadonly requiredSystems?: readonly GameModuleModelType[];\n}"
+        "export interface GameModuleDefinition<TModelExports extends Readonly<Record<string, unknown>> = Readonly<Record<string, unknown>>> {\nreadonly id: string;\nreadonly version: string;\nreadonly modelExports?: TModelExports;\nreadonly requiredSystems?: readonly GameModuleModelType[];\nreadonly processServices?: {\nreadonly configure: (config: ProcessConfig) => void;\nreadonly takeMetrics: () => Readonly<Record<string, object>>;\n};\n}"
       ]
     },
     {
@@ -1378,7 +1378,7 @@
       ]
     }
   ],
-  "declarationGraphHash": "107c40967fe3dbec3c3b99ca70d64b2906789a9b75a969df24841121b963ac2a",
+  "declarationGraphHash": "1dec763128a0aaca2b29bba317998dfff060a84566dc49d0a2e7513cb7ed70ed",
   "declarationGraph": [
     {
       "path": "core/async.d.ts",
@@ -1402,7 +1402,7 @@
     },
     {
       "path": "core/content/ModuleConfigRegistry.d.ts",
-      "declaration": "export interface ModuleConfigCandidate {\nreadonly moduleId: string;\nreadonly schemaFingerprint: string;\nreadonly dataFingerprint: string;\nreadonly tables: Readonly<Record<string, unknown>>;\n}\ninterface ModuleConfigSchema {\nreadonly moduleId: string;\nreadonly schemaFingerprint: string;\nreadonly validate: (tables: Readonly<Record<string, unknown>>) => void;\n}\nexport declare class ModuleConfigRegistry {\nprivate static schemas;\nprivate static snapshots;\nprivate static configured;\nprivate static generation;\nstatic Get(moduleId: string): ModuleConfigCandidate;\nstatic get Generation(): number;\nstatic __configure(schemas: readonly ModuleConfigSchema[]): void;\nstatic __prepare(inputs: readonly ModuleConfigCandidate[]): () => void;\n}\nexport {};"
+      "declaration": "export interface ModuleConfigCandidate {\nreadonly moduleId: string;\nreadonly schemaFingerprint: string;\nreadonly dataFingerprint: string;\nreadonly tables: Readonly<Record<string, unknown>>;\n}\ninterface ModuleConfigSchema {\nreadonly moduleId: string;\nreadonly schemaFingerprint: string;\nreadonly validate: (tables: Readonly<Record<string, unknown>>, previous?: Readonly<Record<string, unknown>>) => void;\n}\nexport declare class ModuleConfigRegistry {\nprivate static schemas;\nprivate static snapshots;\nprivate static configured;\nprivate static generation;\nstatic Get(moduleId: string): ModuleConfigCandidate;\nstatic get Generation(): number;\nstatic __configure(schemas: readonly ModuleConfigSchema[]): void;\nstatic __prepare(inputs: readonly ModuleConfigCandidate[]): () => void;\n}\nexport {};"
     },
     {
       "path": "core/content/RuntimeDataPackRegistry.d.ts",
@@ -1414,7 +1414,7 @@
     },
     {
       "path": "core/hotReload/contracts.d.ts",
-      "declaration": "export interface HotfixManifest {\nformatVersion: 1;\nbundleVersion: string;\nmodelFingerprint: string;\nmodelSourceHash: string;\nprotocolFingerprint: string;\nstableCoreApiHash: string;\nnativeSchemaHash: string;\nmoduleGraphHash?: string;\nhotfixHash: string;\nbuildMode: \"demo\" | \"bench\";\n}\nexport interface HotfixStatus {\nactiveVersion?: string;\nactiveGeneration: number;\nstagingVersion?: string;\nphase: \"idle\" | \"staging\" | \"committing\" | \"rolling-back\";\nlastError?: string;\n}"
+      "declaration": "export interface HotfixManifest {\nformatVersion: 1;\nbundleVersion: string;\nmodelFingerprint: string;\nmodelSourceHash: string;\nprotocolFingerprint: string;\nstableCoreApiHash: string;\nnativeSchemaHash: string;\nmoduleGraphHash?: string;\nhotfixHash: string;\nbuildMode: \"demo\" | \"bench\" | \"modules\";\n}\nexport interface HotfixStatus {\nactiveVersion?: string;\nactiveGeneration: number;\nstagingVersion?: string;\nphase: \"idle\" | \"staging\" | \"committing\" | \"rolling-back\";\nlastError?: string;\n}"
     },
     {
       "path": "core/location/LocationDirectory.d.ts",
@@ -1438,7 +1438,7 @@
     },
     {
       "path": "core/modules/GameModuleSystem.d.ts",
-      "declaration": "type GameModuleModelType = abstract new (...args: any[]) => object;\nexport interface GameModuleDefinition<TModelExports extends Readonly<Record<string, unknown>> = Readonly<Record<string, unknown>>> {\nreadonly id: string;\nreadonly version: string;\nreadonly modelExports?: TModelExports;\nreadonly requiredSystems?: readonly GameModuleModelType[];\n}\nexport interface GameModuleIdentity {\nreadonly id: string;\nreadonly version: string;\n}\nexport declare function defineGameModule<TModelExports extends Readonly<Record<string, unknown>>>(definition: GameModuleDefinition<TModelExports>): void;\nexport declare function sealGameModules(expected: readonly GameModuleIdentity[], publicApis?: Readonly<Record<string, Readonly<Record<string, unknown>>>>): void;\nexport declare function hasSealedGameModule(id: string): boolean;\nexport {};"
+      "declaration": "import type { ProcessConfig } from \"../process/types\";\ntype GameModuleModelType = abstract new (...args: any[]) => object;\nexport interface GameModuleDefinition<TModelExports extends Readonly<Record<string, unknown>> = Readonly<Record<string, unknown>>> {\nreadonly id: string;\nreadonly version: string;\nreadonly modelExports?: TModelExports;\nreadonly requiredSystems?: readonly GameModuleModelType[];\nreadonly processServices?: {\nreadonly configure: (config: ProcessConfig) => void;\nreadonly takeMetrics: () => Readonly<Record<string, object>>;\n};\n}\nexport interface GameModuleIdentity {\nreadonly id: string;\nreadonly version: string;\n}\nexport declare function defineGameModule<TModelExports extends Readonly<Record<string, unknown>>>(definition: GameModuleDefinition<TModelExports>): void;\nexport declare function configureGameModuleServices(config: ProcessConfig): void;\nexport declare function takeGameModuleMetrics(): Readonly<Record<string, object>>;\nexport declare function sealGameModules(expected: readonly GameModuleIdentity[], publicApis?: Readonly<Record<string, Readonly<Record<string, unknown>>>>): void;\nexport declare function hasSealedGameModule(id: string): boolean;\nexport {};"
     },
     {
       "path": "core/persistence/HostDbProxyRecords.d.ts",

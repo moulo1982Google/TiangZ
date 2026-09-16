@@ -77,9 +77,9 @@ npm run test:game-config
 app/generated/model/config/                    服务端
 client_sdk/typescript/Generated/Config/        客户端SDK唯一源码
 game_config/generated/                         完整JSON数据包与schema/data指纹
-client_demo/cocos_client2D_3.8.6/.../Generated/SDK/Generated/Config/  自动分发副本
-client_demo/cocos_client3D_3.8.8/.../Generated/SDK/Generated/Config/  自动分发副本
-client_demo/pixi_client_8.19.0/.../Generated/SDK/Generated/Config/     自动分发副本
+../TiangZ-Examples/clients/cocos_client2D_3.8.6/.../Generated/SDK/Generated/Config/  自动分发副本
+../TiangZ-Examples/clients/cocos_client3D_3.8.8/.../Generated/SDK/Generated/Config/  自动分发副本
+../TiangZ-Examples/clients/pixi_client_8.19.0/.../Generated/SDK/Generated/Config/     自动分发副本
 ```
 
 所有Generated文件都禁止手改。服务端Model记录结构指纹，独立数据包记录数据指纹；客户端生成物记录它所携带的数据指纹，用于版本诊断。

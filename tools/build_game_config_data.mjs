@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
+import { moduleHostConfig } from "./module_host_config.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const source = path.join(root, "game_config", "generated");
@@ -9,18 +10,17 @@ const outIndex = process.argv.indexOf("--out-dir");
 if (outIndex >= 0 && (!process.argv[outIndex + 1] || process.argv[outIndex + 1].startsWith("--"))) throw new Error("--out-dir requires a directory");
 const dist = path.resolve(root, outIndex >= 0 ? process.argv[outIndex + 1] : "dist");
 const initial = process.argv.includes("--initial");
-const manifest = JSON.parse(
+const modelManifest = JSON.parse(await readFile(path.join(dist, "model.manifest.json"), "utf8"));
+const emptyHost = modelManifest.buildMode === "modules" ? moduleHostConfig() : undefined;
+const manifest = emptyHost?.manifest ?? JSON.parse(
   await readFile(path.join(source, "game-config.manifest.json"), "utf8"),
 );
 
 validateManifest(manifest);
-const files = await readPackageFiles(source, manifest);
+const files = emptyHost?.files ?? await readPackageFiles(source, manifest);
 
-const modelManifest = JSON.parse(
-  await readFile(path.join(dist, "model.manifest.json"), "utf8"),
-);
 const catalog = await loadGameModuleCatalog({ projectRoot: root,
-  modulesDirectory: path.resolve(root, process.env.TIANGZ_MODULES_DIR ?? "modules") });
+  modulesDirectory: path.resolve(root, argumentValue("--modules-dir") ?? process.env.TIANGZ_MODULES_DIR ?? "modules") });
 if (modelManifest.moduleGraphHash !== catalog.graphHash) throw new Error("module graph changed; rebuild Model before packaging config");
 const moduleConfigs = [];
 for (const module of catalog.modules.filter((item) => item.gameConfig)) {
@@ -66,6 +66,7 @@ const relativeCandidate = path.relative(root, candidate).replaceAll(path.sep, "/
 process.stdout.write(
   `[build:game-config] mode=${mode} schema=${manifest.schemaFingerprint.slice(0, 12)} data=${manifest.dataFingerprint.slice(0, 12)} candidate=${relativeCandidate}\n`,
 );
+process.stdout.write(`[build:game-config:result] ${JSON.stringify({ formatVersion: 1, kind: "game-config", candidateDirectory: candidate, mode })}\n`);
 if (initial) {
   process.stdout.write(
     `[build:game-config] 已更新${path.relative(root, path.join(dist, "game-config")).replaceAll(path.sep, "/")}，服务器重启时会读取这个启动包。\n`,
@@ -170,4 +171,12 @@ function assertHash(bytes, expected, name) {
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function argumentValue(name) {
+  const inline = process.argv.find(arg => arg.startsWith(`${name}=`));
+  const index = process.argv.indexOf(name);
+  const value = inline?.slice(name.length + 1) ?? (index < 0 ? undefined : process.argv[index + 1]);
+  if ((inline || index >= 0) && (!value || value.startsWith("--"))) throw new Error(`${name} requires a directory`);
+  return value;
 }

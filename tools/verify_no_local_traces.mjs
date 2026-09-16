@@ -27,7 +27,9 @@ const rules = [
 
 const violations = [];
 for (const file of files) {
-  const buffer = readFileSync(file);
+  let buffer;
+  try { buffer = readFileSync(file); }
+  catch (error) { if (error.code === "ENOENT") continue; throw error; }
   if (buffer.includes(0)) continue;
   const lines = buffer.toString("utf8").split(/\r?\n/);
   for (let index = 0; index < lines.length; index += 1) {
@@ -60,16 +62,10 @@ if (violations.length > 0) {
 console.log(`本机痕迹门禁通过：已检查 ${files.length} 个Git候选文件。`);
 
 /**
- * 只允许本轮明确不修改的第三方Unity模板，以及验证Windows带空格路径解析的精确测试夹具。
- * Allow only the untouched third-party Unity template and exact Windows path parser fixtures.
+ * 只允许验证 Windows 带空格路径解析的精确测试夹具。
+ * Allows only exact fixtures for parsing Windows paths containing spaces.
  */
 function isAllowedFixture(file, line, ruleId) {
-  if (
-    ruleId === "user-home-path" &&
-    file === "client_demo/Unity2022.3.62f3c1_demo/Assets/TutorialInfo/Layout.wlt"
-  ) {
-    return true;
-  }
   if (ruleId !== "windows-absolute-path" || file !== "src/shutdown.rs") {
     return false;
   }

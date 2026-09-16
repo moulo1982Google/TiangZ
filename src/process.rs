@@ -1146,7 +1146,7 @@ fn run_process_runtime(
     completion_sink: crate::host::HostSceneCompletionSink,
     health_state: Arc<ProcessHealthState>,
 ) -> Result<()> {
-    crate::native_data::configure_project_root(&project_root)
+    crate::module_native::configure_project_root(&project_root)
         .map_err(|error| anyhow::anyhow!(error.to_string()))?;
     let process_name = process.name.clone();
     let scheduling = RuntimeScheduling::from_process(&process);

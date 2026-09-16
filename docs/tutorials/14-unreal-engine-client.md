@@ -1,6 +1,9 @@
 # Unreal Engine 5.4.4客户端
 
-`client_demo/ue_client3D_5.4.4/TiangZClientUE`是与Cocos 3D使用同一服务端协议和Map 100的C++演示。公共C++ SDK不依赖UE；UE插件只负责WebSocket、游戏线程Update、坐标换算和Actor表现。
+> 2026-09-16 ??????????? Cocos/Pixi/Godot ???????????????????? TiangZ-Examples ?????? codegen ??? canonical SDK?????????? npm run sdk:sync???????? TiangZ ???
+
+
+`../TiangZ-Examples/clients/ue_client3D_5.4.4/TiangZClientUE`是与Cocos 3D使用同一服务端协议和Map 100的C++演示。公共C++ SDK不依赖UE；UE插件只负责WebSocket、游戏线程Update、坐标换算和Actor表现。
 
 ## 生成与编译
 
@@ -16,14 +19,14 @@ npm run codegen:cpp-client-sdk
 
 ```text
 client_sdk/cpp/include/tiangz/generated/
-client_demo/ue_client3D_5.4.4/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/
+../TiangZ-Examples/clients/ue_client3D_5.4.4/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/
 ```
 
 前者由Proto生成，后者是分发副本。UE 5.4.4在本开发机使用VS2022 MSVC 14.38；若机器只安装了14.44，应通过Visual Studio Installer补装`MSVC v143 14.38`。命令行编译：
 
 ```powershell
 $env:UE_ROOT = "<UE 5.4安装目录>"
-$project = (Resolve-Path "client_demo/ue_client3D_5.4.4/TiangZClientUE/TiangZClientUE.uproject")
+$project = (Resolve-Path "../TiangZ-Examples/clients/ue_client3D_5.4.4/TiangZClientUE/TiangZClientUE.uproject")
 & "$env:UE_ROOT\Engine\Build\BatchFiles\Build.bat" `
   TiangZClientUEEditor Win64 Development `
   "-Project=$project" `
@@ -75,7 +78,7 @@ UE Automation测试名为`TiangZ.ClientSDK`，覆盖嵌套数组、正负64位�
 
 ```powershell
 $env:UE_ROOT = "<UE 5.4安装目录>"
-$project = (Resolve-Path "client_demo/ue_client3D_5.4.4/TiangZClientUE/TiangZClientUE.uproject")
+$project = (Resolve-Path "../TiangZ-Examples/clients/ue_client3D_5.4.4/TiangZClientUE/TiangZClientUE.uproject")
 & "$env:UE_ROOT\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
   "$project" `
   -unattended -nop4 -nosplash -NullRHI `

@@ -12,7 +12,9 @@ export async function recordGenerator(root, descriptor) {
   const lockDirectory = `${manifestFile}.lock`;
   await withManifestLock(lockDirectory, async () => {
     const previous = await readManifest(manifestFile);
-    const contentInputs = await hashFiles(root, [manifestScript, ...descriptor.contentInputs]);
+    const scriptRelative = path.relative(root, manifestScript);
+    const localImplementation = !scriptRelative.startsWith("..") && !path.isAbsolute(scriptRelative);
+    const contentInputs = await hashFiles(root, [...(localImplementation ? [manifestScript] : []), ...descriptor.contentInputs]);
     const outputs = await hashFiles(root, descriptor.outputs);
     const selections = [...(descriptor.selections ?? [])]
       .map((selection) => ({
@@ -32,6 +34,7 @@ export async function recordGenerator(root, descriptor) {
       ...(previous?.generators ?? {}),
       [descriptor.id]: {
         command: descriptor.command,
+        ...(!localImplementation ? { implementationFingerprint: hashText(await readFile(manifestScript, "utf8")) } : {}),
         contentInputs,
         selections,
         outputs,

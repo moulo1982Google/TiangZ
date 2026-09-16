@@ -13,19 +13,9 @@ if (unknown.length > 0) {
   process.exit(1);
 }
 
-const cocosGeneratedNames = [
-  "library",
-  "temp",
-  "local",
-  "build",
-  "profiles",
-  "native",
-];
-
 const targets = [
   "target",
   "dist",
-  ...cocosGeneratedNames.map((name) => path.join("client_demo/cocos_client2D_3.8.6", name)),
 ];
 
 for (const entry of readdirSync(root, { withFileTypes: true })) {
@@ -36,7 +26,6 @@ for (const entry of readdirSync(root, { withFileTypes: true })) {
 if (copyMode) {
   targets.push(
     "node_modules",
-    path.join("client_demo/cocos_client2D_3.8.6", "node_modules"),
   );
   const resultsDirectory = path.join(root, "perf", "results");
   try {

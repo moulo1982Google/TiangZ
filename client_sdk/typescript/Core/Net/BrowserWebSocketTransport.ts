@@ -32,6 +32,7 @@ if (WebSocketClass) {
 class BrowserWebSocketTransport implements ClientTransport {
   private socket?: WebSocketLike;
   private connecting?: Promise<void>;
+  private cancelConnect?: (error: Error) => void;
   private listener?: ClientTransportListener;
 
   constructor(
@@ -51,33 +52,49 @@ class BrowserWebSocketTransport implements ClientTransport {
     if (this.connected) return Promise.resolve();
     if (this.connecting) return this.connecting;
     const url = formatWebSocketUrl(this.endpoint);
+    let socket: WebSocketLike;
+    try { socket = new this.WebSocketType(url); }
+    catch (error) { return Promise.reject(error); }
+    // 建立期间即持有连接，取消不必等待 onopen；旧连接事件不能影响重试。 / Own the socket during handshake; cancellation need not wait for onopen and stale events cannot affect retries.
+    this.socket = socket;
+    socket.binaryType = "arraybuffer";
     this.connecting = new Promise((resolve, reject) => {
-      const socket = new this.WebSocketType(url);
-      socket.binaryType = "arraybuffer";
       let opened = false;
-      socket.onopen = () => {
-        opened = true;
-        this.socket = socket;
+      this.cancelConnect = (error) => {
         this.connecting = undefined;
+        this.cancelConnect = undefined;
+        reject(error);
+      };
+      socket.onopen = () => {
+        if (this.socket !== socket) return;
+        opened = true;
+        this.connecting = undefined;
+        this.cancelConnect = undefined;
         resolve();
       };
       socket.onerror = () => {
-        if (opened) return;
-        this.connecting = undefined;
-        reject(new Error(`连接失败：${url}`));
+        if (opened || this.socket !== socket) return;
+        const error = new Error(`连接失败：${url}`);
+        this.socket = undefined;
+        this.cancelConnect?.(error);
+        socket.close();
+        this.listener?.onClose(error);
       };
       socket.onclose = () => {
+        if (this.socket !== socket) return;
         const error = new Error(opened ? `连接已关闭：${url}` : `连接建立期间已关闭：${url}`);
-        if (!opened) {
-          this.connecting = undefined;
-          reject(error);
-        }
-        if (this.socket === socket) this.socket = undefined;
+        this.socket = undefined;
+        if (!opened) this.cancelConnect?.(error);
         this.listener?.onClose(error);
       };
       socket.onmessage = (event) => {
+        if (this.socket !== socket || !opened) return;
         if (event.data instanceof ArrayBuffer) this.listener?.onMessage(new Uint8Array(event.data));
-        else this.listener?.onClose(new Error("收到的 WebSocket 消息不是 ArrayBuffer"));
+        else {
+          this.socket = undefined;
+          socket.close();
+          this.listener?.onClose(new Error("收到的 WebSocket 消息不是 ArrayBuffer"));
+        }
       };
     });
     return this.connecting;
@@ -89,8 +106,12 @@ class BrowserWebSocketTransport implements ClientTransport {
   }
 
   close(): void {
-    this.socket?.close();
+    const socket = this.socket;
     this.socket = undefined;
+    const error = new Error(`连接已关闭：${formatEndpoint(this.endpoint)}`);
+    this.cancelConnect?.(error);
+    socket?.close();
+    if (socket) this.listener?.onClose(error);
   }
 }
 
