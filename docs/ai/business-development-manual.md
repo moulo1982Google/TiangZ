@@ -1,4 +1,66 @@
+# 2026-09-16：先选业务工程，再写模块
+
+交付脚本在 Examples/packages/slg 执行 npm run delivery -- check|local|container；--plan 只打印，--ci 要求三仓库已提交且干净。首次换机先准备同级 TiangZ/Examples/DBProxy、宿主 npm ci、battle:build，容器流程先显式 battle:k8s:setup。保持同工作区单流水线，不并行手工 codegen/build。故障保留本轮目录，通过报告指定 BATTLE_LAB_STATE_DIR 检查/受控清理；不使用默认集群。详细交接和未实现项以该包 docs/delivery-handoff.md 为准。
+
+战斗发布与版本路由在 Examples/packages/slg 执行 battle:test → battle:build → battle:verify。区服调用统一管理器，提交 realmId/battleId/logicVersion/configVersion，不配置战斗池绑定；查询携带相同区服与战斗编号。版本来自制品 Model，proto/SDK 走正式生成器，旧请求不自动补版本。混合版本调度单测不等于混合制品 K8s 实跑；当前 realmId 仅为可信实验标签，正式服务必须绑定认证身份。架构与限制见该包 docs/battle-release-routing.md，不能把案例抽成 Core 战斗规则。
+
+本地案例通过后，容器部署练习使用 Examples/packages/slg 的 battle:k8s:setup、battle:k8s:image，以及 battle:k8s -- up/status/verify/scale 2|3/down，详见 validation/battle/k8s/README.md。只操作独立 kubeconfig 和自有实验命名空间；缩容先由业务确认排空，再修改副本数，preStop 不能保证无限等待。不得直接复制内存管理器作为高可用，也不将本地 Pod 编号作为持久身份方案。Model/注册协议变化已要求重建，真实验收状态单独报告。
+
+验证 Rust 后台工作与本地扩缩容可在 Examples/packages/slg 执行 battle:build / battle:verify。案例使用正式脚手架、Native/协议生成器；内部 RPC 与客户端协议分离，不绕过传输访问校验。任务状态属于模块 Component，通用本地控制器只管理自己创建的资源。超时不等于可重算，案例只标 unknown；持久幂等结算和故障恢复仍未实现。先本地验证，之后再讨论 Kubernetes。
+
+需要 Rust 扩展壳时，在 project:create 或 modules:create 后追加 --with-rust。先读生成的 RUST.md：native/*.native、rust/src/native_data.rs 和 TS NativeExample 为手写输入，generated 目录不可手改。新工程使用 setup → host-build → build → smoke；check 包含 Rust 编译检查。dev 自动监听尚不支持 Native，不能用 TS 热更替代 Rust 重编译重启。此壳没有游戏业务或持久状态。
+
+持久 ID 仍通过 GlobalIdSystem.Instance.Next() 取得，恢复/合服不重新发号。需要跨重启唯一性时部署显式选择 identity.allocation=dbproxy，由宿主在 Scene 构造前领取持久号段；没有号段时同步失败，不回退旧算法。模块不直接写高水位，不把 OriginServerId 用于当前路由。省略 allocation 仅保留有告警的旧开发模式；完整构建重启与恢复限制见[ID 号段](../design/global-id-ranges.md)。
+
+租户由部署凭据映射到 DBProxy 后端，业务请求不自报租户。originServerId/GlobalId 是永久身份，realmId 是可迁移归属。合服目录与请求使用格式 v2；模块用独立纯 JSON 策略声明自己的领域动作，显式 --policy 传给只读计划工具。宿主不认识城池、地块或补偿，声明通过不等于策略可执行；见 [租户与区服边界](../design/tenant-realm-foundation.md)。
+
+示例开发先选 Examples 中的包：packages/slg 或 packages/mmorpg。在 Examples 根用 npm run build -- --package slg（check/start/smoke 同理）；不要扫描整个 Examples 作为模块目录。包入口清单 tiangz.example.json 与业务模块清单 tiangz.module.json 分工不同。SLG 的 Cocos 工程是 packages/slg/client/cocos，MMORPG 的共享客户端仍在根 clients。
+
+新游戏从引擎 project:create 创建独立工程，按生成 README 使用 doctor/build/smoke/dev；不在引擎 app 目录新增游戏。MMORPG 示例在同级 TiangZ-Examples/modules/mmorpg，ModuleGame 与 WoW335 通过显式直接依赖复用它，SLG 无需安装它。
+
+阅读顺序：tiangz.module.json → src/model/index.ts 与 public.ts → 领域 Model → 对应 Hotfix/System/Handler。业务引用依赖的公开入口 #tiangz/modules/<id>，#tiangz/model 只提供宿主契约，不再混入 MMORPG。
+
+手写协议/配置/Native 声明属于模块；generated 目录均不能手改。Examples 的 server:build 依次准备编辑器路径、生成协议/Luban/Native/System 声明并构建 TS；Native 改动追加 server:native-build，随后重启。配置候选由模块 validator 检验，冷表不能热更。插件负责呈现确定性错误，不能放宽规则。
+
+游戏测试归 Examples：npm test、test:native、test:runtime、verify:server-assets。test:runtime 用随机本地端口和内存数据验证真实登录/进图/退出；不操作现有服务和数据库。主工程 verify:quick 只检查框架，test:unit:coverage 使用框架与游戏联合场景保持原门槛。旧固定拓扑验收归档为 legacy，不作为日常命令。
+
+下文旧 Starter 操作和路径用于历史业务背景；具体执行入口以 [当前命令](../reference/commands.md) 与 [模块说明](../../../TiangZ-Examples/modules/mmorpg/README.md) 为准。
+
+---
+
 # TiangZ AI 业务开发手册
+
+2026-09-16 客户端开发入口迁移：先在 TiangZ 运行 npm run codegen，再到独立 TiangZ-Examples 执行 npm run sdk:sync、npm run check。Cocos/Pixi/Godot/Unity/UE 的手写业务位于该工程 clients/；不得在主工程重新创建 client_demo 或用联接伪装旧目录。SDK 同步命令只更新 tiangz.clients.json 声明的生成目标，--check 不写文件，编辑器 .meta 保留。服务端 MMORPG、Native 与 ModuleGame/WoW335 公共模块依赖迁移仍待完成，本次没有修改玩法或现有数据库。详见 [示例拆分状态](../design/example-extraction.md)。
+
+2026-09-16 modelExports 的提前漏导出诊断只针对唯一直接顶层登记；未调用辅助函数不会覆盖登记结果。动态或多处分支登记不靠静态推测，仍需真实启动验证，不能为规避错误而把正常入口改成动态装配。
+
+2026-09-16 开发模式的 [tiangz-dev-check] begin/end 只划分 Problems 检查轮次，失败也成对结束；不代表游戏就绪。确认服务可用应看 Runtime 就绪与真实请求，不能把该匹配器当作已实现自动附加调试器。
+
+2026-09-16 独立模块在 Developer Tools 中使用模块导航、模块工程操作和新建模块 Component；不要使用主工程 verify:fast 或旧三件套脚手架。插件发现 tiangz.project.json 后会隔离旧 app/ 索引，避免入口 Scene 误报；源码检查仍运行宿主 check/build，通过任务 Problems 查看位置。旧索引未执行模块检查不是“检查通过”，实时 LSP 模块诊断仍未接入。
+
+2026-09-16 边界检查只针对真实 Core 装饰器/模块登记函数；同名业务函数不应触发 Hotfix 字段或 modelExports 误报。诊断修复应保留符号来源和别名解析，不能以简单字符串匹配替代。
+
+2026-09-16 观察在线修改：保持入门工程 npm run dev，另开终端 npm run request，看真实 count；该命令有业务写入，不是只读健康检查。原样保存 Model 不再误触发重启，内容变化仍须重建重启。SDK 连接关闭与超时须释放尚在握手的 WebSocket，不手工修改生成的客户端副本。game_project_soak 可在唯一临时工程持续检查热更、失败候选、重连、计数连续性和停机；报告中的内存样本不是容量或无泄漏证明。
+
+2026-09-16 新增独立模块组件：从宿主调用 create_module_component --project <工程> --module <ID> --name Inventory --feature inventory，先 --dry-run 查看四个文件，确认后创建。插件“新建模块 Component”会展示同一预览并以 --expect-plan 拒绝过期计划。生成只完成状态/行为分层和入口登记，不代替业务选择 Scene/Entity 生命周期中的 AddComponent；新增 Model 要重启。动态装配入口不自动改写。构建的 Hotfix 字段/构造错误现在直接给出源位置，应把状态放回 Model，不能靠绕开插件检查解决。
+
+2026-09-16 模块日常开发使用 npm run dev：共享 Watcher 自动提交兼容行为候选，编译失败保留旧版本；Model/协议/模块与启动配置变化只提示重启，不自动清空状态。需要修改协议时先退出 dev、显式 protocol-update，再重新 dev。dev:debug 只保证调试 Bundle，Inspector 需在 Process 配置启用。输入 shutdown/父输入 EOF 后优雅停止并释放工程锁；源码循环真实验收为 test:game-project-dev。
+
+2026-09-16 新手路径：使用 project:create 创建计数器工程，按生成 README 执行 doctor/setup/host-build/build/smoke；普通 TS build 不重复 Cargo，首次或宿主变化才 host-build。计数在 Scene 的 Component 上，由 Hotfix System 修改；Handler 不保存状态。Model/Hotfix 以 counter 同名功能目录组织，显式入口负责登记/加载。新工程 tiangz.project.json 由通用 game_project.mjs 校验，插件只作为引导和导航入口。test:game-project 加入 full 验收；状态不持久化，模板不是生产发布配置。
+
+2026-09-16 模块阅读入口：运行 `npm run modules:inspect -- --modules-dir <目录>` 查看 Model/Hotfix 入口、公开 API、状态类型、System/Handler 绑定和疑似漏加载。插件使用同一工具的 `--json` 结果做导航；本模块 modelExports 运行时桥与跨模块 publicApi 不同。静态可达只追踪相对值 import/export，动态注册需人工和运行时核对。通用工具拥有规则，插件拥有引导和呈现；终端开发不能依赖插件安装。
+
+2026-09-15 优先完善 TiangZ 开发流程，不开发 SLG 玩法。独立游戏可在 create_game_module、prepare_game_modules、typecheck_game_modules、build_runtime_bundles 上统一传 `--host-profile modules`；build_game_config_data 从 Model 清单选择空内置表信封，支持显式 `--modules-dir`。业务配置仍经既有模块配置路径安装。Hotfix-only 必须同模式，默认 demo 不自动切换；依赖 MMORPG 类型的模块不适用于 modules 模式。test:module-host 是框架自有真实启停与隔离回归，已纳入 full。TS 模块 Watcher 一键流程已在 2026-09-16 接入，Rust 二进制裁剪仍未完成，不能宣称通用开发流程已经全部收敛。
+
+2026-09-15 SLG 日常入口：首次 setup、dbproxy:up、build，之后 dev 与 client:open；提交前 check/smoke，数据库迁移和发布产物预览按需。protocol.generateGodot=false 可关闭 Godot 生成，旧模块默认不变；不会自动删除旧文件。dev 仍检查模块类型和协议产物，但不调用 Cargo，不生成/同步 SDK，不检查整个 Cocos 工程。过期产物先 setup；新协议显式 protocol:update；Rust/Native 改动或宿主升级必须 build。README 是 SLG 开发流程唯一入口，验收历史另存。
+
+2026-09-15 SLG 环境流程：在独立游戏根目录执行 dbproxy:up，首次生成 Git 忽略的独立密钥并部署专属存储组；dbproxy:check 检查依赖，dbproxy:smoke 在独立库留下唯一验收记录，测试 SDK 写入及第二进程重读。dbproxy:stop 只停该组服务，不删除数据卷。Creator 3.8.8 首次导入后提供完整类型，工程覆盖 moduleResolution 为 Bundler 以兼容宿主 TypeScript；client:build/preview 分别构建与本机预览。
+
+2026-09-15 SLG 开发入口：在独立 `TiangZ-SLG` 工作区使用 setup 同步模块协议 SDK 和编辑器路径，check 做只读一致性/类型检查，dev 生成构建并启动，smoke 用真实 WebSocket 验证只读地图后通过 stdin 控制正常停机。当前 dev 不提供自动监听/热更；新增协议显式运行 protocol:update，Model 变化重建重启。Cocos 未生成编辑器类型时只执行连接层类型检查与打包检查，不能替代编辑器画面验收。不要复制 Wasteland 的持久化配置或为 SLG 修改 Core 特例。
+
+新增 Hotfix 值导入后运行 `modules:typecheck`，检查会定位 `modelExports` 漏登记；仅用于类型时使用显式 `import type`。目前提前检查覆盖入口中可识别的注册调用与命名导入。
+
+2026-09-15 模块开发流程补充：新接入或切换宿主/依赖后执行 `npm run modules:prepare -- --modules-dir <模块父目录>`，同步模块 tsconfig 的编辑器解析；追加 `--check` 可用于 CI。配置文件当前要求严格 JSON，JSONC 会明确拒绝。协议改动先显式更新锁，再执行真正只读的 `codegen:module-protocol -- --modules-dir <目录> --check`；过期产物需要正常生成，不由检查命令修复。生成使用 manifest 自定义源/锁路径，所有模块生成与 opcode 校验完成后才发布，失败恢复旧产物。生成目录不得包含手写代码。dev 会监听模块 Luban 工程目录并过滤生成输出，schema 变化仍走重建重启。
 
 2026-09-15 主线整合后，外置游戏应调用统一 TiangZ 主线的生成器、模块检查和构建入口，游戏的 Proto、配置、SDK 输出和 dist 仍由游戏目录拥有。切换宿主后先运行宿主 `codegen:scenes`，再用该宿主 `modules:typecheck -- --modules-dir <目录>` 检查；检查器会把生成方法声明与当前 Stable API 绑定，并保留模块自有声明。协议/Model/Native 变动必须完整构建和重启，不能复用旧分支二进制。验收记录见 `docs/design/mainline-integration-20260915.md`。
 
@@ -106,10 +168,10 @@ app/model/mmorpg/       MMORPG新增或改变状态、字段、构造、继承�
 app/hotfix/mmorpg/      MMORPG普通Handler与可热更领域行为
 proto/
 game_config/                 策划静态配置Excel；结构完整部署，纯数据可生成候选热更
-client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/
-client_demo/cocos_client3D_3.8.8/assets/       3D客户端业务与灰盒；Generated/SDK禁止手改
-client_demo/ue_client3D_5.4.4/                 UE客户端业务与表现；插件ThirdParty SDK禁止手改
-client_demo/pixi_client_8.19.0/src/
+../TiangZ-Examples/clients/cocos_client2D_3.8.6/assets/scripts/Demo/
+../TiangZ-Examples/clients/cocos_client3D_3.8.8/assets/       3D客户端业务与灰盒；Generated/SDK禁止手改
+../TiangZ-Examples/clients/ue_client3D_5.4.4/                 UE客户端业务与表现；插件ThirdParty SDK禁止手改
+../TiangZ-Examples/clients/pixi_client_8.19.0/src/
 configs/
 tests或tools中的对应业务自测
 ```
@@ -241,8 +303,8 @@ Unity业务客户端的默认边界是：
 
 ```text
 client_sdk/csharp/                         C# SDK唯一源码；协议和网络Core
-client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime  生成副本，禁止手改
-client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Demo     Unity场景、输入、相机和表现
+../TiangZ-Examples/clients/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime  生成副本，禁止手改
+../TiangZ-Examples/clients/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Demo     Unity场景、输入、相机和表现
 ```
 
 协议变化后执行`npm run codegen:csharp-client-sdk`，然后用`dotnet build client_sdk/csharp/TiangZ.Client.csproj`做引擎无关验证。Unity业务不得自己编码protobuf、分配rpcId或直接访问`RpcSocket`的内部字典；只通过生成的`LoginMgrClient/LoginClient/GateClient/MapClient`和消息描述符调用。每帧在Unity主线程调用`RpcSocket.Update()`，网络回调线程不得触碰GameObject、Transform或其他Unity API。当前SDK只提供桌面WebSocket，TCP/KCP没有Adapter时必须报错。
@@ -413,7 +475,7 @@ MapHost -> MapScene
 - 帧尾同步：`app/model/mmorpg/map/MapComponent.ts::FrameFlush`。
 - 玩家下线保存：`app/model/mmorpg/persistence/PlayerPersistenceComponent.ts`。
 - Model/System领域方法范例：`app/model/mmorpg/login/LoginComponent.ts`与`app/hotfix/mmorpg/login/LoginComponentSystem.ts`。
-- 客户端Push：`client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Handlers`。
+- 客户端Push：`../TiangZ-Examples/clients/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Handlers`。
 - Scene发现和调用：`app/core/process/SceneMessageHelper.ts`及`docs/guides/business-cookbook.md`。
 
 先复用这些形状，不重新发明Manager、ServiceLocator或事件总线。
@@ -632,7 +694,7 @@ message M2C_UseSkill // IActorLocationResponse
 5. 服务端只从`app/generated/model/server`导入；客户端、工具和压测客户端只从`client_sdk/typescript/Generated`导入。
 6. C++/UE客户端只从`client_sdk/cpp/include/tiangz/generated`使用生成协议；UE插件中的ThirdParty副本由codegen覆盖，禁止手改msgcode、Codec或rpcId。
 6. 执行`npm run test:protocol`和相关业务测试。
-7. Godot客户端只通过`client_demo/godot-3d-4.7.1/scripts/tiangz_client.gd`调用登录、RPC和Push；协议Codec由`npm run codegen:godot-client-sdk`生成到`scripts/generated/tiangz_proto.gd`，`main.gd`只做节点表现。Godot当前是WebSocket演示适配，不能自行补TCP/KCP或把Godot的`Vector3`写入协议。
+7. Godot客户端只通过`../TiangZ-Examples/clients/godot-3d-4.7.1/scripts/tiangz_client.gd`调用登录、RPC和Push；协议Codec由`npm run codegen:godot-client-sdk`生成到`scripts/generated/tiangz_proto.gd`，`main.gd`只做节点表现。Godot当前是WebSocket演示适配，不能自行补TCP/KCP或把Godot的`Vector3`写入协议。
 
 不得手工修改`opcode.lock.json/schema.lock.json`来绕过生成器，也不得在业务代码中硬编码msgcode、rpcId或codec。
 
@@ -1178,7 +1240,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 ## 验证矩阵
 
-`0.3.10`框架稳定化和`0.4.0` Phase 4.0空间契约已经完成，当前继续沿`0.4.x`开发线推进。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议、空间模式或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
+`0.3.10`框架稳定化和`0.4.0` Phase 4.0空间契约已经完成，当前版本为 `0.6.0-alpha.0`，直接进入模块化开发预发布线，尚未完成 0.6 正式发布验收。升级宿主先逐个检查模块版本范围；旧 `<0.5.0` 上限必须经消费方验证后迁移，不自动放宽其他游戏声明。随后重新生成、完整构建并重启。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议、空间模式或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
 
 本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/cluster/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。需要在VS Code断点调试中持续Reload时使用`npm run dev:debug`：初始和后续候选都带内联sourcemap，Process/V8/Inspector连接不重启，新脚本会重新绑定TS断点。若V8正停在断点必须先Resume；当前栈继续旧代码，后续调用才使用新generation。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools把Model长期状态中的显式`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`字段和`as any`写属性视为错误；请使用稳定默认值或明确的数据结构。对象`T | null`、判别联合、显式Map/Record和普通DTO仍可正常使用。
 
