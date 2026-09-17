@@ -4,6 +4,8 @@
 
 ## 固定边界
 
+2026-09-17 恢复安全补充：DBProxy配置`storage.authoritativeReadNamespaces: ["player"]`使角色恢复读取PG已提交快照，保活原Actor仍复用内存。最终下线仍等待SaveMulti确认，不改为Enqueue；所有DBProxy候选必须升级并一致配置，未配置仍走旧缓存语义。方法与验收范围见[权威恢复读取](../../../TiangZ-DBProxy/docs/authoritative-recovery-reads.md)。
+
 ```text
 MapHostScene
   -> PlayerRepository                 业务接口与Payload归TiangZ
@@ -294,3 +296,12 @@ npm run test:tiangz-fault-matrix
 - DBProxy开发分支已提供独立Prometheus指标、双实例Grafana Dashboard和基础告警，TiangZ Process指标也会显示Endpoint连接失败与切换；观测端口必须保留在本机或运维内网。TLS、令牌轮换、通知路由和生产长期指标存储仍未完成；Redis/PostgreSQL高可用与数据库内部指标使用云厂商能力，不在TiangZ内实现。
 
 Gate故障接管已由独立无数据库验收覆盖；下一步是动态地图安全回退/接管、跨机器租约和生产运维能力。新增经济玩法继续复用领域Revision与多记录事务，不能退回巨型Player Snapshot。
+
+
+## DBProxy默认权威读取契约（2026-09-17）
+
+默认Load/LoadMulti改为PG主库已提交状态，失败报错、不退缓存；整批一个SQL快照，不包括Server未保存内存、Enqueue未落库及快照之后的提交。缓存读取必须显式选择，min_revision只适用于已知版本调用方，不能作为登录恢复前提。保活重连复用原权威Actor；冷登录/进程恢复才访问存储，跨服接管仍先完成所有权交接和必要保存。
+
+已确认PG提交后缓存失败仍返回成功并后台修复；PG提交结果未知保留原操作号重试。禁止用缩短缓存TTL、后台重试或进程本地dirty标记代替跨节点正确性。故障表现为成功写入后读到旧缓存；默认权威读取消除这一依赖。原按namespace启用权威读取方案已被默认全量权威替代，保留配置只额外禁止指定namespace显式读缓存。
+
+本次核对Repository/玩家恢复链路使用直接Save/事务，没有将Enqueue ACK当PG提交；新接入不得假定Enqueue后Load立即可见。必须部署所有DBProxy候选节点后再宣称新契约生效；已有游戏SDK默认Load无需传版本。新显式缓存SDK入口需要宿主另行适配，旧宿主明确拒绝该入口。复测：DBProxy根目录`node tools/test_authoritative_reads.mjs`（仅隔离PG/Redis）、`cargo test --workspace`与`npm run test:typescript`。真实存储结果与未覆盖容量见DBProxy的`docs/default-read-contract.md`，不能继承旧二进制的长稳结果。

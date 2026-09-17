@@ -15,7 +15,7 @@ interface ProcessBootstrapAdapters {
   readonly modelExports: object;
   readonly configureProcess?: (config: ProcessRuntimeConfig["process"]) => void;
   readonly takeMetrics?: () => object;
-  readonly installGameConfig: (manifestJson: string, dataJson: string) => string;
+  readonly prepareGameConfig?: (manifestJson: string, dataJson: string) => () => void;
 }
 
 /** 安装一次进程桥接；领域初始化由不可变宿主入口提供。 / Installs the process bridge once; immutable host entries supply domain initialization. */
@@ -113,11 +113,11 @@ export function installProcessBootstrap(adapters: ProcessBootstrapAdapters): voi
     return "true";
   }
 
-  function updateBinary(sampleMetrics: boolean): MaybePromise<string> {
+  function updateBinary(sampleMetrics: boolean, hotfixDraining = false): MaybePromise<string> {
     // 停机只排空宿主操作，不能重新推进游戏Timer或接收新业务。 / Shutdown drains host work without advancing gameplay timers or new business.
     if (processStopping) { flushHostSceneOperations(); return "0"; }
     if (!processRuntime) return JSON.stringify({});
-    const result = processRuntime.update(sampleMetrics);
+    const result = processRuntime.update(sampleMetrics, hotfixDraining);
     return isPromiseLike(result)
       ? Promise.resolve(result).then((value) => flushUpdateResult(value, sampleMetrics))
       : flushUpdateResult(result, sampleMetrics);
@@ -146,7 +146,18 @@ export function installProcessBootstrap(adapters: ProcessBootstrapAdapters): voi
     if (processRuntime && !processRuntime.CanCommitHotfix) {
       throw new Error("hotfix requires empty ingress and zero in-flight business tasks");
     }
-    HotfixSystem.Begin(JSON.parse(manifestJson) as HotfixManifest);
+    const manifest = JSON.parse(manifestJson) as HotfixManifest & {
+      runtimeConfig?: { manifestJson: string; dataJson: string };
+    };
+    if (manifest.runtimeConfig && !adapters.prepareGameConfig) {
+      throw new Error("Model does not support atomic Hotfix/config release; rebuild and restart");
+    }
+    const commitConfig = manifest.runtimeConfig
+      ? adapters.prepareGameConfig!(manifest.runtimeConfig.manifestJson, manifest.runtimeConfig.dataJson)
+      : undefined;
+    // 快照已暂存，不在活动 manifest 中重复保留完整 JSON。 / Staging owns the snapshot; do not retain its JSON in the active manifest.
+    delete manifest.runtimeConfig;
+    HotfixSystem.Begin(manifest, commitConfig);
     return JSON.stringify(HotfixSystem.Status());
   }
 
@@ -160,10 +171,6 @@ export function installProcessBootstrap(adapters: ProcessBootstrapAdapters): voi
   function abortHotfix(reason: string): string {
     HotfixSystem.Abort(reason);
     return JSON.stringify(HotfixSystem.Status());
-  }
-
-  function installGameConfig(manifestJson: string, dataJson: string): string {
-    return adapters.installGameConfig(manifestJson, dataJson);
   }
 
   function packOutbound(outbound: ProcessUpdateResult["outbound"]): Uint8Array {
@@ -204,11 +211,10 @@ export function installProcessBootstrap(adapters: ProcessBootstrapAdapters): voi
     __etsStartProcess: (configJson: string) => string | Promise<string>;
     __etsStopProcess: () => string | Promise<string>;
     __etsPushHostEventsBinary: (metadata: Uint8Array) => string;
-    __etsUpdateBinary: (sampleMetrics: boolean) => string | Promise<string>;
+    __etsUpdateBinary: (sampleMetrics: boolean, hotfixDraining?: boolean) => string | Promise<string>;
     __etsBeginHotfix: (manifestJson: string) => string;
     __etsCommitHotfix: () => string;
     __etsAbortHotfix: (reason: string) => string;
-    __etsInstallGameConfig: (manifestJson: string, dataJson: string) => string;
     __hostSleep: (ms: number) => Promise<void>;
   };
   host.__hostSleep = sleepHost;
@@ -219,5 +225,4 @@ export function installProcessBootstrap(adapters: ProcessBootstrapAdapters): voi
   host.__etsBeginHotfix = beginHotfix;
   host.__etsCommitHotfix = commitHotfix;
   host.__etsAbortHotfix = abortHotfix;
-  host.__etsInstallGameConfig = installGameConfig;
 }

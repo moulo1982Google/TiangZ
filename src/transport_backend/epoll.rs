@@ -198,64 +198,80 @@ async fn handle_raw_tcp_connection(
     });
 
     let mut reader_shutdown = shutdown_rx;
-    loop {
-        let frame = tokio::select! {
-            changed = reader_shutdown.changed() => {
-                if changed.is_err() || *reader_shutdown.borrow() { break; }
-                continue;
-            }
-            frame = read_raw_frame(&mut reader, &mut first_frame_len) => frame?,
-        };
-        let Some(frame) = frame else {
-            break;
-        };
-        validate_frame_access(connection_kind, &frame)?;
-        stats.transport_read_completed(1, frame.len() + 4);
-        let rpc_id = (connection_kind == ConnectionKind::Internal)
-            .then(|| inner_frame_rpc_id(&frame))
-            .flatten();
-        let event = ProcessEvent::Frame {
-            scene_index,
-            connection_id,
-            frame: frame.into(),
-        };
-        if let Some(rpc_id) = rpc_id {
-            match event_tx.try_send_control(event) {
-                Ok(()) => continue,
-                Err(ProcessIngressTrySendError::Overloaded) => {
-                    try_queue_connection_frame(
-                        &connection_writer,
-                        build_target_ingress_overload(rpc_id),
-                    )
-                    .map_err(anyhow::Error::msg)?;
-                    tracing::warn!(
-                        target: "tiangz::transport",
-                        connection_id,
-                        rpc_id,
-                        "rejected inner RPC because target control ingress queue is full"
-                    );
+    let read_result: Result<()> = async {
+        loop {
+            let frame = tokio::select! {
+                changed = reader_shutdown.changed() => {
+                    if changed.is_err() || *reader_shutdown.borrow() { break; }
                     continue;
                 }
-                Err(ProcessIngressTrySendError::Stopped) => {
-                    return Err(anyhow::anyhow!("process event queue is stopped"));
+                frame = read_raw_frame(&mut reader, &mut first_frame_len) => frame?,
+            };
+            let Some(frame) = frame else {
+                break;
+            };
+            validate_frame_access(connection_kind, &frame)?;
+            stats.transport_read_completed(1, frame.len() + 4);
+            let rpc_id = (connection_kind == ConnectionKind::Internal)
+                .then(|| inner_frame_rpc_id(&frame))
+                .flatten();
+            let event = ProcessEvent::Frame {
+                internal: connection_kind == ConnectionKind::Internal,
+                scene_index,
+                connection_id,
+                frame: frame.into(),
+            };
+            if let Some(rpc_id) = rpc_id {
+                match event_tx.try_send_control(event) {
+                    Ok(()) => continue,
+                    Err(ProcessIngressTrySendError::Overloaded) => {
+                        try_queue_connection_frame(
+                            &connection_writer,
+                            build_target_ingress_overload(rpc_id),
+                        )
+                        .map_err(anyhow::Error::msg)?;
+                        tracing::warn!(
+                            target: "tiangz::transport",
+                            connection_id,
+                            rpc_id,
+                            "rejected inner RPC because target control ingress queue is full"
+                        );
+                        continue;
+                    }
+                    Err(ProcessIngressTrySendError::Stopped) => {
+                        return Err(anyhow::anyhow!("process event queue is stopped"));
+                    }
                 }
             }
+            event_tx
+                .send(event, None)
+                .await
+                .map_err(anyhow::Error::msg)?;
         }
-        event_tx
-            .send(event, None)
-            .await
-            .map_err(anyhow::Error::msg)?;
+        Ok(())
     }
+    .await;
 
-    finish_connection(
+    // 错误也必须移除writer并通知断线；恶意/损坏连接不再等待发送排空。
+    // Errors must remove the writer and notify disconnect; corrupt peers skip outbound draining.
+    if read_result.is_err() {
+        writer_task.abort();
+    }
+    let finish_result = finish_connection(
         scene_index,
         connection_id,
         &event_tx,
         &writers,
         &shutdown_tx,
     )
-    .await?;
-    writer_task.await??;
+    .await;
+    if finish_result.is_err() {
+        writer_task.abort();
+    }
+    let writer_result = writer_task.await;
+    read_result?;
+    finish_result?;
+    writer_result??;
     Ok(())
 }
 
@@ -342,52 +358,68 @@ async fn handle_websocket_connection(
     });
 
     let mut reader_shutdown = shutdown_rx;
-    loop {
-        let message = tokio::select! {
-            changed = reader_shutdown.changed() => {
-                if changed.is_err() || *reader_shutdown.borrow() { break; }
-                continue;
-            }
-            message = reader.next() => message,
-        };
-        let Some(message) = message else {
-            break;
-        };
-        match message? {
-            Message::Binary(frame) => {
-                if !(2..=MAX_FRAME_LEN).contains(&frame.len()) {
-                    bail!("invalid websocket frame length: {}", frame.len());
+    let read_result: Result<()> = async {
+        loop {
+            let message = tokio::select! {
+                changed = reader_shutdown.changed() => {
+                    if changed.is_err() || *reader_shutdown.borrow() { break; }
+                    continue;
                 }
-                validate_frame_access(ConnectionKind::External, &frame)?;
-                stats.transport_read_completed(1, frame.len());
-                event_tx
-                    .send(
-                        ProcessEvent::Frame {
-                            scene_index,
-                            connection_id,
-                            frame,
-                        },
-                        None,
-                    )
-                    .await
-                    .map_err(anyhow::Error::msg)?;
+                message = reader.next() => message,
+            };
+            let Some(message) = message else {
+                break;
+            };
+            match message? {
+                Message::Binary(frame) => {
+                    if !(2..=MAX_FRAME_LEN).contains(&frame.len()) {
+                        bail!("invalid websocket frame length: {}", frame.len());
+                    }
+                    validate_frame_access(ConnectionKind::External, &frame)?;
+                    stats.transport_read_completed(1, frame.len());
+                    event_tx
+                        .send(
+                            ProcessEvent::Frame {
+                                internal: false,
+                                scene_index,
+                                connection_id,
+                                frame,
+                            },
+                            None,
+                        )
+                        .await
+                        .map_err(anyhow::Error::msg)?;
+                }
+                Message::Close(_) => break,
+                Message::Ping(_) | Message::Pong(_) => {}
+                Message::Text(_) => bail!("websocket text frames are not supported"),
+                Message::Frame(_) => {}
             }
-            Message::Close(_) => break,
-            Message::Ping(_) | Message::Pong(_) => {}
-            Message::Text(_) => bail!("websocket text frames are not supported"),
-            Message::Frame(_) => {}
         }
+        Ok(())
     }
+    .await;
 
-    finish_connection(
+    // 协议校验和读取失败同样走统一清理，防止孤儿发送任务留住Socket。
+    // Protocol/read failures also run cleanup so orphaned writers cannot retain sockets.
+    if read_result.is_err() {
+        writer_task.abort();
+    }
+    let finish_result = finish_connection(
         scene_index,
         connection_id,
         &event_tx,
         &writers,
         &shutdown_tx,
     )
-    .await?;
-    writer_task.await??;
+    .await;
+    if finish_result.is_err() {
+        writer_task.abort();
+    }
+    let writer_result = writer_task.await;
+    read_result?;
+    finish_result?;
+    writer_result??;
     Ok(())
 }
 

@@ -1,5 +1,53 @@
 # 2026-09-16 模块拆分后的当前事实
 
+2026-09-17 七日测试复测入口：[分析基线及对应提交核验](external-7d-analysis-baseline-20260917.md)，[三组复测清单](../../../TiangZ-Examples/tools/chaos/retest-7d-findings.md)。新增缓存写超时回归已编译未实跑；DBProxy缺口尚未修复。不得将最终状态恢复当作运行期无旧读，也不得遗漏Relay最终核验失败。
+
+## AI续接必读：失败教训
+
+2026-09-17 本轮主工程verify:quick完整运行：30项通过、1项verify:no-local-traces失败，命中既有tools/ai-assistants/check.mjs:38的本地盘符检测正则；本轮没有修改/豁免该工具。cargo fmt/clippy/test通过，不能据此称完整门禁已通过。
+
+2026-09-17 SLG驻留与前台恢复已实现：默认最后请求后5分钟保留已确认玩家内存，命中不Load；回收不删除离线任务，启动扫描恢复截止Timer；独立receipt不被战报覆盖；玩家独立互斥，地图变化才原子写玩家+世界。仍是32玩家、单世界无鉴权Demo，不是正式PlayerHost。配置在模块model/residency.json，属于Model构建期输入，改后重建重启。29条针对性测试、2条恢复工具计划测试和无DB真实WebSocket断开11秒重连通过；旧数据库强杀报告不能充当本轮验收。详见[实现/配置/测试边界](../../../TiangZ-Examples/packages/slg/docs/player-residency-and-foreground.md)。Model配置不得逃出modelRoots；不要覆盖基类私有timers字段。假基类测试不能代替真实模块check/build。
+
+2026-09-17 新增DBProxy按精确namespace选择权威PG读取，默认缓存语义未改；game复测配置启用player，SLG配置源码启用玩家/世界namespace，尚未部署运行镜像。真实TCP旧/负缓存与PG阻塞回归三轮通过，保活及最终保存顺序22项相关测试通过。完整登录耗时、SLG新镜像恢复仍待验收；不能称全局缓存旧读已修复。升级/命令/证据见[权威恢复读取](../../../TiangZ-DBProxy/docs/authoritative-recovery-reads.md)。
+
+2026-09-17 PG性能先结合资源/参数做并发阶梯，寻找工作区间；不把max_connections当最佳并发，不用过载档位代表正常延迟。多区服共享PG须汇总活动连接预算。见[登录容量方法与待完成端到端步骤](../../../TiangZ-DBProxy/docs/login-capacity-method.md)。保活存储边界新增3项控制流回归；完整登录时延仍未测量。
+
+2026-09-17 登录性能必须区分保活Actor复用与存储冷加载。保活复用不应重读角色快照；不要把鉴权/账号查询混为角色恢复。已完成24场景存储阶段对比，见[登录存储首轮基线](../../../TiangZ-DBProxy/docs/login-storage-comparison-20260917.md)，不代表完整登录性能。
+
+2026-09-17 缓存旧读已在隔离PG/Redis连续16轮复现，用户要求提前结束30分钟计划；服务代码尚未修复。见[本机复现与代码分析](../../../TiangZ-DBProxy/docs/old-cache-reproduction-20260917.md)。不要继续宣称仅有静态推测，也不要称已完成30分钟或TCP端到端验收。
+
+SLG新增小规模真实存储强杀脚本，入口 Examples `reliability -- plan --suite slg`，保留原MMORPG game且不随all加入；隔离环境不复用开发数据库，详见[恢复测试](../../../TiangZ-Examples/packages/slg/docs/recovery-test.md)。PG初始化socket就绪不等于TCP就绪，容器健康检查需匹配消费者使用的TCP；本轮第一次隔离启动因该夹具问题失败，不能算游戏恢复失败或通过。最终结果读取实际report。
+
+2026-09-17 SLG恢复验收：修复夹具后两轮各7项通过、共16次强杀，最终报告 Examples/packages/slg/temp/recovery/run-iaAz8o/report.json；真实SQL对账和清理通过，演练卷保留且容器停止。最终控制器哈希已核对。只证明单场景3玩家关键崩溃边界，不证明独立PlayerHost、数据库自身故障或500玩家长稳。后者等待用户另行安排。
+
+AI 技能可复用规则入口：[技能开发约束](skill-development-contract.md)。涵盖模块归属、Timer/Update、同步语义、C/S 协议、数据库结果未知、原子热更与验收证据。源码已收进 tools/ai-assistants，Codex/Claude 便携技能已生成、工作区已同步，Cindy 0.2.0 已原位更新并真实调用验证32条规则；独立 Codex/Claude 客户端尚未运行验收。生成、换机和历史副本边界见 [三端交付说明](assistant-packages.md)。
+
+2026-09-17 SLG 基础玩法已在 Examples/packages/slg 接入（建筑、生产、武将、行军）；仍为单场景 Demo，玩家/世界分记录原子提交，不是独立 PlayerHost。15 条单测及内存模式真实 RPC smoke 通过；真实 DB 崩溃恢复、新 UI 画面、联合演练未验收。见[玩法与复测](../../../TiangZ-Examples/packages/slg/docs/gameplay-demo.md)。**IsHostDbProxyAvailable 仅表示宿主桥存在，不表示进程配置了数据库或数据库可用**；持久模式依据进程配置，配置后故障必须失败，不可退回内存。首次 smoke 因误判失败，修复并重建后通过。
+
+2026-09-17 三类测试代码整理：Examples `npm run reliability` 默认仅计划，支持hotfix/dbproxy/game分组及独立build/check/run，详情见[入口说明](../../../TiangZ-Examples/tools/chaos/README.md)。已修正旧联合控制器的组合宿主/探针SDK路径和审计证据根，要求所有计划故障都覆盖，新增独立Gate/整组游戏进程强杀。此轮仅静态检查和纯工具单测；用户要求整理后等待指令，**未执行整理后的联合演练**。run会清理专用演练库/Redis，不能默认运行，更不能把上轮热更或历史DB报告算作当前三组通过。
+
+后续遇到可复用的失败必须落到开发文档，不依赖聊天记忆；按现象、根因、正确做法、禁止绕过、复测和证据记录。详细操作见[失败教训与复测流程](business-development-manual.md#失败教训与复测流程)，2026-09-17已记录：
+
+- **客户端C协议不能用于进程间Inner RPC**：即使请求字段一致，也要声明模块S协议并重新生成内部descriptor；使用`scene.scenes.call`不代表外部descriptor变成内部协议。访问校验正确拒绝不是框架Bug，不能放宽校验。
+- DB断一次可能被SDK有界重试恢复；分别验证短断连恢复、持续不可达失败和丢ACK后幂等，不能假定一次断连必然业务失败。
+- `/ready`成功不代表首份连接指标已经发布；有界等待基线，不删除断言或用固定睡眠掩盖时序。
+- 网络错误提前返回跳过writer清理是真实框架缺陷；保留失败现场，重建后验证关闭、连接数和正常请求。
+- 历史通过结果只对应报告中的二进制和覆盖范围；完整回归重新构建后，最终负载/故障测试须对齐最终制品。24小时尚未执行。
+
+2026-09-17 故障补测：`test:hotfix-faults`纳入完整回归，覆盖双进程、500请求排队、内部暂存满及断线/停机；可选真实DB通过独立回环代理注入迟回包/断连，不停现有容器。测试记录保留在唯一namespace，命令与证据见[故障验收](../design/hotfix-fault-acceptance-20260917.md)。用户明确24小时暂不执行，另行安排；基础设施可靠性优先于玩法。
+
+2026-09-17 网络错误收尾修复：Tokio网络后端TCP/WebSocket读取或校验失败也必须移除writer、通知断线并回收发送任务；坏连接不等待发送排空，正常关闭保留排空语义。故障矩阵检查非法帧连接关闭与连接数回落。Rust修改需重建并重启，旧二进制长稳结果不能代替修复后验证。
+
+2026-09-17 主动暂停热更的测试证据、超时口径和换机复测命令见[本轮验收记录](../design/hotfix-pause-acceptance-20260917.md)。以记录中的已完成结果为准，不把24小时计划当作已通过。
+
+热更主动短窗口：候选独立线程预检后暂停新业务入口，已有任务/宿主完成通知继续推进，Timer和固定帧暂缓；默认3000ms，留最多100ms提交余量，超时或128条内部请求暂存满则恢复旧版本。Hotfix/config整体提交/回滚；不改RPC超时，不保证客户端超时能取消服务器执行，不引入多generation。需重建Rust/Model并重启；持续负载复测用 `tools/hotfix_load_soak.mjs`，报告保留在本轮temp目录，详见热更设计。不要将脚本支持24小时说成已经验收。
+
+2026-09-17 延迟开发范式已补充：开始/到期/取消/恢复分开，Model 保存任务状态，Hotfix 登记所有者 Timer 并立即返回。插件错误处 `Ctrl+.` 可打开离线指南或生成未保存骨架；不改原代码、不自动迁移扣费/持久化，TODO 结算必须人工完成。维护时同步插件 `extension/guides/`，详见[延迟业务开发范式](../patterns/timer-update-and-action.md#延迟业务开发范式)。
+
+2026-09-17 硬约束：游戏业务严禁 await 时间，包括 sleep/delay、TimerSystem.WaitAsync、原生计时器和定时器 Promise 包装；任何时长的延迟、到期、周期触发必须通过所有者 Timer 与方法名回调。数据库/RPC/锁等结果等待仍允许，不能据此声称在途异步已消失。Developer Tools 与模块构建共同报告 `tiangz.timer.time-wait-forbidden` 错误，规则、例外与换机要求见[时间调度模式](../patterns/timer-update-and-action.md)。
+
+> 2026-09-17：Hotfix 与 Luban 配置改为完整配对发布、帧间原子提交。`build:hotfix` / `build:game-config` 均输出联合候选；`reload` 和本机 `hotfix plan/apply/status/rollback` 操作整套，`reload-config` 仅作联合加载别名。Hotfix manifest 包含 gameConfigHash/releaseId，配置单改也改变 bundleVersion。现有 pendingAsync/pendingIngress 安全条件保留；等待期间仍推进主循环。Model/schema/冷数据变化仍重启，客户端和持久业务状态不随发布回滚。旧的两条独立在线切换说明已被取代；首次使用须重建宿主与 Model 并重启。详细流程以 docs/design/typescript-hot-reload.md 的联合发布章节为准。
+
 Examples/packages/slg 提供平台无关 delivery check/local/container 与 --plan/--ci：复用正式检查、构建和战斗验收，容器状态单独放在本轮 temp 子目录，不接管手动练习。制品记录本地 image ID，失败保留现场，生产发布未开放；跨机器/自建 Git 接续见该包 docs/delivery-handoff.md。不要将本地制品记录当成远端 registry digest、签名或完整可复现发布。
 
 SLG 发布目标为公共登录、独立区服与独立战斗服务，区服不绑定战斗池。Examples 战斗案例新增 realmId + battleId 任务身份、逻辑/配置双版本准入与调度、执行端二次检查；能力随 Model 制品冻结，不由环境变量冒充。无兼容节点的新请求 unavailable，不入账；已受理任务不降级。范围仅有界可信实验，非鉴权/持久结算或完整发布平台。协议须重新生成、重建重启；旧 K8s 镜像报告不能代表新版通过。设计及验收范围见 Examples/packages/slg/docs/battle-release-routing.md。
@@ -574,11 +622,11 @@ docs/patterns/               MMORPG领域设计原则与稳定规则编号
 
 Generated目录禁止手工编辑。新建平级游戏目录时，codegen通过`codegen.config.json`的搜索根发现Scene和Handler，不维护手工类型表。
 
-游戏静态配置与部署配置严格分离：`configs/<environment>`只描述Machine、Process、Scene、端口和Runtime参数；`game_config`保存策划维护的Luban Excel。仓库固定Luban `4.10.2` CLI，按`c/s`分组生成服务端Model类型、客户端SDK类型和独立JSON数据包。表、字段、类型、分组、索引和引用关系属于绝对不可热更的Model；数据重载策略由`ConfigTablePolicy`按整表声明，不能在一张表内混合Hot/Cold。当前ItemConfig、PlayerConfig为Hot，MapConfig、AoiConfig、AoiSyncTierConfig和策略表为Cold。生成包同时携带完整/Hot/Cold数据及指纹；Rust验证三者分区一致，TS拒绝Cold指纹变化。只有Hot数据可由Watcher通过`reload-config`原子替换，Cold任何值变化都必须完整构建并重启Process。业务统一通过只读`GameConfigs.Xxx.Get/TryGet/GetAll`读取，不直接解析Excel/JSON，不长期缓存整行对象。Reload不重跑Awake、不回写既有Entity状态，旧引用仍指向旧快照。客户端配置仍随SDK发布，服务端Reload不会远程替换Cocos/Pixi数据。
+游戏静态配置与部署配置严格分离：`configs/<environment>`只描述Machine、Process、Scene、端口和Runtime参数；`game_config`保存策划维护的Luban Excel。仓库固定Luban `4.10.2` CLI，按`c/s`分组生成服务端Model类型、客户端SDK类型和独立JSON数据包。表、字段、类型、分组、索引和引用关系属于绝对不可热更的Model；数据重载策略由`ConfigTablePolicy`按整表声明，不能在一张表内混合Hot/Cold。当前ItemConfig、PlayerConfig为Hot，MapConfig、AoiConfig、AoiSyncTierConfig和策略表为Cold。生成包同时携带完整/Hot/Cold数据及指纹；Rust验证三者分区一致，TS拒绝Cold指纹变化。只有 Hot 数据可随完整 Hotfix + 配置候选，由 Runtime 在帧间原子提交，Cold任何值变化都必须完整构建并重启Process。业务统一通过只读`GameConfigs.Xxx.Get/TryGet/GetAll`读取，不直接解析Excel/JSON，不长期缓存整行对象。Reload不重跑Awake、不回写既有Entity状态，旧引用仍指向旧快照。客户端配置仍随SDK发布，服务端Reload不会远程替换Cocos/Pixi数据。
 
 AOI可见密度与内容刷点密度是两份独立数据：外置内容包拥有模板和刷点，Core的`MapConfig -> AoiConfig/AoiSyncTierConfig`只拥有观察范围、迟滞边界和同步频率。奇数范围边长`N`以观察者Grid为中心，每侧半径为`(N - 1) / 2`个Grid；地图应按物理Cell尺寸和目标可见距离选择Cold AOI配置。发现“附近实体太少”时不得复制刷点、扩大导入区域或增加地图分支来掩盖过小的AOI。通用`Large World AOI`是可复用配置数据，不包含任何游戏、种族或区域规则。
 
-游戏配置命令明确区分启动包和在线候选：`npm run build:game-config:startup`会重新生成并覆盖`dist/game-config`，Process重启时读取这里；`npm run build:game-config`只生成`dist/game-config-candidates/<指纹>`，必须配合Watcher的`reload-config`在线切换。`npm run test:game-config`只验证生成物和指纹，不会更新启动目录。
+游戏配置命令区分启动包与在线联合候选：`npm run build:game-config:startup` 等价于完整 `npm run build`，配套生成 Model、Hotfix 和 `dist/game-config`；`npm run build:game-config` 等价于 `build:hotfix`，生成携带完整配置的 `dist/hotfix-candidates/<releaseId前16位>`，由 `reload` 提交。低层配置打包器产生的 `game-config-candidates` 仅为构建暂存，不可单独在线提交。
 
 `.native`是codegen输入而不是生成物。框架通用ABI只放`native_data/core`；游戏新增Rust批处理能力时在`native_data/<game>/XxxOps.native`声明，生成器聚合产生Rust Extension、Host bootstrap和TS `NativeOps`。状态机黄金数据属于`tests/fixtures`，禁止混入原型目录。
 
@@ -634,7 +682,7 @@ Cocos Demo完整类型检查依赖编辑器生成的`../TiangZ-Examples/clients/
 
 业务行为采用ET风格System表达：`@systemFor(ModelType)`类写`Awake/OnDestroy`和公开领域方法，但不创建实例、不保存字段。codegen把公开方法生成到`app/generated/bootstrap/systems/*.d.ts`并合并回Model类型，所以调用方保持`unit.Move()`的面向对象写法，Model无需手写抛错空壳。运行时仍直接安装prototype描述符，没有逐次Registry查找。System首次安装后为必需项，候选遗漏会整体拒绝；Reload不重跑现有对象Awake，新对象使用新Awake，已有对象后续方法和销毁使用当前generation。
 
-本地开发可使用`npm run dev -- configs/<环境>/<部署包>/StartMachine.json`（当前为`configs/local/cluster/StartMachine.json`）：开发宿主初次完整构建并启动Watcher，随后监听`app/hotfix`和`game_config`源文件，串行构建不可变Hotfix或配置数据候选并分别执行`reload`/`reload-config`。`npm run dev:debug`使用`configs/local/debug/StartMachine.json`和all-in-one Inspector，让初始Bundle与后续Hotfix候选都带内联sourcemap；V8和Inspector连接不重建，VS Code依据新`scriptParsed`重新绑定TS源码断点。暂停在断点时必须先Resume，当前调用栈不做Edit-and-Continue。源码模式不改变生产模型，不监听Model源码，也不允许V8直接执行TS。Model以ESM加载一次，Hotfix以固定脚本名IIFE重复求值，避免ESM ModuleMap和每代脚本URL持续增长。Developer Tools对Model长期状态中的`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`和`as any`写入按错误处理；DTO、对象`T | null`、判别联合与显式Map/Record不受影响。
+本地开发可使用`npm run dev -- configs/<环境>/<部署包>/StartMachine.json`（当前为`configs/local/cluster/StartMachine.json`）：开发宿主初次完整构建并启动Watcher，随后监听`app/hotfix`和`game_config`源文件，串行构建不可变 Hotfix + 配置联合候选并执行 `reload`。`npm run dev:debug`使用`configs/local/debug/StartMachine.json`和all-in-one Inspector，让初始Bundle与后续Hotfix候选都带内联sourcemap；V8和Inspector连接不重建，VS Code依据新`scriptParsed`重新绑定TS源码断点。暂停在断点时必须先Resume，当前调用栈不做Edit-and-Continue。源码模式不改变生产模型，不监听Model源码，也不允许V8直接执行TS。Model以ESM加载一次，Hotfix以固定脚本名IIFE重复求值，避免ESM ModuleMap和每代脚本URL持续增长。Developer Tools对Model长期状态中的`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`和`as any`写入按错误处理；DTO、对象`T | null`、判别联合与显式Map/Record不受影响。
 
 正式Hotfix操作使用`npm run hotfix -- plan/apply/status/rollback`，不再依赖人工向Watcher终端输入命令。Process只有显式配置`lifecycle.hotfixOperations`并从指定环境变量取得非空令牌时才开放管理路由；路由复用健康端口但只接受回环来源和Bearer令牌，禁止经Nginx或公网暴露。CLI校验候选哈希与冻结Model契约，支持`--target`灰度、active/previous状态、operationId审计和单机多Process部分失败补偿回滚。回滚是重新提交previous候选并生成新generation，不是倒退计数。当前不提供跨机器Prepare/Commit；多机需先分发同一内容寻址候选，再登录各机器执行本地目标协调。
 
@@ -1056,3 +1104,16 @@ PlayerTradeEvents.Notification 将邀请、状态变化、关闭结果传给模�
 ### 2026-09-11 历史成交补查
 
 PlayerTradeComponent.QueryResult(player, tradeId, otherCharacterId) 返回 pending / committed / unknown。持久化组件 ReadHistoricalMultiTransaction 强制包含调用者角色，只读取双方 inventory/wallet 的原事务回执，不推进当前 revision、不清除未决集合、不应用旧资产。交易领域解码后校验交易 ID 和双方角色 ID；存储错误向上传递，缺失回执不能解释为失败。查询不要求对方在线，不依赖当前地图会话。调用端保留 tradeId 与对方角色 ID；回执过期或未成交均可能 unknown。此能力不持久化取消结果，不替代客户端重连处理。
+
+
+## DBProxy默认权威读取契约（2026-09-17）
+
+默认Load/LoadMulti改为PG主库已提交状态，失败报错、不退缓存；整批一个SQL快照，不包括Server未保存内存、Enqueue未落库及快照之后的提交。缓存读取必须显式选择，min_revision只适用于已知版本调用方，不能作为登录恢复前提。保活重连复用原权威Actor；冷登录/进程恢复才访问存储，跨服接管仍先完成所有权交接和必要保存。
+
+已确认PG提交后缓存失败仍返回成功并后台修复；PG提交结果未知保留原操作号重试。禁止用缩短缓存TTL、后台重试或进程本地dirty标记代替跨节点正确性。故障表现为成功写入后读到旧缓存；默认权威读取消除这一依赖。原按namespace启用权威读取方案已被默认全量权威替代，保留配置只额外禁止指定namespace显式读缓存。
+
+本次核对Repository/玩家恢复链路使用直接Save/事务，没有将Enqueue ACK当PG提交；新接入不得假定Enqueue后Load立即可见。必须部署所有DBProxy候选节点后再宣称新契约生效；已有游戏SDK默认Load无需传版本。新显式缓存SDK入口需要宿主另行适配，旧宿主明确拒绝该入口。复测：DBProxy根目录`node tools/test_authoritative_reads.mjs`（仅隔离PG/Redis）、`cargo test --workspace`与`npm run test:typescript`。真实存储结果与未覆盖容量见DBProxy的`docs/default-read-contract.md`，不能继承旧二进制的长稳结果。
+
+SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools/authoritative_acceptance.mjs`：默认只计划，build固定源码/制品哈希并单独构建短TTL，run为每项每轮建立隔离环境。正式Rust探针解码DBProxy协议，按连接/rpcId锁定提交成功回包；提交前强杀必须丢弃扣住的请求，不能在清理时释放。产粮对账使用持久分钟检查点，回执独立于战报；负缓存必须在冷恢复前确认有效。夹具单测不能代替实库验收，D5握手模拟不能冒充历史服务端，资源快照不能冒充容量时序。详见SLG的`docs/authoritative-read-acceptance.md`。
+
+2026-09-17提交前检查：AI技能便携性自检曾在正则中写死两个本机盘符，被本机路径门禁检出。改为通用Windows盘符/分隔符模式，覆盖全部盘符并保留门禁；`node tools/verify_no_local_traces.mjs`和`node tools/ai-assistants/check.mjs`复核通过。不要为自检脚本关闭路径检查。 / The portability self-check now rejects all Windows drive paths instead of embedding machine-specific drives; both trace and assistant checks pass without weakening the gate.

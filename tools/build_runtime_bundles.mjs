@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { execFileSync } from "node:child_process";
@@ -10,6 +10,7 @@ import { resolveModuleApi } from "./game_module_imports.mjs";
 import { moduleNativeFingerprint } from "./module_native.mjs";
 import { moduleHostConfig } from "./module_host_config.mjs";
 import { resolveHostProfile } from "./host_profile.mjs";
+import { atomicReleaseId } from "./atomic_release_identity.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const requestedOutputDirectory = argumentValue("--out-dir");
@@ -51,10 +52,11 @@ if ((requestedHotfixOut || requestedHotfixEntry) && !hotfixOnly) {
 }
 
 const automaticCandidate = hotfixOnly && !requestedHotfixOut;
+if (automaticCandidate) await mkdir(path.join(dist, "hotfix-candidates"), { recursive: true });
 const hotfixOutputDirectory = hotfixOnly
   ? requestedHotfixOut
     ? path.resolve(root, requestedHotfixOut)
-    : path.join(dist, "hotfix-candidates", ".building")
+    : await mkdtemp(path.join(dist, "hotfix-candidates", ".building-"))
   : dist;
 const hotfixCandidateFile = path.join(hotfixOutputDirectory, "hotfix.candidate.js");
 const hotfixOutputFile = path.join(hotfixOutputDirectory, "hotfix.js");
@@ -63,7 +65,6 @@ const hotfixEntry = requestedHotfixEntry
   ? path.resolve(root, requestedHotfixEntry)
   : path.join(root, bench ? "app/hotfix/main.bench.ts" : "app/hotfix/main.ts");
 
-if (automaticCandidate) await rm(hotfixOutputDirectory, { recursive: true, force: true });
 await mkdir(hotfixOutputDirectory, { recursive: true });
 await rm(hotfixCandidateFile, { force: true });
 
@@ -196,14 +197,28 @@ if (!hotfixOnly) {
   await writeJson(path.join(dist, "model.manifest.json"), modelManifest);
   await rm(path.join(dist, "main.js"), { force: true });
 }
+// 每个行为候选绑定完整配置，配置单改也必须产生不同的发布身份。
+// Bind the complete config to every behavior candidate, including config-only releases.
+const configOutput = execFileSync(process.execPath, [path.join(root, "tools/build_game_config_data.mjs"),
+  "--out-dir", dist, "--modules-dir", moduleCatalog.directory, ...(!hotfixOnly ? ["--initial"] : [])],
+  { cwd: root, encoding: "utf8", windowsHide: true });
+const configResult = JSON.parse(configOutput.split(/\r?\n/).find(line => line.startsWith("[build:game-config:result] ")).slice("[build:game-config:result] ".length));
+if (hotfixOnly) await cp(configResult.candidateDirectory, path.join(hotfixOutputDirectory, "game-config"), { recursive: true });
+hotfixManifest.gameConfigHash = sha256(await readFile(path.join(hotfixOutputDirectory, "game-config/game-config.manifest.json")));
+hotfixManifest.releaseId = atomicReleaseId(hotfixManifest);
+hotfixManifest.bundleVersion = `${packageJson.version}+${hotfixManifest.releaseId}`;
 await writeFile(hotfixOutputFile, hotfixBytes);
 await writeJson(hotfixManifestFile, hotfixManifest);
 await rm(hotfixCandidateFile, { force: true });
 let publishedDirectory = hotfixOutputDirectory;
 if (automaticCandidate) {
-  publishedDirectory = path.join(dist, "hotfix-candidates", hotfixManifest.hotfixHash.slice(0, 16));
-  await rm(publishedDirectory, { recursive: true, force: true });
-  await rename(hotfixOutputDirectory, publishedDirectory);
+  publishedDirectory = path.join(dist, "hotfix-candidates", hotfixManifest.releaseId.slice(0, 16));
+  try { await rename(hotfixOutputDirectory, publishedDirectory); }
+  catch (error) {
+    if (!["EEXIST", "ENOTEMPTY", "EPERM"].includes(error.code)) throw error;
+    if (await readFile(path.join(publishedDirectory, "hotfix.manifest.json"), "utf8") !== await readFile(hotfixManifestFile, "utf8")) throw error;
+    await rm(hotfixOutputDirectory, { recursive: true, force: true });
+  }
 }
 process.stdout.write(
   `[build:runtime] ${buildMode} modules=${moduleCatalog.modules.length} graph=${moduleCatalog.graphHash.slice(0, 12)} model=${modelManifest.modelFingerprint.slice(0, 12)} hotfix=${hotfixManifest.hotfixHash.slice(0, 12)} output=${path.relative(root, publishedDirectory).replaceAll(path.sep, "/")}\n`,
@@ -251,7 +266,10 @@ import { configureGameModuleServices, takeGameModuleMetrics } from "./app/core/m
 installProcessBootstrap({ modelExports: CorePublic,
   configureProcess: configureGameModuleServices,
   takeMetrics: takeGameModuleMetrics,
-  installGameConfig: (manifest, data) => installEmptyHostConfig(${JSON.stringify(gameConfigManifest.schemaFingerprint)}, manifest, data),
+  prepareGameConfig: (manifestJson, dataJson) => {
+    installEmptyHostConfig(${JSON.stringify(gameConfigManifest.schemaFingerprint)}, manifestJson, dataJson);
+    return ModuleConfigRegistry.__prepare(JSON.parse(JSON.parse(manifestJson).moduleConfigsJson ?? "[]"));
+  },
 });` : `import ${JSON.stringify(includeBench ? "./app/model/main.bench.ts" : "./app/model/main.ts")};`;
   return `${protocolRegistration}${protocolRegistration ? "\n" : ""}${hostEntry}
 import { sealGameModules } from "./app/core/modules/GameModuleSystem.ts";
@@ -265,14 +283,6 @@ if ((globalThis.__tiangzModuleNativeFingerprint ?? "") !== ${JSON.stringify(nati
   throw new Error("module Native binary does not match Model; rebuild Native and restart Process");
 }
 ModuleConfigRegistry.__configure([${configSchemas}]);
-const installHostConfig = globalThis.__etsInstallGameConfig;
-globalThis.__etsInstallGameConfig = (manifestJson, dataJson) => {
-  const manifest = JSON.parse(manifestJson);
-  const commitModules = ModuleConfigRegistry.__prepare(JSON.parse(manifest.moduleConfigsJson ?? "[]"));
-  const hostStatus = installHostConfig(manifestJson, dataJson);
-  commitModules();
-  return JSON.stringify({ ...JSON.parse(hostStatus), moduleConfigGeneration: ModuleConfigRegistry.Generation });
-};
 `;
 }
 

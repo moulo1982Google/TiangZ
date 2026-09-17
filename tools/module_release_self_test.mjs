@@ -15,6 +15,7 @@ const environment = { ...process.env, TIANGZ_MODULES_DIR: modules };
 const packaged = run("tools/build_game_config_data.mjs", ["--initial", "--out-dir", bundles]);
 assert.equal(packaged.status, 0, packaged.stderr);
 for (const [file, mutate, message] of [
+  [path.join(bundles, "hotfix.manifest.json"), (value) => { value.gameConfigHash = "0".repeat(64); }, /not a matching atomic candidate/],
   [path.join(bundles, "hotfix.manifest.json"), (value) => { value.moduleGraphHash = "0".repeat(64); }, /bundles do not match/],
   [path.join(bundles, "game-config/game-config.manifest.json"), (value) => { value.moduleConfigsJson = "[{}]"; }, /module config is incomplete/],
   [native, (value) => { value.binaryHash = "0".repeat(64); }, /Native release binary is stale/],

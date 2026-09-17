@@ -8,6 +8,7 @@ import ts from "typescript";
 import { verifyModuleBridge } from "./module_bridge_check.mjs";
 import { resolveHostProfile } from "./host_profile.mjs";
 import { hotfixClassDiagnostics } from "./hotfix_class_rules.mjs";
+import * as developerTools from "@tiangz/developer-tools-core";
 const root = path.resolve(import.meta.dirname, "..");
 let modulesOnly;
 let catalog;
@@ -89,6 +90,13 @@ function runCompiler(project, moduleId) {
     }) });
   }
   const owner = catalog.modules.find(module => module.id === moduleId);
+  if (typeof developerTools.businessTimeDiagnostics !== "function") throw new Error("Developer Tools 缺少业务时间等待检查；请更新 @tiangz/developer-tools-core 并构建，再检查模块。");
+  const timeDiagnostics = program.getSourceFiles()
+    .filter(source => [...owner.entries.modelRoots, ...owner.entries.hotfixRoots].some(directory => isWithin(directory, source.fileName)))
+    .flatMap(source => developerTools.businessTimeDiagnostics(source.text, source.fileName).map(item => ({
+      code: item.code, file: source.fileName, line: item.location.line + 1, column: item.location.character + 1, message: item.message,
+    })));
+  if (timeDiagnostics.length) throw Object.assign(new Error(`game module ${moduleId} 时间调度规则失败:\n${timeDiagnostics.map(item => `${item.file}:${item.line}:${item.column} [${item.code}] ${item.message}`).join("\n")}`), { diagnostics: timeDiagnostics });
   verifyModuleBridge(program, owner);
   const behaviorDiagnostics = program.getSourceFiles().filter(source => owner.entries.hotfixRoots.some(directory => isWithin(directory, source.fileName)))
     .flatMap(source => hotfixClassDiagnostics(source, program.getTypeChecker()));

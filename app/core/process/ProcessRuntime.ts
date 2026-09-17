@@ -176,11 +176,18 @@ export class ProcessRuntime implements LocalSceneRouter {
   }
 
   /** 在本进程唯一 V8 线程内推进 Game.Update 和所有本地 Scene mailbox。 / Advances Game.Update and every local Scene mailbox inside this process's single V8 thread. */
-  update(includeMetrics = true): MaybePromise<ProcessUpdateResult> {
+  update(includeMetrics = true, hotfixDraining = false): MaybePromise<ProcessUpdateResult> {
     const startedAt = this.entryScenes.map(() => monotonicNow());
-    Game.Instance.Update(monotonicNow(), Date.now(), () => {
+    // 热更只排空已接收业务；时钟继续走，但不新触发业务Timer或固定帧。
+    // Reload drains admitted work with live clocks, without starting timers or fixed updates.
+    if (hotfixDraining) {
+      TimeSystem.Instance.__update(monotonicNow(), Date.now());
       this.pumpSceneIngress();
-    });
+    } else {
+      Game.Instance.Update(monotonicNow(), Date.now(), () => {
+        this.pumpSceneIngress();
+      });
+    }
     const merged = mergeResults(
       this.entryScenes.map((scene, index) =>
         scene.__completeUpdate(startedAt[index] ?? monotonicNow(), includeMetrics)

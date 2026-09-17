@@ -550,7 +550,7 @@ fn default_stop_timeout_ms() -> u64 {
 }
 
 fn default_hotfix_reload_timeout_ms() -> u64 {
-    30_000
+    3_000
 }
 
 fn default_hotfix_operations_token_env() -> String {
@@ -1671,7 +1671,7 @@ mod tests {
         assert_eq!(defaults.game.fixed_update_ms, 50);
         assert_eq!(defaults.game.max_catch_up_steps, 2);
         assert_eq!(defaults.lifecycle.stop_timeout_ms, 10_000);
-        assert_eq!(defaults.lifecycle.hotfix_reload_timeout_ms, 30_000);
+        assert_eq!(defaults.lifecycle.hotfix_reload_timeout_ms, 3_000);
         assert!(defaults.lifecycle.restart.is_none());
     }
 

@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use crate::game_config::GameConfigBundle;
 use anyhow::{Context, Result, bail};
 use deno_core::{JsRuntime, ModuleSpecifier};
 use serde::{Deserialize, Serialize};
@@ -44,6 +45,10 @@ struct HotfixManifest {
     #[serde(default)]
     module_graph_hash: String,
     hotfix_hash: String,
+    #[serde(default)]
+    game_config_hash: String,
+    #[serde(default)]
+    release_id: String,
     build_mode: String,
 }
 
@@ -60,6 +65,7 @@ pub struct HotfixCandidate {
     hotfix_source: String,
     manifest_json: String,
     manifest: HotfixManifest,
+    config: GameConfigBundle,
 }
 
 /// 记录真正发生在 V8 切换阶段中的分段耗时；候选构建不属于这里。 / Records segmented V8 switch costs; candidate build time is intentionally excluded.
@@ -106,15 +112,16 @@ impl RuntimeBundles {
         let model_specifier = ModuleSpecifier::from_file_path(&model_path).map_err(|_| {
             anyhow::anyhow!("failed to convert {} to a file URL", model_path.display())
         })?;
+        let initial_hotfix = paired_candidate(
+            hotfix_path,
+            hotfix_bytes,
+            hotfix_manifest_json,
+            hotfix_manifest,
+        )?;
         Ok(Self {
             model_specifier,
             model_manifest,
-            initial_hotfix: HotfixCandidate {
-                hotfix_source: decode_hotfix_source(&hotfix_path, hotfix_bytes)?,
-                hotfix_path,
-                manifest_json: hotfix_manifest_json,
-                manifest: hotfix_manifest,
-            },
+            initial_hotfix,
         })
     }
 
@@ -126,8 +133,8 @@ impl RuntimeBundles {
         self.initial_hotfix.bundle_version()
     }
 
-    pub fn game_config_schema_fingerprint(&self) -> &str {
-        &self.model_manifest.game_config_schema_fingerprint
+    pub(crate) fn config_fingerprint(&self) -> &str {
+        self.initial_hotfix.config_fingerprint()
     }
 
     /// 向本机运维入口公开冻结契约摘要，不包含源码或密钥。 / Exposes the frozen contract summary to the local operations endpoint without source or secrets.
@@ -161,12 +168,13 @@ impl RuntimeBundles {
         let hotfix_bytes = fs::read(&hotfix_path)
             .with_context(|| format!("failed to read {}", hotfix_path.display()))?;
         verify_hotfix_contract(&self.model_manifest, &hotfix_bytes, &manifest)?;
-        Ok(HotfixCandidate {
-            hotfix_source: decode_hotfix_source(&hotfix_path, hotfix_bytes)?,
-            hotfix_path,
-            manifest_json,
-            manifest,
-        })
+        let candidate = paired_candidate(hotfix_path, hotfix_bytes, manifest_json, manifest)?;
+        if candidate.config.cold_data_fingerprint()
+            != self.initial_hotfix.config.cold_data_fingerprint()
+        {
+            bail!("cold game config changed; rebuild and restart the Process");
+        }
+        Ok(candidate)
     }
 
     /// 在一个隔离 V8 中完成无 Process 实例的初始模块注册自检。 / Performs initial registration-only module validation in an isolated V8 with no Process instance.
@@ -216,6 +224,9 @@ impl RuntimeBundles {
 }
 
 impl HotfixCandidate {
+    pub(crate) fn config_fingerprint(&self) -> &str {
+        &self.manifest.game_config_hash
+    }
     pub fn bundle_version(&self) -> &str {
         &self.manifest.bundle_version
     }
@@ -268,6 +279,66 @@ impl HotfixCandidate {
             )
         })
     }
+}
+
+/// 配对实际配置字节并注入仅供宿主使用的暂存参数；缺少配对信息直接拒绝。
+/// Binds verified config bytes and injects host-only staging input, rejecting unpaired artifacts.
+fn paired_candidate(
+    path: PathBuf,
+    bytes: Vec<u8>,
+    manifest_json: String,
+    manifest: HotfixManifest,
+) -> Result<HotfixCandidate> {
+    let config = GameConfigBundle::load(
+        &path
+            .parent()
+            .context("missing candidate parent")?
+            .join("game-config"),
+    )?;
+    config.verify_schema(&manifest.game_config_schema_fingerprint)?;
+    let config_hash = format!("{:x}", Sha256::digest(config.manifest_json().as_bytes()));
+    if manifest.game_config_hash != config_hash {
+        bail!("Hotfix/config pair hash mismatch; rebuild the complete release");
+    }
+    let release_id = format!(
+        "{:x}",
+        Sha256::digest(
+            [
+                manifest
+                    .bundle_version
+                    .split('+')
+                    .next()
+                    .unwrap_or_default(),
+                &manifest.hotfix_hash,
+                &manifest.game_config_hash,
+                &manifest.model_fingerprint,
+                &manifest.model_source_hash,
+                &manifest.protocol_fingerprint,
+                &manifest.stable_core_api_hash,
+                &manifest.native_schema_hash,
+                &manifest.game_config_schema_fingerprint,
+                &manifest.module_graph_hash,
+                &manifest.build_mode,
+            ]
+            .join(":")
+            .as_bytes()
+        )
+    );
+    if manifest.release_id != release_id
+        || !manifest.bundle_version.ends_with(&format!("+{release_id}"))
+    {
+        bail!("Hotfix/config release identity mismatch");
+    }
+    let mut value: Value = serde_json::from_str(&manifest_json)?;
+    value["runtimeConfig"] =
+        json!({ "manifestJson": config.manifest_json(), "dataJson": config.server_data_json() });
+    Ok(HotfixCandidate {
+        hotfix_source: decode_hotfix_source(&path, bytes)?,
+        hotfix_path: path,
+        manifest_json: serde_json::to_string(&value)?,
+        manifest,
+        config,
+    })
 }
 
 fn verify_hotfix_contract(
@@ -383,6 +454,8 @@ mod tests {
             game_config_schema_fingerprint: model.game_config_schema_fingerprint.clone(),
             module_graph_hash: "graph-b".into(),
             hotfix_hash: hash,
+            game_config_hash: String::new(),
+            release_id: String::new(),
             build_mode: model.build_mode.clone(),
         };
 

@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 3,
+  "minCindyVersion": "0.1.73",
+  "id": "tiangz-game-backend",
+  "name": "TiangZ Game Backend",
+  "description": "为 TiangZ 游戏后端提供只读的领域建模、环境准备、同步、生命周期、持久化和 TypeScript/Rust 边界建议。",
+  "whenToUse": "需要开发或评审 TiangZ、DBProxy、Examples/SLG 模块的领域建模、Timer/Update、状态同步、C/S 协议、持久化重试、Hotfix/config 原子热更、测试证据与开发环境时找我。",
+  "version": "0.2.0",
+  "entry": "main.js",
+  "launch": "on-demand",
+  "command": "tiangz-backend",
+  "tools": [
+    {
+      "name": "list_design_rules",
+      "description": "列出 TiangZ 后端设计规则，包括时间等待禁令、模块边界、协议身份、持久化重试、热更和验收证据。返回仓库文档入口；只读，不修改项目文件。",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "get_environment_requirements",
+      "description": "说明当前 TiangZ 仓库对应的 Native Language 版本、Node/Rust/VS Code 要求，以及哪些开发路径需要 Docker/DBProxy。只读，不下载、不安装、不启动服务。",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "infer_system_archetype",
+      "description": "根据业务描述推断最接近的 TiangZ 系统类型。只读，不修改项目文件。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "业务描述",
+            "description": "例如：玩家身上的持续伤害状态、完成过的收集成就。"
+          }
+        },
+        "required": ["text"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "recommend_system_design",
+      "description": "根据系统类型和业务约束生成 TiangZ 后端初步设计建议，覆盖所有权、对象形态、生命周期、同步受众、持久化与 Model/Hotfix 落点。只读，不生成或修改代码。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "archetype": {
+            "type": "string",
+            "enum": ["item", "buff", "quest", "achievement", "numeric", "custom"],
+            "title": "系统类型",
+            "description": "item、buff、quest、achievement、numeric 或 custom。"
+          },
+          "name": {
+            "type": "string",
+            "title": "系统名称",
+            "description": "可选的业务系统名称。"
+          },
+          "owner": {
+            "type": "string",
+            "enum": ["player", "map", "scene", "session"],
+            "title": "所有者",
+            "description": "自定义系统的直接所有者聚合。"
+          },
+          "independentIdentity": {
+            "type": "boolean",
+            "title": "独立身份",
+            "description": "对象是否需要稳定的独立业务身份。"
+          },
+          "independentLifecycle": {
+            "type": "boolean",
+            "title": "独立生命周期",
+            "description": "对象是否需要独立创建、销毁或计时生命周期。"
+          },
+          "networkTarget": {
+            "type": "boolean",
+            "title": "网络目标",
+            "description": "对象是否需要 mailbox、网络寻址和独立消息串行。"
+          },
+          "audiences": {
+            "type": "array",
+            "items": {"type": "string", "enum": ["self", "party", "aoi", "global", "none"]},
+            "title": "同步受众",
+            "description": "自定义系统可见的受众：self、party、aoi、global 或 none。"
+          },
+          "changeSemantics": {
+            "type": "string",
+            "enum": ["none", "latest", "event"],
+            "title": "变化语义",
+            "description": "none、latest 或 event。"
+          },
+          "changeFrequency": {
+            "type": "string",
+            "enum": ["low", "medium", "high"],
+            "title": "变化频率",
+            "description": "低频、中频或高频。"
+          },
+          "persistent": {
+            "type": "boolean",
+            "title": "是否持久化",
+            "description": "自定义系统是否保存稳定业务字段。"
+          }
+        },
+        "required": ["archetype"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 //! 校验并承载独立于Model Bundle的Luban数据包。 / Validates and carries Luban data packages independently from the Model bundle.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
@@ -44,7 +44,6 @@ struct GameConfigReloadPolicies {
 
 /// 已完成文件名、哈希和组合数据指纹校验的候选。 / A candidate whose filenames, hashes, and combined data fingerprint have been verified.
 pub(crate) struct GameConfigBundle {
-    directory: PathBuf,
     manifest_json: String,
     manifest: GameConfigManifest,
     server_data_json: String,
@@ -176,7 +175,6 @@ impl GameConfigBundle {
             .context("server game config data is not valid UTF-8")?;
 
         Ok(Self {
-            directory,
             manifest_json,
             manifest,
             server_data_json,
@@ -195,20 +193,12 @@ impl GameConfigBundle {
         Ok(())
     }
 
-    pub(crate) fn directory(&self) -> &Path {
-        &self.directory
-    }
-
     pub(crate) fn manifest_json(&self) -> &str {
         &self.manifest_json
     }
 
     pub(crate) fn server_data_json(&self) -> &str {
         &self.server_data_json
-    }
-
-    pub(crate) fn data_fingerprint(&self) -> &str {
-        &self.manifest.data_fingerprint
     }
 
     /// 返回启动后不可变化的冷配置指纹；reload-config必须与当前值完全一致。 / Returns the restart-only cold-data fingerprint that every reload candidate must preserve.

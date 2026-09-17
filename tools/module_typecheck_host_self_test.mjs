@@ -36,6 +36,13 @@ try {
   const methodError = check();
   assert.notEqual(methodError.status, 0);
   assert.match(methodError.stderr, /not assignable/);
+  await writeFile(entry, 'import { TimerSystem } from "#tiangz/model"; export async function wrong() { await TimerSystem.Instance.WaitAsync(1); }');
+  const timerError = check();
+  assert.notEqual(timerError.status, 0);
+  assert.match(timerError.stderr, /tiangz.timer.time-wait-forbidden/);
+  await writeFile(entry, 'export async function good(result: Promise<number>) { return await result; }');
+  const ordinaryAwait = check();
+  assert.equal(ordinaryAwait.status, 0, ordinaryAwait.stderr);
   console.log("module typecheck host selection passed: current methods, stale host excluded, local declarations preserved");
 } finally {
   assert.equal(path.dirname(temporary), path.join(root, "temp"));

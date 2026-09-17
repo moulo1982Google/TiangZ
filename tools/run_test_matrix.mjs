@@ -56,6 +56,8 @@ const profiles = Object.freeze({
     npmStep("test:module-host"),
     npmStep("test:game-project"),
     npmStep("test:game-project-dev"),
+    npmStep("test:hotfix-load"),
+    npmStep("test:hotfix-faults"),
     ...[
       "test:module-native-runtime",
       "test:module-native-scaffold-runtime",

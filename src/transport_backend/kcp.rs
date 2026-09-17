@@ -266,6 +266,7 @@ async fn handle_datagram(
                     .event_tx
                     .send(
                         ProcessEvent::Frame {
+                            internal: false,
                             scene_index: context.scene_index,
                             connection_id: session.connection_id,
                             frame: frame.into(),

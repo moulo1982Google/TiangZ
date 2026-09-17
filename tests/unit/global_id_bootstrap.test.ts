@@ -8,7 +8,7 @@ test("startup waits for reservations; shutdown during preparation prevents Scene
   let resolve!: (value: Awaited<ReturnType<typeof PrepareGlobalIds>>) => void;
   vi.mocked(PrepareGlobalIds).mockImplementation(() => new Promise(done => { resolve = done; }));
   const configureProcess = vi.fn();
-  installProcessBootstrap({ modelExports: {}, configureProcess, installGameConfig: () => "ok" });
+  installProcessBootstrap({ modelExports: {}, configureProcess });
   const host = globalThis as typeof globalThis & {
     __etsStartProcess(config: string): Promise<string>;
     __etsStopProcess(): Promise<string>;

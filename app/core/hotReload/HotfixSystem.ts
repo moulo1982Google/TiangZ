@@ -29,6 +29,7 @@ interface BindingCandidate<T extends object> {
 
 interface StagingGeneration {
   readonly manifest: HotfixManifest;
+  readonly commitConfig?: () => void;
   readonly methods: MethodCandidate[];
   readonly bindings: BindingCandidate<object>[];
 }
@@ -88,7 +89,7 @@ export class HotfixSystem {
   }
 
   /** 在求值候选 Bundle 前建立暂存区；Model 指纹兼容性由 Rust 宿主先行校验。 / Opens staging before candidate evaluation; the Rust host validates Model fingerprints first. */
-  static Begin(manifest: HotfixManifest): void {
+  static Begin(manifest: HotfixManifest, commitConfig?: () => void): void {
     if (this.staging || this.phase !== "idle") {
       throw new Error(`hotfix cannot begin while phase is ${this.phase}`);
     }
@@ -97,7 +98,7 @@ export class HotfixSystem {
     }
     this.lastError = undefined;
     this.phase = "staging";
-    this.staging = { manifest, methods: [], bindings: [] };
+    this.staging = { manifest, commitConfig, methods: [], bindings: [] };
   }
 
   /** 放弃尚未提交的候选；模块求值异常时 Rust 必须调用此入口。 / Aborts an uncommitted candidate; Rust must call it when module evaluation fails. */
@@ -196,6 +197,9 @@ export class HotfixSystem {
         bindingUndo.push(candidate.store.__commit(candidate.key, candidate.value));
       }
 
+      // 配置提交只允许先检查再交换快照，交换后不得抛出或执行回调。
+      // The prepared config commit checks first, then swaps without callbacks or throwing afterward.
+      staging.commitConfig?.();
       this.activeManifest = staging.manifest;
       this.generation += 1;
       this.staging = undefined;

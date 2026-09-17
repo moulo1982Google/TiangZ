@@ -4,6 +4,8 @@ TiangZ 是 Rust Runtime + TypeScript 的模块化游戏服务端框架。当前�
 
 MMORPG 不再是内置宿主：服务端模块、协议、配置、Native 游戏数据与六个客户端都在同级 TiangZ-Examples。TiangZ-ModuleGame 和 TiangZ-WoW335 显式依赖该 MMORPG 模块；SLG 不需要安装它。
 
+Hotfix 与 Luban 配置现在作为一个完整候选发布，在每个 Process 的现有帧间安全点原子切换，失败保留旧的整套版本。候选独立预检后主动暂停新业务入口，默认3秒窗口内排空，超时放弃候选并恢复服务，不修改RPC超时。首次升级此加载机制需要完整构建并重启；后续使用 `build:hotfix`（`build:game-config` 为同义入口）生成联合候选。操作、回滚和限制见[热更设计](docs/design/typescript-hot-reload.md)，复测步骤和实际结果见[主动暂停验收记录](docs/design/hotfix-pause-acceptance-20260917.md)。
+
 ## 新手从这里开始
 
 ```powershell

@@ -1,5 +1,7 @@
 # Luban游戏配置
 
+> 当前在线配置更新已与完整 Hotfix 合并为一个帧间事务：`build:game-config` 等价于 `build:hotfix`，使用输出的 `hotfix-candidates/<releaseId>` 调用 `reload`。`reload-config` 只接受同样的联合候选；下文历史纯配置候选在线操作已被取代。结构/冷配置变化仍重启，`build:game-config:startup` 现在执行完整构建。详见 [联合热更](../design/typescript-hot-reload.md#hotfix-与配置的联合发布2026-09-17)。
+
 TiangZ把配置分成两类：
 
 - `configs/<environment>/`描述机器、Process、Scene、端口和Runtime参数，面向部署。
@@ -67,8 +69,8 @@ npm run test:game-config
 
 这里有两个不同的打包入口：
 
-- `npm run build:game-config:startup`会先重新运行Luban，再覆盖`dist/game-config`。服务器重启时读取这个目录，适合修改后停服重启。
-- `npm run build:game-config`会生成`dist/game-config-candidates/<指纹>`，但不会改动`dist/game-config`。它只用于在线热重载，随后把输出的候选目录交给Watcher的`reload-config`。
+- `npm run build:game-config:startup`执行完整构建，生成相互匹配的 Model、Hotfix 和 `dist/game-config`，部署后重启。
+- `npm run build:game-config`等价于 `build:hotfix`，生成携带完整配置的 `dist/hotfix-candidates/<releaseId前16位>`，不会覆盖启动包。把输出的联合候选目录交给 Watcher 的 `reload`。
 - `npm run test:game-config`只验证生成物和分区指纹，不会把`game_config/generated`复制到服务器启动目录。
 
 完整`npm run codegen`也会执行游戏配置生成，并把客户端配置随公共SDK分发到Cocos和Pixi。生成目录如下：
@@ -127,21 +129,21 @@ Luban输入被拆成两部分：
 
 ```text
 npm run build:game-config
-# 读取输出中的 candidate=dist/game-config-candidates/...
-reload-config dist/game-config-candidates/...
+# 读取输出中的 candidate=dist/hotfix-candidates/...
+reload dist/hotfix-candidates/...
 ```
 
-每个Process依次完成文件哈希、Hot/Cold分区、Model结构指纹、全表解析、外键和业务约束检查；Cold指纹不一致会以“必须重启”拒绝，其他检查全部通过后才一次性替换当前快照。失败时继续使用旧快照。可以从`tiangz_game_config_info`、`tiangz_game_config_reload_successes_total`和`tiangz_game_config_reload_failures_total`确认结果。
+每个 Process 校验联合发布身份、文件哈希、Hot/Cold 分区、Model 结构指纹与模块配置校验器，并暂存 Hotfix 行为。Cold 指纹不一致会以“必须重启”拒绝；所有准备完成后，在现有帧间安全点同时提交行为与配置。失败保留旧的整套版本。可以从 `tiangz_game_config_info`、`tiangz_game_config_reload_successes_total` 和 `tiangz_game_config_reload_failures_total` 确认结果；其中配置身份是包含模块配置的完整配置 manifest 哈希。
 
 切换不会重跑Scene、Entity或Component的`Awake`，也不会修改已经由配置创建出的运行时状态。旧代码若保存过某行配置对象，该引用仍保持旧值；后续通过`GameConfigs.Xxx.Get`取得的是新快照。因此默认在真正使用数值时查询，不要把整行配置长期缓存到Entity字段。地图创建参数和玩家初始模板只自然影响新地图、新玩家；道具使用这类即时查询会立即读取新值。
 
-当前在线Reload只替换服务端快照。Cocos/Pixi中的配置仍编入Client SDK，必须单独构建和发布；不得因为服务端已切换就假定在线客户端同步获得新配置。Watcher保证单个Process内原子切换，多机器部署可能有很短的版本交错窗口。
+当前在线 Reload 联合替换服务端 Hotfix 与配置。Cocos/Pixi 中的配置仍编入 Client SDK，必须单独构建和发布。原子提交由每个 Process 的 Runtime 执行，不是 Watcher 的全局事务；不同进程可以暂时运行不同的完整版本，不能据此假定全服或客户端已同步切换。
 
 ## 新增配置的检查清单
 
 1. 判断它是静态策划配置，还是玩家运行时/数据库数据。
 2. 设计稳定`id`，明确每个字段属于`c`、`s`还是`c,s`。
 3. 能引用其他表时使用`#ref`，不依赖业务代码事后检查。
-4. 如果准备重启服务器，执行`npm run build:game-config:startup`和`npm run test:game-config`；如果要在线热更，执行`npm run build:game-config`后用Watcher的`reload-config`切换候选；结构有变化时改用完整`npm run build`。
+4. 重启部署执行完整 `npm run build`；在线更新执行 `npm run build:game-config`，再用 Watcher 的 `reload` 提交联合候选。旧拼写 `reload-config` 也只接受联合候选，纯配置目录不能在线提交。模块校验与业务用例通过后再发布。
 5. 业务只调用`GameConfigs`，不缓存可变副本，不扫描Generated JSON。
 6. 配置改变了架构或业务流程时，同步更新两份AI文档。

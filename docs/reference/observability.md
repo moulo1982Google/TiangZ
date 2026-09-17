@@ -369,7 +369,7 @@ MapHost 每 5 秒随 Scene 快照输出每张地图的广播状态：
 - `tiangz_native_numeric_recipient_deliveries_total`：按`numeric_type`查看Numeric逻辑扇出；排查恢复类数值时应比较`rate(changes)`与`rate(recipient_deliveries)`，不要只看聚合`encoded_items`。
 - Numeric 三类latest源共享脏字典遍历，但不共享待ACK结果；排查下行时如果某一类发送失败，只应看到该类dirty保留，不能把其他类的ACK当作清除依据。
 - `tiangz_scene_latency_ms_bucket`：标准 Histogram bucket；Grafana 使用 `histogram_quantile()` 计算可聚合的 P50/P95/P99。
-- `tiangz_game_config_info{data_fingerprint="..."}`：该Process当前生效的游戏配置数据版本；多Process版本不一致时可直接比较标签。
+- `tiangz_game_config_info{data_fingerprint="..."}`：该 Process 当前生效的完整配置 manifest SHA-256，包含模块配置（2026-09-17 联合加载机制起，不再仅为宿主 server/client 数据哈希）。多 Process 可比较标签；Hotfix 的 `bundleVersion` 同时绑定代码与此配置身份，客户端版本需独立查询。
 - `tiangz_game_config_reload_successes_total` / `tiangz_game_config_reload_failures_total`：配置数据在线切换成功和拒绝次数。
 - `tiangz_game_config_commit_ms` / `tiangz_game_config_reload_total_ms`：最近一次成功切换在V8内提交和从收到命令到完成的总耗时。
 

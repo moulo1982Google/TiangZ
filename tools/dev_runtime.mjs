@@ -222,25 +222,11 @@ async function runRuntime(project, options) {
       do {
         if (pendingGameConfig) {
           pendingGameConfig = false;
-          process.stdout.write("[dev] 游戏配置已变化，正在生成并校验数据候选...\n");
-          let candidate;
-          if (project) {
-            await tool("codegen_module_configs.mjs", ...projectArgs.moduleArgs);
-            const output = await tool("build_game_config_data.mjs", ...projectArgs.moduleArgs, "--out-dir", projectArgs.dist);
-            candidate = immutableCandidateFromOutput(output, "game-config", projectArgs.dist);
-          } else {
-            await runNpm(["run", "codegen:module-config"]);
-            const output = await runNpmCapture(["run", "build:game-config"]);
-            candidate = gameConfigCandidateDirectoryFromOutput(output);
-          }
-          await stableGuard?.ready();
-          if (stopping || restartRequired) return;
-          if (!runtime.stdin.writable) throw new Error("Watcher stdin is closed");
-          runtime.stdin.write(`reload-config ${path.resolve(root, candidate)}\n`);
-          process.stdout.write(`[dev] 已提交配置切换：${candidate}\n`);
+          pendingHotfix = true;
         }
         if (pendingHotfix) {
           pendingHotfix = false;
+          await tool("codegen_module_configs.mjs", "--modules-dir", moduleCatalog.directory);
           process.stdout.write("[dev] Hotfix 已变化，正在生成注册表并检查类型...\n");
           let candidate;
           if (project) {

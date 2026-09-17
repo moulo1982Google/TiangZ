@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { atomicReleaseId } from "./atomic_release_identity.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const defaultStartup = path.join(root, "configs", "local", "cluster", "StartMachine.json");
@@ -38,9 +39,9 @@ try {
       candidate,
       targets: statuses.targets.map((target) => ({
         ...target,
-        action: target.hotfix.bundleVersion === candidate.bundleVersion
-          ? "skip"
-          : contractsEqual(target.hotfix.modelContract, candidate.modelContract) ? "apply" : "incompatible",
+        action: !contractsEqual(target.hotfix.modelContract, candidate.modelContract)
+          ? "incompatible"
+          : target.hotfix.bundleVersion === candidate.bundleVersion ? "skip" : "apply",
       })),
     };
     result = command === "plan" ? plan : await applyPlan(targets, plan, operationId);
@@ -119,19 +120,29 @@ async function inspectCandidate(candidateValue) {
   const directory = await realpath(path.resolve(root, candidateValue));
   const hotfix = await readFile(path.join(directory, "hotfix.js"));
   const manifest = await readJson(path.join(directory, "hotfix.manifest.json"));
-  const model = await readJson(path.join(root, "dist", "model.manifest.json"));
   if (manifest.formatVersion !== 1) throw new Error(`unsupported Hotfix manifest format ${manifest.formatVersion}`);
   const actualHash = createHash("sha256").update(hotfix).digest("hex");
   if (manifest.hotfixHash !== actualHash) throw new Error("candidate hotfix.js hash does not match its manifest");
-  for (const field of contractFields) {
-    if (manifest[field] !== model[field]) {
-      throw new Error(`candidate ${field}=${manifest[field]} does not match active Model contract ${model[field]}`);
-    }
+  const configBytes = await readFile(path.join(directory, "game-config/game-config.manifest.json"));
+  const configHash = createHash("sha256").update(configBytes).digest("hex");
+  if (manifest.gameConfigHash !== configHash) throw new Error("candidate Hotfix/config pair hash mismatch");
+  const releaseId = atomicReleaseId(manifest);
+  if (manifest.releaseId !== releaseId || !manifest.bundleVersion.endsWith(`+${releaseId}`)) throw new Error("candidate release identity mismatch");
+  const config = JSON.parse(configBytes);
+  for (const key of ["server", "serverHot", "serverCold", "client", "clientHot", "clientCold"]) {
+    const filename = { server: "server.json", serverHot: "server.hot.json", serverCold: "server.cold.json",
+      client: "client.json", clientHot: "client.hot.json", clientCold: "client.cold.json" }[key];
+    if (config[`${key}File`] !== filename) throw new Error("config filenames must be fixed");
+    const bytes = await readFile(path.join(directory, "game-config", filename));
+    if (createHash("sha256").update(bytes).digest("hex") !== config[`${key}Hash`]) throw new Error(`config hash mismatch: ${filename}`);
   }
+  if (config.moduleConfigsJson !== undefined && createHash("sha256").update(config.moduleConfigsJson).digest("hex") !== config.moduleConfigsHash) throw new Error("module config hash mismatch");
   return {
     directory,
     bundleVersion: requireString(manifest.bundleVersion, "candidate bundleVersion"),
     hotfixHash: actualHash,
+    releaseId,
+    gameConfigHash: configHash,
     buildMode: manifest.buildMode,
     modelContract: Object.fromEntries(contractFields.map((field) => [field, manifest[field]])),
   };

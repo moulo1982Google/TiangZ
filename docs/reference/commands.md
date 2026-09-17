@@ -1,5 +1,7 @@
 # 常用命令参考
 
+> 2026-09-17：Hotfix 与 Luban 配置改为完整配对发布、帧间原子提交。`build:hotfix` / `build:game-config` 均输出联合候选；`reload` 和本机 `hotfix plan/apply/status/rollback` 操作整套，`reload-config` 仅作联合加载别名。Hotfix manifest 包含 gameConfigHash/releaseId，配置单改也改变 bundleVersion。现有 pendingAsync/pendingIngress 安全条件保留；等待期间仍推进主循环。Model/schema/冷数据变化仍重启，客户端和持久业务状态不随发布回滚。旧的两条独立在线切换说明已被取代；首次使用须重建宿主与 Model 并重启。详细流程以 docs/design/typescript-hot-reload.md 的联合发布章节为准。
+
 ## 新游戏
 
 ```powershell
@@ -12,6 +14,8 @@ npm run project:create -- --path ../MyGame --id org.example.game
 
 ## 引擎维护
 
+热更一小时持续负载（先取得测试授权）：`node tools/hotfix_load_soak.mjs --seconds 3600 --clients 500 --reload-seconds 600 --requests-per-second 2`。先构建匹配宿主并运行完整回归；报告留在脚本打印的 `temp/hotfix-load-*`，不连接现有数据库。边界与判定见[热更设计](../design/typescript-hot-reload.md#持续负载与换机复测)。
+
 持久 ID 隔离验收：`node tools/global_id_runtime_self_test.mjs`。需先构建 TiangZ 与同级 DBProxy 的 debug 二进制；只启动自有内存后端与临时进程，不连接现有数据库。生产切换见[号段配置与恢复约束](../design/global-id-ranges.md)。
 
 合服只读规划：`node tools/realm_merge_plan.mjs --catalog <目录.json> --request <请求.json> --policy <模块策略.json>`。目录/请求为格式 v2，策略为格式 v1；输出不是可执行迁移。开发者职责见[租户与区服边界](../design/tenant-realm-foundation.md)。
@@ -20,6 +24,10 @@ npm run project:create -- --path ../MyGame --id org.example.game
 | --- | --- |
 | codegen | 引擎通用生成物 |
 | build | 默认 modules 宿主的 TS 和初始配置包 |
+| build:hotfix / build:game-config | 完整 Hotfix + 配置的不可变联合候选，不重建 Model |
+| hotfix -- plan/apply/status/rollback | 本机显式启用管理入口的 Process：检查、提交、查询、整套回滚 |
+| test:hotfix-load | 独立本机20客户端短测：主动暂停超时恢复、配对拒绝/切换/回滚与序号核验 |
+| test:hotfix-faults | 双进程、500排队请求、内部暂存满、断线/停机故障矩阵；默认不连接DB，真实存储需显式选择，见[复跑说明](../design/hotfix-fault-acceptance-20260917.md) |
 | build:runtime:debug | 不带游戏 Native 的 Rust 宿主 |
 | modules:link -- --source <模块> --modules-dir <目录> --name <名称> | 安装外部模块根 |
 | modules:prepare -- --modules-dir <目录> | 编辑器路径与声明发现 |

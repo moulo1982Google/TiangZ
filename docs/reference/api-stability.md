@@ -4,6 +4,14 @@ TiangZ从`0.3.10-alpha.0`开始建立可执行的公共API边界。目标不是�
 
 ## 版本身份
 
+### 2026-09-17：Hotfix 与配置联合加载迁移
+
+首次升级须重新构建 Rust 宿主、Model 与完整启动包，并重启 Process。旧的未配对 Hotfix/配置制品不可直接交给新 Runtime。
+
+`build:game-config` 改为生成完整联合候选，`build:game-config:startup` 改为完整构建。`reload-config` 仅保留为联合候选的命令别名；独立 `__etsInstallGameConfig` 内部桥已移除。发布身份包含代码、配置及冻结契约，配置指标身份改为完整配置 manifest 哈希。测试工具应使用 Begin/Commit 的联合路径，不能重新引入独立在线配置交换。详见[热更设计](../design/typescript-hot-reload.md)。
+
+### 版本号检查
+
 根目录`Cargo.toml`的`package.version`是版本参考源。开发阶段允许`package.json`、`package-lock.json`和README暂时不同步，`npm run verify:version`只提示差异；准备发布时才把这些副本作为冻结门禁：
 
 ```powershell

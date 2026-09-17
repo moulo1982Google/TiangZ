@@ -220,6 +220,7 @@ async fn run_reader(
                 .then(|| inner_frame_rpc_id(&frame))
                 .flatten();
             let event = ProcessEvent::Frame {
+                internal: connection_kind == ConnectionKind::Internal,
                 scene_index,
                 connection_id,
                 frame,

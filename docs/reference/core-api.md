@@ -26,7 +26,7 @@
 - `TimerSystem.NewOnceTimer(delayMs, callback)`：创建一次性游戏定时器。
 - `TimerSystem.NewRepeatedTimer(intervalMs, callback)`：创建重复游戏定时器；Process 卡顿时只触发一次并跳过过期周期，不突发补齐。
 - `TimerSystem.Cancel(timerId, reason)`：立即取消定时器并至多通知一次取消回调。
-- `TimerSystem.WaitAsync(delayMs)`：等待游戏时钟推进；它不是 Rust/Tokio IO 超时。
+- `TimerSystem.WaitAsync(delayMs)`：兼容的游戏时钟等待能力，**禁止游戏业务调用**（2026-09-17 硬约束）；仅供受控基础设施/测试使用，不是 Rust/Tokio IO 超时。业务延迟必须使用所有者 `NewOnceTimer/NewRepeatedTimer` 方法名回调，不能用 Promise 或 `.then` 包装绕过，见[时间调度规则](../patterns/timer-update-and-action.md)。
 - `TimerSystem.ServerTime()`：返回当前Unix毫秒；框架不提供`TimerComponent`同类型别名。
 - Component 实现同步 `Update(): void`、`LateUpdate(): void` 或 `FrameFlush(): void` 后，会在 `AddComponent` 成功时自动注册，在 `RemoveComponent`/销毁时自动注销。每个固定逻辑帧严格按 `Update -> LateUpdate -> FrameFlush` 执行，三个阶段都禁止返回 Promise。
 - `Component.NewOnceTimer(delayMs, methodName, args, { onCancelled })` / `NewRepeatedTimer(...)`：参数原样传回；业务主动取消时以`(args, context)`调用取消方法。定时器随组件销毁静默清理，触发时按方法名解析当前Hotfix prototype。

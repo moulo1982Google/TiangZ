@@ -2,10 +2,19 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import process from "node:process";
+import assert from "node:assert/strict";
+import { atomicReleaseId, releaseIdentityFields } from "./atomic_release_identity.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 await run(["tools/build_runtime_bundles.mjs"]);
 await run(["tools/build_runtime_bundles.mjs", "--hotfix-only"]);
+await run(["tools/build_runtime_bundles.mjs", "--hotfix-only"]);
+const releaseManifest = JSON.parse(await readFile(path.join(root, "dist/hotfix.manifest.json"), "utf8"));
+assert.equal(atomicReleaseId(releaseManifest), releaseManifest.releaseId);
+for (const field of releaseIdentityFields) {
+  assert.notEqual(atomicReleaseId({ ...releaseManifest, [field]: `${releaseManifest[field]}-changed` }), releaseManifest.releaseId, `${field} must affect the release identity`);
+}
+assert.notEqual(atomicReleaseId({ ...releaseManifest, bundleVersion: "other-version" }), releaseManifest.releaseId);
 
 const hotfixBundle = await readFile(path.join(root, "dist", "hotfix.js"), "utf8");
 if (/^\s*import\s/m.test(hotfixBundle)) {

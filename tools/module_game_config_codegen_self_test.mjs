@@ -53,9 +53,20 @@ try {
   runInNewContext(await readFile(path.join(dist, "model.js"), "utf8"), context);
   const hostManifest = JSON.parse(await readFile(path.join(dist, "game-config/game-config.manifest.json"), "utf8"));
   const hostData = await readFile(path.join(dist, "game-config/server.json"), "utf8");
-  const install = (manifest) => JSON.parse(context.__etsInstallGameConfig(JSON.stringify(manifest), hostData));
-  assert.equal(install(hostManifest).moduleConfigGeneration, 1);
   const registry = context.__tiangzModelExports.ModuleConfigRegistry;
+  const hotfixManifest = JSON.parse(await readFile(path.join(dist, "hotfix.manifest.json"), "utf8"));
+  const hotfixSource = await readFile(path.join(dist, "hotfix.js"), "utf8");
+  assert.equal(context.__etsInstallGameConfig, undefined, "no standalone config reload bridge");
+  const install = (manifest) => {
+    try {
+      context.__etsBeginHotfix(JSON.stringify({ ...hotfixManifest,
+        runtimeConfig: { manifestJson: JSON.stringify(manifest), dataJson: hostData } }));
+      runInNewContext(hotfixSource, context);
+      context.__etsCommitHotfix();
+      return { moduleConfigGeneration: registry.Generation };
+    } catch (error) { context.__etsAbortHotfix(String(error)); throw error; }
+  };
+  assert.equal(install(hostManifest).moduleConfigGeneration, 1);
   const old = registry.Get("org.example.cards");
   const candidates = JSON.parse(hostManifest.moduleConfigsJson);
   candidates[0].tables.cards_tbcard[0].name = "Updated Catalog";

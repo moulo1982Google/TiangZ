@@ -17,6 +17,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { loadGameModuleCatalog } from "../game_module_catalog.mjs";
 import { moduleNativeFingerprint } from "../module_native.mjs";
+import { atomicReleaseId } from "../atomic_release_identity.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 if (process.argv[2] === "--smoke-existing") {
@@ -58,6 +59,8 @@ if (hasNative && !binary.startsWith(nativeBuild + path.sep)) throw new Error("Na
 const model = JSON.parse(readFileSync(path.join(bundles, "model.manifest.json"), "utf8"));
 const hotfix = JSON.parse(readFileSync(path.join(bundles, "hotfix.manifest.json"), "utf8"));
 const config = JSON.parse(readFileSync(path.join(bundles, "game-config/game-config.manifest.json"), "utf8"));
+const gameConfigHash = sha256(path.join(bundles, "game-config/game-config.manifest.json"));
+const pairedReleaseId = atomicReleaseId(hotfix);
 if (model.moduleGraphHash !== catalog.graphHash || hotfix.moduleGraphHash !== catalog.graphHash ||
     model.modelFingerprint !== hotfix.modelFingerprint || sha256(path.join(bundles, "model.js")) !== model.modelFingerprint ||
     sha256(path.join(bundles, "hotfix.js")) !== hotfix.hotfixHash) throw new Error("release bundles do not match the installed module graph or hashes");
@@ -72,6 +75,8 @@ for (const [file, field] of [["server.json", "serverHash"], ["server.hot.json", 
   ["client.json", "clientHash"], ["client.hot.json", "clientHotHash"], ["client.cold.json", "clientColdHash"]]) {
   if (sha256(path.join(bundles, "game-config", file)) !== config[field]) throw new Error(`release config hash mismatch: ${file}`);
 }
+if (hotfix.gameConfigHash !== gameConfigHash || hotfix.releaseId !== pairedReleaseId ||
+    !hotfix.bundleVersion?.endsWith(`+${pairedReleaseId}`)) throw new Error("release Hotfix and config are not a matching atomic candidate");
 if (hasNative) {
   const native = JSON.parse(readFileSync(path.join(nativeBuild, `${profile}.manifest.json`), "utf8"));
   if (native.nativeModuleHash !== await moduleNativeFingerprint(catalog) || native.nativeModuleHash !== model.nativeModuleHash ||

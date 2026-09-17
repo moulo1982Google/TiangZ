@@ -73,7 +73,7 @@ if (initial) {
   );
 } else {
   process.stdout.write(
-    "[build:game-config] 仅生成热重载候选，不会更新dist/game-config；重启生效请运行npm run build:game-config:startup。\n",
+    "[build:game-config] 仅生成构建内部使用的数据暂存包，不可单独在线提交；发布请运行npm run build:hotfix，重启包请运行npm run build。\n",
   );
 }
 

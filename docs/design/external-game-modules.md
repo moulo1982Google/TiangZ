@@ -1,5 +1,7 @@
 # 外置游戏模块
 
+> 2026-09-17：Hotfix 与 Luban 配置改为完整配对发布、帧间原子提交。`build:hotfix` / `build:game-config` 均输出联合候选；`reload` 和本机 `hotfix plan/apply/status/rollback` 操作整套，`reload-config` 仅作联合加载别名。Hotfix manifest 包含 gameConfigHash/releaseId，配置单改也改变 bundleVersion。现有 pendingAsync/pendingIngress 安全条件保留；等待期间仍推进主循环。Model/schema/冷数据变化仍重启，客户端和持久业务状态不随发布回滚。旧的两条独立在线切换说明已被取代；首次使用须重建宿主与 Model 并重启。详细流程以 docs/design/typescript-hot-reload.md 的联合发布章节为准。
+
 更新时间：2026-09-15。当前宿主开发基线：`0.6.0-alpha.0`。
 
 ## 宿主装配模式
@@ -8,7 +10,7 @@
 
 当前工作重点是完善 TiangZ 的通用开发流程；SLG 仅作接入验证，不以增加 SLG 玩法代替框架改进。
 
-`--host-profile modules` 选择只装配 Core 和显式外置模块的 TypeScript 宿主，也是当前默认且唯一支持的模式；旧 `demo` 明确报错。宿主通过 `ProcessBootstrap` 提供进程生命周期、事件投递、出站打包和 Hotfix 屏障。
+`--host-profile modules` 选择只装配 Core 和显式外置模块的 TypeScript 宿主，也是当前默认且唯一支持的模式；旧 `demo` 明确报错。宿主通过 `ProcessBootstrap` 提供进程生命周期、事件投递、出站打包和 Hotfix 帧间提交安全检查。
 
 在 TiangZ 根目录执行（路径仅为示例）：
 
@@ -101,7 +103,7 @@ npm run dev
 
 这不是第二套配置系统。宿主`game_config/`与模块`game_config/`使用同一Luban编译能力，只是schema所有权和发布范围不同：宿主内置信封为空，游戏表全部属于对应模块。模块应使用生成的`Tables`解析自己的payload，再投影到Core已有的中立Profile；不得把原始导入JSON直接强转为业务类型。`RuntimeDataPack`仍然只是部署信封，负责发现、所有权、大小、哈希和冻结，不取代Luban schema。来源数据库、Excel或第三方服务器导入器只负责产出模块Luban源数据，不能成为运行时格式。
 
-模块配置 schema 改变后必须重新生成、完整构建并重启 Process；同 schema 的数据更新可通过完整配置候选走既有 `reload-config`，详见下文“配置导出与运行时更新”。这与启动时载入、仍需重启的 `RuntimeDataPack` 不同；已捕获的数据快照也不会自动更新。
+模块配置 schema 改变后必须重新生成、完整构建并重启 Process；同 schema 的数据更新可通过完整 Hotfix + 配置候选走 `reload`，详见下文“配置导出与运行时更新”。这与启动时载入、仍需重启的 `RuntimeDataPack` 不同；已捕获的数据快照也不会自动更新。
 
 ## Manifest v1
 

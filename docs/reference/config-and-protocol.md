@@ -123,7 +123,7 @@ Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置�
 ```json
 {
   "lifecycle": {
-    "hotfixReloadTimeoutMs": 30000,
+    "hotfixReloadTimeoutMs": 3000,
     "hotfixOperations": {
       "authTokenEnv": "TIANGZ_HOTFIX_ADMIN_TOKEN"
     }
@@ -175,7 +175,7 @@ Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置�
 
 `lifecycle.stopTimeoutMs` 控制 TS `onStop`、玩家保存等停机工作的最长等待时间，默认 `10000`，允许范围为 `100` 到 `120000`。超时会让进程以错误退出，不能静默假装保存成功。
 
-`lifecycle.hotfixReloadTimeoutMs`控制Reload等待Scene入口和异步Handler排空的最长时间，默认`30000`，范围同样为`100`到`120000`。超时只拒绝候选并保留旧generation，不会关闭Process或断开客户端。
+`lifecycle.hotfixReloadTimeoutMs`控制候选独立线程预检完成后的主动暂停预算，默认`3000`（3秒），范围为`100`到`120000`。新业务暂缓投递，在途完成通知继续处理；预留最多100ms（不超过10%）给同步提交，排空超时或内部请求暂存达到128条则放弃热更并恢复旧版本。该期限不能中断同步求值或提交，不是端到端停顿硬上限；RPC超时不随此项改变。已有显式配置优先，新机制需重建Rust/Model并重启。完成通道、过载和客户端超时边界见[热更设计](../design/typescript-hot-reload.md)。
 
 `lifecycle.restart`是仅由Watcher消费的可选监管策略。省略时子进程退出会触发整组失败收束；配置`maxAttempts/windowMs/backoffMs`后，Watcher只在预算内重启该进程，预算耗尽仍关闭整组。自动重启不是数据恢复开关：只有具备持久化、所有权代次和路由恢复契约的进程才应启用。
 

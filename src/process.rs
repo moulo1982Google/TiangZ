@@ -1,7 +1,7 @@
 //! 协调有界宿主队列、单 V8 业务线程、端点、Update 与停机。 / Coordinates bounded host queues, one V8 business thread, endpoints, updates, and shutdown.
 
 use std::collections::BTreeMap;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -19,7 +19,6 @@ use tokio::sync::{mpsc as tokio_mpsc, watch};
 
 use crate::config::{ProcessConfig, ProcessSchedulingMode, RuntimeConfig, SceneConfig};
 use crate::data_pack::{LoadedRuntimeDataPack, load_runtime_data_packs};
-use crate::game_config::GameConfigBundle;
 use crate::health::{
     GameObservabilitySnapshot, HealthServer, LatencyObservabilitySnapshot,
     MailboxObservabilitySnapshot, NativeDataObservabilitySnapshot, ProcessHealthState,
@@ -28,12 +27,11 @@ use crate::health::{
     TransportDiagnosticObservabilitySnapshot, TransportOverloadStageObservabilitySnapshot,
 };
 use crate::host::{
-    BinaryOutboundBatch, HostSceneCompletion, call_js_install_game_config,
-    call_js_push_host_events, call_js_start_process, call_js_stop_process, call_js_update_binary,
-    configure_host_scene_bridge, create_runtime, poll_js_stop_process, pump_js_event_loop_once,
-    take_close_connection_requests,
+    BinaryOutboundBatch, HostSceneCompletion, call_js_push_host_events, call_js_start_process,
+    call_js_stop_process, call_js_update_binary, configure_host_scene_bridge, create_runtime,
+    poll_js_stop_process, pump_js_event_loop_once, take_close_connection_requests,
 };
-use crate::hotfix::{HotfixInstallResult, RuntimeBundles};
+use crate::hotfix::{HotfixCandidate, HotfixInstallResult, RuntimeBundles};
 use crate::inspector::ProcessInspector;
 use crate::shutdown::{
     ParentControlCommand, receive_parent_control, spawn_parent_control_receiver,
@@ -113,6 +111,7 @@ pub(crate) enum ProcessEvent {
     Frame {
         scene_index: u32,
         connection_id: u64,
+        internal: bool,
         frame: Bytes,
     },
     Disconnect {
@@ -181,7 +180,9 @@ impl ProcessEvent {
 
     fn ingress_class(&self) -> ProcessIngressClass {
         match self {
-            Self::Frame { frame, .. } if crate::transport::inner_frame_rpc_id(frame).is_none() => {
+            Self::Frame {
+                frame, internal, ..
+            } if !internal || crate::transport::inner_frame_rpc_id(frame).is_none() => {
                 ProcessIngressClass::Data
             }
             Self::Frame { .. }
@@ -198,11 +199,6 @@ pub(crate) enum RuntimeControl {
         requested_at: Instant,
         response: tokio::sync::oneshot::Sender<std::result::Result<HotfixReloadReport, String>>,
     },
-    ReloadGameConfig {
-        candidate: Box<GameConfigBundle>,
-        requested_at: Instant,
-        response: tokio::sync::oneshot::Sender<std::result::Result<GameConfigReloadReport, String>>,
-    },
 }
 
 /// Hotfix 控制面返回的分段结果，同时作为结构化日志与性能测试的稳定字段。 / Segmented Hotfix control result used by structured logs and performance tests.
@@ -211,6 +207,7 @@ pub(crate) enum RuntimeControl {
 pub(crate) struct HotfixReloadReport {
     pub(crate) candidate_directory: String,
     pub(crate) bundle_version: String,
+    pub(crate) config_fingerprint: String,
     pub(crate) generation: u64,
     pub(crate) validation_ms: f64,
     pub(crate) preflight_ms: f64,
@@ -219,18 +216,8 @@ pub(crate) struct HotfixReloadReport {
     pub(crate) candidate_eval_ms: f64,
     pub(crate) commit_ms: f64,
     pub(crate) reload_total_ms: f64,
+    pub(crate) pause_ms: f64,
     pub(crate) status_json: String,
-}
-
-/// 配置数据控制面结果；schema不变时只替换Snapshot，不改变Model或Hotfix generation。 / Config-data control result; a schema-compatible swap changes only the snapshot, not Model or Hotfix generation.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct GameConfigReloadReport {
-    candidate_directory: String,
-    data_fingerprint: String,
-    commit_ms: f64,
-    reload_total_ms: f64,
-    status_json: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -859,16 +846,12 @@ pub async fn run_runtime_config(
     let runtime_data_packs = load_runtime_data_packs(resolved_config, &config.process.data_packs)?;
     init_remote_transport();
     let runtime_bundles = RuntimeBundles::load(root)?;
-    let game_config_schema_fingerprint =
-        runtime_bundles.game_config_schema_fingerprint().to_string();
-    let initial_game_config = GameConfigBundle::load(&root.join("dist/game-config"))?;
-    initial_game_config.verify_schema(&game_config_schema_fingerprint)?;
 
     tracing::info!(
         target: "tiangz::runtime",
         version = crate::version::current(),
         hotfix = runtime_bundles.bundle_version(),
-        game_config = initial_game_config.data_fingerprint(),
+        game_config = runtime_bundles.config_fingerprint(),
         process = %config.process.name,
         scene_count = config.scenes.len(),
         data_pack_count = runtime_data_packs.len(),
@@ -972,7 +955,6 @@ pub async fn run_runtime_config(
             scenes,
             known_scenes,
             runtime_bundles,
-            initial_game_config,
             runtime_data_packs,
             event_rx,
             runtime_control_rx,
@@ -1000,7 +982,7 @@ pub async fn run_runtime_config(
             command = receive_parent_control(&mut parent_control) => {
                 match command? {
                     ParentControlCommand::Shutdown => break false,
-                    ParentControlCommand::Reload(candidate_directory) => {
+                    ParentControlCommand::Reload(candidate_directory) | ParentControlCommand::ReloadConfig(candidate_directory) => {
                         let candidate_directory = if candidate_directory.is_absolute() {
                             candidate_directory
                         } else {
@@ -1026,51 +1008,7 @@ pub async fn run_runtime_config(
                             }
                         });
                     }
-                    ParentControlCommand::ReloadConfig(candidate_directory) => {
-                        let candidate_directory = if candidate_directory.is_absolute() {
-                            candidate_directory
-                        } else {
-                            root.join(candidate_directory)
-                        };
-                        let requested_at = Instant::now();
-                        match GameConfigBundle::load(&candidate_directory)
-                            .and_then(|candidate| {
-                                candidate.verify_schema(&game_config_schema_fingerprint)?;
-                                Ok(candidate)
-                            })
-                        {
-                            Ok(candidate) => {
-                                let (response, completed) = tokio::sync::oneshot::channel();
-                                runtime_control_tx
-                                    .send(RuntimeControl::ReloadGameConfig {
-                                        candidate: Box::new(candidate),
-                                        requested_at,
-                                        response,
-                                    })
-                                    .map_err(|_| anyhow::anyhow!("V8 runtime control channel is stopped"))?;
-                                tokio::spawn(async move {
-                                    match completed.await {
-                                        Ok(Ok(report)) => tracing::info!(
-                                            target: "tiangz::game_config",
-                                            report = %serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_string()),
-                                            "game config reload completed"
-                                        ),
-                                        Ok(Err(error)) => tracing::error!(target: "tiangz::game_config", %error, "game config reload rejected; active snapshot preserved"),
-                                        Err(_) => tracing::warn!(target: "tiangz::game_config", "game config reload response was dropped during shutdown"),
-                                    }
-                                });
-                            }
-                            Err(error) => {
-                                health_state.record_game_config_failure();
-                                tracing::error!(
-                                    target: "tiangz::game_config",
-                                    error = %format!("{error:#}"),
-                                    candidate = %candidate_directory.display(),
-                                    "game config candidate validation failed; active snapshot preserved"
-                                );
-                            }
-                        }
-                    }
+
                 }
             }
         }
@@ -1136,7 +1074,6 @@ fn run_process_runtime(
     scenes: Vec<SceneConfig>,
     known_scenes: Vec<SceneConfig>,
     runtime_bundles: RuntimeBundles,
-    initial_game_config: GameConfigBundle,
     runtime_data_packs: Vec<LoadedRuntimeDataPack>,
     mut event_rx: ProcessEventReceiver,
     runtime_control_rx: mpsc::Receiver<RuntimeControl>,
@@ -1209,23 +1146,7 @@ fn run_process_runtime(
         project_root.join("dist").display().to_string(),
         runtime_bundles.model_contract_status(),
     );
-    let active_game_config_cold_fingerprint =
-        initial_game_config.cold_data_fingerprint().to_string();
-    let initial_config_status = call_js_install_game_config(
-        &js_event_loop,
-        &mut runtime,
-        &entrypoints,
-        initial_game_config.manifest_json(),
-        initial_game_config.server_data_json(),
-    )
-    .context("failed to install initial game config data")?;
-    tracing::info!(
-        target: "tiangz::game_config",
-        data_fingerprint = initial_game_config.data_fingerprint(),
-        status = %initial_config_status,
-        "initial game config snapshot installed"
-    );
-    health_state.record_initial_game_config(initial_game_config.data_fingerprint().to_string());
+    health_state.record_initial_game_config(runtime_bundles.config_fingerprint().to_string());
 
     let process_config = json!({
         "process": process,
@@ -1263,11 +1184,12 @@ fn run_process_runtime(
     let mut pending_async = false;
     let mut pending_ingress = false;
     let mut pending_reload: Option<(PathBuf, Instant, tokio::sync::oneshot::Sender<_>)> = None;
-    let mut pending_config_reload: Option<(
-        Box<GameConfigBundle>,
-        Instant,
-        tokio::sync::oneshot::Sender<_>,
-    )> = None;
+    let runtime_bundles = Arc::new(runtime_bundles);
+    let mut preparing: Option<thread::JoinHandle<Result<PreparedHotfix>>> = None;
+    let mut prepared: Option<PreparedHotfix> = None;
+    let mut drain_started: Option<Instant> = None;
+    let mut deferred_control = VecDeque::new();
+    let mut pause_overflow = false;
     let hotfix_reload_timeout = Duration::from_millis(process.lifecycle.hotfix_reload_timeout_ms);
     loop {
         while let Ok(control) = runtime_control_rx.try_recv() {
@@ -1281,85 +1203,111 @@ fn run_process_runtime(
                         let _ = response
                             .send(Err("another Hotfix reload is already pending".to_string()));
                     } else {
-                        pending_reload = Some((candidate_directory, requested_at, response));
-                    }
-                }
-                RuntimeControl::ReloadGameConfig {
-                    candidate,
-                    requested_at,
-                    response,
-                } => {
-                    if pending_config_reload.is_some() {
-                        let _ = response.send(Err(
-                            "another game config reload is already pending".to_string()
-                        ));
-                    } else {
-                        pending_config_reload = Some((candidate, requested_at, response));
+                        let bundles = Arc::clone(&runtime_bundles);
+                        let directory = candidate_directory.clone();
+                        let log_level = crate::logging::typescript_min_level(&process.logging);
+                        match thread::Builder::new()
+                            .name("hotfix-preflight".into())
+                            .spawn(move || prepare_hotfix_reload(&bundles, &directory, log_level))
+                        {
+                            Ok(worker) => {
+                                preparing = Some(worker);
+                                pending_reload =
+                                    Some((candidate_directory, requested_at, response));
+                            }
+                            Err(error) => {
+                                health_state.record_hotfix_failure();
+                                let _ = response.send(Err(format!(
+                                    "failed to start Hotfix preflight: {error}"
+                                )));
+                            }
+                        }
                     }
                 }
             }
         }
 
-        if let Some((candidate, requested_at, response)) = pending_config_reload.take() {
-            let result = if candidate.cold_data_fingerprint() != active_game_config_cold_fingerprint
-            {
-                Err(anyhow::anyhow!(
-                    "cold game config changed: active={}, candidate={}; rebuild and restart the Process",
-                    active_game_config_cold_fingerprint,
-                    candidate.cold_data_fingerprint(),
-                ))
-            } else {
-                execute_game_config_reload(
-                    &js_event_loop,
-                    &mut runtime,
-                    &entrypoints,
-                    &candidate,
-                    requested_at,
-                )
-            };
-            match &result {
-                Ok(report) => health_state.record_game_config_success(
-                    report.data_fingerprint.clone(),
-                    report.commit_ms,
-                    report.reload_total_ms,
-                ),
-                Err(_) => health_state.record_game_config_failure(),
-            }
-            let _ = response.send(result.map_err(|error| format!("{error:#}")));
-            continue;
-        }
-
-        if pending_reload
+        if preparing
             .as_ref()
-            .is_some_and(|(_, requested_at, _)| requested_at.elapsed() >= hotfix_reload_timeout)
+            .is_some_and(|worker| worker.is_finished())
+        {
+            let result = preparing
+                .take()
+                .unwrap()
+                .join()
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("Hotfix preflight worker panicked")));
+            match result {
+                Ok(candidate) => {
+                    prepared = Some(candidate);
+                    drain_started = Some(Instant::now());
+                    tracing::info!(target: "tiangz::hotfix", "Hotfix ingress pause started");
+                }
+                Err(error) => {
+                    if let Some((_, _, response)) = pending_reload.take() {
+                        health_state.record_hotfix_failure();
+                        let _ = response.send(Err(format!("{error:#}")));
+                    }
+                }
+            }
+        }
+
+        // 为同步提交留少量余量；同步V8执行不能靠此预算强行中断。
+        // Reserve time for synchronous commit; this budget cannot interrupt synchronous V8 code.
+        let drain_budget = hotfix_reload_timeout
+            .saturating_sub(Duration::from_millis(100).min(hotfix_reload_timeout / 10));
+        if (pause_overflow
+            || drain_started.is_some_and(|started| started.elapsed() >= drain_budget)
+            || (preparing.is_none()
+                && pending_reload
+                    .as_ref()
+                    .is_some_and(|(_, _, reply)| reply.is_closed())))
             && let Some((candidate_directory, _, response)) = pending_reload.take()
         {
+            let reason = if pause_overflow {
+                "deferred inner request capacity reached"
+            } else if response.is_closed() {
+                "operation caller disconnected"
+            } else {
+                "drain deadline exceeded"
+            };
+            let pause_ms = drain_started.map(elapsed_ms).unwrap_or_default();
+            prepared = None;
+            drain_started = None;
+            pause_overflow = false;
+            tracing::warn!(target: "tiangz::hotfix", reason, pause_ms, pending_async, pending_ingress, deferred_requests = deferred_control.len(), "Hotfix ingress pause aborted; previous release resumed");
             health_state.record_hotfix_failure();
             let _ = response.send(Err(format!(
-                "Hotfix candidate {} did not reach a safe commit barrier within {}ms",
+                "Hotfix candidate {} rejected: {reason}; window={}ms pause={pause_ms:.1}ms pendingAsync={pending_async} pendingIngress={pending_ingress} deferredRequests={}",
                 candidate_directory.display(),
                 hotfix_reload_timeout.as_millis(),
+                deferred_control.len(),
             )));
             continue;
         }
 
-        if !pending_async
+        if prepared.is_some()
+            && !pending_async
             && !pending_ingress
-            && let Some((candidate_directory, requested_at, response)) = pending_reload.take()
+            && let Some((_, requested_at, response)) = pending_reload.take()
         {
             let next_generation = active_generation + 1;
             let result = execute_hotfix_reload(
-                &runtime_bundles,
+                prepared.take().unwrap(),
                 &js_event_loop,
                 &mut runtime,
                 &entrypoints,
-                &candidate_directory,
                 requested_at,
+                drain_started.take().unwrap(),
                 next_generation,
-                crate::logging::typescript_min_level(&process.logging),
             );
-            if result.is_ok() {
+            tracing::info!(target: "tiangz::hotfix", success = result.is_ok(), "Hotfix ingress resumed");
+            if let Ok(report) = &result {
                 active_generation = next_generation;
+                health_state.record_game_config_success(
+                    report.config_fingerprint.clone(),
+                    report.commit_ms,
+                    report.reload_total_ms,
+                );
             }
             match &result {
                 Ok(report) => health_state.record_hotfix_success(
@@ -1373,7 +1321,10 @@ fn run_process_runtime(
                     report.commit_ms,
                     report.reload_total_ms,
                 ),
-                Err(_) => health_state.record_hotfix_failure(),
+                Err(_) => {
+                    health_state.record_hotfix_failure();
+                    health_state.record_game_config_failure();
+                }
             }
             let _ = response.send(result.map_err(|error| format!("{error:#}")));
             continue;
@@ -1384,7 +1335,17 @@ fn run_process_runtime(
         let mut shutdown_requested = false;
         let wait_ms = scheduling.idle_tick_ms;
         let batch_capacity = scheduling.batch_capacity(queue_stats.depth.load(Ordering::Relaxed));
-        if pending_ingress {
+        // 内部RPC请求也可能是新业务；暂存有界请求，完成通知仍走控制通道。
+        // Inner RPC requests can start new business too; defer them boundedly while completions flow.
+        if drain_started.is_none() {
+            while event_count < batch_capacity as u32 {
+                let Some(event) = deferred_control.pop_front() else {
+                    break;
+                };
+                push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
+            }
+        }
+        if pending_ingress || drain_started.is_some() {
             // TS still has data ingress queued. Keep the control lane flowing so Probe,
             // disconnect, and completion responses cannot be rejected behind a data backlog.
             // Bound reinjection so the TS pump retains capacity to drain its existing queue.
@@ -1393,6 +1354,14 @@ fn run_process_runtime(
                 match event_rx.try_recv_control() {
                     Ok(event) => {
                         queue_stats.dequeue(event.kind(), event.ingress_class());
+                        if drain_started.is_some() && matches!(&event, ProcessEvent::Frame { .. }) {
+                            deferred_control.push_back(event);
+                            if deferred_control.len() >= MAX_PENDING_INGRESS_CONTROL_EVENTS {
+                                pause_overflow = true;
+                                break;
+                            }
+                            continue;
+                        }
                         if matches!(&event, ProcessEvent::Shutdown) {
                             shutdown_requested = true;
                             break;
@@ -1402,7 +1371,7 @@ fn run_process_runtime(
                     Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
                 }
             }
-        } else {
+        } else if event_count == 0 {
             match event_rx.recv_timeout(Duration::from_millis(wait_ms)) {
                 Ok(event) => {
                     queue_stats.dequeue(event.kind(), event.ingress_class());
@@ -1419,7 +1388,11 @@ fn run_process_runtime(
 
         let coalesce_deadline = scheduling
             .coalesce_deadline(queue_stats.depth.load(Ordering::Relaxed) + event_count as usize);
-        while !pending_ingress && !shutdown_requested && event_count < batch_capacity as u32 {
+        while !pending_ingress
+            && drain_started.is_none()
+            && !shutdown_requested
+            && event_count < batch_capacity as u32
+        {
             match event_rx.try_recv() {
                 Ok(event) => {
                     queue_stats.dequeue(event.kind(), event.ingress_class());
@@ -1454,6 +1427,7 @@ fn run_process_runtime(
             &mut last_process_cpu_time_ms,
             &mut last_resource_sample_at,
             &health_state,
+            drain_started.is_some(),
         )?;
         if shutdown_requested {
             break;
@@ -1465,12 +1439,6 @@ fn run_process_runtime(
             "Process stopped before Hotfix reached its commit barrier".to_string(),
         ));
     }
-    if let Some((_, _, response)) = pending_config_reload {
-        let _ = response.send(Err(
-            "Process stopped before game config reload was committed".to_string(),
-        ));
-    }
-
     let pending_stop = call_js_stop_process(&js_event_loop, &mut runtime, &entrypoints)
         .context("failed to begin TypeScript shutdown")?;
     let stop_deadline =
@@ -1494,7 +1462,7 @@ fn run_process_runtime(
         }
         pump_js_event_loop_once(&js_event_loop, &mut runtime)?;
         // 停机模式的Update只提交RPC队列，不运行游戏Tick。 / Shutdown updates submit RPC queues without running gameplay ticks.
-        call_js_update_binary(&js_event_loop, &mut runtime, &entrypoints, false)?;
+        call_js_update_binary(&js_event_loop, &mut runtime, &entrypoints, false, false)?;
         if let Some(result) = poll_js_stop_process(&mut runtime, &pending_stop)? {
             break result;
         }
@@ -1516,48 +1484,19 @@ fn run_process_runtime(
     Ok(())
 }
 
-/// 在两个Update之间构造并替换配置Snapshot；失败不会修改当前Registry。 / Builds and swaps a config snapshot between updates; failure leaves the active registry untouched.
-fn execute_game_config_reload(
-    js_event_loop: &tokio::runtime::Runtime,
-    runtime: &mut deno_core::JsRuntime,
-    entrypoints: &crate::host::JsEntrypoints,
-    candidate: &GameConfigBundle,
-    requested_at: Instant,
-) -> Result<GameConfigReloadReport> {
-    let commit_started = Instant::now();
-    let status_json = call_js_install_game_config(
-        js_event_loop,
-        runtime,
-        entrypoints,
-        candidate.manifest_json(),
-        candidate.server_data_json(),
-    )
-    .context("TypeScript game config snapshot validation failed")?;
-    Ok(GameConfigReloadReport {
-        candidate_directory: candidate.directory().display().to_string(),
-        data_fingerprint: candidate.data_fingerprint().to_string(),
-        commit_ms: elapsed_ms(commit_started),
-        reload_total_ms: elapsed_ms(requested_at),
-        status_json,
-    })
+struct PreparedHotfix {
+    candidate: HotfixCandidate,
+    directory: PathBuf,
+    validation_ms: f64,
+    preflight_ms: f64,
 }
 
-/// 在安全屏障内完成候选复核、隔离预检和正式 V8 提交；调用期间不从业务队列取新帧。
-///
-/// Revalidates, preflights, and commits one candidate inside the switch barrier. The caller does
-/// not dequeue new business frames while this function runs, so queued ingress remains bounded in
-/// Rust and observes either the old or the new handler table, never a partially committed table.
-#[allow(clippy::too_many_arguments)]
-fn execute_hotfix_reload(
+/// 在独立线程校验并预检不可变候选，不暂停正在服务的V8。 / Validates and preflights an immutable candidate off-thread without pausing the serving V8.
+fn prepare_hotfix_reload(
     runtime_bundles: &RuntimeBundles,
-    js_event_loop: &tokio::runtime::Runtime,
-    runtime: &mut deno_core::JsRuntime,
-    entrypoints: &crate::host::JsEntrypoints,
     candidate_directory: &Path,
-    requested_at: Instant,
-    generation: u64,
     typescript_log_level: u8,
-) -> Result<HotfixReloadReport> {
+) -> Result<PreparedHotfix> {
     let candidate_directory = candidate_directory.canonicalize().with_context(|| {
         format!(
             "failed to resolve Hotfix candidate {}",
@@ -1569,6 +1508,9 @@ fn execute_hotfix_reload(
     let validation_ms = elapsed_ms(validation_at);
 
     let preflight_at = Instant::now();
+    let js_event_loop = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
     {
         let mut preflight_runtime = {
             let _guard = js_event_loop.enter();
@@ -1576,28 +1518,49 @@ fn execute_hotfix_reload(
                 .context("failed to create isolated Hotfix reload preflight V8")?
         };
         runtime_bundles
-            .preflight_candidate(js_event_loop, &mut preflight_runtime, &candidate)
+            .preflight_candidate(&js_event_loop, &mut preflight_runtime, &candidate)
             .context("isolated Hotfix reload preflight failed")?;
     }
     let preflight_ms = elapsed_ms(preflight_at);
+    Ok(PreparedHotfix {
+        candidate,
+        directory: candidate_directory,
+        validation_ms,
+        preflight_ms,
+    })
+}
+
+/// 排空后在帧间提交已预检的代码和配置；不重新读取候选文件。 / Commits the preflighted code/config pair between drained frames without rereading candidate files.
+fn execute_hotfix_reload(
+    prepared: PreparedHotfix,
+    js_event_loop: &tokio::runtime::Runtime,
+    runtime: &mut deno_core::JsRuntime,
+    entrypoints: &crate::host::JsEntrypoints,
+    requested_at: Instant,
+    drain_started: Instant,
+    generation: u64,
+) -> Result<HotfixReloadReport> {
+    let PreparedHotfix {
+        candidate,
+        directory: candidate_directory,
+        validation_ms,
+        preflight_ms,
+    } = prepared;
+    let barrier_wait_ms = elapsed_ms(drain_started);
     let install: HotfixInstallResult = candidate.install(js_event_loop, runtime, entrypoints)?;
     Ok(HotfixReloadReport {
         candidate_directory: candidate_directory.display().to_string(),
         bundle_version: install.bundle_version,
+        config_fingerprint: candidate.config_fingerprint().to_string(),
         generation,
         validation_ms,
         preflight_ms,
-        barrier_wait_ms: (elapsed_ms(requested_at)
-            - validation_ms
-            - preflight_ms
-            - install.timings.begin_ms
-            - install.timings.candidate_eval_ms
-            - install.timings.commit_ms)
-            .max(0.0),
+        barrier_wait_ms,
         begin_ms: install.timings.begin_ms,
         candidate_eval_ms: install.timings.candidate_eval_ms,
         commit_ms: install.timings.commit_ms,
         reload_total_ms: elapsed_ms(requested_at),
+        pause_ms: elapsed_ms(drain_started),
         status_json: install.status_json,
     })
 }
@@ -1625,6 +1588,7 @@ fn flush_runtime_batch(
     last_process_cpu_time_ms: &mut u64,
     last_resource_sample_at: &mut Instant,
     health_state: &ProcessHealthState,
+    hotfix_draining: bool,
 ) -> Result<(bool, bool)> {
     queue_stats.runtime_updates.fetch_add(1, Ordering::Relaxed);
     queue_stats
@@ -1641,8 +1605,13 @@ fn flush_runtime_batch(
     pump_js_event_loop_once(js_event_loop, runtime)?;
 
     let sample_metrics = last_metrics_log.elapsed() >= Duration::from_secs(5);
-    let (update_result, outbound) =
-        call_js_update_binary(js_event_loop, runtime, entrypoints, sample_metrics)?;
+    let (update_result, outbound) = call_js_update_binary(
+        js_event_loop,
+        runtime,
+        entrypoints,
+        sample_metrics,
+        hotfix_draining,
+    )?;
     let (
         pending_async,
         pending_ingress,
@@ -2203,10 +2172,11 @@ fn push_event(
         ProcessEvent::Frame {
             scene_index,
             connection_id,
+            internal,
             frame,
         } => {
             queue_stats.inbound_frames.fetch_add(1, Ordering::Relaxed);
-            let event_type = if crate::transport::inner_frame_rpc_id(&frame).is_some() {
+            let event_type = if internal && crate::transport::inner_frame_rpc_id(&frame).is_some() {
                 5
             } else {
                 1
@@ -2461,6 +2431,7 @@ mod tests {
         sender
             .send(
                 ProcessEvent::Frame {
+                    internal: true,
                     scene_index: 0,
                     connection_id: 999,
                     frame: Bytes::from_static(&[0x4e, 0x20]),
@@ -2478,6 +2449,27 @@ mod tests {
         let event = receiver.try_recv().unwrap();
         assert_eq!(event.ingress_class(), ProcessIngressClass::Data);
         stats.dequeue(event.kind(), event.ingress_class());
+    }
+
+    #[test]
+    fn outer_rpc_cannot_bypass_hotfix_pause_by_carrying_rpc_id() {
+        // protobuf field 90 (rpcId) = 1; identity comes from the accepted endpoint.
+        let frame = Bytes::from_static(&[0x9c, 0x40, 0xd0, 0x05, 0x01]);
+        assert_eq!(crate::transport::inner_frame_rpc_id(&frame), Some(1));
+        let outer = ProcessEvent::Frame {
+            scene_index: 0,
+            connection_id: 1,
+            internal: false,
+            frame: frame.clone(),
+        };
+        let inner = ProcessEvent::Frame {
+            scene_index: 0,
+            connection_id: 2,
+            internal: true,
+            frame,
+        };
+        assert_eq!(outer.ingress_class(), ProcessIngressClass::Data);
+        assert_eq!(inner.ingress_class(), ProcessIngressClass::Control);
     }
 
     #[test]

@@ -9,6 +9,7 @@
 3. 业务需求先查 `docs/patterns` 和 [能力归属表](docs/design/capability-ownership.md)，明确所有者、Entity形态、生命周期、Audience和同步语义，再查找 `app/model/domains` 中可复用的稳定契约，以及 `../TiangZ-Examples/modules/mmorpg/src/model`、`../TiangZ-Examples/modules/mmorpg/src/hotfix` 中最接近的领域适配实现。
 4. 当前事实的可信顺序是：运行中的代码与测试 > `README.md`、`docs/tutorials`、`docs/reference`、`docs/design/maintainer-guide.md` > `docs/roadmap.md` > 历史 `phase*_plan/acceptance` 和旧性能报告。
 5. 用户说“讨论”“先看”或“先别改”时，只检查和说明，不修改文件。
+6. 遇到有复用价值的失败，必须在同轮把“现象、真实原因、正确做法、禁止的绕过方式、复测命令和证据”写入AI开发文档，并同步上下文入口；区分夹具错误、环境问题和框架缺陷，不能只留在聊天或临时日志中。先读[失败教训与复测流程](docs/ai/business-development-manual.md#失败教训与复测流程)，避免上下文丢失后重复犯错。
 
 ## 架构世界观
 
@@ -79,6 +80,7 @@ Hotfix只能通过`#tiangz/model`取得Model与Core的稳定类型，禁止深�
 - 不增加只转发一次调用的`Sink`、`Delegate`、`Manager`或事件层。
 - 在Factory中使用`AddComponent`确定Entity能力；运行时使用`GetComponent`访问必需能力。
 - `Awake`必须同步。数据库、RPC等异步初始化由Factory在发布Entity前显式等待。
+- 游戏业务代码严禁通过 `await sleep/delay/TimerSystem.WaitAsync` 等等待时间，短延迟、零延迟也不例外；不得用原生计时器、Promise 包装或 `.then` 绕过。延迟、倒计时、到期和周期事件必须使用所有者的 `NewOnceTimer/NewRepeatedTimer` 与方法名回调。数据库、RPC、锁等结果等待仍允许，详见[时间调度硬约束](docs/patterns/timer-update-and-action.md)。
 - 业务日志使用注入的`Logger`或`scene.logger`，不得新增`console.log`。
 - 业务状态归属Scene、Actor或Component；不得用模块级可变变量或全局单例替代正确所有权。
 
@@ -87,6 +89,7 @@ Hotfix只能通过`#tiangz/model`取得Model与Core的稳定类型，禁止深�
 - 网络帧固定为`[length:u32 BE][msgcode:u16 BE][protobuf payload]`。
 - `rpcId`属于`IRequest/IResponse` payload，不属于公共帧头，业务代码不手工处理。
 - RPC使用生成的descriptor和强类型Client，不手写msgcode、codec或请求响应关联表。
+- 客户端C协议不能直接用于进程间Inner RPC；模块须声明S协议并生成内部descriptor，即使payload相同也不能复用外部协议身份。不得关闭传输访问校验来让夹具通过。
 - Snapshot用于进入、重连和主动全量同步；Delta用于可覆盖状态；Event用于技能、道具、掉落等不可丢失事实。
 - `latest`只用于相同稳定key可覆盖的状态；`event`不得静默覆盖。
 - Audience决定“发给谁”，descriptor决定“如何排队和合并”，两者不得耦合。

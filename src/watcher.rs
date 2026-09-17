@@ -187,7 +187,6 @@ async fn wait_for_watcher_trigger(
     let mut parent_control = Some(spawn_stdin_control_receiver());
     let mut poll = tokio::time::interval(Duration::from_millis(50));
     let mut active_hotfix_candidate: Option<PathBuf> = None;
-    let mut active_config_candidate: Option<PathBuf> = None;
     poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -207,7 +206,7 @@ async fn wait_for_watcher_trigger(
                     ParentControlCommand::ReloadConfig(candidate) => {
                         let candidate = if candidate.is_absolute() { candidate } else { root.join(candidate) };
                         broadcast_config_reload(children, &candidate)?;
-                        active_config_candidate = Some(candidate.canonicalize().with_context(|| format!("failed to resolve game config candidate {}", candidate.display()))?);
+                        active_hotfix_candidate = Some(candidate.canonicalize().with_context(|| format!("failed to resolve release candidate {}", candidate.display()))?);
                     }
                 }
             }
@@ -219,7 +218,6 @@ async fn wait_for_watcher_trigger(
                             exe,
                             root,
                             active_hotfix_candidate.as_deref(),
-                            active_config_candidate.as_deref(),
                         ) {
                             Ok(()) => continue,
                             Err(error) if schedule_restart(child) => {
@@ -300,7 +298,6 @@ fn restart_child(
     exe: &Path,
     root: &Path,
     hotfix_candidate: Option<&Path>,
-    config_candidate: Option<&Path>,
 ) -> Result<()> {
     let (process, control) = spawn_child(exe, root, &child.arg)?;
     child.child = process;
@@ -310,9 +307,6 @@ fn restart_child(
     let replay_result = (|| {
         if let Some(candidate) = hotfix_candidate {
             write_reload_command(child, "reload", candidate)?;
-        }
-        if let Some(candidate) = config_candidate {
-            write_reload_command(child, "reload-config", candidate)?;
         }
         Ok::<(), anyhow::Error>(())
     })();
