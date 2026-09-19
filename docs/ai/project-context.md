@@ -1144,3 +1144,26 @@ PlayerTradeComponent.QueryResult(player, tradeId, otherCharacterId) 返回 pendi
 SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools/authoritative_acceptance.mjs`：默认只计划，build固定源码/制品哈希并单独构建短TTL，run为每项每轮建立隔离环境。正式Rust探针解码DBProxy协议，按连接/rpcId锁定提交成功回包；提交前强杀必须丢弃扣住的请求，不能在清理时释放。产粮对账使用持久分钟检查点，回执独立于战报；负缓存必须在冷恢复前确认有效。夹具单测不能代替实库验收，D5握手模拟不能冒充历史服务端，资源快照不能冒充容量时序。详见SLG的`docs/authoritative-read-acceptance.md`。
 
 2026-09-17提交前检查：AI技能便携性自检曾在正则中写死两个本机盘符，被本机路径门禁检出。改为通用Windows盘符/分隔符模式，覆盖全部盘符并保留门禁；`node tools/verify_no_local_traces.mjs`和`node tools/ai-assistants/check.mjs`复核通过。不要为自检脚本关闭路径检查。 / The portability self-check now rejects all Windows drive paths instead of embedding machine-specific drives; both trace and assistant checks pass without weakening the gate.
+
+## 持久化写法标记（2026-09-19）
+
+`.native`的`@persistent`实体可以再加`@queued`或`@transactional`（tiangz-native-language 0.17.0，尚未打标签发布）。写法由数据语义决定；何时写、哪些记录组成一次事务仍由业务代码在调用点决定。DBProxy代码不变。
+
+| 描述 | 生成的仓库 | 可用写法 |
+| --- | --- | --- |
+| 不加 | `DbProxyEntityRepository` | `Save`/`SaveSnapshot`，以及新增的`TransactionWrite`（只生成事务写入记录，不访问存储） |
+| `@queued` | `DbProxyQueuedEntityRepository` | `Enqueue`/`EnqueueSnapshot` |
+| `@transactional` | `DbProxyTransactionalEntityRepository` | `TransactionWrite`/`TransactionWriteSnapshot`，交给`HostDbProxyRecords.CommitRecords` |
+
+- 一条记录只允许一种写法。排队写不带revision校验、按记录合并，落库是无条件覆盖；同一记录若还被CAS保存或事务写入，迟到的排队值会覆盖已确认的新数据。校验器拒绝两个标记同用，生成仓库在类型和运行时上都没有被禁止的方法；业务绕过生成仓库、直接拼namespace写入时不受保护。
+- Enqueue成功只表示Redis AOF已接收，不表示PG已落库；崩溃或换服后可能回退到最近落库状态，不能用于经济或需要立即恢复的数据。
+- 受限仓库读到旧schema只在内存迁移、不回写：排队记录回写会与待落库值竞争，事务记录由下一次事务以读到的revision写入新版本。普通仓库保持原有CAS回写。
+- 未加标记的实体，生成文本与0.16.0逐字节一致（已用Examples已提交的`NativeItemPersistence.ts`实测）。
+- 开发期更换写法直接清库；从`@queued`改为其他写法前，至少停写并等DBProxy排队积压清零。运营中更换写法造成的数据问题不由DBProxy兜底。
+- 发布顺序：先给tiangz-native-language打`v0.17.0`，再升级TiangZ依赖；在此之前主工程codegen仍使用0.16.0，新标记不生效。公共API锁的处理见[API稳定性迁移记录](../reference/api-stability.md#开发中)。
+
+长稳入口：`npm run soak:write-modes -- plan|check|smoke|run`（控制器`tools/persistence_write_modes_soak.mjs`），Examples可用`npm run reliability -- plan --suite write-modes`编排。探针在真实TiangZ进程里经Host op同时运行三种写法，账本先记意图再执行写入，进程在任意时刻被杀都能判定可能已提交的最大值。
+
+- `smoke`：内存DBProxy + 一次探针强杀重启，不接触数据库容器。
+- `run`：使用专用`tiangz-dbproxy-local`容器中的独立库`dbproxy_write_modes_soak`和Redis库号5，注入PG、可靠Redis、缓存、AOF、首选DBProxy节点、全部DBProxy节点、探针进程七类故障；每次故障后要求每个玩家每种写法再确认两次；最后排空排队积压，按账本核对，并直接查PG核对写法互斥与事务恰好一次。
+- `run`会清理上述专用数据并停启容器，必须由用户明确授权；与其他演练共用`reliability.lock`，不能并行。2026-09-19只执行了单测和smoke（通过），`run`尚未执行，不能宣称已通过长稳。

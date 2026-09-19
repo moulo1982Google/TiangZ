@@ -137,6 +137,8 @@ npm run verify:core-api
 
 ### 开发中
 
+- 新增持久化写法的Stable API（非破坏性）：`DbProxyQueuedEntityRepository`、`DbProxyTransactionalEntityRepository`及类型`QueuedEntityRepository`、`TransactionalEntityRepository`；`DbProxyEntityRepository`新增`TransactionWrite`/`TransactionWriteSnapshot`，原有方法、请求号格式和重试语义不变。它们由`.native`的`@queued`/`@transactional`生成代码使用，见[持久化写法标记](../ai/business-development-manual.md#持久化写法标记2026-09-19)。`public-api.lock.json`本轮未更新：HEAD锁已落后源码（`a16344c`/`1da8f58`引入的声明变化），更新锁会同时吸收这些无关漂移；发布前执行`core-api:update-lock`时一并评审。
+
 - 新增 `modules` 宿主装配模式，HotfixManifest.buildMode 增加同名值；仅显式选择时生效，默认 demo/bench 保持原行为。模式不匹配的 Hotfix 必须拒绝；模式切换需要完整构建与 Process 重启，不更新协议字段或绕过兼容指纹。
 
 - Stable Core新增`defineGameModule`以及`entityExtensionHandler/applyEntityExtensions`：前者只允许不可变Model装载期登记模块ID、版本、显式Model导出和必需System，后者只在未发布Entity的Factory边界同步装配强类型Component；构建期模块图与Hotfix完整装配器集合均被冻结。具体模块及其领域Component/Handler不属于Core。

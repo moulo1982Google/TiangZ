@@ -129,13 +129,19 @@ export type { StreamDelivery } from "./persistence/HostStreamConsumer";
 // External modules use the Host-linked SDK version instead of bundling competing transaction contracts.
 export { HostDbProxyRecords, CreateOutboxEvent } from "./persistence/HostDbProxyRecords";
 export type { DbProxyRecordCommit, DbProxyEventEnvelope } from "./persistence/HostDbProxyRecords";
+// `.native`写法标记生成的受限仓库；普通实体继续使用DbProxyEntityRepository。
+// Restricted repositories generated from `.native` write-mode markers; ordinary entities keep DbProxyEntityRepository.
 export {
   CreateVersionedEntityRepository,
   DbProxyEntityRepository,
+  DbProxyQueuedEntityRepository,
+  DbProxyTransactionalEntityRepository,
   InMemoryVersionedEntityRepository,
   IsVersionedEntityRevisionConflict,
 } from "./persistence/VersionedEntityRepository";
 export type {
+  QueuedEntityRepository,
+  TransactionalEntityRepository,
   VersionedEntityCodec,
   VersionedEntityMigration,
   VersionedEntityLoadResult,

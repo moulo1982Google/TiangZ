@@ -45,6 +45,7 @@ const profiles = Object.freeze({
       "test:build-result",
     ].map(npmStep),
     commandStep("realm merge plan", process.execPath, ["--test", "tools/realm_merge_plan.test.mjs"]),
+    commandStep("persistence write-mode soak logic", process.execPath, ["--test", "tools/persistence_write_modes_soak.test.mjs"]),
     commandStep("local replica controller", process.execPath, ["--test", "tools/local_replica_controller.test.mjs"]),
     commandStep("module typecheck host selection", process.execPath, ["tools/module_typecheck_host_self_test.mjs"]),
     commandStep("cargo fmt", "cargo", ["fmt", "--all", "--", "--check"]),
