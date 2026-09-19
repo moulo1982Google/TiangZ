@@ -19,7 +19,7 @@ export const FAULTS = Object.freeze({
   postgres: { estimateSeconds: 95, needsContainers: true, summary: "停止PG 65秒：普通/事务写入暂不可用或结果未知，排队写继续由AOF确认" },
   redis: { estimateSeconds: 55, needsContainers: true, summary: "强杀可靠Redis 35秒：排队写失败，普通/事务写入不受影响" },
   cache: { estimateSeconds: 55, needsContainers: true, summary: "强杀缓存Redis 35秒：三种写法都应继续，读取回源PG" },
-  aof: { estimateSeconds: 90, needsContainers: true, summary: "PG停机期间积累排队写，强杀并重启可靠Redis，再恢复PG：已确认排队写必须最终落库" },
+  aof: { estimateSeconds: 120, needsContainers: true, summary: "PG停机期间积累排队写，强杀并重启可靠Redis，再恢复PG：已确认排队写必须最终落库" },
   "dbproxy-primary": { estimateSeconds: 40, needsContainers: false, summary: "强杀探针首选DBProxy节点20秒：客户端切换到备用节点" },
   "dbproxy-all": { estimateSeconds: 45, needsContainers: false, summary: "强杀全部DBProxy节点20秒：所有写法结果未知，恢复后按原身份重试或对账" },
   "probe-restart": { estimateSeconds: 40, needsContainers: false, summary: "强杀TiangZ探针进程后重启：新进程从PG恢复并按账本核对" },

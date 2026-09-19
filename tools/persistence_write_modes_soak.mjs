@@ -68,12 +68,16 @@ const ENVIRONMENT = Object.freeze({
 });
 const BACKLOG_KEYS = ["dbproxy:snapshot-backlog:pending", "dbproxy:snapshot-backlog:processing"];
 const PROBE_TIMING = { stepMs: 250, errorBackoffMs: 500, auditMs: 1000, statMs: 5000 };
-// 本组验证正确性而非容量。单条Enqueue每节点单连接等待everysec的WAITAOF，实测约1.5次/秒/节点，
-// 且宿主平时只连首选节点；每玩家40秒一次、按玩家错开，20玩家约0.5次/秒，留出余量避免自我维持的过载。
+// 本组验证正确性而非容量。单条Enqueue每节点单连接等待everysec的WAITAOF，饱和时实测约1次/秒/节点；
+// 请求超时后TS仓库重试3次、宿主客户端再重发1次，最坏6倍放大，且服务端仍执行已放弃的请求。
+// 间隔取max(40秒, 玩家数×9秒)：最坏放大且集中到单节点时约0.5次/秒，低于饱和容量的一半。
 // This suite proves correctness, not capacity. Single Enqueue waits for everysec WAITAOF on one connection
-// per node (~1.5/s per node measured) and the Host normally uses only the primary node; one write per
-// player every 40 s, staggered, keeps 20 players at ~0.5/s so overload cannot become self-sustaining.
-const DURABLE_QUEUED_STEP_MS = 40_000;
+// per node (~1/s per node when saturated). After a timeout the TS repository retries 3 times and the Host
+// client resends once (up to 6x amplification) while the server still executes abandoned requests.
+// max(40 s, players x 9 s) keeps even worst-case amplification on one node near 0.5/s, half its saturated capacity.
+function durableQueuedStepMs(players) {
+  return Math.max(40_000, players * 9_000);
+}
 // 操作事件只进内存账本；保留最近一段供失败定位，避免日志随时长线性膨胀。
 // Op events go to the in-memory ledger; keep a recent window for failure analysis so logs do not grow with duration.
 const RECENT_OP_LIMIT = 5000;
@@ -83,23 +87,26 @@ function parseArguments(argv) {
   if (!["plan", "check", "smoke", "run"].includes(action)) throw new Error("expected plan/check/smoke/run");
   const values = new Map();
   for (let i = 0; i < rest.length; i += 2) {
-    if (!["--seconds", "--players", "--steady-seconds", "--confirm"].includes(rest[i]) || rest[i + 1] === undefined || values.has(rest[i])) {
+    if (!["--seconds", "--players", "--steady-seconds", "--faults", "--confirm"].includes(rest[i]) || rest[i + 1] === undefined || values.has(rest[i])) {
       throw new Error("invalid or duplicate option");
     }
     values.set(rest[i], rest[i + 1]);
   }
   const smoke = action === "smoke";
+  // --faults 只用于定位问题：部分故障的运行永远不算长稳通过。 / --faults is for diagnosis only; a partial run never counts as a soak pass.
+  const partial = values.has("--faults");
+  if (partial && action !== "run") throw new Error("--faults is only accepted by run");
   const seconds = Number(values.get("--seconds") ?? (smoke ? 60 : 3600));
   const players = Number(values.get("--players") ?? (smoke ? 4 : 20));
   const steadySeconds = Number(values.get("--steady-seconds") ?? (smoke ? 5 : 60));
-  const [minSeconds, maxSeconds] = smoke ? [10, 600] : [900, 14400];
+  const [minSeconds, maxSeconds] = smoke || partial ? [10, 14400] : [900, 14400];
   if (!Number.isInteger(seconds) || seconds < minSeconds || seconds > maxSeconds) throw new Error(`seconds must be ${minSeconds}..${maxSeconds}`);
   if (!Number.isInteger(players) || players < 1 || players > (smoke ? 20 : 100)) throw new Error(`players must be 1..${smoke ? 20 : 100}`);
   if (!Number.isInteger(steadySeconds) || steadySeconds < 1 || steadySeconds > 600) throw new Error("steady-seconds must be 1..600");
   if (action === "run" && values.get("--confirm") !== CONFIRMATION) throw new Error(`run requires --confirm ${CONFIRMATION}`);
   if (action !== "run" && values.has("--confirm")) throw new Error("--confirm is only accepted by run");
-  const faults = smoke ? ["probe-restart"] : [...FULL_FAULT_ORDER];
-  return { action, seconds, players, steadySeconds, faults, schedule: planSchedule({ seconds, faults, steadySeconds }) };
+  const faults = smoke ? ["probe-restart"] : partial ? values.get("--faults").split(",") : [...FULL_FAULT_ORDER];
+  return { action, seconds, players, steadySeconds, faults, partial, schedule: planSchedule({ seconds, faults, steadySeconds }) };
 }
 
 function describePlan(options) {
@@ -109,7 +116,7 @@ function describePlan(options) {
     players: options.players,
     workload: "每个虚拟玩家并行三条写入链：普通CAS保存、@queued排队写、@transactional双钱包原子转账 / per virtual player: ordinary CAS saves, @queued writes, @transactional two-wallet transfers",
     namespaces: NAMESPACES,
-    probeTiming: { ...PROBE_TIMING, queuedStepMs: queuedStepMs(options.action),
+    probeTiming: { ...PROBE_TIMING, queuedStepMs: queuedStepMs(options.action, options.players),
       note: "正确性用例：排队写负载刻意低于实测单节点容量，不代表容量 / correctness suite: queued load deliberately below measured single-node capacity; not a capacity result" },
     schedule: options.schedule,
     faults: Object.fromEntries(options.faults.map((fault) => [fault, FAULTS[fault].summary])),
@@ -190,13 +197,17 @@ class Soak {
       await this.startProbe("run");
       await this.soak();
       await this.finish();
-      this.report.status = "passed";
-      console.log(`[write-modes] passed: ${path.join(this.dir, "final.json")}`);
+      this.report.status = this.options.partial ? "partial-passed" : "passed";
+      console.log(this.options.partial
+        ? `[write-modes] partial diagnostic run passed (not a soak pass): ${path.join(this.dir, "final.json")}`
+        : `[write-modes] passed: ${path.join(this.dir, "final.json")}`);
     } catch (error) {
       this.report.status = "failed";
       this.report.error = String(error?.stack ?? error);
       console.error(`[write-modes] failed: ${error?.message ?? error}`);
       process.exitCode = 1;
+      // 收尾会杀掉节点；先保存失败当下的服务端指标。 / Cleanup kills the nodes; save server metrics from the failure moment first.
+      await this.captureMetrics("at-failure");
     } finally {
       await this.cleanup();
       this.report.finishedAt = new Date().toISOString();
@@ -205,7 +216,7 @@ class Soak {
       this.report.completedFaults = this.completed;
       this.report.lastProbeStat = this.lastStat;
       writeFileSync(path.join(this.dir, "ledger.json"), JSON.stringify(this.ledger, null, 2));
-      if (this.report.status !== "passed") writeFileSync(path.join(this.dir, "probe-recent-ops.log"), this.recentOps.join("\n") + "\n");
+      if (this.report.status === "failed") writeFileSync(path.join(this.dir, "probe-recent-ops.log"), this.recentOps.join("\n") + "\n");
       this.save("final.json");
       if (lock) { await lock.close(); await unlink(path.join(evidenceBase, "reliability.lock")); }
       console.log(`[write-modes] evidence: ${this.dir}`);
@@ -213,6 +224,17 @@ class Soak {
   }
 
   save(file = "report.json") { writeFileSync(path.join(this.dir, file), JSON.stringify(this.report, null, 2)); }
+
+  async captureMetrics(label) {
+    for (const node of this.dbproxies.values()) {
+      try {
+        const text = await (await fetch(`http://127.0.0.1:${node.observability}/metrics`, { signal: AbortSignal.timeout(3000) })).text();
+        writeFileSync(path.join(this.dir, `${node.name}-metrics-${label}.txt`), text);
+      } catch (error) {
+        writeFileSync(path.join(this.dir, `${node.name}-metrics-${label}.txt`), `unavailable: ${String(error)}\n`);
+      }
+    }
+  }
 
   event(type, details = {}) {
     const value = { at: new Date().toISOString(), type, ...details };
@@ -379,7 +401,7 @@ class Soak {
     const model = this.originalModel + renderProbeScript({
       runId: this.runId, epoch: this.epoch, mode, players: this.options.players, namespaces: NAMESPACES,
       resume: resumeState(this.ledger), walletTotal: WALLET_TOTAL, settleMs: this.epoch > 1 ? 5000 : 0, ...PROBE_TIMING,
-      queuedStepMs: queuedStepMs(this.options.action),
+      queuedStepMs: queuedStepMs(this.options.action, this.options.players),
     });
     writeFileSync(path.join(this.runtimeDir, "dist", "model.js"), model);
     const fingerprint = createHash("sha256").update(model).digest("hex");
@@ -474,6 +496,7 @@ class Soak {
           return;
         }
         await this.wait(schedule.steadySeconds * 1000);
+        await this.captureMetrics(`before-${fault}-c${cycle}`);
         this.event("fault_started", { fault, cycle });
         await this.inject(fault);
         await this.recover(fault);
@@ -503,10 +526,13 @@ class Soak {
       case "aof": {
         // PG停机时排队写仍由AOF确认；此刻的确认值在Redis强杀重启后也必须最终落库。
         // With PG down, queued writes are still acknowledged by AOF; these acks must survive a Redis kill and land later.
+        const acksBefore = this.ledger.acks.queued;
         command("docker", ["stop", "--time", "5", ENVIRONMENT.postgres]);
-        await this.wait(15_000);
+        // 停机45秒，让足够多的排队写只存在于AOF中（尚未落PG）。 / 45 s so enough queued writes exist only in AOF, not yet in PG.
+        await this.wait(45_000);
         this.aofAcked = this.ledger.queued.map((entry) => entry.acked);
-        this.event("aof_acked_snapshot", { total: this.aofAcked.reduce((sum, value) => sum + value, 0) });
+        this.event("aof_acked_snapshot", { total: this.aofAcked.reduce((sum, value) => sum + value, 0),
+          ackedWhilePostgresDown: this.ledger.acks.queued - acksBefore });
         command("docker", ["kill", ENVIRONMENT.redis]);
         await this.wait(5_000);
         command("docker", ["start", ENVIRONMENT.redis]);
@@ -544,7 +570,8 @@ class Soak {
   /** 每个玩家每种写法再确认两次，证明业务而不只是端口恢复。 / Two more acks per player and mode prove business recovery, not just open ports. */
   async rounds(label) {
     const baseline = ackCounters(this.ledger);
-    await this.until(() => roundsSatisfied(this.ledger, baseline, 2), 300_000, `two business rounds after ${label}`);
+    await this.until(() => roundsSatisfied(this.ledger, baseline, 2), roundsTimeoutMs(this.options.action, this.options.players),
+      `two business rounds after ${label}`);
     this.event("business_rounds_passed", { after: label, acks: { ...this.ledger.acks } });
   }
 
@@ -666,8 +693,13 @@ class Soak {
 }
 
 /** 内存后端没有AOF等待，冒烟保持快节奏；真实存储按容量余量放慢排队写。 / The memory backend has no AOF wait, so smoke stays fast; durable runs pace queued writes below capacity. */
-function queuedStepMs(action) {
-  return action === "smoke" ? PROBE_TIMING.stepMs : DURABLE_QUEUED_STEP_MS;
+function queuedStepMs(action, players) {
+  return action === "smoke" ? PROBE_TIMING.stepMs : durableQueuedStepMs(players);
+}
+
+/** 两轮排队写至少需要两个间隔加错峰，恢复等待按间隔放宽。 / Two queued rounds need two intervals plus stagger, so the recovery wait scales with the interval. */
+function roundsTimeoutMs(action, players) {
+  return Math.max(300_000, Math.ceil(2.5 * queuedStepMs(action, players)) + 120_000);
 }
 
 /** 专用环境使用PG+可靠Redis+独立缓存；冒烟使用内存后端。 / Dedicated runs use PG + reliable Redis + separate cache; smoke uses the memory backend. */

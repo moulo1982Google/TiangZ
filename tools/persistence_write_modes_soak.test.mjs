@@ -30,6 +30,15 @@ test("arguments require explicit confirmation only for the destructive run", () 
   assert.throws(() => parseArguments(["run", "--seconds", "600", "--confirm", CONFIRMATION]), /seconds must be/);
 });
 
+test("fault subsets are diagnostic-only and never become a full soak pass", () => {
+  const partial = parseArguments(["run", "--faults", "redis", "--seconds", "120", "--confirm", CONFIRMATION]);
+  assert.equal(partial.partial, true);
+  assert.deepEqual(partial.schedule.order, ["redis"]);
+  assert.equal(parseArguments(["run", "--confirm", CONFIRMATION]).partial, false);
+  assert.throws(() => parseArguments(["smoke", "--faults", "redis"]), /only accepted by run/);
+  assert.throws(() => parseArguments(["run", "--faults", "disk", "--seconds", "120", "--confirm", CONFIRMATION]), /unknown fault/);
+});
+
 test("ledger accepts sequential intents and acks, and flags out-of-order or phantom acknowledgements", () => {
   const ledger = createLedger(1);
   for (const event of [
