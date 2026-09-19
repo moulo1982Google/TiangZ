@@ -69,20 +69,18 @@ describe("@queued repository", () => {
     void repository.TransactionWrite;
   });
 
-  test("retries storage unavailability with one request identity and stops on other errors", async () => {
-    vi.useFakeTimers();
-    vi.spyOn(Math, "random").mockReturnValue(0);
+  test("sends each queued write once, without retrying storage unavailability", async () => {
     const transport = new RecordingTransport();
-    transport.enqueueFailures.push(DbProxyErrorCode.StorageUnavailable, DbProxyErrorCode.StorageUnavailable);
+    transport.enqueueFailures.push(DbProxyErrorCode.StorageUnavailable);
     const repository = new DbProxyQueuedEntityRepository(counterCodec(1), "unit-process", new DbProxyClient(transport));
 
-    await expect(repository.EnqueueSnapshot("p-2", { value: 5 })).resolves.toBeUndefined();
-    expect(transport.enqueues).toHaveLength(3);
-    expect(new Set(transport.enqueues.map((write) => write.requestId)).size).toBe(1);
+    // 下一次排队写会取代失败的这次；仓库重试只会在过载时放大负载。 / The next queued write supersedes a failed one; repository retries only amplify overload.
+    await expect(repository.EnqueueSnapshot("p-2", { value: 5 })).rejects.toMatchObject({ code: DbProxyErrorCode.StorageUnavailable });
+    expect(transport.enqueues).toHaveLength(1);
 
-    transport.enqueueFailures.push(DbProxyErrorCode.InvalidRequest);
-    await expect(repository.EnqueueSnapshot("p-2", { value: 6 })).rejects.toMatchObject({ code: DbProxyErrorCode.InvalidRequest });
-    expect(transport.enqueues).toHaveLength(4);
+    await expect(repository.EnqueueSnapshot("p-2", { value: 6 })).resolves.toBeUndefined();
+    expect(transport.enqueues).toHaveLength(2);
+    expect(transport.enqueues[0]?.requestId).not.toBe(transport.enqueues[1]?.requestId);
   });
 
   test("reports codec failures as rejections, never synchronous throws", async () => {

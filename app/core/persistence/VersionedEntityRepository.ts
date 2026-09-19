@@ -225,9 +225,11 @@ implements QueuedEntityRepository<TSnapshot, TEntity> {
     return this.EnqueueSnapshot(key, this.codec.Capture(value));
   }
 
-  /** 排队写入；结果不明确时以同一requestId重试，重复接收只替换同一记录的待落库值。编码错误以拒绝返回，不同步抛出。
-   * Queues a write; ambiguous results retry with the same requestId, and a repeat only replaces the pending value of this
-   * record. Codec errors reject rather than throw synchronously.
+  /** 排队写入，只发送一次、不在仓库内重试：下一次排队写本来就会取代它，重试只会在存储过载时放大负载。
+   * 失败时由调用方决定是否以新值再写；编码错误以拒绝返回，不同步抛出。
+   * Queues a write once with no in-repository retry: the next queued write supersedes it anyway, and retries only
+   * amplify load while storage is overloaded. On failure the caller decides whether to write a newer value; codec
+   * errors reject rather than throw synchronously.
    */
   async EnqueueSnapshot(key: string, value: TSnapshot): Promise<void> {
     const write: DbProxySnapshotWrite = {
@@ -238,7 +240,7 @@ implements QueuedEntityRepository<TSnapshot, TEntity> {
       payload: this.codec.Encode(value),
       updatedAtUnixMs: BigInt(Date.now()),
     };
-    return RetryStorageUnavailable(() => this.client.EnqueueSnapshot(write));
+    return this.client.EnqueueSnapshot(write);
   }
 }
 

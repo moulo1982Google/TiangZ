@@ -68,16 +68,11 @@ const ENVIRONMENT = Object.freeze({
 });
 const BACKLOG_KEYS = ["dbproxy:snapshot-backlog:pending", "dbproxy:snapshot-backlog:processing"];
 const PROBE_TIMING = { stepMs: 250, errorBackoffMs: 500, auditMs: 1000, statMs: 5000 };
-// 本组验证正确性而非容量。单条Enqueue每节点单连接等待everysec的WAITAOF，饱和时实测约1次/秒/节点；
-// 请求超时后TS仓库重试3次、宿主客户端再重发1次，最坏6倍放大，且服务端仍执行已放弃的请求。
-// 间隔取max(40秒, 玩家数×9秒)：最坏放大且集中到单节点时约0.5次/秒，低于饱和容量的一半。
-// This suite proves correctness, not capacity. Single Enqueue waits for everysec WAITAOF on one connection
-// per node (~1/s per node when saturated). After a timeout the TS repository retries 3 times and the Host
-// client resends once (up to 6x amplification) while the server still executes abandoned requests.
-// max(40 s, players x 9 s) keeps even worst-case amplification on one node near 0.5/s, half its saturated capacity.
-function durableQueuedStepMs(players) {
-  return Math.max(40_000, players * 9_000);
-}
+// DBProxy入队已改为组提交（一次写入加一次WAITAOF确认整批，带排队上限与期限），TiangZ排队写仓库不再重试；
+// 排队写与其他写法同为250毫秒一次，本组同时检验正确性与该负载下故障后的恢复。
+// DBProxy enqueue now uses group commit (one write and one WAITAOF per batch, with a queue bound and deadline) and the
+// TiangZ queued repository no longer retries; queued writes run at the same 250 ms pace as the other modes, so this
+// suite checks correctness and post-fault recovery under that load together.
 // 操作事件只进内存账本；保留最近一段供失败定位，避免日志随时长线性膨胀。
 // Op events go to the in-memory ledger; keep a recent window for failure analysis so logs do not grow with duration.
 const RECENT_OP_LIMIT = 5000;
@@ -117,7 +112,7 @@ function describePlan(options) {
     workload: "每个虚拟玩家并行三条写入链：普通CAS保存、@queued排队写、@transactional双钱包原子转账 / per virtual player: ordinary CAS saves, @queued writes, @transactional two-wallet transfers",
     namespaces: NAMESPACES,
     probeTiming: { ...PROBE_TIMING, queuedStepMs: queuedStepMs(options.action, options.players),
-      note: "正确性用例：排队写负载刻意低于实测单节点容量，不代表容量 / correctness suite: queued load deliberately below measured single-node capacity; not a capacity result" },
+      note: "排队写与其他写法同频；这是正确性与恢复用例，不是容量基准 / queued writes share the other modes' pace; a correctness and recovery suite, not a capacity benchmark" },
     schedule: options.schedule,
     faults: Object.fromEntries(options.faults.map((fault) => [fault, FAULTS[fault].summary])),
     recoveryRule: "每次故障后等待依赖恢复，并要求每个玩家每种写法再确认至少两次 / after each fault every player and mode must acknowledge at least two more writes",
@@ -692,9 +687,8 @@ class Soak {
   }
 }
 
-/** 内存后端没有AOF等待，冒烟保持快节奏；真实存储按容量余量放慢排队写。 / The memory backend has no AOF wait, so smoke stays fast; durable runs pace queued writes below capacity. */
-function queuedStepMs(action, players) {
-  return action === "smoke" ? PROBE_TIMING.stepMs : durableQueuedStepMs(players);
+function queuedStepMs() {
+  return PROBE_TIMING.stepMs;
 }
 
 /** 两轮排队写至少需要两个间隔加错峰，恢复等待按间隔放宽。 / Two queued rounds need two intervals plus stagger, so the recovery wait scales with the interval. */
