@@ -68,6 +68,12 @@ const ENVIRONMENT = Object.freeze({
 });
 const BACKLOG_KEYS = ["dbproxy:snapshot-backlog:pending", "dbproxy:snapshot-backlog:processing"];
 const PROBE_TIMING = { stepMs: 250, errorBackoffMs: 500, auditMs: 1000, statMs: 5000 };
+// 本组验证正确性而非容量。单条Enqueue每节点单连接等待everysec的WAITAOF，实测约1.5次/秒/节点，
+// 且宿主平时只连首选节点；每玩家40秒一次、按玩家错开，20玩家约0.5次/秒，留出余量避免自我维持的过载。
+// This suite proves correctness, not capacity. Single Enqueue waits for everysec WAITAOF on one connection
+// per node (~1.5/s per node measured) and the Host normally uses only the primary node; one write per
+// player every 40 s, staggered, keeps 20 players at ~0.5/s so overload cannot become self-sustaining.
+const DURABLE_QUEUED_STEP_MS = 40_000;
 // 操作事件只进内存账本；保留最近一段供失败定位，避免日志随时长线性膨胀。
 // Op events go to the in-memory ledger; keep a recent window for failure analysis so logs do not grow with duration.
 const RECENT_OP_LIMIT = 5000;
@@ -103,6 +109,8 @@ function describePlan(options) {
     players: options.players,
     workload: "每个虚拟玩家并行三条写入链：普通CAS保存、@queued排队写、@transactional双钱包原子转账 / per virtual player: ordinary CAS saves, @queued writes, @transactional two-wallet transfers",
     namespaces: NAMESPACES,
+    probeTiming: { ...PROBE_TIMING, queuedStepMs: queuedStepMs(options.action),
+      note: "正确性用例：排队写负载刻意低于实测单节点容量，不代表容量 / correctness suite: queued load deliberately below measured single-node capacity; not a capacity result" },
     schedule: options.schedule,
     faults: Object.fromEntries(options.faults.map((fault) => [fault, FAULTS[fault].summary])),
     recoveryRule: "每次故障后等待依赖恢复，并要求每个玩家每种写法再确认至少两次 / after each fault every player and mode must acknowledge at least two more writes",
@@ -371,6 +379,7 @@ class Soak {
     const model = this.originalModel + renderProbeScript({
       runId: this.runId, epoch: this.epoch, mode, players: this.options.players, namespaces: NAMESPACES,
       resume: resumeState(this.ledger), walletTotal: WALLET_TOTAL, settleMs: this.epoch > 1 ? 5000 : 0, ...PROBE_TIMING,
+      queuedStepMs: queuedStepMs(this.options.action),
     });
     writeFileSync(path.join(this.runtimeDir, "dist", "model.js"), model);
     const fingerprint = createHash("sha256").update(model).digest("hex");
@@ -654,6 +663,11 @@ class Soak {
       }
     }
   }
+}
+
+/** 内存后端没有AOF等待，冒烟保持快节奏；真实存储按容量余量放慢排队写。 / The memory backend has no AOF wait, so smoke stays fast; durable runs pace queued writes below capacity. */
+function queuedStepMs(action) {
+  return action === "smoke" ? PROBE_TIMING.stepMs : DURABLE_QUEUED_STEP_MS;
 }
 
 /** 专用环境使用PG+可靠Redis+独立缓存；冒烟使用内存后端。 / Dedicated runs use PG + reliable Redis + separate cache; smoke uses the memory backend. */

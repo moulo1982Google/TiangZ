@@ -126,9 +126,11 @@ export function probeMain(CONFIG) {
       return undefined;
     }
 
-    // 排队写法：值严格递增；失败只计数，下一次写入自然取代它。
+    // 排队写法：值严格递增；失败只计数，下一次写入自然取代它。按玩家错开起点，避免同步突发。
     // Queued mode: values strictly increase; failures are counted and superseded by the next write.
+    // Starts are staggered per player so writes never arrive as a synchronized burst.
     async function queuedLoop(p, s) {
+      await sleep(Math.floor((p * CONFIG.queuedStepMs) / CONFIG.players));
       while (!halted) {
         const v = s.attempted + 1;
         s.attempted = v;
@@ -138,7 +140,7 @@ export function probeMain(CONFIG) {
           stats.ok.queued += 1;
           emit({ t: "qa", p, v });
         } catch (error) { recordError("queued", error); await sleep(CONFIG.errorBackoffMs); }
-        await sleep(CONFIG.stepMs);
+        await sleep(CONFIG.queuedStepMs);
       }
     }
 
@@ -254,7 +256,7 @@ export function extractProbeEvent(line) {
 /** 生成追加到model.js的脚本。 / Renders the script appended to model.js. */
 export function renderProbeScript(config) {
   const required = ["runId", "epoch", "mode", "players", "namespaces", "resume", "walletTotal",
-    "stepMs", "errorBackoffMs", "auditMs", "statMs", "settleMs"];
+    "stepMs", "queuedStepMs", "errorBackoffMs", "auditMs", "statMs", "settleMs"];
   for (const name of required) if (config[name] === undefined) throw new Error(`probe config missing ${name}`);
   if (config.mode !== "run" && config.mode !== "verify") throw new Error("probe mode must be run or verify");
   if (!/^[a-z0-9-]{4,40}$/.test(config.runId)) throw new Error("runId must be 4..40 lowercase letters, digits or dashes");

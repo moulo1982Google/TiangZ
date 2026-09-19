@@ -155,7 +155,7 @@ test("probe keeps the ledger consistent through ambiguous commits and a kill/res
 function probeConfig(overrides) {
   return {
     runId: "wms-unit-test", epoch: 1, mode: "run", players: 3, namespaces: NAMESPACES, resume: { queuedAttempted: [] },
-    walletTotal: WALLET_TOTAL, stepMs: 1, errorBackoffMs: 1, auditMs: 5, statMs: 1000, settleMs: 0, ...overrides,
+    walletTotal: WALLET_TOTAL, stepMs: 1, queuedStepMs: 1, errorBackoffMs: 1, auditMs: 5, statMs: 1000, settleMs: 0, ...overrides,
   };
 }
 
