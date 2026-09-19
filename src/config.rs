@@ -102,6 +102,14 @@ pub struct ProcessDbProxyConfig {
     pub auth_token_env: String,
     #[serde(default = "default_dbproxy_client_pool_size")]
     pub client_pool_size: usize,
+    /// 排队写（EnqueueSnapshot）专用连接数；0表示与其他请求共用 clientPoolSize 连接。
+    /// Connections dedicated to queued writes (EnqueueSnapshot); 0 shares the clientPoolSize connections.
+    #[serde(default)]
+    pub queued_client_pool_size: usize,
+    /// 每条连接同时在途的请求上限，超出时在本进程排队。
+    /// In-flight requests per connection; excess requests queue in this process.
+    #[serde(default = "default_dbproxy_max_in_flight_per_connection")]
+    pub max_in_flight_per_connection: usize,
     #[serde(default = "default_dbproxy_connect_timeout_ms")]
     pub connect_timeout_ms: u64,
     #[serde(default = "default_dbproxy_request_timeout_ms")]
@@ -577,6 +585,10 @@ fn default_dbproxy_client_pool_size() -> usize {
     4
 }
 
+fn default_dbproxy_max_in_flight_per_connection() -> usize {
+    tiangz_dbproxy_client::DEFAULT_MAX_IN_FLIGHT
+}
+
 fn default_dbproxy_connect_timeout_ms() -> u64 {
     5_000
 }
@@ -987,6 +999,14 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
         if !(1..=64).contains(&db_proxy.client_pool_size) {
             bail!("process persistence.dbProxy.clientPoolSize must be between 1 and 64");
         }
+        if db_proxy.queued_client_pool_size > 64 {
+            bail!("process persistence.dbProxy.queuedClientPoolSize must be between 0 and 64");
+        }
+        if !(1..=4096).contains(&db_proxy.max_in_flight_per_connection) {
+            bail!(
+                "process persistence.dbProxy.maxInFlightPerConnection must be between 1 and 4096"
+            );
+        }
         if !(100..=120_000).contains(&db_proxy.connect_timeout_ms) {
             bail!("process persistence.dbProxy.connectTimeoutMs must be between 100 and 120000");
         }
@@ -1317,6 +1337,11 @@ mod tests {
         assert!(db_proxy.failover_endpoints.is_empty());
         assert_eq!(db_proxy.auth_token_env, "TIANGZ_DBPROXY_AUTH_TOKEN");
         assert_eq!(db_proxy.client_pool_size, 8);
+        assert_eq!(db_proxy.queued_client_pool_size, 0);
+        assert_eq!(
+            db_proxy.max_in_flight_per_connection,
+            tiangz_dbproxy_client::DEFAULT_MAX_IN_FLIGHT
+        );
         assert_eq!(db_proxy.connect_timeout_ms, 5_000);
         assert_eq!(db_proxy.request_timeout_ms, 9_000);
         assert_eq!(db_proxy.max_frame_bytes, 8 * 1024 * 1024);
@@ -1358,6 +1383,43 @@ mod tests {
             process.persistence.db_proxy.unwrap().failover_endpoints,
             vec!["127.0.0.1:7801"]
         );
+    }
+
+    #[test]
+    fn validates_dedicated_queued_connections_and_in_flight_limit() {
+        let config_with = |fields: &str| -> RuntimeConfig {
+            serde_json::from_str(&format!(
+                r#"{{
+                    "process": {{
+                        "name": "map1",
+                        "persistence": {{ "dbProxy": {{ "endpoint": "127.0.0.1:7800", {fields} }} }}
+                    }},
+                    "scenes": [{{ "name": "map_1", "sceneType": "Map", "innerIp": "127.0.0.1", "port": 7301 }}]
+                }}"#
+            ))
+            .unwrap()
+        };
+        let accepted = config_with(r#""queuedClientPoolSize": 2, "maxInFlightPerConnection": 128"#);
+        assert!(validate_runtime_config(&accepted).is_ok());
+        let db_proxy = accepted.process.persistence.db_proxy.as_ref().unwrap();
+        assert_eq!(db_proxy.queued_client_pool_size, 2);
+        assert_eq!(db_proxy.max_in_flight_per_connection, 128);
+        for (fields, name) in [
+            (r#""queuedClientPoolSize": 65"#, "queuedClientPoolSize"),
+            (
+                r#""maxInFlightPerConnection": 0"#,
+                "maxInFlightPerConnection",
+            ),
+            (
+                r#""maxInFlightPerConnection": 4097"#,
+                "maxInFlightPerConnection",
+            ),
+        ] {
+            let error = validate_runtime_config(&config_with(fields))
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(name), "{error}");
+        }
     }
 
     #[test]

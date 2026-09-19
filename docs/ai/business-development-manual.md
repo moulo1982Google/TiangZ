@@ -98,6 +98,16 @@ SLG 首次玩法 smoke（临时目录 tiangz-slg-smoke-Lipipu）报 `DBProxy is 
 | 非法TCP帧后连接不关闭；真实宿主缺陷，`hotfix-load-7VPROC`/`hotfix-load-VAWhXd` | 读循环`?`跳过统一清理；TCP/WebSocket先清理writer、通知断线并回收发送任务，再传播错误 | 坏连接及时终止；正常关闭保留消息排空。必须重建Rust并复测8条坏连接及正常请求 |
 | 改了Rust但沿用旧长稳结论；证据风险 | 脚本可复用已有宿主，存在二进制不等于代码最新；先构建，记录报告`binarySha256` | 不能把旧版一小时通过算给新版；完整verify可能再次构建，最终制品变化后重跑针对性验收 |
 | Windows构建受全局GCC变量或PowerShell策略影响；环境问题 | MSVC构建前检查`CC/CXX`，仅在当前会话清除错误的GCC覆盖；使用`npm.cmd` | 不更改全机工具链/执行策略来跑测试；原有LNK4098警告要披露，不伪称零警告 |
+| 向`model.js`注入探针后宿主报`Hotfix/config release identity mismatch`；夹具错误，写法长稳首次smoke（2026-09-19） | 原子发布后`releaseId`绑定`modelFingerprint`等字段。注入后除重写指纹外，还要用`tools/atomic_release_identity.mjs`的`atomicReleaseId`重算`releaseId`及`bundleVersion`后缀 | 不关闭或绕过宿主身份校验。`module_dbproxy_migration_self_test.mjs`曾同时带有此问题和下一行问题（SLG的`dbproxy:smoke`会调用它）：2026-09-19对自有内存DBProxy逐一复现两个错误后已修正，迁移断言（值11、revision 2、旧写入者被拒）不变；复测需自起隔离DBProxy后运行`node tools/module_dbproxy_migration_self_test.mjs --endpoint <回环地址>`，禁止指向共享库 |
+| 注入探针后报`unknown scene type ...; registered:`为空；夹具错误，同上 | 模块化后主工程`dist`不含游戏模块，没有场景类型。按`global_id_runtime_self_test.mjs`用`create_game_module/prepare_game_modules/build_runtime_bundles/build_game_config_data`构建夹具模块，再用`--runtime-root`启动 | 不借用MMORPG场景，也不往Core加测试场景；夹具由当前源码现场构建，不复用旧`dist` |
+| 解析探针`console.log`输出一直超时；夹具错误，同上 | `console.log`经宿主日志层输出，前有时间戳和颜色码、后有属性，不在行首。按标记定位后做括号/字符串感知解析 | 不要为测试更改宿主日志格式；主动停止探针时宿主取消在途操作产生的`fatal`属预期，只在非主动停止时判失败 |
+| 写法长稳前两次`run`在可靠Redis故障后排队写始终不恢复；产品容量问题，`write-modes-run-2026-09-19T06-45-28-717Z`、`07-21-13-224Z` | 单条Enqueue在每个DBProxy节点只有一条入队连接，持锁等待`everysec`的`WAITAOF`：空闲时平均约0.5秒，满载时约1次/秒/节点。请求超5秒后TS仓库重试3次、宿主客户端再重发1次（最多6倍），服务端仍执行已放弃的请求。节点指标显示故障后入队平均排队45–60秒、单节点连接累计1541次，但只有Redis停机期间的3次真正报错。平时只用约三分之一容量，35秒停机后的积压经放大仍超过容量，形成自我维持的过载。用新客户端且被杀时空闲的定向复现可恢复，说明服务端本身能重连 | 不能加大客户端超时或减少故障来掩盖。正确性长稳按最坏6倍放大计算排队写负载（间隔max(40秒,玩家数×9秒)），第三次`run`据此通过。之后经用户同意已实施：DBProxy入队组提交＋排队上限4096＋2秒排队期限，TiangZ排队写仓库不再重试；第四次`run`在原负载下通过 |
+| 写法长稳AOF故障的“已确认排队写存活”核对是弱证据；自查发现（2026-09-19），第四次`run`的“80次全部落库”结论因此降级 | 核对用最终值对比强杀前快照，但探针持续写同一记录，后续更大的值必然满足“不低于快照”，即使强杀丢了确认也发现不了 | 改为Redis一应答就直接读恢复出的积压逐个核对，排除重启后新写入的条目（masked），缺失/低于要求即失败、零核对也失败。凡是“最终值不低于某时刻确认值”的核对，都要先确认之后的写入不会把丢失掩盖掉 |
+| 写法长稳memory档位最终读取每个玩家排队值落后1–2个确认；`write-modes-run-2026-09-19T13-31-41-742Z` | DBProxy积压：落库中的记录再入队会回到pending，两个节点的worker可并发领取同一记录；PG拥塞时旧值的无条件写入后到，覆盖新值。aof档位负载低，之前没触发 | DBProxy `4bdde13`：领取跳过仍有有效租约的记录。以前的通过不能证明没有并发类缺陷；提高负载（memory档位约6倍排队写）才暴露 |
+| 写法长稳memory档位AOF核对20个玩家全判masked；`write-modes-run-2026-09-19T13-22-09-909Z` | 控制器账本靠解析探针日志更新，高频时滞后，强杀时取的已尝试值偏旧 | 在Redis重启前再取已尝试值。依赖账本快照的核对要考虑日志解析滞后 |
+| 500玩家过夜长稳第8轮在dbproxy-all后业务恢复超时；夹具问题，`write-modes-run-2026-09-19T17-03-32-149Z` | 探针出错退避固定30秒，全部DBProxy节点重启后数百玩家同时重试，反复压满每节点8条PG连接（2秒连接排队后快速失败），4个玩家连续失败凑不齐两次确认。失败时直接查PG，普通写与钱包全部一致 | 退避加50%–150%抖动。TiangZ业务仓库本来就是随机退避；写负载探针也必须如此。DBProxy的2秒快速失败是设计行为，不要靠加大超时掩盖 |
+| 500玩家时探针恢复读取约2分钟、接近3分钟就绪上限；AOF核对把500个键放进一条redis-cli命令触发Windows命令行长度上限（2026-09-20） | 恢复读取逐个玩家串行；核对键在命令行传递 | 恢复读取按玩家并发（降到4秒），键改在Redis脚本内按`RedisSnapshotBacklog::member`规则生成。规模参数变化时要重算每一处的串行耗时与命令行长度 |
+| 执行`core-api:update-lock`后锁里出现无关声明变化；证据风险，同上 | HEAD锁自`a16344c`/`1da8f58`起已落后源码（`GlobalIdConfig`、`GlobalIdSystem`、`EntryScene`、`Game`、`HotfixSystem`）。开发期`verify:core-api`跳过锁比对，锁在发布前统一更新 | 功能改动不要顺手吸收他人漂移；先确认漂移来源，发布时连同说明一次评审 |
 
 上述错误的修正不得降低安全断言。预期拒绝/断线属于故障测试的一部分；必须验证拒绝原因、generation不变、恢复后请求仅执行一次，而不是要求所有故障路径都返回成功。
 
@@ -1930,3 +1940,45 @@ PlayerTradeComponent.QueryResult(player, tradeId, otherCharacterId) 返回 pendi
 SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools/authoritative_acceptance.mjs`：默认只计划，build固定源码/制品哈希并单独构建短TTL，run为每项每轮建立隔离环境。正式Rust探针解码DBProxy协议，按连接/rpcId锁定提交成功回包；提交前强杀必须丢弃扣住的请求，不能在清理时释放。产粮对账使用持久分钟检查点，回执独立于战报；负缓存必须在冷恢复前确认有效。夹具单测不能代替实库验收，D5握手模拟不能冒充历史服务端，资源快照不能冒充容量时序。详见SLG的`docs/authoritative-read-acceptance.md`。
 
 2026-09-17提交前检查：AI技能便携性自检曾在正则中写死两个本机盘符，被本机路径门禁检出。改为通用Windows盘符/分隔符模式，覆盖全部盘符并保留门禁；`node tools/verify_no_local_traces.mjs`和`node tools/ai-assistants/check.mjs`复核通过。不要为自检脚本关闭路径检查。 / The portability self-check now rejects all Windows drive paths instead of embedding machine-specific drives; both trace and assistant checks pass without weakening the gate.
+
+## 持久化写法标记（2026-09-19）
+
+`.native`的`@persistent`实体可以再加`@queued`或`@transactional`（tiangz-native-language 0.17.0，尚未打标签发布）。写法由数据语义决定；何时写、哪些记录组成一次事务仍由业务代码在调用点决定。DBProxy代码不变。
+
+| 描述 | 生成的仓库 | 可用写法 |
+| --- | --- | --- |
+| 不加 | `DbProxyEntityRepository` | `Save`/`SaveSnapshot`，以及新增的`TransactionWrite`（只生成事务写入记录，不访问存储） |
+| `@queued` | `DbProxyQueuedEntityRepository` | `Enqueue`/`EnqueueSnapshot` |
+| `@transactional` | `DbProxyTransactionalEntityRepository` | `TransactionWrite`/`TransactionWriteSnapshot`，交给`HostDbProxyRecords.CommitRecords` |
+
+- 一条记录只允许一种写法。排队写不带revision校验、按记录合并，落库是无条件覆盖；同一记录若还被CAS保存或事务写入，迟到的排队值会覆盖已确认的新数据。校验器拒绝两个标记同用，生成仓库在类型和运行时上都没有被禁止的方法；业务绕过生成仓库、直接拼namespace写入时不受保护。
+- Enqueue成功只表示Redis AOF已接收，不表示PG已落库；崩溃或换服后可能回退到最近落库状态，不能用于经济或需要立即恢复的数据。仓库只发送一次、不在内部重试：下一次排队写会取代它，重试只会在过载时放大负载。
+- 受限仓库读到旧schema只在内存迁移、不回写：排队记录回写会与待落库值竞争，事务记录由下一次事务以读到的revision写入新版本。普通仓库保持原有CAS回写。
+- 未加标记的实体，生成文本与0.16.0逐字节一致（已用Examples已提交的`NativeItemPersistence.ts`实测）。
+- 开发期更换写法直接清库；从`@queued`改为其他写法前，至少停写并等DBProxy排队积压清零。运营中更换写法造成的数据问题不由DBProxy兜底。
+- 发布顺序：先给tiangz-native-language打`v0.17.0`，再升级TiangZ依赖；在此之前主工程codegen仍使用0.16.0，新标记不生效。公共API锁的处理见[API稳定性迁移记录](../reference/api-stability.md#开发中)。
+
+长稳入口：`npm run soak:write-modes -- plan|check|smoke|run`（控制器`tools/persistence_write_modes_soak.mjs`），Examples可用`npm run reliability -- plan --suite write-modes`编排。探针在真实TiangZ进程里经Host op同时运行三种写法，账本先记意图再执行写入，进程在任意时刻被杀都能判定可能已提交的最大值。
+
+- `smoke`：内存DBProxy + 一次探针强杀重启，不接触数据库容器。
+- `run`：使用专用`tiangz-dbproxy-local`容器中的独立库`dbproxy_write_modes_soak`和Redis库号5，注入PG、可靠Redis、缓存、AOF、首选DBProxy节点、全部DBProxy节点、探针进程七类故障；每次故障后要求每个玩家每种写法再确认两次；最后排空排队积压，按账本核对，并直接查PG核对写法互斥与事务恰好一次。
+- `run`会清理上述专用数据并停启容器，必须由用户明确授权；与其他演练共用`reliability.lock`，不能并行。2026-09-19单测和smoke通过。前两次`run`在可靠Redis故障后失败（排队写过载，见失败教训表，账本均0违例）；按最坏重试放大降低排队写负载后，第三次`run`（10玩家，排队写每90秒一次）通过完整一轮七类故障：普通写15,518次、排队写232次、事务20,640次确认，0违例，重启恢复读取与最终读取无差异、排队写无回退，PG直接核对写法互斥成立、每个事务序号恰好提交一次，证据`write-modes-run-2026-09-19T07-50-07-965Z`。这证明的是正确性，不是容量；AOF场景中PG停机期间只确认了2次排队写，该样本偏少。随后DBProxy入队改为组提交（排队上限4096、2秒排队期限），TiangZ排队写仓库不再重试；第四次`run`在与首次失败相同的负载（20玩家，排队写每250毫秒一次）下通过完整一轮：普通890、排队1,807、事务1,750次确认，0违例；PG停机期间有80次排队写只在AOF中得到确认，证据`write-modes-run-2026-09-19T09-16-36-248Z`。**更正**：当时的AOF核对只比较最终值与强杀前快照，而后续写入总会覆盖同一记录，因此不能单独证明这80次确认在强杀后存活；此后已改为Redis一应答就直接读取恢复出的积压逐个核对（见下）。此时入队平均约1.8秒（要等当前批和本批两次落盘），而探针客户端只有4条连接、每条同时只有一个请求，吞吐受客户端并发限制。
+
+连接与确认档位（2026-09-19，已实现，尚未跑整轮`run`）：
+
+- 同连接多请求在途：DBProxy服务端`server.maxInFlightPerConnection`、客户端`max_in_flight`（宿主`persistence.dbProxy.maxInFlightPerConnection`），默认均为64。同一连接上涉及同一记录、operation ID或trade ID的请求按到达顺序执行，其余并发；连接池按记录稳定路由，所以同一记录的写入仍按调用顺序落库。单个请求超时只有在发出后整条连接一帧未收到时才换连接；后端panic只让该请求收到`INTERNAL`。协议格式不变，新旧两端兼容。
+- 排队写专用连接：宿主`persistence.dbProxy.queuedClientPoolSize`（0..64，默认0=与`clientPoolSize`共用）。大于0时`EnqueueSnapshot`/`EnqueueMultiSnapshot`只走这些连接，总连接数为两者之和。排队写与直接写之间不保证跨连接顺序，这依赖“一条记录只允许一种写法”。
+- 入队确认档位：DBProxy部署配置`backlog.enqueueAck`，`aof`（默认，等本地AOF落盘）或`memory`（写入Redis内存即确认；Redis进程或机器崩溃可能丢约1秒已确认入队，正常重启不丢）。整个DBProxy部署统一，协议与业务代码不变；只把允许丢几秒的数据放到`memory`部署，充值、抽卡、建筑升级必须直接写PG。
+- 长稳控制器：探针用4条共享+2条排队写专用连接，每条64在途；新增`--enqueue-ack aof|memory`（默认aof）。AOF故障在Redis一应答就用一次只读EVAL读出每个玩家的积压条目：只核对PG停机期间才确认的玩家，值大于强杀时已尝试值的条目是重启后新写入、记为masked；任何缺失或低于要求即失败，一个都核对不到也失败。`memory`档位只要求强杀3秒前的确认存活。2026-09-19单测、`check`、`smoke`、`verify:quick`通过。整轮`run`（20玩家，经用户授权）：
+  - memory档位首跑在AOF核对处失败：账本靠解析日志滞后于探针，强杀时的已尝试值偏旧，20个玩家全被误判为masked；改为Redis重启前取已尝试值。
+  - memory档位第二跑在最终读取失败：20个玩家PG值都比最后确认少1–2。根因是DBProxy积压的既有缺陷——记录落库中又被入队会回到pending，另一节点的worker可并发领取，慢的旧值无条件写入后到覆盖新值。DBProxy `4bdde13`改为不领取仍有有效租约的记录（其ACK会把新值重新排队），并加真实Redis回归测试。
+  - 修复后两档都通过完整一轮七类故障，0违例：memory档位普通4,161、排队47,607、事务6,932次确认，PG停机期间3,460次排队写，重启后直接核对20/20，证据`write-modes-run-2026-09-19T13-50-45-339Z`；aof档位普通4,111、排队7,277、事务6,891，PG停机期间500次，核对20/20，证据`write-modes-run-2026-09-19T14-05-45-956Z`。修复前那次aof通过（`13-07-25-573Z`）不作为结论。
+  - 原“仍存的窄风险”（落库任务租约过期后才写PG，旧值覆盖新值）已解决：见下方防护序号。
+
+落库防护序号与500玩家过夜长稳（2026-09-20）：
+
+- 根因不是PG/Redis的缺陷，是DBProxy的设计：落库只靠租约互斥，PG侧无条件覆盖。租约挡不住"旧写入晚到"——任务卡顿、两节点时钟偏差、Redis崩溃回滚领取状态，都能让失效任务把旧值写在后面。
+- DBProxy `3ea22de`：入队脚本按 `max(Redis时钟微秒, 上一序号+1)` 分配防护序号写进条目（旧格式条目按0处理）；迁移12给快照表加 `queued_sequence`；落库改条件UPSERT，序号不更大就不写、返回 `Duplicate` 与当前版本并照常确认。加固：租约时间改用Redis `TIME`、落库事务 `statement_timeout` 10秒。测试：条目格式单测、真实PG防护语义、真实PG+Redis复现"租约过期后旧值才到"。
+- 过夜长稳（500玩家，每人每种写法60秒一次，每节点8条PG连接，aof档位）：主体运行连续通过7轮七类故障、0违例（01:03–05:57）；第8轮在dbproxy-all后因业务恢复超时失败，当时直接查PG，500个普通写与500对钱包全部与账本一致、总额守恒。随后用加抖动的探针再跑2轮完整收尾并通过：普通28,522、排队32,755、事务31,944次确认，13个故障动作，0违例，排空积压后最终读取0问题、无排队回退，PG直接对账0问题（2,000行快照、每玩家事务恰好一次），证据`write-modes-run-2026-09-19T21-59-07-118Z`。
+- 长稳控制器同期修的都是核对/夹具问题，不是产品问题：500人恢复读取改并发（串行约2分钟接近就绪上限）；AOF核对的键改在Redis脚本内生成（500个键超Windows命令行上限）；AOF核对补查PG（PG优雅关闭前几秒仍可落库，条目因此不在积压里）；探针出错退避加50%–150%抖动（固定退避让数百玩家在节点恢复后同步重试）。新增 `--step-ms`、`--dbproxy-shards`，放开到500玩家/12小时。
+- 容量观察（不是产品结论）：本机Windows Docker上单次PG操作约117→133毫秒（随表增长变慢），每节点8条连接约每秒80次操作。500玩家每5秒一次会把它压满并触发2秒连接排队快速失败；60秒一次约为容量三分之一，稳定。

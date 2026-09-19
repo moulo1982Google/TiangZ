@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
+import { atomicReleaseId } from "./atomic_release_identity.mjs";
 import { stopRuntime, sleep } from "./lib/process_test_harness.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -16,22 +17,40 @@ if (!token && envFile) {
   token = /^DBPROXY_AUTH_TOKEN=(.+)$/m.exec(content)?.[1]?.trim().replace(/^(['"])(.*)\1$/, "$2");
 }
 if (!token) throw new Error("set TIANGZ_DBPROXY_AUTH_TOKEN or supply --env-file; credentials are never logged");
+await mkdir(path.join(root, "temp"), { recursive: true });
 const directory = await mkdtemp(path.join(root, "temp", "module-migration-runtime-"));
 const key = `acceptance-${Date.now()}`;
 const executable = path.join(root, "target/debug", process.platform === "win32" ? "TiangZ.exe" : "TiangZ");
 try {
+  // 模块化宿主的主工程dist不含游戏模块；用正式模块工具链构建只含空场景的夹具。
+  // The modular Host's engine dist has no game modules; build a fixture with one empty scene through the official module toolchain.
+  const modules = path.join(directory, "modules");
+  const moduleRoot = path.join(modules, "probe");
+  const dist = path.join(directory, "dist");
+  const tool = args => execFileSync(process.execPath, args, { cwd: root, encoding: "utf8", windowsHide: true, timeout: 180_000,
+    stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, TIANGZ_MODULES_DIR: modules } });
   await mkdir(path.join(directory, "configs"));
-  await mkdir(path.join(directory, "dist"));
-  for (const name of ["model.js", "hotfix.js", "model.manifest.json", "hotfix.manifest.json", "game-config"]) {
-    await cp(path.join(root, "dist", name), path.join(directory, "dist", name), { recursive: true });
-  }
-  const original = await readFile(path.join(directory, "dist/model.js"), "utf8");
+  tool(["tools/create_game_module.mjs", "--id", "org.tiangz.migrationprobe", "--path", moduleRoot]);
+  await writeFile(path.join(moduleRoot, "src/model/index.ts"), `import { EntryScene, entryScene, defineGameModule } from "#tiangz/core";
+// 迁移验收只需要宿主场景；读写逻辑由测试注入。 / The migration check only needs a host scene; storage logic is injected by the test.
+@entryScene()
+export class MigrationProbeScene extends EntryScene {}
+defineGameModule({ id: "org.tiangz.migrationprobe", version: "0.1.0", modelExports: { MigrationProbeScene } });
+`);
+  await writeFile(path.join(moduleRoot, "src/hotfix/index.ts"), "export {};\n");
+  tool(["tools/prepare_game_modules.mjs", "--modules-dir", modules]);
+  tool(["tools/build_runtime_bundles.mjs", "--modules-dir", modules, "--out-dir", dist]);
+  tool(["tools/build_game_config_data.mjs", "--modules-dir", modules, "--out-dir", dist, "--initial"]);
+  const original = await readFile(path.join(dist, "model.js"), "utf8");
+  const manifests = Object.fromEntries(await Promise.all(["model.manifest.json", "hotfix.manifest.json"].map(async file =>
+    [file, await readFile(path.join(dist, file), "utf8")])));
   const port = await freePort();
-  await writeFile(path.join(directory, "configs/probe.json"), JSON.stringify({
+  const configPath = path.join(directory, "configs/probe.json");
+  await writeFile(configPath, JSON.stringify({
     process: { name: "module-migration-probe", identity: { originServerId: 32, workerId: 0 },
       persistence: { dbProxy: { endpoint, authTokenEnv: "TIANGZ_DBPROXY_AUTH_TOKEN", clientPoolSize: 1,
         connectTimeoutMs: 5000, requestTimeoutMs: 5000, maxFrameBytes: 8388608 } } },
-    scenes: [{ name: "probe", sceneType: "Location", ip: "127.0.0.1", port }],
+    scenes: [{ name: "probe", sceneType: "MigrationProbe", ip: "127.0.0.1", port, protocol: "websocket", audience: "outer" }],
   }));
   for (const mode of ["create", "verify"]) {
     const model = original + `\n(() => {
@@ -60,14 +79,19 @@ try {
         return result;
       };
     })();\n`;
-    await writeFile(path.join(directory, "dist/model.js"), model);
-    for (const file of ["model.manifest.json", "hotfix.manifest.json"]) {
-      const manifestPath = path.join(directory, "dist", file);
-      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-      manifest.modelFingerprint = createHash("sha256").update(model).digest("hex");
-      await writeFile(manifestPath, JSON.stringify(manifest));
+    await writeFile(path.join(dist, "model.js"), model);
+    const fingerprint = createHash("sha256").update(model).digest("hex");
+    for (const [file, content] of Object.entries(manifests)) {
+      const manifest = JSON.parse(content);
+      manifest.modelFingerprint = fingerprint;
+      // 发布身份绑定Model指纹；按同一契约重算，不绕过宿主校验。 / The release identity binds the Model fingerprint; recompute it, never bypass the Host check.
+      if (typeof manifest.releaseId === "string") {
+        manifest.releaseId = atomicReleaseId(manifest);
+        manifest.bundleVersion = `${manifest.bundleVersion.split("+")[0]}+${manifest.releaseId}`;
+      }
+      await writeFile(path.join(dist, file), JSON.stringify(manifest));
     }
-    const child = spawn(executable, ["configs/probe.json"], { cwd: directory, windowsHide: true,
+    const child = spawn(executable, [`--runtime-root=${directory}`, configPath], { cwd: directory, windowsHide: true,
       env: { ...process.env, RUST_LOG: "info", TIANGZ_DBPROXY_AUTH_TOKEN: token, TIANGZ_WATCHER_CONTROL: "stdin" }, stdio: ["pipe", "pipe", "pipe"] });
     let output = "";
     let failure;
@@ -78,7 +102,7 @@ try {
       const deadline = Date.now() + 30000;
       while (!output.includes(`MODULE_MIGRATION_${mode.toUpperCase()}_PASSED`) && Date.now() < deadline && child.exitCode === null && !failure) await sleep(50);
       if (failure) throw failure;
-      assert.match(output, new RegExp(`MODULE_MIGRATION_${mode.toUpperCase()}_PASSED`));
+      assert.match(output, new RegExp(`MODULE_MIGRATION_${mode.toUpperCase()}_PASSED`), output.slice(-4000));
     } finally {
       await stopRuntime({ child });
     }

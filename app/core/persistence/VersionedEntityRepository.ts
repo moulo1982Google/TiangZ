@@ -3,6 +3,7 @@ import {
   DbProxyErrorCode,
   DbProxyRemoteError,
   type DbProxySnapshotWrite,
+  type DbProxyTransactionalRecordWrite,
 } from "@tiangz/dbproxy-sdk";
 import { HostDbProxyTransport, IsHostDbProxyAvailable } from "./HostDbProxyTransport";
 
@@ -80,6 +81,34 @@ export interface VersionedEntityRepository<TSnapshot, TEntity> {
 }
 
 /**
+ * `.native`的`@queued`记录契约：只能排队写入。Enqueue成功只表示Redis AOF已接收，不表示PG已落库；
+ * 写入不带版本校验并按记录合并，崩溃或换服后可能回退到最近落库状态。
+ *
+ * Contract for `.native` `@queued` records: queued writes only. Success means Redis AOF accepted
+ * the write, not that PostgreSQL committed it; writes carry no revision check and coalesce per
+ * record, so a crash or ownership move may roll back to the last persisted state.
+ */
+export interface QueuedEntityRepository<TSnapshot, TEntity> {
+  Load(key: string): Promise<VersionedEntityLoadResult<TSnapshot> | undefined>;
+  Enqueue(key: string, value: TEntity): Promise<void>;
+  EnqueueSnapshot(key: string, value: TSnapshot): Promise<void>;
+}
+
+/**
+ * `.native`的`@transactional`记录契约：只生成事务写入记录，由业务与其他记录一起交给CommitRecords。
+ * 提交结果未知时必须以原operationId和完全相同的写入集合重试。
+ *
+ * Contract for `.native` `@transactional` records: builds transactional writes only, which domain
+ * code commits together through CommitRecords. Uncertain outcomes must retry with the original
+ * operationId and identical writes.
+ */
+export interface TransactionalEntityRepository<TSnapshot, TEntity> {
+  Load(key: string): Promise<VersionedEntityLoadResult<TSnapshot> | undefined>;
+  TransactionWrite(key: string, value: TEntity, expectedRevision: bigint): DbProxyTransactionalRecordWrite;
+  TransactionWriteSnapshot(key: string, value: TSnapshot, expectedRevision: bigint): DbProxyTransactionalRecordWrite;
+}
+
+/**
  * 普通单Entity快照的通用Repository。它只处理schema校验、revision CAS和同ID重试；
  * 聚合查询、索引、跨玩家事务和恢复生命周期仍由领域Repository负责。
  *
@@ -90,8 +119,7 @@ export interface VersionedEntityRepository<TSnapshot, TEntity> {
 export class DbProxyEntityRepository<TSnapshot, TEntity>
 implements VersionedEntityRepository<TSnapshot, TEntity> {
   private readonly client: DbProxyClient;
-  private readonly requestPrefix: string;
-  private requestSequence = 0;
+  private readonly requestIds: RepositoryRequestIds;
 
   constructor(
     private readonly codec: VersionedEntityCodec<TSnapshot, TEntity>,
@@ -99,9 +127,7 @@ implements VersionedEntityRepository<TSnapshot, TEntity> {
     client = new DbProxyClient(new HostDbProxyTransport()),
   ) {
     this.client = client;
-    repositoryInstanceSequence += 1;
-    if (!Number.isSafeInteger(repositoryInstanceSequence)) throw new Error("DBProxy repository instance sequence exhausted");
-    this.requestPrefix = `${processName}:${codec.recordNamespace}:${Date.now().toString(36)}:${repositoryInstanceSequence.toString(36)}`;
+    this.requestIds = new RepositoryRequestIds(processName, codec.recordNamespace);
   }
 
   async Load(key: string): Promise<VersionedEntityLoadResult<TSnapshot> | undefined> {
@@ -141,14 +167,23 @@ implements VersionedEntityRepository<TSnapshot, TEntity> {
     return this.PersistSnapshot(key, value, expectedRevision);
   }
 
+  /** 生成事务写入记录，不访问存储；交给CommitRecords与其他记录一起提交。
+   * Builds a transactional write without storage access, for CommitRecords with other records.
+   */
+  TransactionWrite(key: string, value: TEntity, expectedRevision: bigint): DbProxyTransactionalRecordWrite {
+    return this.TransactionWriteSnapshot(key, this.codec.Capture(value), expectedRevision);
+  }
+
+  TransactionWriteSnapshot(key: string, value: TSnapshot, expectedRevision: bigint): DbProxyTransactionalRecordWrite {
+    return CreateTransactionalRecordWrite(this.codec, key, value, expectedRevision);
+  }
+
   /** 写入已校验版本的快照；迁移使用读取到的revision，所有重试复用请求身份。
    * Writes a version-checked snapshot; migrations use the loaded revision and all retries preserve request identity.
    */
-  private async PersistSnapshot(key: string, value: TSnapshot, expectedRevision: bigint): Promise<VersionedEntitySaveResult> {
-    this.requestSequence += 1;
-    if (!Number.isSafeInteger(this.requestSequence)) throw new Error("DBProxy entity request sequence exhausted");
+  private PersistSnapshot(key: string, value: TSnapshot, expectedRevision: bigint): Promise<VersionedEntitySaveResult> {
     const write: DbProxySnapshotWrite = {
-      requestId: `${this.requestPrefix}:${this.requestSequence.toString(36)}`,
+      requestId: this.requestIds.Next(),
       record: { namespace: this.codec.recordNamespace, key },
       schema: this.codec.schema,
       schemaVersion: this.codec.schemaVersion,
@@ -156,17 +191,155 @@ implements VersionedEntityRepository<TSnapshot, TEntity> {
       expectedRevision,
       updatedAtUnixMs: BigInt(Date.now()),
     };
-    for (let attempt = 1; attempt <= SAVE_ATTEMPTS; attempt += 1) {
-      try {
-        return await this.client.Save(write);
-      } catch (error) {
-        if (attempt === SAVE_ATTEMPTS || !(error instanceof DbProxyRemoteError) || error.code !== DbProxyErrorCode.StorageUnavailable) throw error;
-        // 提交结果不明确时只能复用同一requestId；更换ID可能重复覆盖。 / Ambiguous commits must retry the same requestId.
-        await waitBeforeStorageRetry(attempt);
-      }
-    }
-    throw new Error("unreachable DBProxy entity save retry state");
+    return RetryStorageUnavailable(() => this.client.Save(write));
   }
+}
+
+/**
+ * `@queued`记录的DBProxy实现。读取时旧版本只在内存迁移、不回写：回写会与尚未落库的排队数据竞争，
+ * 可能用较旧的PG状态替换较新的排队值；下一次Enqueue自然写入当前版本。
+ *
+ * DBProxy implementation for `@queued` records. Older schemas migrate in memory without write-back:
+ * writing back would race queued values not yet in PostgreSQL and could replace them with older
+ * state; the next Enqueue writes the current schema.
+ */
+export class DbProxyQueuedEntityRepository<TSnapshot, TEntity>
+implements QueuedEntityRepository<TSnapshot, TEntity> {
+  private readonly client: DbProxyClient;
+  private readonly requestIds: RepositoryRequestIds;
+
+  constructor(
+    private readonly codec: VersionedEntityCodec<TSnapshot, TEntity>,
+    processName: string,
+    client = new DbProxyClient(new HostDbProxyTransport()),
+  ) {
+    this.client = client;
+    this.requestIds = new RepositoryRequestIds(processName, codec.recordNamespace);
+  }
+
+  Load(key: string): Promise<VersionedEntityLoadResult<TSnapshot> | undefined> {
+    return LoadWithoutWriteBack(this.client, this.codec, key);
+  }
+
+  async Enqueue(key: string, value: TEntity): Promise<void> {
+    return this.EnqueueSnapshot(key, this.codec.Capture(value));
+  }
+
+  /** 排队写入，只发送一次、不在仓库内重试：下一次排队写本来就会取代它，重试只会在存储过载时放大负载。
+   * 失败时由调用方决定是否以新值再写；编码错误以拒绝返回，不同步抛出。
+   * Queues a write once with no in-repository retry: the next queued write supersedes it anyway, and retries only
+   * amplify load while storage is overloaded. On failure the caller decides whether to write a newer value; codec
+   * errors reject rather than throw synchronously.
+   */
+  async EnqueueSnapshot(key: string, value: TSnapshot): Promise<void> {
+    const write: DbProxySnapshotWrite = {
+      requestId: this.requestIds.Next(),
+      record: { namespace: this.codec.recordNamespace, key },
+      schema: this.codec.schema,
+      schemaVersion: this.codec.schemaVersion,
+      payload: this.codec.Encode(value),
+      updatedAtUnixMs: BigInt(Date.now()),
+    };
+    return this.client.EnqueueSnapshot(write);
+  }
+}
+
+/**
+ * `@transactional`记录的DBProxy实现。不提供单独保存；读取时旧版本只在内存迁移，
+ * 由下一次事务以读取到的revision写入当前版本。
+ *
+ * DBProxy implementation for `@transactional` records. No standalone save; older schemas migrate
+ * in memory and the next transaction writes the current schema at the loaded revision.
+ */
+export class DbProxyTransactionalEntityRepository<TSnapshot, TEntity>
+implements TransactionalEntityRepository<TSnapshot, TEntity> {
+  private readonly client: DbProxyClient;
+
+  constructor(
+    private readonly codec: VersionedEntityCodec<TSnapshot, TEntity>,
+    processName: string,
+    client = new DbProxyClient(new HostDbProxyTransport()),
+  ) {
+    // 事务身份由业务的operationId决定，仓库不生成请求号；保留processName使生成工厂形状一致。
+    // Transaction identity is the domain operationId; processName keeps the generated factory shape uniform.
+    if (processName.length === 0) throw new TypeError("transactional entity repository processName must not be empty");
+    this.client = client;
+  }
+
+  Load(key: string): Promise<VersionedEntityLoadResult<TSnapshot> | undefined> {
+    return LoadWithoutWriteBack(this.client, this.codec, key);
+  }
+
+  TransactionWrite(key: string, value: TEntity, expectedRevision: bigint): DbProxyTransactionalRecordWrite {
+    return this.TransactionWriteSnapshot(key, this.codec.Capture(value), expectedRevision);
+  }
+
+  TransactionWriteSnapshot(key: string, value: TSnapshot, expectedRevision: bigint): DbProxyTransactionalRecordWrite {
+    return CreateTransactionalRecordWrite(this.codec, key, value, expectedRevision);
+  }
+}
+
+/** 同一仓库实例内唯一、跨实例不重复的请求号。 / Request IDs unique within one repository instance and distinct across instances. */
+class RepositoryRequestIds {
+  private readonly prefix: string;
+  private sequence = 0;
+
+  constructor(processName: string, recordNamespace: string) {
+    repositoryInstanceSequence += 1;
+    if (!Number.isSafeInteger(repositoryInstanceSequence)) throw new Error("DBProxy repository instance sequence exhausted");
+    this.prefix = `${processName}:${recordNamespace}:${Date.now().toString(36)}:${repositoryInstanceSequence.toString(36)}`;
+  }
+
+  Next(): string {
+    this.sequence += 1;
+    if (!Number.isSafeInteger(this.sequence)) throw new Error("DBProxy entity request sequence exhausted");
+    return `${this.prefix}:${this.sequence.toString(36)}`;
+  }
+}
+
+/** 仅对存储暂不可用做有界重试；调用方必须在所有尝试中复用同一请求身份。
+ * Bounded retry for storage unavailability only; callers must reuse one request identity across attempts.
+ */
+async function RetryStorageUnavailable<T>(operation: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; attempt <= SAVE_ATTEMPTS; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (attempt === SAVE_ATTEMPTS || !(error instanceof DbProxyRemoteError) || error.code !== DbProxyErrorCode.StorageUnavailable) throw error;
+      // 提交结果不明确时只能复用同一requestId；更换ID可能重复覆盖。 / Ambiguous commits must retry the same requestId.
+      await waitBeforeStorageRetry(attempt);
+    }
+  }
+  throw new Error("unreachable DBProxy entity save retry state");
+}
+
+async function LoadWithoutWriteBack<TSnapshot, TEntity>(
+  client: DbProxyClient,
+  codec: VersionedEntityCodec<TSnapshot, TEntity>,
+  key: string,
+): Promise<VersionedEntityLoadResult<TSnapshot> | undefined> {
+  const snapshot = await client.Load({ namespace: codec.recordNamespace, key });
+  if (!snapshot) return undefined;
+  const payload = MigrateVersionedEntityPayload(codec, snapshot.schema, snapshot.schemaVersion, snapshot.payload);
+  return { data: codec.Decode(payload), revision: snapshot.revision, updatedAtUnixMs: snapshot.updatedAtUnixMs };
+}
+
+function CreateTransactionalRecordWrite<TSnapshot, TEntity>(
+  codec: VersionedEntityCodec<TSnapshot, TEntity>,
+  key: string,
+  value: TSnapshot,
+  expectedRevision: bigint,
+): DbProxyTransactionalRecordWrite {
+  if (key.length === 0) throw new TypeError("versioned entity key must not be empty");
+  if (expectedRevision < 0n) throw new RangeError("expectedRevision must not be negative");
+  return {
+    record: { namespace: codec.recordNamespace, key },
+    schema: codec.schema,
+    schemaVersion: codec.schemaVersion,
+    expectedRevision,
+    payload: codec.Encode(value),
+    updatedAtUnixMs: BigInt(Date.now()),
+  };
 }
 
 /** 使用墙钟指数退避与full jitter，避免同一故障窗口内的Entity同步重试。 / Uses wall-clock exponential backoff with full jitter so Entities do not retry in lockstep during one outage. */
