@@ -1173,4 +1173,8 @@ SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools
 - 同连接多请求在途：DBProxy服务端`server.maxInFlightPerConnection`、客户端`max_in_flight`（宿主`persistence.dbProxy.maxInFlightPerConnection`），默认均为64。同一连接上涉及同一记录、operation ID或trade ID的请求按到达顺序执行，其余并发；连接池按记录稳定路由，所以同一记录的写入仍按调用顺序落库。单个请求超时只有在发出后整条连接一帧未收到时才换连接；后端panic只让该请求收到`INTERNAL`。协议格式不变，新旧两端兼容。
 - 排队写专用连接：宿主`persistence.dbProxy.queuedClientPoolSize`（0..64，默认0=与`clientPoolSize`共用）。大于0时`EnqueueSnapshot`/`EnqueueMultiSnapshot`只走这些连接，总连接数为两者之和。排队写与直接写之间不保证跨连接顺序，这依赖“一条记录只允许一种写法”。
 - 入队确认档位：DBProxy部署配置`backlog.enqueueAck`，`aof`（默认，等本地AOF落盘）或`memory`（写入Redis内存即确认；Redis进程或机器崩溃可能丢约1秒已确认入队，正常重启不丢）。整个DBProxy部署统一，协议与业务代码不变；只把允许丢几秒的数据放到`memory`部署，充值、抽卡、建筑升级必须直接写PG。
-- 长稳控制器：探针用4条共享+2条排队写专用连接，每条64在途；新增`--enqueue-ack aof|memory`（默认aof）。AOF故障在Redis一应答就用一次只读EVAL读出每个玩家的积压条目：只核对PG停机期间才确认的玩家，值大于强杀时已尝试值的条目是重启后新写入、记为masked；任何缺失或低于要求即失败，一个都核对不到也失败。`memory`档位只要求强杀3秒前的确认存活。2026-09-19单测、`check`（含memory配置离线校验）、`smoke`（确认共享4条与排队2条连接都建立）和`verify:quick`通过；整轮`run`待用户授权。
+- 长稳控制器：探针用4条共享+2条排队写专用连接，每条64在途；新增`--enqueue-ack aof|memory`（默认aof）。AOF故障在Redis一应答就用一次只读EVAL读出每个玩家的积压条目：只核对PG停机期间才确认的玩家，值大于强杀时已尝试值的条目是重启后新写入、记为masked；任何缺失或低于要求即失败，一个都核对不到也失败。`memory`档位只要求强杀3秒前的确认存活。2026-09-19单测、`check`、`smoke`、`verify:quick`通过。整轮`run`（20玩家，经用户授权）：
+  - memory档位首跑在AOF核对处失败：账本靠解析日志滞后于探针，强杀时的已尝试值偏旧，20个玩家全被误判为masked；改为Redis重启前取已尝试值。
+  - memory档位第二跑在最终读取失败：20个玩家PG值都比最后确认少1–2。根因是DBProxy积压的既有缺陷——记录落库中又被入队会回到pending，另一节点的worker可并发领取，慢的旧值无条件写入后到覆盖新值。DBProxy `4bdde13`改为不领取仍有有效租约的记录（其ACK会把新值重新排队），并加真实Redis回归测试。
+  - 修复后两档都通过完整一轮七类故障，0违例：memory档位普通4,161、排队47,607、事务6,932次确认，PG停机期间3,460次排队写，重启后直接核对20/20，证据`write-modes-run-2026-09-19T13-50-45-339Z`；aof档位普通4,111、排队7,277、事务6,891，PG停机期间500次，核对20/20，证据`write-modes-run-2026-09-19T14-05-45-956Z`。修复前那次aof通过（`13-07-25-573Z`）不作为结论。
+  - 仍存的窄风险：worker卡住超过30秒租约后才写PG，旧值仍可能覆盖；未处理。

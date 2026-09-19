@@ -565,9 +565,11 @@ class Soak {
         // memory档位按everysec最多丢约1秒已确认写入：只要求强杀3秒前的确认存活。
         // The memory level may lose about one second of acknowledged writes: only acks older than 3 s must survive.
         if (this.options.enqueueAck === "memory") await this.wait(3_000);
-        const attemptedAtKill = this.ledger.queued.map((entry) => entry.attempted);
         command("docker", ["kill", ENVIRONMENT.redis]);
         await this.wait(5_000);
+        // 账本经日志解析会滞后于探针；在重启前取已尝试值，重启后的新写入必然更大。
+        // The ledger trails the probe through log parsing; take attempted values just before the restart, so only post-restart writes exceed them.
+        const attemptedAtKill = this.ledger.queued.map((entry) => entry.attempted);
         command("docker", ["start", ENVIRONMENT.redis]);
         const restored = await this.readRestoredQueued();
         const verdict = verifyRestoredQueued({ required: this.aofAcked, ackedAtPostgresStop, attemptedAtKill, restored });
