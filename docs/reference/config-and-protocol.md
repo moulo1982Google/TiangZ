@@ -61,6 +61,8 @@ Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置�
       "failoverEndpoints": ["127.0.0.1:7801"],
       "authTokenEnv": "TIANGZ_DBPROXY_AUTH_TOKEN",
       "clientPoolSize": 4,
+      "queuedClientPoolSize": 2,
+      "maxInFlightPerConnection": 64,
       "connectTimeoutMs": 5000,
       "requestTimeoutMs": 5000,
       "maxFrameBytes": 8388608
@@ -73,6 +75,8 @@ Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置�
 - `failoverEndpoints`：可选的有序备用内网地址；首地址仍由`endpoint`指定。网络不可用时Rust客户端按顺序切换，并保留原`requestId/operationId`重试；业务拒绝、Revision冲突、鉴权失败和协议不匹配不会换节点。旧配置也兼容别名`endpoints`，新配置统一使用`failoverEndpoints`。
 - `authTokenEnv`：保存令牌的环境变量名；JSON中禁止填写令牌值，默认`TIANGZ_DBPROXY_AUTH_TOKEN`。
 - `clientPoolSize`：当前Process的Rust连接池大小，范围1到64。
+- `queuedClientPoolSize`：排队写（`@queued`/`EnqueueSnapshot`）专用连接数，范围0到64，默认0表示与其他请求共用`clientPoolSize`连接。大于0时排队写只走这些连接，读取、直接写入和事务不会排在排队写后面；总连接数为两者之和，计入DBProxy的`server.maxConnections`。同一记录只允许一种写法，排队写与直接写不保证跨连接顺序。
+- `maxInFlightPerConnection`：每条连接同时发出未回的请求上限，范围1到4096，默认64；超出在本进程排队。同一连接上涉及同一记录、操作或交易的请求由DBProxy按发送顺序执行，其余并发，所以一个慢请求不会挡住其他玩家的请求。应不大于DBProxy的`server.maxInFlightPerConnection`。
 - `connectTimeoutMs/requestTimeoutMs`：连接和单RPC超时，范围100到120000毫秒。
 - `maxFrameBytes`：协议帧上限，范围1 KiB到64 MiB，必须与DBProxy一致。
 

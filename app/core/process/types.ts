@@ -122,6 +122,10 @@ export interface ProcessDbProxyConfig {
   /** 只填写令牌环境变量名，绝不能把令牌值写入JSON。 / Names the token environment variable; never put the token value in JSON. */
   authTokenEnv?: string;
   clientPoolSize?: number;
+  /** 排队写专用连接数，0（默认）与其他请求共用clientPoolSize连接。 / Connections dedicated to queued writes; 0 (default) shares the clientPoolSize connections. */
+  queuedClientPoolSize?: number;
+  /** 每条连接同时在途的请求上限，默认64。 / In-flight requests per connection, default 64. */
+  maxInFlightPerConnection?: number;
   connectTimeoutMs?: number;
   requestTimeoutMs?: number;
   maxFrameBytes?: number;

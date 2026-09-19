@@ -68,11 +68,63 @@ fn maybe_drop_test_response(kind: &str) -> std::result::Result<(), JsErrorBox> {
     Ok(())
 }
 
+/// 一组按需建立的客户端连接；连接边界不确定时整组重建。
+/// One lazily connected group of client connections, rebuilt as a whole after an ambiguous failure.
+#[derive(Clone)]
+struct PoolSlot {
+    label: &'static str,
+    size: usize,
+    pool: Arc<Mutex<Option<DbProxyClientPool>>>,
+}
+
+impl PoolSlot {
+    fn new(label: &'static str, size: usize) -> Self {
+        Self {
+            label,
+            size,
+            pool: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    async fn get(
+        &self,
+        config: &ClientConfig,
+    ) -> std::result::Result<DbProxyClientPool, ClientError> {
+        let mut pool = self.pool.lock().await;
+        if let Some(existing) = pool.as_ref() {
+            return Ok(existing.clone());
+        }
+        tracing::info!(
+            target: "tiangz::dbproxy",
+            endpoint = %config.endpoint,
+            pool = self.label,
+            pool_size = self.size,
+            "connecting DBProxy client pool"
+        );
+        let connected = DbProxyClientPool::connect(config.clone(), self.size).await?;
+        tracing::info!(
+            target: "tiangz::dbproxy",
+            endpoint = %config.endpoint,
+            pool = self.label,
+            pool_size = self.size,
+            "DBProxy client pool connected"
+        );
+        *pool = Some(connected.clone());
+        Ok(connected)
+    }
+
+    async fn invalidate(&self) {
+        *self.pool.lock().await = None;
+    }
+}
+
 #[derive(Clone)]
 struct DbProxyBridge {
     config: ClientConfig,
-    pool_size: usize,
-    pool: Arc<Mutex<Option<DbProxyClientPool>>>,
+    pool: PoolSlot,
+    /// 排队写专用连接；未配置时排队写与其他请求共用 `pool`。
+    /// Connections dedicated to queued writes; without them queued writes share `pool`.
+    queued_pool: Option<PoolSlot>,
     host_runtime: Handle,
     metrics: Arc<DbProxyClientMetrics>,
 }
@@ -257,32 +309,6 @@ fn record_request_failure(counter: &AtomicU64) -> Option<u64> {
 }
 
 impl DbProxyBridge {
-    async fn pool(&self) -> std::result::Result<DbProxyClientPool, ClientError> {
-        let mut pool = self.pool.lock().await;
-        if let Some(existing) = pool.as_ref() {
-            return Ok(existing.clone());
-        }
-        tracing::info!(
-            target: "tiangz::dbproxy",
-            endpoint = %self.config.endpoint,
-            pool_size = self.pool_size,
-            "connecting DBProxy client pool"
-        );
-        let connected = DbProxyClientPool::connect(self.config.clone(), self.pool_size).await?;
-        tracing::info!(
-            target: "tiangz::dbproxy",
-            endpoint = %self.config.endpoint,
-            pool_size = self.pool_size,
-            "DBProxy client pool connected"
-        );
-        *pool = Some(connected.clone());
-        Ok(connected)
-    }
-
-    async fn invalidate(&self) {
-        *self.pool.lock().await = None;
-    }
-
     /// 连接边界不确定时只重连并重放一次；调用方提供的幂等ID保持不变。
     /// Reconnects and replays once after an ambiguous connection failure while preserving the caller's idempotency ID.
     async fn execute<T, F, Fut>(&self, operation: F) -> std::result::Result<T, ClientError>
@@ -291,29 +317,61 @@ impl DbProxyBridge {
         F: Fn(DbProxyClientPool) -> Fut + Send + 'static,
         Fut: Future<Output = std::result::Result<T, ClientError>> + Send + 'static,
     {
-        let bridge = self.clone();
+        self.execute_in(self.pool.clone(), operation).await
+    }
+
+    /// 排队写走专用连接（若已配置），不与读取和直接写入争用连接。
+    /// Queued writes use their dedicated connections when configured, never contending with reads or direct writes.
+    async fn execute_queued<T, F, Fut>(&self, operation: F) -> std::result::Result<T, ClientError>
+    where
+        T: Send + 'static,
+        F: Fn(DbProxyClientPool) -> Fut + Send + 'static,
+        Fut: Future<Output = std::result::Result<T, ClientError>> + Send + 'static,
+    {
+        let slot = self
+            .queued_pool
+            .clone()
+            .unwrap_or_else(|| self.pool.clone());
+        self.execute_in(slot, operation).await
+    }
+
+    async fn execute_in<T, F, Fut>(
+        &self,
+        slot: PoolSlot,
+        operation: F,
+    ) -> std::result::Result<T, ClientError>
+    where
+        T: Send + 'static,
+        F: Fn(DbProxyClientPool) -> Fut + Send + 'static,
+        Fut: Future<Output = std::result::Result<T, ClientError>> + Send + 'static,
+    {
+        let config = self.config.clone();
         self.host_runtime
-            .spawn(async move { bridge.execute_on_host(operation).await })
+            .spawn(async move { execute_on_host(&config, &slot, operation).await })
             .await
             .map_err(|_| ClientError::UnexpectedResponse("DBProxy host task terminated"))?
     }
+}
 
-    /// 在Rust多线程Host Runtime执行连接和I/O；V8线程只等待结果，不承载网络驱动。
-    /// Runs connections and I/O on the multithreaded Rust host runtime while V8 only awaits the result.
-    async fn execute_on_host<T, F, Fut>(&self, operation: F) -> std::result::Result<T, ClientError>
-    where
-        F: Fn(DbProxyClientPool) -> Fut,
-        Fut: Future<Output = std::result::Result<T, ClientError>>,
-    {
-        let pool = self.pool().await?;
-        match operation(pool).await {
-            Err(error) if is_reconnectable(&error) => {
-                self.invalidate().await;
-                let pool = self.pool().await?;
-                operation(pool).await
-            }
-            result => result,
+/// 在Rust多线程Host Runtime执行连接和I/O；V8线程只等待结果，不承载网络驱动。
+/// Runs connections and I/O on the multithreaded Rust host runtime while V8 only awaits the result.
+async fn execute_on_host<T, F, Fut>(
+    config: &ClientConfig,
+    slot: &PoolSlot,
+    operation: F,
+) -> std::result::Result<T, ClientError>
+where
+    F: Fn(DbProxyClientPool) -> Fut,
+    Fut: Future<Output = std::result::Result<T, ClientError>>,
+{
+    let pool = slot.get(config).await?;
+    match operation(pool).await {
+        Err(error) if is_reconnectable(&error) => {
+            slot.invalidate().await;
+            let pool = slot.get(config).await?;
+            operation(pool).await
         }
+        result => result,
     }
 }
 
@@ -344,12 +402,14 @@ pub fn configure(process: &ProcessConfig, host_runtime: Handle) -> Result<()> {
     config.connect_timeout = Duration::from_millis(settings.connect_timeout_ms);
     config.request_timeout = Duration::from_millis(settings.request_timeout_ms);
     config.max_frame_bytes = settings.max_frame_bytes;
+    config.max_in_flight = settings.max_in_flight_per_connection;
     let endpoint_count = settings.endpoint_candidates().len();
     DBPROXY_BRIDGE.with(|slot| {
         *slot.borrow_mut() = Some(DbProxyBridge {
             config,
-            pool_size: settings.client_pool_size,
-            pool: Arc::new(Mutex::new(None)),
+            pool: PoolSlot::new("shared", settings.client_pool_size),
+            queued_pool: (settings.queued_client_pool_size > 0)
+                .then(|| PoolSlot::new("queued", settings.queued_client_pool_size)),
             host_runtime,
             metrics,
         });
@@ -360,6 +420,8 @@ pub fn configure(process: &ProcessConfig, host_runtime: Handle) -> Result<()> {
         endpoint = %settings.endpoint,
         endpoint_count,
         client_pool_size = settings.client_pool_size,
+        queued_client_pool_size = settings.queued_client_pool_size,
+        max_in_flight_per_connection = settings.max_in_flight_per_connection,
         "DBProxy host bridge configured"
     );
     Ok(())
@@ -383,7 +445,11 @@ pub async fn warm() -> std::result::Result<(), ClientError> {
     let Some(bridge) = bridge else {
         return Ok(());
     };
-    bridge.execute(|_| async { Ok(()) }).await
+    bridge.execute(|_| async { Ok(()) }).await?;
+    if bridge.queued_pool.is_some() {
+        bridge.execute_queued(|_| async { Ok(()) }).await?;
+    }
+    Ok(())
 }
 
 fn bridge() -> std::result::Result<DbProxyBridge, JsErrorBox> {
@@ -756,7 +822,7 @@ async fn op_host_dbproxy_enqueue_snapshot(
         updated_at_unix_ms: parse_u64(&updated_at_unix_ms, "updatedAtUnixMs")?,
     };
     let result = bridge()?
-        .execute(move |pool| {
+        .execute_queued(move |pool| {
             let request = request.clone();
             async move { pool.enqueue_snapshot(request).await }
         })
@@ -780,7 +846,7 @@ async fn op_host_dbproxy_enqueue_multi_snapshot(
 ) -> std::result::Result<HostBatchEnqueueResponse, JsErrorBox> {
     let requests = parse_snapshot_writes(&writes_json)?;
     let result = bridge()?
-        .execute(move |pool| {
+        .execute_queued(move |pool| {
             let requests = requests.clone();
             async move { pool.enqueue_multi_snapshot(&requests).await }
         })

@@ -5,7 +5,7 @@ import vm from "node:vm";
 import {
   FULL_FAULT_ORDER, NAMESPACES, WALLET_TOTAL,
   adoptBootState, applyProbeEvent, assertCoverage, checkLoadedState, checkStorageRows,
-  createLedger, planSchedule, resumeState, roundsSatisfied, ackCounters,
+  createLedger, planSchedule, resumeState, roundsSatisfied, ackCounters, verifyRestoredQueued,
 } from "./lib/persistence_write_modes_ledger.mjs";
 import { extractProbeEvent, renderProbeScript } from "./lib/persistence_write_modes_probe.mjs";
 import { CONFIRMATION, parseArguments } from "./persistence_write_modes_soak.mjs";
@@ -28,6 +28,26 @@ test("arguments require explicit confirmation only for the destructive run", () 
   assert.equal(parseArguments(["run", "--confirm", CONFIRMATION]).action, "run");
   assert.throws(() => parseArguments(["smoke", "--confirm", CONFIRMATION]), /only accepted by run/);
   assert.throws(() => parseArguments(["run", "--seconds", "600", "--confirm", CONFIRMATION]), /seconds must be/);
+});
+
+test("enqueue acknowledgement level is explicit and limited to real storage", () => {
+  assert.equal(parseArguments([]).enqueueAck, "aof");
+  assert.equal(parseArguments(["plan", "--enqueue-ack", "memory"]).enqueueAck, "memory");
+  assert.equal(parseArguments(["run", "--enqueue-ack", "memory", "--confirm", CONFIRMATION]).enqueueAck, "memory");
+  assert.throws(() => parseArguments(["plan", "--enqueue-ack", "none"]), /enqueue-ack must be/);
+  assert.throws(() => parseArguments(["smoke", "--enqueue-ack", "memory"]), /does not apply to smoke/);
+});
+
+test("restored backlog check flags lost acknowledgements and ignores entries rewritten after the restart", () => {
+  const base = { ackedAtPostgresStop: [5, 5, 5, 5, 5], attemptedAtKill: [12, 12, 12, 12, 12] };
+  const verdict = verifyRestoredQueued({ ...base, required: [10, 10, 10, 10, 5], restored: [10, 12, 13, 9, undefined] });
+  // p4 未在PG停机期间确认，可能已落PG，不参与核对。 / p4 was not acknowledged while PG was down, so it may already be in PG.
+  assert.equal(verdict.eligible, 4);
+  assert.equal(verdict.verified, 2);
+  assert.equal(verdict.masked, 1);
+  assert.deepEqual(verdict.lost, [{ p: 3, required: 10, restored: 9 }]);
+  const missing = verifyRestoredQueued({ ...base, required: [10, 5, 5, 5, 5], restored: [undefined, 1, 1, 1, 1] });
+  assert.deepEqual(missing.lost, [{ p: 0, required: 10, restored: "missing" }]);
 });
 
 test("fault subsets are diagnostic-only and never become a full soak pass", () => {

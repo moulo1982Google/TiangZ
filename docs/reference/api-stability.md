@@ -138,6 +138,7 @@ npm run verify:core-api
 ### 开发中
 
 - 新增持久化写法的Stable API（非破坏性）：`DbProxyQueuedEntityRepository`、`DbProxyTransactionalEntityRepository`及类型`QueuedEntityRepository`、`TransactionalEntityRepository`；`DbProxyEntityRepository`新增`TransactionWrite`/`TransactionWriteSnapshot`，原有方法、请求号格式和重试语义不变。它们由`.native`的`@queued`/`@transactional`生成代码使用，见[持久化写法标记](../ai/business-development-manual.md#持久化写法标记2026-09-19)。`public-api.lock.json`本轮未更新：HEAD锁已落后源码（`a16344c`/`1da8f58`引入的声明变化），更新锁会同时吸收这些无关漂移；发布前执行`core-api:update-lock`时一并评审。
+- `ProcessDbProxyConfig`新增可选字段`queuedClientPoolSize`（排队写专用连接数，默认0共用）与`maxInFlightPerConnection`（每连接在途请求上限，默认64），非破坏性；锁同上一并在发布前评审。
 
 - 新增 `modules` 宿主装配模式，HotfixManifest.buildMode 增加同名值；仅显式选择时生效，默认 demo/bench 保持原行为。模式不匹配的 Hotfix 必须拒绝；模式切换需要完整构建与 Process 重启，不更新协议字段或绕过兼容指纹。
 

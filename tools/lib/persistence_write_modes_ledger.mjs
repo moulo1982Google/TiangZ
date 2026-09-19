@@ -19,7 +19,7 @@ export const FAULTS = Object.freeze({
   postgres: { estimateSeconds: 95, needsContainers: true, summary: "停止PG 65秒：普通/事务写入暂不可用或结果未知，排队写继续由AOF确认" },
   redis: { estimateSeconds: 55, needsContainers: true, summary: "强杀可靠Redis 35秒：排队写失败，普通/事务写入不受影响" },
   cache: { estimateSeconds: 55, needsContainers: true, summary: "强杀缓存Redis 35秒：三种写法都应继续，读取回源PG" },
-  aof: { estimateSeconds: 120, needsContainers: true, summary: "PG停机期间积累排队写，强杀并重启可靠Redis，再恢复PG：已确认排队写必须最终落库" },
+  aof: { estimateSeconds: 125, needsContainers: true, summary: "PG停机期间积累排队写，强杀并重启可靠Redis，立即核对恢复出的积压，再恢复PG：已确认排队写不得丢失（memory确认档位只要求强杀3秒前的确认）" },
   "dbproxy-primary": { estimateSeconds: 40, needsContainers: false, summary: "强杀探针首选DBProxy节点20秒：客户端切换到备用节点" },
   "dbproxy-all": { estimateSeconds: 45, needsContainers: false, summary: "强杀全部DBProxy节点20秒：所有写法结果未知，恢复后按原身份重试或对账" },
   "probe-restart": { estimateSeconds: 40, needsContainers: false, summary: "强杀TiangZ探针进程后重启：新进程从PG恢复并按账本核对" },
@@ -212,6 +212,30 @@ export function ackCounters(ledger) {
 export function roundsSatisfied(ledger, baseline, rounds = 2) {
   const current = ackCounters(ledger);
   return current.every((counts, mode) => counts.every((count, p) => count - baseline[mode][p] >= rounds));
+}
+
+/** 入队确认档位，由DBProxy部署配置决定。 / Enqueue acknowledgement levels, set by the DBProxy deployment. */
+export const ENQUEUE_ACKS = Object.freeze(["aof", "memory"]);
+
+/**
+ * AOF故障：可靠Redis重启后，直接核对恢复出的积压条目。只核对PG停机期间才确认的玩家（其值只能在积压中），
+ * 值大于强杀时已尝试值的条目是重启后新写入，无法作证，记为masked。
+ * AOF fault: after the reliable Redis restarts, check the restored backlog directly. Only players acknowledged
+ * while PostgreSQL was down are eligible (their value can only live in the backlog); an entry above the value
+ * attempted at the kill was written after the restart and cannot testify, so it counts as masked.
+ */
+export function verifyRestoredQueued({ required, ackedAtPostgresStop, attemptedAtKill, restored }) {
+  const result = { eligible: 0, verified: 0, masked: 0, lost: [] };
+  for (let p = 0; p < required.length; p++) {
+    if (required[p] <= ackedAtPostgresStop[p]) continue;
+    result.eligible += 1;
+    const value = restored[p];
+    if (value === undefined) result.lost.push({ p, required: required[p], restored: "missing" });
+    else if (value > attemptedAtKill[p]) result.masked += 1;
+    else if (value < required[p]) result.lost.push({ p, required: required[p], restored: value });
+    else result.verified += 1;
+  }
+  return result;
 }
 
 /** 探针传给新进程的续写参数。 / Resume parameters handed to a restarted probe. */

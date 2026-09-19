@@ -26,7 +26,7 @@ import { stopRuntime, sleep } from "./lib/process_test_harness.mjs";
 import {
   FAULTS, FULL_FAULT_ORDER, MODES, NAMESPACES, WALLET_TOTAL,
   ackCounters, adoptBootState, applyProbeEvent, assertCoverage, checkLoadedState, checkStorageRows,
-  createLedger, planSchedule, resumeState, roundsSatisfied,
+  ENQUEUE_ACKS, createLedger, planSchedule, resumeState, roundsSatisfied, verifyRestoredQueued,
 } from "./lib/persistence_write_modes_ledger.mjs";
 import { extractProbeEvent, renderProbeScript } from "./lib/persistence_write_modes_probe.mjs";
 
@@ -68,6 +68,9 @@ const ENVIRONMENT = Object.freeze({
 });
 const BACKLOG_KEYS = ["dbproxy:snapshot-backlog:pending", "dbproxy:snapshot-backlog:processing"];
 const PROBE_TIMING = { stepMs: 250, errorBackoffMs: 500, auditMs: 1000, statMs: 5000 };
+// 探针连接布局：普通/事务写入与读取共用4条连接，排队写独占2条；每条连接最多64个在途请求。
+// Probe connection layout: 4 shared connections for reads and direct/transactional writes, 2 dedicated to queued writes, 64 in flight each.
+const PROBE_CONNECTIONS = Object.freeze({ clientPoolSize: 4, queuedClientPoolSize: 2, maxInFlightPerConnection: 64 });
 // DBProxy入队已改为组提交（一次写入加一次WAITAOF确认整批，带排队上限与期限），TiangZ排队写仓库不再重试；
 // 排队写与其他写法同为250毫秒一次，本组同时检验正确性与该负载下故障后的恢复。
 // DBProxy enqueue now uses group commit (one write and one WAITAOF per batch, with a queue bound and deadline) and the
@@ -82,7 +85,7 @@ function parseArguments(argv) {
   if (!["plan", "check", "smoke", "run"].includes(action)) throw new Error("expected plan/check/smoke/run");
   const values = new Map();
   for (let i = 0; i < rest.length; i += 2) {
-    if (!["--seconds", "--players", "--steady-seconds", "--faults", "--confirm"].includes(rest[i]) || rest[i + 1] === undefined || values.has(rest[i])) {
+    if (!["--seconds", "--players", "--steady-seconds", "--faults", "--enqueue-ack", "--confirm"].includes(rest[i]) || rest[i + 1] === undefined || values.has(rest[i])) {
       throw new Error("invalid or duplicate option");
     }
     values.set(rest[i], rest[i + 1]);
@@ -101,7 +104,11 @@ function parseArguments(argv) {
   if (action === "run" && values.get("--confirm") !== CONFIRMATION) throw new Error(`run requires --confirm ${CONFIRMATION}`);
   if (action !== "run" && values.has("--confirm")) throw new Error("--confirm is only accepted by run");
   const faults = smoke ? ["probe-restart"] : partial ? values.get("--faults").split(",") : [...FULL_FAULT_ORDER];
-  return { action, seconds, players, steadySeconds, faults, partial, schedule: planSchedule({ seconds, faults, steadySeconds }) };
+  // 冒烟用内存后端，没有积压，确认档位无意义。 / Smoke uses the memory backend, which has no backlog to acknowledge.
+  const enqueueAck = values.get("--enqueue-ack") ?? "aof";
+  if (!ENQUEUE_ACKS.includes(enqueueAck)) throw new Error(`--enqueue-ack must be one of ${ENQUEUE_ACKS.join("/")}`);
+  if (smoke && values.has("--enqueue-ack")) throw new Error("--enqueue-ack does not apply to smoke");
+  return { action, seconds, players, steadySeconds, faults, partial, enqueueAck, schedule: planSchedule({ seconds, faults, steadySeconds }) };
 }
 
 function describePlan(options) {
@@ -109,6 +116,8 @@ function describePlan(options) {
     title: "持久化写法长稳与故障恢复 / persistence write-mode soak",
     action: options.action,
     players: options.players,
+    enqueueAck: options.enqueueAck,
+    connections: PROBE_CONNECTIONS,
     workload: "每个虚拟玩家并行三条写入链：普通CAS保存、@queued排队写、@transactional双钱包原子转账 / per virtual player: ordinary CAS saves, @queued writes, @transactional two-wallet transfers",
     namespaces: NAMESPACES,
     probeTiming: { ...PROBE_TIMING, queuedStepMs: queuedStepMs(options.action, options.players),
@@ -302,6 +311,30 @@ class Soak {
     this.event("environment_prepared", { database: ENVIRONMENT.database, redisDb: ENVIRONMENT.redisDb });
   }
 
+  /**
+   * Redis一应答就读取每个玩家的排队条目（一次只读EVAL），抢在探针重新写入之前。
+   * Read every player's queued entry as soon as Redis answers (one read-only EVAL), ahead of the probe's rewrites.
+   */
+  async readRestoredQueued() {
+    const deadline = Date.now() + 60_000;
+    for (;;) {
+      try { if (redisCli(ENVIRONMENT.redis, ["-n", String(ENVIRONMENT.redisDb), "PING"]).trim() === "PONG") break; } catch { /* starting or loading AOF */ }
+      if (Date.now() > deadline) throw new Error("reliable Redis did not answer after restart");
+      await sleep(100);
+    }
+    const keys = Array.from({ length: this.options.players }, (_, p) => backlogEntryKey(NAMESPACES.queued, `${this.runId}/${p}`));
+    const script = "local out = {} for i, key in ipairs(KEYS) do local value = redis.call('GET', key) "
+      + "if value then out[i] = string.match(value, '{\"v\":(%d+)}') or 'unparsed' else out[i] = 'missing' end end return out";
+    const lines = redisCli(ENVIRONMENT.redis, ["-n", String(ENVIRONMENT.redisDb), "EVAL", script, String(keys.length), ...keys])
+      .trim().split(/\r?\n/);
+    if (lines.length !== keys.length) throw new Error(`unexpected backlog read: ${lines.length} lines for ${keys.length} keys`);
+    return lines.map((line) => {
+      if (line === "missing") return undefined;
+      if (!/^\d+$/.test(line)) throw new Error(`backlog entry payload is not {"v":N}: ${line}`);
+      return Number(line);
+    });
+  }
+
   async containersHealthy(names = [ENVIRONMENT.postgres, ENVIRONMENT.redis, ENVIRONMENT.cache]) {
     await this.until(() => {
       const state = JSON.parse(command("docker", ["inspect", ...names]));
@@ -318,7 +351,7 @@ class Soak {
       const port = await freePort();
       const observability = await freePort();
       const configPath = path.join(this.dir, `${name}.json`);
-      writeFileSync(configPath, JSON.stringify(dbproxyConfig({ durable: this.run, port, observability }), null, 2));
+      writeFileSync(configPath, JSON.stringify(dbproxyConfig({ durable: this.run, port, observability, enqueueAck: this.options.enqueueAck }), null, 2));
       this.dbproxies.set(name, { name, port, observability, configPath });
       await this.startDbProxy(name);
     }
@@ -388,7 +421,7 @@ class Soak {
         persistence: { dbProxy: {
           endpoint: `127.0.0.1:${nodes[0].port}`,
           failoverEndpoints: nodes.slice(1).map((node) => `127.0.0.1:${node.port}`),
-          authTokenEnv: "WMS_TIANGZ_DBPROXY_TOKEN", clientPoolSize: 4, connectTimeoutMs: 2000, requestTimeoutMs: 5000, maxFrameBytes: 8388608,
+          authTokenEnv: "WMS_TIANGZ_DBPROXY_TOKEN", ...PROBE_CONNECTIONS, connectTimeoutMs: 2000, requestTimeoutMs: 5000, maxFrameBytes: 8388608,
         } },
       },
       scenes: [{ name: "probe", sceneType: "WriteModesProbe", ip: "127.0.0.1", port: scenePort, protocol: "websocket", audience: "outer" }],
@@ -519,18 +552,28 @@ class Soak {
         return;
       }
       case "aof": {
-        // PG停机时排队写仍由AOF确认；此刻的确认值在Redis强杀重启后也必须最终落库。
-        // With PG down, queued writes are still acknowledged by AOF; these acks must survive a Redis kill and land later.
+        // PG停机时排队写仍由Redis确认；强杀重启Redis后，恢复出的积压必须包含这些确认。
+        // With PG down, queued writes are still acknowledged by Redis; the backlog restored after a Redis kill must hold them.
         const acksBefore = this.ledger.acks.queued;
+        const ackedAtPostgresStop = this.ledger.queued.map((entry) => entry.acked);
         command("docker", ["stop", "--time", "5", ENVIRONMENT.postgres]);
-        // 停机45秒，让足够多的排队写只存在于AOF中（尚未落PG）。 / 45 s so enough queued writes exist only in AOF, not yet in PG.
+        // 停机45秒，让足够多的排队写只存在于积压中（尚未落PG）。 / 45 s so enough queued writes exist only in the backlog.
         await this.wait(45_000);
         this.aofAcked = this.ledger.queued.map((entry) => entry.acked);
         this.event("aof_acked_snapshot", { total: this.aofAcked.reduce((sum, value) => sum + value, 0),
-          ackedWhilePostgresDown: this.ledger.acks.queued - acksBefore });
+          ackedWhilePostgresDown: this.ledger.acks.queued - acksBefore, enqueueAck: this.options.enqueueAck });
+        // memory档位按everysec最多丢约1秒已确认写入：只要求强杀3秒前的确认存活。
+        // The memory level may lose about one second of acknowledged writes: only acks older than 3 s must survive.
+        if (this.options.enqueueAck === "memory") await this.wait(3_000);
+        const attemptedAtKill = this.ledger.queued.map((entry) => entry.attempted);
         command("docker", ["kill", ENVIRONMENT.redis]);
         await this.wait(5_000);
         command("docker", ["start", ENVIRONMENT.redis]);
+        const restored = await this.readRestoredQueued();
+        const verdict = verifyRestoredQueued({ required: this.aofAcked, ackedAtPostgresStop, attemptedAtKill, restored });
+        this.event("aof_backlog_verified", { ...verdict, lost: verdict.lost.length });
+        if (verdict.lost.length) throw new Error(`acknowledged queued writes missing from the restored backlog: ${JSON.stringify(verdict.lost.slice(0, 10))}`);
+        if (verdict.verified === 0) throw new Error(`restored backlog verified no player (eligible ${verdict.eligible}, masked ${verdict.masked})`);
         await this.containersHealthy([ENVIRONMENT.redis]);
         await this.wait(15_000);
         command("docker", ["start", ENVIRONMENT.postgres]);
@@ -697,7 +740,12 @@ function roundsTimeoutMs(action, players) {
 }
 
 /** 专用环境使用PG+可靠Redis+独立缓存；冒烟使用内存后端。 / Dedicated runs use PG + reliable Redis + separate cache; smoke uses the memory backend. */
-function dbproxyConfig({ durable, port, observability }) {
+/** DBProxy积压条目键，与 RedisSnapshotBacklog::member 一致。 / Backlog entry key, matching RedisSnapshotBacklog::member. */
+function backlogEntryKey(namespace, key) {
+  return `dbproxy:snapshot-backlog:entry:${namespace.length}:${namespace}:${key.length}:${key}`;
+}
+
+function dbproxyConfig({ durable, port, observability, enqueueAck = "aof" }) {
   return {
     configVersion: 1,
     server: { listenAddr: `127.0.0.1:${port}`, authTokenEnv: "WMS_DBPROXY_TOKEN", maxFrameBytes: 8388608, maxPayloadBytes: 1048576,
@@ -707,7 +755,7 @@ function dbproxyConfig({ durable, port, observability }) {
       backend: "postgresRedis", postgresUrlEnv: "WMS_POSTGRES_URL", redisUrlEnv: "WMS_REDIS_URL", cacheRedisUrlEnv: "WMS_CACHE_REDIS_URL", shards: 4,
     } : { backend: "memory", shards: 4 },
     ...(durable ? {
-      backlog: { workers: 1, leaseMs: 30000, idleDelayMs: 20, failureDelayMs: 1000 },
+      backlog: { workers: 1, leaseMs: 30000, idleDelayMs: 20, failureDelayMs: 1000, enqueueAck },
       cacheRepair: { workers: 1, leaseMs: 30000, idleDelayMs: 250, baseRetryDelayMs: 1000, maxRetryDelayMs: 60000, maxAttempts: 20 },
     } : {}),
     logging: { filterEnv: "RUST_LOG", defaultFilter: "info" },
@@ -720,10 +768,10 @@ function checkDbProxyConfigs() {
   const directory = path.join(root, "temp");
   mkdirSync(directory, { recursive: true });
   const results = {};
-  for (const durable of [true, false]) {
-    const file = path.join(directory, `write-modes-dbproxy-${durable ? "durable" : "memory"}.check.json`);
-    writeFileSync(file, JSON.stringify(dbproxyConfig({ durable, port: 17820, observability: 19820 })));
-    results[durable ? "durable" : "memory"] = command(ARTIFACTS.dbproxy, ["--check-config", file]).trim();
+  for (const [name, durable, enqueueAck] of [["durable-aof", true, "aof"], ["durable-memory-ack", true, "memory"], ["memory", false, "aof"]]) {
+    const file = path.join(directory, `write-modes-dbproxy-${name}.check.json`);
+    writeFileSync(file, JSON.stringify(dbproxyConfig({ durable, port: 17820, observability: 19820, enqueueAck })));
+    results[name] = command(ARTIFACTS.dbproxy, ["--check-config", file]).trim();
   }
   return results;
 }
