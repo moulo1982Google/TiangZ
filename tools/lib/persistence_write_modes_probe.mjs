@@ -64,20 +64,26 @@ export function probeMain(CONFIG) {
     loops.push(queuedAuditor(queuedStates), statLoop());
     await Promise.all(loops);
 
+    // 多个玩家并发读取（每个玩家内仍按顺序），500玩家时恢复读取不超过探针就绪期限；结果按玩家序号存放。
+    // Players load concurrently (sequential within a player) so 500 players stay within the readiness deadline;
+    // results are stored by player index.
     async function loadAll() {
       const state = { direct: [], queued: [], wallet: [] };
-      for (let p = 0; p < CONFIG.players; p++) {
+      const loadPlayer = async (p) => {
         const d = await direct.Load(key(p));
-        state.direct.push(d ? { v: d.data.v, rev: Number(d.revision) } : { v: 0, rev: 0 });
+        state.direct[p] = d ? { v: d.data.v, rev: Number(d.revision) } : { v: 0, rev: 0 };
         const q = await queued.Load(key(p));
-        state.queued.push({ v: q ? q.data.v : 0 });
+        state.queued[p] = { v: q ? q.data.v : 0 };
         const a = await wallet.Load(walletKey(p, "a"));
         const b = await wallet.Load(walletKey(p, "b"));
-        state.wallet.push(a || b ? {
+        state.wallet[p] = a || b ? {
           a: a ? { balance: a.data.balance, seq: a.data.seq, rev: Number(a.revision) } : undefined,
           b: b ? { balance: b.data.balance, seq: b.data.seq, rev: Number(b.revision) } : undefined,
-        } : null);
-      }
+        } : null;
+      };
+      let next = 0;
+      const worker = async () => { while (next < CONFIG.players) await loadPlayer(next++); };
+      await Promise.all(Array.from({ length: Math.min(32, CONFIG.players) }, worker));
       return state;
     }
 
