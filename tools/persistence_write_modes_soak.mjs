@@ -331,11 +331,16 @@ class Soak {
       if (Date.now() > deadline) throw new Error("reliable Redis did not answer after restart");
       await sleep(100);
     }
-    const keys = Array.from({ length: this.options.players }, (_, p) => backlogEntryKey(NAMESPACES.queued, `${this.runId}/${p}`));
-    const script = "local out = {} for i, key in ipairs(KEYS) do local value = redis.call('GET', key) "
-      + "if value then out[i] = string.match(value, '{\"v\":(%d+)}') or 'unparsed' else out[i] = 'missing' end end return out";
-    const lines = redisCli(ENVIRONMENT.redis, ["-n", String(ENVIRONMENT.redisDb), "EVAL", script, String(keys.length), ...keys])
-      .trim().split(/\r?\n/);
+    // 键在脚本内按 RedisSnapshotBacklog::member 的规则生成：500个键放进命令行会超过Windows命令行长度上限。
+    // Keys are built inside the script with the RedisSnapshotBacklog::member rule: 500 keys on the command line exceed the
+    // Windows command-line limit.
+    const keys = { length: this.options.players };
+    const script = "local ns = ARGV[1] local out = {} for p = 0, tonumber(ARGV[3]) - 1 do "
+      + "local key = ARGV[2] .. '/' .. p "
+      + "local value = redis.call('GET', 'dbproxy:snapshot-backlog:entry:' .. #ns .. ':' .. ns .. ':' .. #key .. ':' .. key) "
+      + "if value then out[p + 1] = string.match(value, '{\"v\":(%d+)}') or 'unparsed' else out[p + 1] = 'missing' end end return out";
+    const lines = redisCli(ENVIRONMENT.redis, ["-n", String(ENVIRONMENT.redisDb), "EVAL", script, "0",
+      NAMESPACES.queued, this.runId, String(this.options.players)]).trim().split(/\r?\n/);
     if (lines.length !== keys.length) throw new Error(`unexpected backlog read: ${lines.length} lines for ${keys.length} keys`);
     return lines.map((line) => {
       if (line === "missing") return undefined;
@@ -758,11 +763,6 @@ function roundsTimeoutMs(stepMs) {
 }
 
 /** 专用环境使用PG+可靠Redis+独立缓存；冒烟使用内存后端。 / Dedicated runs use PG + reliable Redis + separate cache; smoke uses the memory backend. */
-/** DBProxy积压条目键，与 RedisSnapshotBacklog::member 一致。 / Backlog entry key, matching RedisSnapshotBacklog::member. */
-function backlogEntryKey(namespace, key) {
-  return `dbproxy:snapshot-backlog:entry:${namespace.length}:${namespace}:${key.length}:${key}`;
-}
-
 function dbproxyConfig({ durable, port, observability, enqueueAck = "aof", shards = 4 }) {
   return {
     configVersion: 1,
