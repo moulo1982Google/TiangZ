@@ -18,6 +18,10 @@ export function probeMain(CONFIG) {
     ambiguous: { direct: 0, wallet: 0 },
     lastError: {},
   };
+  // 出错退避在基准的50%–150%间随机：固定退避会让大量玩家在节点恢复后同时重试，反复压满连接排队。
+  // Error backoff is randomised within 50%–150% of the base: a fixed delay makes many players retry together after a
+  // node recovers and keeps saturating the connection queue.
+  const backoff = () => Math.floor(CONFIG.errorBackoffMs * (0.5 + Math.random()));
   const recordError = (mode, error) => { stats.errors[mode] += 1; stats.lastError[mode] = describe(error); };
   const halt = (what, detail) => { if (!halted) emit({ t: "violation", what, detail }); halted = true; };
 
@@ -89,7 +93,7 @@ export function probeMain(CONFIG) {
 
     async function retryUntilLoaded(load) {
       for (;;) {
-        try { return await load(); } catch (error) { recordError("direct", error); await sleep(CONFIG.errorBackoffMs); }
+        try { return await load(); } catch (error) { recordError("direct", error); await sleep(backoff()); }
       }
     }
 
@@ -111,7 +115,7 @@ export function probeMain(CONFIG) {
           recordError("direct", error); stats.ambiguous.direct += 1;
           const committed = await reconcileDirect(p, s, next);
           if (committed === undefined) return undefined;
-          if (committed) { s.v = next; s.rev = next; next += 1; } else await sleep(CONFIG.errorBackoffMs);
+          if (committed) { s.v = next; s.rev = next; next += 1; } else await sleep(backoff());
         }
         await sleep(CONFIG.stepMs);
       }
@@ -128,7 +132,7 @@ export function probeMain(CONFIG) {
           if (v === s.v && rev === s.rev) { emit({ t: "dr", p, v: attempted, c: false }); return false; }
           halt("direct-reconcile", { p, loaded: v, rev, acked: s.v, attempted });
           return undefined;
-        } catch (error) { recordError("direct", error); await sleep(CONFIG.errorBackoffMs); }
+        } catch (error) { recordError("direct", error); await sleep(backoff()); }
       }
       return undefined;
     }
@@ -146,7 +150,7 @@ export function probeMain(CONFIG) {
           await queued.EnqueueSnapshot(key(p), { v });
           stats.ok.queued += 1;
           emit({ t: "qa", p, v });
-        } catch (error) { recordError("queued", error); await sleep(CONFIG.errorBackoffMs); }
+        } catch (error) { recordError("queued", error); await sleep(backoff()); }
         await sleep(CONFIG.queuedStepMs);
       }
     }
@@ -218,7 +222,7 @@ export function probeMain(CONFIG) {
           attempts += 1;
           if (attempts === 1) stats.ambiguous.wallet += 1;
           recordError("wallet", error);
-          await sleep(CONFIG.errorBackoffMs);
+          await sleep(backoff());
         }
       }
       return undefined;
