@@ -238,6 +238,21 @@ export function verifyRestoredQueued({ required, ackedAtPostgresStop, attemptedA
   return result;
 }
 
+/**
+ * PG的停库是优雅关闭，关闭前几秒落库任务仍能提交；这些条目落库后已从积压删除。
+ * 对积压中缺失的玩家，用PG重启后读到的值补上（取两者较大者）再核对。
+ * Stopping PostgreSQL is a graceful shutdown during which the flush worker can still commit for a few seconds; such
+ * entries were removed from the backlog after landing. For players missing from the backlog, fill in the value read
+ * from PostgreSQL after its restart (taking the larger of the two) before verifying.
+ */
+export function mergeRestoredWithPostgres(restored, postgres) {
+  return restored.map((value, p) => {
+    const stored = postgres.get(p);
+    if (stored === undefined) return value;
+    return value === undefined ? stored : Math.max(value, stored);
+  });
+}
+
 /** 探针传给新进程的续写参数。 / Resume parameters handed to a restarted probe. */
 export function resumeState(ledger) {
   return { queuedAttempted: ledger.queued.map((entry) => entry.attempted) };

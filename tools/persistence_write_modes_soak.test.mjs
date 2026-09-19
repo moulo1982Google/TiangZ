@@ -5,7 +5,7 @@ import vm from "node:vm";
 import {
   FULL_FAULT_ORDER, NAMESPACES, WALLET_TOTAL,
   adoptBootState, applyProbeEvent, assertCoverage, checkLoadedState, checkStorageRows,
-  createLedger, planSchedule, resumeState, roundsSatisfied, ackCounters, verifyRestoredQueued,
+  createLedger, planSchedule, resumeState, roundsSatisfied, ackCounters, verifyRestoredQueued, mergeRestoredWithPostgres,
 } from "./lib/persistence_write_modes_ledger.mjs";
 import { extractProbeEvent, renderProbeScript } from "./lib/persistence_write_modes_probe.mjs";
 import { CONFIRMATION, parseArguments } from "./persistence_write_modes_soak.mjs";
@@ -59,6 +59,17 @@ test("restored backlog check flags lost acknowledgements and ignores entries rew
   assert.deepEqual(verdict.lost, [{ p: 3, required: 10, restored: 9 }]);
   const missing = verifyRestoredQueued({ ...base, required: [10, 5, 5, 5, 5], restored: [undefined, 1, 1, 1, 1] });
   assert.deepEqual(missing.lost, [{ p: 0, required: 10, restored: "missing" }]);
+});
+
+test("entries that landed in PostgreSQL before its shutdown are not counted as lost", () => {
+  const inputs = { required: [18, 17, 17], ackedAtPostgresStop: [16, 16, 16], attemptedAtKill: [19, 18, 18] };
+  const restored = [undefined, undefined, 17];
+  assert.equal(verifyRestoredQueued({ ...inputs, restored }).lost.length, 2);
+  const merged = mergeRestoredWithPostgres(restored, new Map([[0, 18], [1, 16]]));
+  assert.deepEqual(merged, [18, 16, 17]);
+  const verdict = verifyRestoredQueued({ ...inputs, restored: merged });
+  assert.equal(verdict.verified, 2);
+  assert.deepEqual(verdict.lost, [{ p: 1, required: 17, restored: 16 }]);
 });
 
 test("fault subsets are diagnostic-only and never become a full soak pass", () => {

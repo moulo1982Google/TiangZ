@@ -26,7 +26,7 @@ import { stopRuntime, sleep } from "./lib/process_test_harness.mjs";
 import {
   FAULTS, FULL_FAULT_ORDER, MODES, NAMESPACES, WALLET_TOTAL,
   ackCounters, adoptBootState, applyProbeEvent, assertCoverage, checkLoadedState, checkStorageRows,
-  ENQUEUE_ACKS, createLedger, planSchedule, resumeState, roundsSatisfied, verifyRestoredQueued,
+  ENQUEUE_ACKS, createLedger, mergeRestoredWithPostgres, planSchedule, resumeState, roundsSatisfied, verifyRestoredQueued,
 } from "./lib/persistence_write_modes_ledger.mjs";
 import { extractProbeEvent, renderProbeScript } from "./lib/persistence_write_modes_probe.mjs";
 
@@ -349,6 +349,19 @@ class Soak {
     });
   }
 
+  /** 直接从PG读取指定玩家的排队记录值。 / Read the queued values of the given players directly from PostgreSQL. */
+  readQueuedFromPostgres(players) {
+    const values = new Map();
+    if (players.length === 0) return values;
+    const keys = players.map((p) => `'${this.runId}/${p}'`).join(",");
+    const rows = psql(`SELECT record_key, convert_from(payload, 'UTF8') FROM dbproxy_snapshots WHERE namespace = '${NAMESPACES.queued}' AND record_key IN (${keys});`);
+    for (const line of rows.trim().split(/\r?\n/).filter(Boolean)) {
+      const [recordKey, ...payload] = line.split("|");
+      values.set(Number(recordKey.slice(recordKey.lastIndexOf("/") + 1)), JSON.parse(payload.join("|")).v);
+    }
+    return values;
+  }
+
   async containersHealthy(names = [ENVIRONMENT.postgres, ENVIRONMENT.redis, ENVIRONMENT.cache]) {
     await this.until(() => {
       const state = JSON.parse(command("docker", ["inspect", ...names]));
@@ -586,13 +599,22 @@ class Soak {
         const attemptedAtKill = this.ledger.queued.map((entry) => entry.attempted);
         command("docker", ["start", ENVIRONMENT.redis]);
         const restored = await this.readRestoredQueued();
-        const verdict = verifyRestoredQueued({ required: this.aofAcked, ackedAtPostgresStop, attemptedAtKill, restored });
+        const inputs = { required: this.aofAcked, ackedAtPostgresStop, attemptedAtKill };
+        let verdict = verifyRestoredQueued({ ...inputs, restored });
         this.event("aof_backlog_verified", { ...verdict, lost: verdict.lost.length });
-        if (verdict.lost.length) throw new Error(`acknowledged queued writes missing from the restored backlog: ${JSON.stringify(verdict.lost.slice(0, 10))}`);
-        if (verdict.verified === 0) throw new Error(`restored backlog verified no player (eligible ${verdict.eligible}, masked ${verdict.masked})`);
         await this.containersHealthy([ENVIRONMENT.redis]);
         await this.wait(15_000);
         command("docker", ["start", ENVIRONMENT.postgres]);
+        if (verdict.lost.length) {
+          // 积压里缺失的可能已在PG关闭前落库：PG恢复后再查一次。 / Missing entries may have landed before PG shut down.
+          await this.containersHealthy([ENVIRONMENT.postgres]);
+          const postgres = this.readQueuedFromPostgres(verdict.lost.map((entry) => entry.p));
+          const landed = verdict.lost.filter((entry) => postgres.has(entry.p)).length;
+          verdict = verifyRestoredQueued({ ...inputs, restored: mergeRestoredWithPostgres(restored, postgres) });
+          this.event("aof_backlog_verified_with_postgres", { ...verdict, landedBeforeStop: landed, lost: verdict.lost.length });
+        }
+        if (verdict.lost.length) throw new Error(`acknowledged queued writes missing from the restored backlog and PostgreSQL: ${JSON.stringify(verdict.lost.slice(0, 10))}`);
+        if (verdict.verified === 0) throw new Error(`restored backlog verified no player (eligible ${verdict.eligible}, masked ${verdict.masked})`);
         return;
       }
       case "dbproxy-primary":
