@@ -90,6 +90,7 @@ export function probeMain(CONFIG) {
     // 普通写法：CAS保存；结果未知时从PG读取判定是否已提交，不盲目换值重试。
     // Ordinary mode: CAS save; uncertain outcomes are resolved by an authoritative read, never by blindly writing a new value.
     async function directLoop(p, s) {
+      await sleep(Math.floor((p * CONFIG.stepMs) / CONFIG.players));
       let next = s.v + 1;
       while (!halted) {
         emit({ t: "di", p, v: next });
@@ -163,6 +164,7 @@ export function probeMain(CONFIG) {
     // Transactional mode: atomic transfer between two wallets; uncertain outcomes retry the original
     // operationId with identical writes until decided.
     async function walletLoop(p, s) {
+      await sleep(Math.floor((p * CONFIG.stepMs) / CONFIG.players));
       let n = s ? s.a.seq + 1 : 0;
       while (!halted) {
         const toB = n % 2 === 1;

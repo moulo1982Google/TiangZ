@@ -38,6 +38,17 @@ test("enqueue acknowledgement level is explicit and limited to real storage", ()
   assert.throws(() => parseArguments(["smoke", "--enqueue-ack", "memory"]), /does not apply to smoke/);
 });
 
+test("overnight runs allow 500 players and 12 hours with an explicit, bounded pace", () => {
+  const run = parseArguments(["run", "--players", "500", "--seconds", "43200", "--step-ms", "5000", "--confirm", CONFIRMATION]);
+  assert.equal(run.players, 500);
+  assert.equal(run.stepMs, 5000);
+  assert.equal(parseArguments([]).stepMs, 250);
+  assert.throws(() => parseArguments(["plan", "--players", "501"]), /players must be/);
+  assert.throws(() => parseArguments(["plan", "--seconds", "43201"]), /seconds must be/);
+  assert.throws(() => parseArguments(["plan", "--step-ms", "50"]), /step-ms/);
+  assert.throws(() => parseArguments(["smoke", "--players", "21"]), /players must be/);
+});
+
 test("restored backlog check flags lost acknowledgements and ignores entries rewritten after the restart", () => {
   const base = { ackedAtPostgresStop: [5, 5, 5, 5, 5], attemptedAtKill: [12, 12, 12, 12, 12] };
   const verdict = verifyRestoredQueued({ ...base, required: [10, 10, 10, 10, 5], restored: [10, 12, 13, 9, undefined] });

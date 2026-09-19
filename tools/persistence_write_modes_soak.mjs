@@ -85,7 +85,7 @@ function parseArguments(argv) {
   if (!["plan", "check", "smoke", "run"].includes(action)) throw new Error("expected plan/check/smoke/run");
   const values = new Map();
   for (let i = 0; i < rest.length; i += 2) {
-    if (!["--seconds", "--players", "--steady-seconds", "--faults", "--enqueue-ack", "--confirm"].includes(rest[i]) || rest[i + 1] === undefined || values.has(rest[i])) {
+    if (!["--seconds", "--players", "--steady-seconds", "--step-ms", "--faults", "--enqueue-ack", "--confirm"].includes(rest[i]) || rest[i + 1] === undefined || values.has(rest[i])) {
       throw new Error("invalid or duplicate option");
     }
     values.set(rest[i], rest[i + 1]);
@@ -97,9 +97,14 @@ function parseArguments(argv) {
   const seconds = Number(values.get("--seconds") ?? (smoke ? 60 : 3600));
   const players = Number(values.get("--players") ?? (smoke ? 4 : 20));
   const steadySeconds = Number(values.get("--steady-seconds") ?? (smoke ? 5 : 60));
-  const [minSeconds, maxSeconds] = smoke || partial ? [10, 14400] : [900, 14400];
+  // 过夜长稳最长12小时、500玩家；人数多时用 --step-ms 放慢节奏，保持小压力。
+  // Overnight soaks run up to 12 h with 500 players; with many players, --step-ms slows the pace to keep the load light.
+  const [minSeconds, maxSeconds] = smoke || partial ? [10, 43200] : [900, 43200];
   if (!Number.isInteger(seconds) || seconds < minSeconds || seconds > maxSeconds) throw new Error(`seconds must be ${minSeconds}..${maxSeconds}`);
-  if (!Number.isInteger(players) || players < 1 || players > (smoke ? 20 : 100)) throw new Error(`players must be 1..${smoke ? 20 : 100}`);
+  const maxPlayers = smoke ? 20 : 500;
+  if (!Number.isInteger(players) || players < 1 || players > maxPlayers) throw new Error(`players must be 1..${maxPlayers}`);
+  const stepMs = Number(values.get("--step-ms") ?? PROBE_TIMING.stepMs);
+  if (!Number.isInteger(stepMs) || stepMs < 100 || stepMs > 60_000) throw new Error("step-ms must be 100..60000");
   if (!Number.isInteger(steadySeconds) || steadySeconds < 1 || steadySeconds > 600) throw new Error("steady-seconds must be 1..600");
   if (action === "run" && values.get("--confirm") !== CONFIRMATION) throw new Error(`run requires --confirm ${CONFIRMATION}`);
   if (action !== "run" && values.has("--confirm")) throw new Error("--confirm is only accepted by run");
@@ -108,7 +113,7 @@ function parseArguments(argv) {
   const enqueueAck = values.get("--enqueue-ack") ?? "aof";
   if (!ENQUEUE_ACKS.includes(enqueueAck)) throw new Error(`--enqueue-ack must be one of ${ENQUEUE_ACKS.join("/")}`);
   if (smoke && values.has("--enqueue-ack")) throw new Error("--enqueue-ack does not apply to smoke");
-  return { action, seconds, players, steadySeconds, faults, partial, enqueueAck, schedule: planSchedule({ seconds, faults, steadySeconds }) };
+  return { action, seconds, players, steadySeconds, stepMs, faults, partial, enqueueAck, schedule: planSchedule({ seconds, faults, steadySeconds }) };
 }
 
 function describePlan(options) {
@@ -120,7 +125,7 @@ function describePlan(options) {
     connections: PROBE_CONNECTIONS,
     workload: "每个虚拟玩家并行三条写入链：普通CAS保存、@queued排队写、@transactional双钱包原子转账 / per virtual player: ordinary CAS saves, @queued writes, @transactional two-wallet transfers",
     namespaces: NAMESPACES,
-    probeTiming: { ...PROBE_TIMING, queuedStepMs: queuedStepMs(options.action, options.players),
+    probeTiming: { ...probeTiming(options), queuedStepMs: options.stepMs,
       note: "排队写与其他写法同频；这是正确性与恢复用例，不是容量基准 / queued writes share the other modes' pace; a correctness and recovery suite, not a capacity benchmark" },
     schedule: options.schedule,
     faults: Object.fromEntries(options.faults.map((fault) => [fault, FAULTS[fault].summary])),
@@ -428,8 +433,8 @@ class Soak {
     }, null, 2));
     const model = this.originalModel + renderProbeScript({
       runId: this.runId, epoch: this.epoch, mode, players: this.options.players, namespaces: NAMESPACES,
-      resume: resumeState(this.ledger), walletTotal: WALLET_TOTAL, settleMs: this.epoch > 1 ? 5000 : 0, ...PROBE_TIMING,
-      queuedStepMs: queuedStepMs(this.options.action, this.options.players),
+      resume: resumeState(this.ledger), walletTotal: WALLET_TOTAL, settleMs: this.epoch > 1 ? 5000 : 0, ...probeTiming(this.options),
+      queuedStepMs: this.options.stepMs,
     });
     writeFileSync(path.join(this.runtimeDir, "dist", "model.js"), model);
     const fingerprint = createHash("sha256").update(model).digest("hex");
@@ -610,7 +615,7 @@ class Soak {
   /** 每个玩家每种写法再确认两次，证明业务而不只是端口恢复。 / Two more acks per player and mode prove business recovery, not just open ports. */
   async rounds(label) {
     const baseline = ackCounters(this.ledger);
-    await this.until(() => roundsSatisfied(this.ledger, baseline, 2), roundsTimeoutMs(this.options.action, this.options.players),
+    await this.until(() => roundsSatisfied(this.ledger, baseline, 2), roundsTimeoutMs(this.options.stepMs),
       `two business rounds after ${label}`);
     this.event("business_rounds_passed", { after: label, acks: { ...this.ledger.acks } });
   }
@@ -732,13 +737,15 @@ class Soak {
   }
 }
 
-function queuedStepMs() {
-  return PROBE_TIMING.stepMs;
+/** 三种写法同一节奏；审计间隔不小于写入节奏。 / All three modes share one pace; the audit never runs faster than the writes. */
+function probeTiming(options) {
+  return { ...PROBE_TIMING, stepMs: options.stepMs, auditMs: Math.max(PROBE_TIMING.auditMs, Math.floor(options.stepMs / 2)) };
 }
 
+
 /** 两轮排队写至少需要两个间隔加错峰，恢复等待按间隔放宽。 / Two queued rounds need two intervals plus stagger, so the recovery wait scales with the interval. */
-function roundsTimeoutMs(action, players) {
-  return Math.max(300_000, Math.ceil(2.5 * queuedStepMs(action, players)) + 120_000);
+function roundsTimeoutMs(stepMs) {
+  return Math.max(300_000, Math.ceil(2.5 * stepMs) + 120_000);
 }
 
 /** 专用环境使用PG+可靠Redis+独立缓存；冒烟使用内存后端。 / Dedicated runs use PG + reliable Redis + separate cache; smoke uses the memory backend. */
