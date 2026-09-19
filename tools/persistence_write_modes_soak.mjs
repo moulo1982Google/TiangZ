@@ -640,7 +640,12 @@ class Soak {
   }
 
   async cleanup() {
-    if (this.probe && this.probe.child.exitCode === null) await stopRuntime({ child: this.probe.child }, 10_000).catch(() => undefined);
+    if (this.probe && this.probe.child.exitCode === null) {
+      // 失败后的收尾停止同样是主动停止，宿主取消在途操作产生的fatal不是新的失败。
+      // Stopping during cleanup is intentional too; the resulting cancellation fatal is not a new failure.
+      this.probe.stopping = true;
+      await stopRuntime({ child: this.probe.child }, 10_000).catch(() => undefined);
+    }
     for (const record of [...this.children]) { record.child.kill("SIGKILL"); await record.done; }
     if (this.run) {
       // 故障中途失败时恢复依赖，避免给下一个演练留下停止的容器。 / Restore dependencies if a fault was interrupted.

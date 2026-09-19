@@ -1166,4 +1166,4 @@ SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools
 
 - `smoke`：内存DBProxy + 一次探针强杀重启，不接触数据库容器。
 - `run`：使用专用`tiangz-dbproxy-local`容器中的独立库`dbproxy_write_modes_soak`和Redis库号5，注入PG、可靠Redis、缓存、AOF、首选DBProxy节点、全部DBProxy节点、探针进程七类故障；每次故障后要求每个玩家每种写法再确认两次；最后排空排队积压，按账本核对，并直接查PG核对写法互斥与事务恰好一次。
-- `run`会清理上述专用数据并停启容器，必须由用户明确授权；与其他演练共用`reliability.lock`，不能并行。2026-09-19只执行了单测和smoke（通过），`run`尚未执行，不能宣称已通过长稳。
+- `run`会清理上述专用数据并停启容器，必须由用户明确授权；与其他演练共用`reliability.lock`，不能并行。2026-09-19单测和smoke通过；首轮`run`（900秒）在PG故障恢复后、可靠Redis故障后失败：排队写入队吞吐远低于探针负载，出现自我维持的过载，账本0违例，详见失败教训表。尚未通过长稳。
