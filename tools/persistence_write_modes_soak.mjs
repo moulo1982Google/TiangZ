@@ -85,7 +85,7 @@ function parseArguments(argv) {
   if (!["plan", "check", "smoke", "run"].includes(action)) throw new Error("expected plan/check/smoke/run");
   const values = new Map();
   for (let i = 0; i < rest.length; i += 2) {
-    if (!["--seconds", "--players", "--steady-seconds", "--step-ms", "--faults", "--enqueue-ack", "--confirm"].includes(rest[i]) || rest[i + 1] === undefined || values.has(rest[i])) {
+    if (!["--seconds", "--players", "--steady-seconds", "--step-ms", "--dbproxy-shards", "--faults", "--enqueue-ack", "--confirm"].includes(rest[i]) || rest[i + 1] === undefined || values.has(rest[i])) {
       throw new Error("invalid or duplicate option");
     }
     values.set(rest[i], rest[i + 1]);
@@ -105,6 +105,9 @@ function parseArguments(argv) {
   if (!Number.isInteger(players) || players < 1 || players > maxPlayers) throw new Error(`players must be 1..${maxPlayers}`);
   const stepMs = Number(values.get("--step-ms") ?? PROBE_TIMING.stepMs);
   if (!Number.isInteger(stepMs) || stepMs < 100 || stepMs > 60_000) throw new Error("step-ms must be 100..60000");
+  // 每个DBProxy节点的PG连接数（存储分片数）。 / PostgreSQL connections per DBProxy node (storage shards).
+  const dbproxyShards = Number(values.get("--dbproxy-shards") ?? 4);
+  if (!Number.isInteger(dbproxyShards) || dbproxyShards < 1 || dbproxyShards > 64) throw new Error("dbproxy-shards must be 1..64");
   if (!Number.isInteger(steadySeconds) || steadySeconds < 1 || steadySeconds > 600) throw new Error("steady-seconds must be 1..600");
   if (action === "run" && values.get("--confirm") !== CONFIRMATION) throw new Error(`run requires --confirm ${CONFIRMATION}`);
   if (action !== "run" && values.has("--confirm")) throw new Error("--confirm is only accepted by run");
@@ -113,7 +116,7 @@ function parseArguments(argv) {
   const enqueueAck = values.get("--enqueue-ack") ?? "aof";
   if (!ENQUEUE_ACKS.includes(enqueueAck)) throw new Error(`--enqueue-ack must be one of ${ENQUEUE_ACKS.join("/")}`);
   if (smoke && values.has("--enqueue-ack")) throw new Error("--enqueue-ack does not apply to smoke");
-  return { action, seconds, players, steadySeconds, stepMs, faults, partial, enqueueAck, schedule: planSchedule({ seconds, faults, steadySeconds }) };
+  return { action, seconds, players, steadySeconds, stepMs, dbproxyShards, faults, partial, enqueueAck, schedule: planSchedule({ seconds, faults, steadySeconds }) };
 }
 
 function describePlan(options) {
@@ -121,6 +124,7 @@ function describePlan(options) {
     title: "持久化写法长稳与故障恢复 / persistence write-mode soak",
     action: options.action,
     players: options.players,
+    dbproxyShards: options.dbproxyShards,
     enqueueAck: options.enqueueAck,
     connections: PROBE_CONNECTIONS,
     workload: "每个虚拟玩家并行三条写入链：普通CAS保存、@queued排队写、@transactional双钱包原子转账 / per virtual player: ordinary CAS saves, @queued writes, @transactional two-wallet transfers",
@@ -356,7 +360,7 @@ class Soak {
       const port = await freePort();
       const observability = await freePort();
       const configPath = path.join(this.dir, `${name}.json`);
-      writeFileSync(configPath, JSON.stringify(dbproxyConfig({ durable: this.run, port, observability, enqueueAck: this.options.enqueueAck }), null, 2));
+      writeFileSync(configPath, JSON.stringify(dbproxyConfig({ durable: this.run, port, observability, enqueueAck: this.options.enqueueAck, shards: this.options.dbproxyShards }), null, 2));
       this.dbproxies.set(name, { name, port, observability, configPath });
       await this.startDbProxy(name);
     }
@@ -739,7 +743,12 @@ class Soak {
 
 /** 三种写法同一节奏；审计间隔不小于写入节奏。 / All three modes share one pace; the audit never runs faster than the writes. */
 function probeTiming(options) {
-  return { ...PROBE_TIMING, stepMs: options.stepMs, auditMs: Math.max(PROBE_TIMING.auditMs, Math.floor(options.stepMs / 2)) };
+  // 出错退避不短于写入间隔的一半：退避远快于写入节奏时，大量玩家同时重试会把存储压成自我维持的过载。
+  // Error backoff is at least half the step: backing off far faster than the pace lets retries from many players
+  // turn a storage hiccup into self-sustaining overload.
+  const half = Math.floor(options.stepMs / 2);
+  return { ...PROBE_TIMING, stepMs: options.stepMs, errorBackoffMs: Math.max(PROBE_TIMING.errorBackoffMs, half),
+    auditMs: Math.max(PROBE_TIMING.auditMs, half) };
 }
 
 
@@ -754,15 +763,15 @@ function backlogEntryKey(namespace, key) {
   return `dbproxy:snapshot-backlog:entry:${namespace.length}:${namespace}:${key.length}:${key}`;
 }
 
-function dbproxyConfig({ durable, port, observability, enqueueAck = "aof" }) {
+function dbproxyConfig({ durable, port, observability, enqueueAck = "aof", shards = 4 }) {
   return {
     configVersion: 1,
     server: { listenAddr: `127.0.0.1:${port}`, authTokenEnv: "WMS_DBPROXY_TOKEN", maxFrameBytes: 8388608, maxPayloadBytes: 1048576,
       handshakeTimeoutMs: 5000, shutdownGraceMs: 5000 },
     runtime: { workerThreads: 2 },
     storage: durable ? {
-      backend: "postgresRedis", postgresUrlEnv: "WMS_POSTGRES_URL", redisUrlEnv: "WMS_REDIS_URL", cacheRedisUrlEnv: "WMS_CACHE_REDIS_URL", shards: 4,
-    } : { backend: "memory", shards: 4 },
+      backend: "postgresRedis", postgresUrlEnv: "WMS_POSTGRES_URL", redisUrlEnv: "WMS_REDIS_URL", cacheRedisUrlEnv: "WMS_CACHE_REDIS_URL", shards,
+    } : { backend: "memory", shards },
     ...(durable ? {
       backlog: { workers: 1, leaseMs: 30000, idleDelayMs: 20, failureDelayMs: 1000, enqueueAck },
       cacheRepair: { workers: 1, leaseMs: 30000, idleDelayMs: 250, baseRetryDelayMs: 1000, maxRetryDelayMs: 60000, maxAttempts: 20 },
