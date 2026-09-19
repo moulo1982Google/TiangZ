@@ -101,7 +101,7 @@ SLG 首次玩法 smoke（临时目录 tiangz-slg-smoke-Lipipu）报 `DBProxy is 
 | 向`model.js`注入探针后宿主报`Hotfix/config release identity mismatch`；夹具错误，写法长稳首次smoke（2026-09-19） | 原子发布后`releaseId`绑定`modelFingerprint`等字段。注入后除重写指纹外，还要用`tools/atomic_release_identity.mjs`的`atomicReleaseId`重算`releaseId`及`bundleVersion`后缀 | 不关闭或绕过宿主身份校验。`module_dbproxy_migration_self_test.mjs`曾同时带有此问题和下一行问题（SLG的`dbproxy:smoke`会调用它）：2026-09-19对自有内存DBProxy逐一复现两个错误后已修正，迁移断言（值11、revision 2、旧写入者被拒）不变；复测需自起隔离DBProxy后运行`node tools/module_dbproxy_migration_self_test.mjs --endpoint <回环地址>`，禁止指向共享库 |
 | 注入探针后报`unknown scene type ...; registered:`为空；夹具错误，同上 | 模块化后主工程`dist`不含游戏模块，没有场景类型。按`global_id_runtime_self_test.mjs`用`create_game_module/prepare_game_modules/build_runtime_bundles/build_game_config_data`构建夹具模块，再用`--runtime-root`启动 | 不借用MMORPG场景，也不往Core加测试场景；夹具由当前源码现场构建，不复用旧`dist` |
 | 解析探针`console.log`输出一直超时；夹具错误，同上 | `console.log`经宿主日志层输出，前有时间戳和颜色码、后有属性，不在行首。按标记定位后做括号/字符串感知解析 | 不要为测试更改宿主日志格式；主动停止探针时宿主取消在途操作产生的`fatal`属预期，只在非主动停止时判失败 |
-| 写法长稳前两次`run`在可靠Redis故障后排队写始终不恢复；产品容量问题，`write-modes-run-2026-09-19T06-45-28-717Z`、`07-21-13-224Z` | 单条Enqueue在每个DBProxy节点只有一条入队连接，持锁等待`everysec`的`WAITAOF`：空闲时平均约0.5秒，满载时约1次/秒/节点。请求超5秒后TS仓库重试3次、宿主客户端再重发1次（最多6倍），服务端仍执行已放弃的请求。节点指标显示故障后入队平均排队45–60秒、单节点连接累计1541次，但只有Redis停机期间的3次真正报错。平时只用约三分之一容量，35秒停机后的积压经放大仍超过容量，形成自我维持的过载。用新客户端且被杀时空闲的定向复现可恢复，说明服务端本身能重连 | 不能加大客户端超时或减少故障来掩盖。正确性长稳按最坏6倍放大计算排队写负载（间隔max(40秒,玩家数×9秒)），第三次`run`据此通过。产品侧需另行决定服务端合并WAITAOF、请求截止时间或批量入队（EnqueueMulti），属DBProxy改动，须用户同意 |
+| 写法长稳前两次`run`在可靠Redis故障后排队写始终不恢复；产品容量问题，`write-modes-run-2026-09-19T06-45-28-717Z`、`07-21-13-224Z` | 单条Enqueue在每个DBProxy节点只有一条入队连接，持锁等待`everysec`的`WAITAOF`：空闲时平均约0.5秒，满载时约1次/秒/节点。请求超5秒后TS仓库重试3次、宿主客户端再重发1次（最多6倍），服务端仍执行已放弃的请求。节点指标显示故障后入队平均排队45–60秒、单节点连接累计1541次，但只有Redis停机期间的3次真正报错。平时只用约三分之一容量，35秒停机后的积压经放大仍超过容量，形成自我维持的过载。用新客户端且被杀时空闲的定向复现可恢复，说明服务端本身能重连 | 不能加大客户端超时或减少故障来掩盖。正确性长稳按最坏6倍放大计算排队写负载（间隔max(40秒,玩家数×9秒)），第三次`run`据此通过。之后经用户同意已实施：DBProxy入队组提交＋排队上限4096＋2秒排队期限，TiangZ排队写仓库不再重试；第四次`run`在原负载下通过 |
 | 执行`core-api:update-lock`后锁里出现无关声明变化；证据风险，同上 | HEAD锁自`a16344c`/`1da8f58`起已落后源码（`GlobalIdConfig`、`GlobalIdSystem`、`EntryScene`、`Game`、`HotfixSystem`）。开发期`verify:core-api`跳过锁比对，锁在发布前统一更新 | 功能改动不要顺手吸收他人漂移；先确认漂移来源，发布时连同说明一次评审 |
 
 上述错误的修正不得降低安全断言。预期拒绝/断线属于故障测试的一部分；必须验证拒绝原因、generation不变、恢复后请求仅执行一次，而不是要求所有故障路径都返回成功。
@@ -1947,7 +1947,7 @@ SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools
 | `@transactional` | `DbProxyTransactionalEntityRepository` | `TransactionWrite`/`TransactionWriteSnapshot`，交给`HostDbProxyRecords.CommitRecords` |
 
 - 一条记录只允许一种写法。排队写不带revision校验、按记录合并，落库是无条件覆盖；同一记录若还被CAS保存或事务写入，迟到的排队值会覆盖已确认的新数据。校验器拒绝两个标记同用，生成仓库在类型和运行时上都没有被禁止的方法；业务绕过生成仓库、直接拼namespace写入时不受保护。
-- Enqueue成功只表示Redis AOF已接收，不表示PG已落库；崩溃或换服后可能回退到最近落库状态，不能用于经济或需要立即恢复的数据。
+- Enqueue成功只表示Redis AOF已接收，不表示PG已落库；崩溃或换服后可能回退到最近落库状态，不能用于经济或需要立即恢复的数据。仓库只发送一次、不在内部重试：下一次排队写会取代它，重试只会在过载时放大负载。
 - 受限仓库读到旧schema只在内存迁移、不回写：排队记录回写会与待落库值竞争，事务记录由下一次事务以读到的revision写入新版本。普通仓库保持原有CAS回写。
 - 未加标记的实体，生成文本与0.16.0逐字节一致（已用Examples已提交的`NativeItemPersistence.ts`实测）。
 - 开发期更换写法直接清库；从`@queued`改为其他写法前，至少停写并等DBProxy排队积压清零。运营中更换写法造成的数据问题不由DBProxy兜底。
@@ -1957,4 +1957,4 @@ SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools
 
 - `smoke`：内存DBProxy + 一次探针强杀重启，不接触数据库容器。
 - `run`：使用专用`tiangz-dbproxy-local`容器中的独立库`dbproxy_write_modes_soak`和Redis库号5，注入PG、可靠Redis、缓存、AOF、首选DBProxy节点、全部DBProxy节点、探针进程七类故障；每次故障后要求每个玩家每种写法再确认两次；最后排空排队积压，按账本核对，并直接查PG核对写法互斥与事务恰好一次。
-- `run`会清理上述专用数据并停启容器，必须由用户明确授权；与其他演练共用`reliability.lock`，不能并行。2026-09-19单测和smoke通过。前两次`run`在可靠Redis故障后失败（排队写过载，见失败教训表，账本均0违例）；按最坏重试放大降低排队写负载后，第三次`run`（10玩家，排队写每90秒一次）通过完整一轮七类故障：普通写15,518次、排队写232次、事务20,640次确认，0违例，重启恢复读取与最终读取无差异、排队写无回退，PG直接核对写法互斥成立、每个事务序号恰好提交一次，证据`write-modes-run-2026-09-19T07-50-07-965Z`。这证明的是正确性，不是容量；AOF场景中PG停机期间只确认了2次排队写，该样本偏少。
+- `run`会清理上述专用数据并停启容器，必须由用户明确授权；与其他演练共用`reliability.lock`，不能并行。2026-09-19单测和smoke通过。前两次`run`在可靠Redis故障后失败（排队写过载，见失败教训表，账本均0违例）；按最坏重试放大降低排队写负载后，第三次`run`（10玩家，排队写每90秒一次）通过完整一轮七类故障：普通写15,518次、排队写232次、事务20,640次确认，0违例，重启恢复读取与最终读取无差异、排队写无回退，PG直接核对写法互斥成立、每个事务序号恰好提交一次，证据`write-modes-run-2026-09-19T07-50-07-965Z`。这证明的是正确性，不是容量；AOF场景中PG停机期间只确认了2次排队写，该样本偏少。随后DBProxy入队改为组提交（排队上限4096、2秒排队期限），TiangZ排队写仓库不再重试；第四次`run`在与首次失败相同的负载（20玩家，排队写每250毫秒一次）下通过完整一轮：普通890、排队1,807、事务1,750次确认，0违例；PG停机期间有80次排队写只存在于AOF，Redis强杀后全部落库，证据`write-modes-run-2026-09-19T09-16-36-248Z`。此时入队平均约1.8秒（要等当前批和本批两次落盘），而探针客户端只有4条连接、每条同时只有一个请求，吞吐受客户端并发限制。
