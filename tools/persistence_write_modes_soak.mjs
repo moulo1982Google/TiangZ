@@ -754,7 +754,7 @@ function probeTiming(options) {
 
 /** 两轮排队写至少需要两个间隔加错峰，恢复等待按间隔放宽。 / Two queued rounds need two intervals plus stagger, so the recovery wait scales with the interval. */
 function roundsTimeoutMs(stepMs) {
-  return Math.max(300_000, Math.ceil(2.5 * stepMs) + 120_000);
+  return Math.max(300_000, 4 * stepMs + 120_000);
 }
 
 /** 专用环境使用PG+可靠Redis+独立缓存；冒烟使用内存后端。 / Dedicated runs use PG + reliable Redis + separate cache; smoke uses the memory backend. */
