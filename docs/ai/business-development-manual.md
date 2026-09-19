@@ -1,6 +1,46 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-09-18短时采样回归已通过：`sampling10-rd6WDP/report.json`为`sampling10-passed`，北京时间10:36:32开始测量，实测601201ms，10:46:54完成清理；21个有效资源样本通过原20个门槛、同PID及增长检查，26笔业务及26次原命令重放、29次对账、233次快照，最终冷重启恢复通过，游戏/代理/探针/存储全部停止。正式构建与24项工具测试通过；历史样本回放确定复现原18/20失败。本轮仅验证采样修复，未执行热更和五种故障，未启动新八小时测试，原八小时失败报告保持不变。 / The ten-minute sampling regression passed with 21 valid samples against the unchanged 20-sample threshold, same-process growth checks, 26 operations and replays, 29 reconciliations, 233 snapshots, final cold recovery and complete cleanup. The official build and all 24 tool tests passed, including replay of the original 18/20 failure. This verifies sampling only; no new eight-hour soak was started.
+
+2026-09-18八小时SLG长稳soak8h-Bkzmwd最终failed：恢复期23次点采样中，3次outbound=1、2次pending=1被静默过滤，仅18个空闲样本，结束时才触发至少20个门槛；随后资源增长检查及最终冷恢复未执行，原失败报告必须保留。修复采样器为60秒内等待两个不同指标发布周期均空闲，保存全部忙/旧快照，指标不刷新或持续忙碌则失败；固定采样时隙、运行中检查剩余容量、恢复期结束即执行数量和同PID增长门槛。禁止把最低数量改为18或复用同一快照补数。历史23个样本已冻结为回归夹具；复测为SLG正式build、node --test tools/acceptance/*.test.mjs，再node tools/soak_acceptance.mjs --profile sampling10 --confirm isolated-slg-authoritative-test。短测前8分钟每20秒采集、保持20个门槛，后2分钟收敛并冷恢复；它不替代八小时和五类故障验收。 / The completed soak failed because silent filtering left 18 of 23 samples. Preserve that failure; require two fresh idle publications within a bounded wait, check coverage early, and validate with recorded evidence plus a ten-minute real-storage regression.
+
+2026-09-18 H/J前置验证已完成：25个子项分批实测通过，H3在run-gOw29M连续三轮通过（准备阶段客户端回包3/4/3），H8在run-xSvyRq通过10次正式候选和992个连续样本；所有清理成功。五分钟长稳自检smoke5-GUPRFU通过。八小时控制器PID 27472已后台启动，报告在Examples/packages/slg/temp/authoritative-acceptance/soak8h-Bkzmwd/report.json，每5分钟采样；必须看状态、最近采样时间及进程存活，不能把启动当通过。停止用同目录STOP文件，勿强杀Node留下假running。完整三轮A/B/C/D/H/J矩阵仍未通过；本次未修改宿主或DBProxy运行时代码。 / All 25 H/J cases passed in separate runs, including three consecutive H3 rounds and H8 resource gates. The eight-hour isolated soak is launched but not yet passed; use the report heartbeat and cooperative STOP file.
+
+2026-09-18 H3二次复核（run-0YDqnf）出现not-effective：单条串行只读流量的一次往返跨过约85ms准备窗口，服务端已生成旧版响应，但客户端收包比暂停日志到达晚约0.2ms。保留原报告，不把服务器时间替换成客户端完成证据；夹具改为最多4条并行只读请求链，并保留发送/收到/服务器时间，仍严格要求暂停前有客户端回包。禁止拓宽暂停前窗口或改为任意早期回包。复测：正式build后run --cases H3 --rounds 3 --confirm isolated-slg-authoritative-test，再单独H8；不能用旧H3通过记录替代此次稳定性复核。 / A single read round trip straddled the short preparation window. Keep the client-before-pause gate, use four bounded read chains, preserve all timing evidence, and rerun three rounds without changing runtime behavior.
+
+2026-09-18 H9b首次实测被服务器正确拒绝，但夹具只匹配protocol文字而误判。正式协议生成物参与Model包字节，src/hotfix.rs先校验modelFingerprint，因此正确路径可能先报Model哈希不兼容。修复要求候选真实protocolFingerprint不同，并精确核对首个不兼容字段及双方哈希；禁止仅接受任意422、手改manifest或跳过指纹。失败证据为SLG run-JP9R5Z/H9b-1及report.json；同份报告的H3-F2/F3、H6、H7a/b、H9a已通过。复测SLG正式build后run --cases H9b --rounds 1 --confirm isolated-slg-authoritative-test；新增反例单测拒绝无协议变化及无关错误。 / H9b exposed a fixture assumption about rejection order: generated protocol code changes the Model hash, which is checked first. Verify the real protocol change and exact rejected hashes, never arbitrary rejection or edited manifests.
+
+2026-09-17 H3-F2 首轮记录为 not-effective：队列日志已证明 frame=3072、backpressure=1，但基线抓取早于首个周期指标发布，缺少 frame 分阶段计数。夹具现在有界等待完整基线，并保存饱和前后原始指标；禁止将缺指标当零、降低队列容量或删除背压断言。失败证据：SLG temp/authoritative-acceptance/run-8KTtrc/report.json 与 H3-F2-1/game-1.log。复测：SLG 执行 test:acceptance build 后，以 run --cases H3-F2 --rounds 1 --confirm isolated-slg-authoritative-test 定向验证。 / The first H3-F2 run lacked its initial periodic metric snapshot despite actual saturation. Await a complete baseline and preserve raw metrics; never substitute zero, reduce capacity, or remove the backpressure assertion.
+
+
+D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authoritative_reads真实PG/Redis测试1通过（11.42秒），SLG原子批量探针通过，游戏/代理/探针/存储全部停止。工具单测17通过；正式build/check通过。此证据仅覆盖D1，不代表H/J或整轮90分钟通过。
+
+2026-09-17 SLG 90分钟复测在A4因 `docker exited 1` 提前停止；实因每个隔离用例只停止容器却保留默认网络，累计18个 `slg-acceptance-*` 网络后耗尽Docker地址池，业务断言尚未执行。正确做法是确认网络没有运行容器后清理旧测试网络，并让每轮结束时删除容器和网络、保留命名卷。禁止清理开发/线上网络，禁止把Docker启动失败记为业务通过。复测记录：run-GCm8Ll；A4修复后定向复测run-Y5p6QT通过。 / On 2026-09-17 the SLG 90-minute rerun stopped at A4 with `docker exited 1`; the actual cause was that each isolated case stopped containers but retained its default network, exhausting Docker address pools after 18 `slg-acceptance-*` networks. The correct fix is to remove only verified empty test networks and make each run remove its containers and network while retaining named volumes. Never clean development or production networks, and never classify a Docker startup failure as a business pass. Evidence: run-GCm8Ll; targeted A4 rerun run-Y5p6QT passed.
+
+同轮H3第一次复测未扣住提交，是夹具按旧JSON字段 `records` 匹配，而正式DBProxy解码字段为 `writes`；修正字段后又因继承的 `RUST_LOG=warn` 隐藏了 `Hotfix ingress pause started` 的info日志，导致真实暂停已完成却被观测器判为超时。正确做法是按正式 `writes[].record` 校验RecordKey，并为热更验收显式开启info日志；不能放宽2秒观测期限或用admin返回的总耗时替代暂停证据。复测记录：run-TSwgAW（字段误报）、run-w4DoP2（日志可见性误报）。 / In the same run, the first H3 attempt failed to hold the commit because the fixture matched the legacy JSON `records` field while the official DBProxy decoder exposes `writes`; after that fix, inherited `RUST_LOG=warn` hid the info log `Hotfix ingress pause started`, so the real pause completed but the observer timed out. The correct fix is to match `writes[].record` by RecordKey and explicitly enable info logs for hotfix acceptance; do not relax the two-second observation deadline or replace pause evidence with the admin call's total duration. Evidence: run-TSwgAW (field mismatch) and run-w4DoP2 (log visibility mismatch).
+
+2026-09-17 SLG D1夹具隔离失败：run-cHJ8WY在D1提前退出；补齐子进程stdout/stderr日志后，run-TC9Bun确认StorageBackend初始化报publisher endpoint changed，尚未执行读取断言。原因是独立存储测试与SLG共用PG数据库，却以宿主机缓存Redis地址注册已被容器队列Redis占用的legacy Publisher。正确做法是在本轮隔离PG容器内创建authority_probe专用数据库；SLG原子批量探针仍检查SLG数据库，存储级断言单独标明范围。禁止清空Publisher注册表、放宽端点校验或手改构建哈希。复测：在Examples/packages/slg执行node tools/authoritative_acceptance.mjs build，再run --cases D1 --rounds 1 --confirm isolated-slg-authoritative-test；失败证据为temp/authoritative-acceptance/run-TC9Bun/D1-1/sql-snapshot-probe.log。修复后的结果以新报告为准。
+
 ## 失败教训与复测流程
+
+2026-09-17 90分钟验收首次启动run-MeA1nL失败：夹具把主endpoint重复放入endpoints（failoverEndpoints旧别名），宿主在连接前正确拒绝；尚未进入业务或计时。修复为endpoint=A、failoverEndpoints=[B]，不放宽运行时校验。原报告和卷保留，隔离容器已停止。配置/源码改变后经正式build/check再开新报告，不能覆盖旧失败或手改构建哈希。
+
+
+### SLG热更候选必须验证实际变化（2026-09-17）
+
+同轮夹具完善：出站深度已通过EntryScene.metricsSnapshot的outbound_lanes自定义gauge导出，仅搜索固定Prometheus名字会误判缺接口。正确做法是按metric name与name/key标签取值，缺指标明确失败，不能按零处理或直接增设Core观测。隔离Model可通过现有metricsSnapshot扩展只读业务计数。H5d用冻结的不可配置方法槽让最后一个方法安装失败，验证真实prototype回滚路径和后续合法发布，不注入配置交换后的任意副作用。
+
+回滚目标取上一活动配对：连续P21→P12→P22后的回滚是P12，不是P11；固定10次序列和断言已同步。纯SDK回归中50毫秒轮询与50毫秒超时相撞属于测试时序错误，改用独立500毫秒测试预算；验收F3仍为1800毫秒客户端、5秒DB、3秒热更，不能放宽生产超时掩盖失败。18项工具测试、SLG检查、正式候选构建以及vitest run tests/legacy/hotfix_system_self_test.test.ts通过；真实PG/Redis和90分钟演练尚未执行。
+
+
+隔离夹具构建时出现两类失败：协议增加必填响应字段后，候选业务实现未同时补字段或恢复时遗留字段，会被类型检查拒绝；Luban int改long在当前TS输出中可能仍是同一schema。二者属于夹具问题，不能据此宣称运行时拒绝不兼容包。
+
+正确做法：只修改复制的源文件，用正式生成器更新候选协议和锁，同步业务响应类型；每个配置变体显式执行Luban生成，恢复基线后再生成/检查。使用新增配置字段制造真正schema变化，并比较moduleConfigsJson内模块schemaFingerprint，而非宿主gameConfigSchemaFingerprint。禁止手改生成物、跳过类型检查或仅凭源文件不同就宣称负向注入有效。
+
+业务配置负值通过现有gameConfig.validator由冻结Model验证，不必新增Core接口。客户端未知结果必须扣游戏响应；若扣DB ACK会让服务器仍在途，成功回滚的前提不成立。暂停/超时证据从真实pauseStart开始；错过自然任务/分钟边界记not-effective，不能修改存档或机器时钟凑命中。
+
+复测在Examples/packages/slg执行npm run test:acceptance -- build-hotfix、npm run test:acceptance-tools及npm run check；前者只构建隔离候选，后两者不启动故障服务。smoke30运行仍需隔离故障验收授权。构建/纯工具检查不能替代真实PG/Redis、回滚重启和30分钟结果；完整覆盖缺项见[SLG验收文档](../../../TiangZ-Examples/packages/slg/docs/authoritative-read-acceptance.md)。
+
 
 ### SLG驻留、前台恢复与模块边界（2026-09-17）
 

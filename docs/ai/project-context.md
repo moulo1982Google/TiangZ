@@ -1,8 +1,35 @@
 # 2026-09-16 模块拆分后的当前事实
 
+2026-09-18短时采样回归已通过：`sampling10-rd6WDP/report.json`为`sampling10-passed`，北京时间10:36:32开始测量，实测601201ms，10:46:54完成清理；21个有效资源样本通过原20个门槛、同PID及增长检查，26笔业务及26次原命令重放、29次对账、233次快照，最终冷重启恢复通过，游戏/代理/探针/存储全部停止。正式构建与24项工具测试通过；历史样本回放确定复现原18/20失败。本轮仅验证采样修复，未执行热更和五种故障，未启动新八小时测试，原八小时失败报告保持不变。 / The ten-minute sampling regression passed with 21 valid samples against the unchanged 20-sample threshold, same-process growth checks, 26 operations and replays, 29 reconciliations, 233 snapshots, final cold recovery and complete cleanup. The official build and all 24 tool tests passed, including replay of the original 18/20 failure. This verifies sampling only; no new eight-hour soak was started.
+
+2026-09-18八小时SLG长稳soak8h-Bkzmwd最终failed：恢复期23次点采样中，3次outbound=1、2次pending=1被静默过滤，仅18个空闲样本，结束时才触发至少20个门槛；随后资源增长检查及最终冷恢复未执行，原失败报告必须保留。修复采样器为60秒内等待两个不同指标发布周期均空闲，保存全部忙/旧快照，指标不刷新或持续忙碌则失败；固定采样时隙、运行中检查剩余容量、恢复期结束即执行数量和同PID增长门槛。禁止把最低数量改为18或复用同一快照补数。历史23个样本已冻结为回归夹具；复测为SLG正式build、node --test tools/acceptance/*.test.mjs，再node tools/soak_acceptance.mjs --profile sampling10 --confirm isolated-slg-authoritative-test。短测前8分钟每20秒采集、保持20个门槛，后2分钟收敛并冷恢复；它不替代八小时和五类故障验收。 / The completed soak failed because silent filtering left 18 of 23 samples. Preserve that failure; require two fresh idle publications within a bounded wait, check coverage early, and validate with recorded evidence plus a ten-minute real-storage regression.
+
+2026-09-18 H/J前置验证已完成：25个子项分批实测通过，H3在run-gOw29M连续三轮通过（准备阶段客户端回包3/4/3），H8在run-xSvyRq通过10次正式候选和992个连续样本；所有清理成功。五分钟长稳自检smoke5-GUPRFU通过。八小时控制器PID 27472已后台启动，报告在Examples/packages/slg/temp/authoritative-acceptance/soak8h-Bkzmwd/report.json，每5分钟采样；必须看状态、最近采样时间及进程存活，不能把启动当通过。停止用同目录STOP文件，勿强杀Node留下假running。完整三轮A/B/C/D/H/J矩阵仍未通过；本次未修改宿主或DBProxy运行时代码。 / All 25 H/J cases passed in separate runs, including three consecutive H3 rounds and H8 resource gates. The eight-hour isolated soak is launched but not yet passed; use the report heartbeat and cooperative STOP file.
+
+2026-09-18 H3二次复核（run-0YDqnf）出现not-effective：单条串行只读流量的一次往返跨过约85ms准备窗口，服务端已生成旧版响应，但客户端收包比暂停日志到达晚约0.2ms。保留原报告，不把服务器时间替换成客户端完成证据；夹具改为最多4条并行只读请求链，并保留发送/收到/服务器时间，仍严格要求暂停前有客户端回包。禁止拓宽暂停前窗口或改为任意早期回包。复测：正式build后run --cases H3 --rounds 3 --confirm isolated-slg-authoritative-test，再单独H8；不能用旧H3通过记录替代此次稳定性复核。 / A single read round trip straddled the short preparation window. Keep the client-before-pause gate, use four bounded read chains, preserve all timing evidence, and rerun three rounds without changing runtime behavior.
+
+2026-09-18 H9b首次实测被服务器正确拒绝，但夹具只匹配protocol文字而误判。正式协议生成物参与Model包字节，src/hotfix.rs先校验modelFingerprint，因此正确路径可能先报Model哈希不兼容。修复要求候选真实protocolFingerprint不同，并精确核对首个不兼容字段及双方哈希；禁止仅接受任意422、手改manifest或跳过指纹。失败证据为SLG run-JP9R5Z/H9b-1及report.json；同份报告的H3-F2/F3、H6、H7a/b、H9a已通过。复测SLG正式build后run --cases H9b --rounds 1 --confirm isolated-slg-authoritative-test；新增反例单测拒绝无协议变化及无关错误。 / H9b exposed a fixture assumption about rejection order: generated protocol code changes the Model hash, which is checked first. Verify the real protocol change and exact rejected hashes, never arbitrary rejection or edited manifests.
+
+2026-09-17 H3-F2 首轮记录为 not-effective：队列日志已证明 frame=3072、backpressure=1，但基线抓取早于首个周期指标发布，缺少 frame 分阶段计数。夹具现在有界等待完整基线，并保存饱和前后原始指标；禁止将缺指标当零、降低队列容量或删除背压断言。失败证据：SLG temp/authoritative-acceptance/run-8KTtrc/report.json 与 H3-F2-1/game-1.log。复测：SLG 执行 test:acceptance build 后，以 run --cases H3-F2 --rounds 1 --confirm isolated-slg-authoritative-test 定向验证。 / The first H3-F2 run lacked its initial periodic metric snapshot despite actual saturation. Await a complete baseline and preserve raw metrics; never substitute zero, reduce capacity, or remove the backpressure assertion.
+
+
+D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authoritative_reads真实PG/Redis测试1通过（11.42秒），SLG原子批量探针通过，游戏/代理/探针/存储全部停止。工具单测17通过；正式build/check通过。此证据仅覆盖D1，不代表H/J或整轮90分钟通过。
+
+2026-09-17 A4启动失败的根因是验收夹具长期保留每个隔离项目的Docker默认网络，最终耗尽预定义地址池；清理范围仅限确认无运行容器的 `slg-acceptance-*` 网络，夹具现以 `docker compose down --remove-orphans` 清理容器和网络并保留命名卷。 / The A4 startup failure was caused by the acceptance fixture retaining one Docker default network per isolated project until the predefined address pools were exhausted. Cleanup is limited to verified `slg-acceptance-*` networks with no running containers; the fixture now uses `docker compose down --remove-orphans` to remove containers and networks while retaining named volumes.
+
+H3验收夹具已固定正式DBProxy的 `writes[].record` 匹配，并在热更场景对子进程显式设置 `RUST_LOG=info`，保证真实暂停/恢复日志可观测；此前的超时分别是字段和日志过滤造成的夹具误报，不代表Runtime或DBProxy业务失败。 / The H3 acceptance fixture now matches the official DBProxy `writes[].record` shape and explicitly sets `RUST_LOG=info` for hotfix scenarios so real pause/resume logs remain observable; the earlier timeouts were fixture false positives caused by field shape and log filtering, not Runtime or DBProxy business failures.
+
+2026-09-17 SLG D1夹具隔离失败：run-cHJ8WY在D1提前退出；补齐子进程stdout/stderr日志后，run-TC9Bun确认StorageBackend初始化报publisher endpoint changed，尚未执行读取断言。原因是独立存储测试与SLG共用PG数据库，却以宿主机缓存Redis地址注册已被容器队列Redis占用的legacy Publisher。正确做法是在本轮隔离PG容器内创建authority_probe专用数据库；SLG原子批量探针仍检查SLG数据库，存储级断言单独标明范围。禁止清空Publisher注册表、放宽端点校验或手改构建哈希。复测：在Examples/packages/slg执行node tools/authoritative_acceptance.mjs build，再run --cases D1 --rounds 1 --confirm isolated-slg-authoritative-test；失败证据为temp/authoritative-acceptance/run-TC9Bun/D1-1/sql-snapshot-probe.log。修复后的结果以新报告为准。
+
 2026-09-17 七日测试复测入口：[分析基线及对应提交核验](external-7d-analysis-baseline-20260917.md)，[三组复测清单](../../../TiangZ-Examples/tools/chaos/retest-7d-findings.md)。新增缓存写超时回归已编译未实跑；DBProxy缺口尚未修复。不得将最终状态恢复当作运行期无旧读，也不得遗漏Relay最终核验失败。
 
 ## AI续接必读：失败教训
+
+2026-09-17 90分钟验收首次启动run-MeA1nL失败：夹具把主endpoint重复放入endpoints（failoverEndpoints旧别名），宿主在连接前正确拒绝；尚未进入业务或计时。修复为endpoint=A、failoverEndpoints=[B]，不放宽运行时校验。原报告和卷保留，隔离容器已停止。配置/源码改变后经正式build/check再开新报告，不能覆盖旧失败或手改构建哈希。
+
+
+2026-09-17 SLG热更夹具：Examples/packages/slg的test:acceptance新增build-hotfix及smoke30计划。隔离副本使用正式Luban/proto/Bundle生成四种代码配置配对和对应启动包；H/J的25子项已接入，新增acceptance90全42项目单轮预算及B组各3分钟恢复观察；真实数据库故障轮次尚未运行，不能宣称完整三轮通过。H8复用已有outbound_lanes自定义指标，H5d通过冻结Model的不可替换方法槽测试现有提交回滚；不修改Core或Rust。18项纯工具测试、正式候选构建、SLG检查及框架回滚自测通过。配置校验使用现有gameConfig.validator，不改Core；Luban int/long可能生成相同TS schema，负向测试必须验证实际指纹变化。见[实施与覆盖边界](../../../TiangZ-Examples/packages/slg/docs/authoritative-read-acceptance.md)。
+
 
 2026-09-17 本轮主工程verify:quick完整运行：30项通过、1项verify:no-local-traces失败，命中既有tools/ai-assistants/check.mjs:38的本地盘符检测正则；本轮没有修改/豁免该工具。cargo fmt/clippy/test通过，不能据此称完整门禁已通过。
 
