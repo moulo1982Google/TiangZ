@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { spawn, execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createServer } from "node:net";
 import path from "node:path";
 import { resolveHostProfile } from "./host_profile.mjs";
@@ -75,6 +76,8 @@ async function verifyRuntime(sceneType, success, failurePattern = /unknown scene
     observability: { health: { ip: "127.0.0.1", port: healthPort } } },
     scenes: [{ name: "probe", sceneType, ip: "127.0.0.1", port: scenePort, protocol: "websocket", audience: "outer" }] }));
   const binary = path.join(root, "target/debug", process.platform === "win32" ? "TiangZ.exe" : "TiangZ");
+  // 缺少调试宿主时给出可执行的提示，不要抛裸 ENOENT。 / Report a fixable message instead of a bare ENOENT.
+  if (!existsSync(binary)) throw new Error(`debug host is missing: ${binary}; run npm run build:runtime:debug first`);
   const child = spawn(binary, [`--runtime-root=${fixture}`, config], { cwd: root, windowsHide: true,
     env: { ...process.env, TIANGZ_WATCHER_CONTROL: "stdin" }, stdio: ["pipe", "pipe", "pipe"] });
   let logs = "";

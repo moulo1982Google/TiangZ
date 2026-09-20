@@ -26,6 +26,10 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Rust Clippy warnings
         run: cargo clippy --all-targets -- -D warnings
+      # test:module-host 会启动仓库根的调试宿主；矩阵里的 cargo 编译排在它之后，必须先构建。
+      # test:module-host launches the debug host from the repository root; the matrix compiles Rust later, so build it first.
+      - name: Build the debug host
+        run: npm run build:runtime:debug
       - run: npm run verify
       - name: Upload failure logs
         if: failure()
