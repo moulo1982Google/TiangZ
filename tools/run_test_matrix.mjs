@@ -131,6 +131,13 @@ async function runProfile(profileName, explicitSteps) {
   console.log(`[test-matrix] SUMMARY profile=${profileName} passed=${report.passed} failed=${report.failed} durationMs=${report.durationMs}`);
   if (failed.length > 0) {
     console.error(`[test-matrix] failed steps: ${failed.map((result) => result.name).join(", ")}`);
+    // CI 的注解可以直接读到，不必翻十几万行日志才知道哪一步失败。
+    // CI annotations are readable directly, so the failing step is visible without scrolling a huge log.
+    if (process.env.GITHUB_ACTIONS === "true") {
+      for (const result of failed) {
+        console.log(`::error title=test-matrix ${profileName}::${result.name} failed`);
+      }
+    }
     process.exitCode = 1;
   }
 }
