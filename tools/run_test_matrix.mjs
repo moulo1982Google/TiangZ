@@ -84,6 +84,10 @@ async function runProfile(profileName, explicitSteps) {
   if (!steps) throw new Error(`unknown test matrix profile: ${profileName}`);
   const startedAt = new Date();
   const results = [];
+  // CI 上捕获每步输出，失败时落盘并放进注解；本机保持实时输出不变。
+  // Capture step output on CI so failures can be written out and annotated; local runs keep streaming.
+  const captureOutput = process.env.GITHUB_ACTIONS === "true";
+  const outputs = new Map();
   console.log(`[test-matrix] profile=${profileName} steps=${steps.length}`);
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index];
@@ -92,9 +96,16 @@ async function runProfile(profileName, explicitSteps) {
     const outcome = spawnSync(step.command, step.args, {
       cwd: root,
       env: childEnvironment,
-      stdio: "inherit",
+      stdio: captureOutput ? ["inherit", "pipe", "pipe"] : "inherit",
       shell: false,
+      encoding: captureOutput ? "utf8" : undefined,
+      maxBuffer: 256 * 1024 * 1024,
     });
+    if (captureOutput) {
+      const text = `${outcome.stdout ?? ""}${outcome.stderr ?? ""}`;
+      outputs.set(step.name, text);
+      process.stdout.write(text);
+    }
     const durationMs = Math.round(performance.now() - started);
     const status = outcome.status === 0 ? "passed" : "failed";
     results.push({
@@ -133,13 +144,25 @@ async function runProfile(profileName, explicitSteps) {
     console.error(`[test-matrix] failed steps: ${failed.map((result) => result.name).join(", ")}`);
     // CI 的注解可以直接读到，不必翻十几万行日志才知道哪一步失败。
     // CI annotations are readable directly, so the failing step is visible without scrolling a huge log.
-    if (process.env.GITHUB_ACTIONS === "true") {
+    if (captureOutput) {
+      const logDir = path.join(root, "temp", "test-logs");
+      await mkdir(logDir, { recursive: true });
       for (const result of failed) {
-        console.log(`::error title=test-matrix ${profileName}::${result.name} failed`);
+        const text = outputs.get(result.name) ?? "";
+        const file = `${profileName}-${result.name.replaceAll(/[^\w.-]+/g, "-")}.log`;
+        if (text) await writeFile(path.join(logDir, file), text, "utf8");
+        const tail = text.split(/\r?\n/).filter((line) => line.trim().length > 0).slice(-12).join("\n");
+        const message = `${result.name} failed (exit ${result.exitCode})\n${tail}`;
+        console.log(`::error title=test-matrix ${profileName}::${encodeAnnotation(message)}`);
       }
     }
     process.exitCode = 1;
   }
+}
+
+/** GitHub 注解需要转义换行，否则只保留第一行。 / GitHub annotations need escaped newlines, or only the first line survives. */
+function encodeAnnotation(message) {
+  return message.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
 }
 
 function npmStep(name) {
