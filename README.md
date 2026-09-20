@@ -2,6 +2,7 @@
 [![verify](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml)
 [![security](https://github.com/moulo1982Google/TiangZ/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/moulo1982Google/TiangZ/actions/workflows/security.yml)
 [![starter](https://github.com/moulo1982Google/TiangZ/actions/workflows/starter.yml/badge.svg?branch=main)](https://github.com/moulo1982Google/TiangZ/actions/workflows/starter.yml)
+[![tag](https://img.shields.io/github/v/tag/moulo1982Google/TiangZ?label=tag&sort=semver)](https://github.com/moulo1982Google/TiangZ/tags)
 [![license](https://img.shields.io/github/license/moulo1982Google/TiangZ?label=license)](LICENSE)
 
 TiangZ 是 Rust Runtime + TypeScript 的模块化游戏服务端框架。当前版本为 `0.6.0`（2026-09-20 发布，标签 `v0.6.0`）。
