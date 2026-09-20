@@ -1,6 +1,6 @@
 # TiangZ
 
-TiangZ 是 Rust Runtime + TypeScript 的模块化游戏服务端框架。当前开发版本为 `0.6.0-alpha.0`，尚未完成 0.6 正式发布验收。
+TiangZ 是 Rust Runtime + TypeScript 的模块化游戏服务端框架。当前版本为 `0.6.0`（2026-09-20 发布，标签 `v0.6.0`）。
 
 MMORPG 不再是内置宿主：服务端模块、协议、配置、Native 游戏数据与六个客户端都在同级 TiangZ-Examples。TiangZ-ModuleGame 和 TiangZ-WoW335 显式依赖该 MMORPG 模块；SLG 不需要安装它。
 

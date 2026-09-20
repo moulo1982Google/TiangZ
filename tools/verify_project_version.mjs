@@ -15,7 +15,9 @@ const packageLock = JSON.parse(
   await readFile(path.join(root, "package-lock.json"), "utf8"),
 );
 const readme = await readFile(path.join(root, "README.md"), "utf8");
-const readmeVersion = readme.match(/当前开发版本为 `([^`]+)`/)?.[1];
+// 发布后 README 写“当前版本为”，开发期写“当前开发版本为”，两种都必须与 Cargo.toml 一致。
+// After a release the README says “当前版本为”, during development “当前开发版本为”; both must match Cargo.toml.
+const readmeVersion = readme.match(/当前(?:开发)?版本为 `([^`]+)`/)?.[1];
 
 const mismatches = [];
 if (packageJson.version !== cargoVersion) {

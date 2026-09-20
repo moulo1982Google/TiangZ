@@ -131,4 +131,4 @@ npm run verify
 - TypeScript是默认主业务语言；性能敏感且规则稳定的领域可显式选择`../TiangZ-Examples/modules/mmorpg/rust/src/game`中的Rust模块，但修改后必须重新编译并重启Process。
 - Wasm只作为未来重计算模块的候选，例如确定性战斗核心；当前不接入。
 - Rhai只作为未来脚本后端候选；当前不为它增加兼容层。
-- 当前开发版本为 `0.6.0-alpha.0`，从 0.4.x 直接进入模块化预发布线，尚未完成 0.6 正式发布验收。`v0.3.10`质量门和`0.4.0`空间契约是历史里程碑；Rust AOI、NavMesh3D运行时和Cocos3D/UE/Unity/Godot演示均已落地，地图空间继续遵循[地图空间与3D坐标契约](docs/design/spatial-world.md)。模块宿主版本范围须逐个验证后迁移，不能自动放宽其他游戏声明。
+- 当前版本为 `0.6.0`（2026-09-20 发布），从 0.4.x 直接进入模块化线，`0.6.0-alpha.0` 是它此前的开发预发布号。`v0.3.10`质量门和`0.4.0`空间契约是历史里程碑；Rust AOI、NavMesh3D运行时和Cocos3D/UE/Unity/Godot演示均已落地，地图空间继续遵循[地图空间与3D坐标契约](docs/design/spatial-world.md)。模块宿主版本范围须逐个验证后迁移，不能自动放宽其他游戏声明。

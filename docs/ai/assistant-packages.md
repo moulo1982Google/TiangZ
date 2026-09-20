@@ -10,7 +10,7 @@
 - `build.mjs`：生成便携目录，可选同步当前上层工作区技能。
 - `check.mjs`：检查技能结构、随包约束、四个 Cindy 工具、六类建议、规则 ID 与权限边界。
 
-旧上层 `plugins/tiangz-game-backend*` 是历史副本，本次没有删除它们，后续不要从那里重新打旧包。主工程 dist 为生成物，不提交；源码和本文需要随仓库保存。
+分发产物仓库是同级的 `TiangZ-AI-Plugins`（远程仓库，需保持最新）：`build.mjs` 生成 dist 后，把 Codex 技能、Claude 技能、Cindy 源码同步过去，并重打 `tiangz-game-backend-cindy/tiangz-game-backend-<版本>.cindy`，否则分发包里仍是旧内容。旧上层 `plugins/tiangz-game-backend*` 已作废，不再维护、不要从那里打包或安装。主工程 dist 为生成物，不提交；源码和本文需要随仓库保存。
 
 ## 生成与检查
 

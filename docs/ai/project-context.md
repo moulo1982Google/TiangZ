@@ -357,7 +357,7 @@ Numeric的`MoveSpeed`已从通用Numeric表拆到`app/model/mmorpg/numeric/Movem
 
 公共`LoginFlow.latestGatePing`保存最近一次Gate Ping的RTT、服务端Unix毫秒时间、估算时钟偏差和本地接收时间。客户端显示网络延迟必须使用RTT，不能直接用`Date.now() - serverTime`，否则客户端与服务器的时钟差会被误算成网络延迟。
 
-当前版本是`0.6.0-alpha.0`，从 0.4.x 直接进入模块化开发预发布线，不代表 0.6 正式发布验收完成。框架支持独立游戏模块，MMORPG 是领域示例，SLG 正在验证开发体验。模块 `<0.5.0` 宿主上限会拒绝本版本，须逐个验证后迁移并重新生成、构建和重启；不得自动放宽其他游戏声明。`v0.3.10`是框架能力的首个稳定基线。Phase 0到Phase 3.10.5的实现、专项验收以及Windows/Linux最终发布矩阵已经完成；Phase 4.0空间契约、Phase 4.1 Rust AOI和Phase 4.2.5 NavMesh3D动态障碍链已经完成。工程已有登录、选服、进入地图、2D/3D多人移动、状态广播、WebSocket/Cocos Web、KCP/Cocos Native、Pixi/H5和Godot 4.7.1验收链路，并完成Windows 3000玩家AOI正式容量回归；角色与怪物之间的动态阻挡和动态避让明确不做，尚未完成Linux/分布式空间负载、完整商业MMORPG业务和生产运维方案。
+当前版本是`0.6.0`（2026-09-20 发布，此前为 `0.6.0-alpha.0` 开发预发布）。框架支持独立游戏模块，MMORPG 是领域示例，SLG 正在验证开发体验。模块 `<0.5.0` 宿主上限会拒绝本版本，须逐个验证后迁移并重新生成、构建和重启；不得自动放宽其他游戏声明。`v0.3.10`是框架能力的首个稳定基线。Phase 0到Phase 3.10.5的实现、专项验收以及Windows/Linux最终发布矩阵已经完成；Phase 4.0空间契约、Phase 4.1 Rust AOI和Phase 4.2.5 NavMesh3D动态障碍链已经完成。工程已有登录、选服、进入地图、2D/3D多人移动、状态广播、WebSocket/Cocos Web、KCP/Cocos Native、Pixi/H5和Godot 4.7.1验收链路，并完成Windows 3000玩家AOI正式容量回归；角色与怪物之间的动态阻挡和动态避让明确不做，尚未完成Linux/分布式空间负载、完整商业MMORPG业务和生产运维方案。
 
 NavMesh3D的同一目标意图由Rust保留现有路径与游标，只更新较新的确认序号；目标变化、显式重置或障碍版本变化才触发重算。这个幂等性是通用导航运行时契约，业务模块仍只决定目标和行为节奏，不把具体游戏巡逻规则写入Core。
 

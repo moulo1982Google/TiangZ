@@ -22,4 +22,4 @@
 | Developer Tools / CLI / 测试 | 能确定检测的约束：时间等待、Model/Hotfix 边界、协议锁、构建指纹等；AI 建议不能代替机器检查 |
 | 游戏包文档 | 玩法规则、具体存档键、简化限制及当次验收，不泛化为引擎规则 |
 
-版本化技能和 Cindy 插件源码已迁入本仓库 `tools/ai-assistants/`，上层 `.agents/skills` 与 `.claude/skills` 是工作区入口，旧上层 `plugins/` 仅保留历史副本。生成与换机操作见 [三端交付说明](assistant-packages.md)。发布独立插件时需重新打包并验证安装后的工具输出，不能只改源码就宣称安装包已更新。
+版本化技能和 Cindy 插件源码已迁入本仓库 `tools/ai-assistants/`，上层 `.agents/skills` 与 `.claude/skills` 是工作区入口，旧上层 `plugins/` 已作废，分发以同级 `TiangZ-AI-Plugins` 仓库为准。生成与换机操作见 [三端交付说明](assistant-packages.md)。发布独立插件时需重新打包并验证安装后的工具输出，不能只改源码就宣称安装包已更新。

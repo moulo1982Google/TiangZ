@@ -51,13 +51,13 @@
   };
 
   var ENVIRONMENT_REQUIREMENTS = {
-    summary: "2026-09-17工作区基线：TiangZ 0.6.0-alpha.0，Node.js 24.x，Rust按rust-toolchain.toml（当前1.97.1）。版本不是在线探测结果，换分支先核对清单。游戏示例已拆到TiangZ-Examples；Docker仅用于需要的本地数据库/容器验证，不是技能运行前提。",
+    summary: "2026-09-17工作区基线：TiangZ 0.6.0，Node.js 24.x，Rust按rust-toolchain.toml（当前1.97.1）。版本不是在线探测结果，换分支先核对清单。游戏示例已拆到TiangZ-Examples；Docker仅用于需要的本地数据库/容器验证，不是技能运行前提。",
     repositories: [
       {
         name: "TiangZ",
         url: "https://github.com/moulo1982Google/TiangZ.git",
         branch: "main",
-        workingVersion: "0.6.0-alpha.0",
+        workingVersion: "0.6.0",
         stableBaseline: "0.3.10"
       },
       {

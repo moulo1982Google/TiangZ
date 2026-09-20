@@ -22,7 +22,7 @@ assert.equal(new Set(rules.rules.map(x => x.id)).size, rules.count);
 for (const id of ['execution.timer', 'protocol.inner-identity', 'persistence.no-fallback', 'persistence.unknown-result', 'hotfix.atomic-config', 'validation.evidence']) {
   assert.ok(rules.rules.some(x => x.id === id), `Missing rule ${id}`);
 }
-assert.equal((await call('get_environment_requirements')).repositories[0].workingVersion, '0.6.0-alpha.0');
+assert.equal((await call('get_environment_requirements')).repositories[0].workingVersion, '0.6.0');
 assert.equal((await call('infer_system_archetype', { text: '持续伤害buff' })).archetype, 'buff');
 for (const archetype of ['item', 'buff', 'quest', 'achievement', 'numeric', 'custom']) {
   const result = await call('recommend_system_design', { archetype, name: '验收', owner: 'player' });

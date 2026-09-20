@@ -1,5 +1,25 @@
 # 版本记录
 
+## 0.6.0 — 2026-09-20（发布，标签 `v0.6.0`）
+
+在 `0.6.0-alpha.0` 开发预发布基础上完成本轮持久化能力并打标签；版本号去掉 alpha 后缀，模块声明的 `minVersion: 0.6.0-alpha.0` 仍然满足。配套 DBProxy 为 `v0.6.0`。
+
+### 新增
+
+- `.native` 持久化写法标记 `@queued`/`@transactional`（需 tiangz-native-language 0.17.0）：写法由数据语义决定，生成受限仓库；未加标记的实体生成文本逐字节不变。详见[持久化写法标记](docs/ai/business-development-manual.md#持久化写法标记2026-09-19)。
+- `persistence.dbProxy.queuedClientPoolSize`（0..64，默认 0 与其他请求共用）：排队写使用专用连接，不与读取、直接写入争用。
+- `persistence.dbProxy.maxInFlightPerConnection`（1..4096，默认 64）：每条 DBProxy 连接同时在途的请求上限；同一记录、操作或交易仍按发送顺序执行。
+- 持久化写法长稳用例 `npm run soak:write-modes`：三种写法并行负载、七类故障注入与恢复、排空积压后直接查 PostgreSQL 对账；支持 `--players`（最多 500）、`--step-ms`、`--dbproxy-shards`、`--enqueue-ack`。
+
+### 变更
+
+- 排队写仓库只发送一次、不在内部重试：下一次排队写会取代它，重试只会在过载时放大负载。
+
+### 验收
+
+- 500 玩家过夜长稳（每人每种写法 60 秒一次）连续通过 7 轮七类故障，0 违例；收尾运行再完整通过 2 轮，普通写 28,522、排队写 32,755、事务 31,944 次确认，最终读取与 PostgreSQL 对账 0 问题。证据 `write-modes-run-2026-09-19T21-59-07-118Z`。
+- `verify:quick` 32 项通过；写法长稳单测与 smoke 通过。
+
 ## 0.6.0-alpha.0 — 2026-09-15（开发预发布）
 
 从 0.4.x 直接转入 0.6 模块化开发线；不补造 0.5 发布记录。本条记录开发基线，不代表已打标签、发布制品或完成正式发布验收。
