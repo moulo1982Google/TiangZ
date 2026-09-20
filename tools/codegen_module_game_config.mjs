@@ -5,6 +5,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rm,
 } from "node:fs/promises";
 import os from "node:os";
@@ -21,7 +22,12 @@ const catalog = await loadGameModuleCatalog({
   projectRoot: root,
   modulesDirectory: path.dirname(moduleRoot),
 });
-const module = catalog.modules.find((candidate) => candidate.root === moduleRoot);
+// 目录清单按真实路径记录模块位置；Windows 临时目录可能是 8.3 短名，字符串比对会失配。
+// The catalog records real paths; a Windows temporary directory can be an 8.3 short name that string comparison misses.
+const realModuleRoot = await realpath(moduleRoot);
+const module = catalog.modules.find(
+  (candidate) => candidate.root === moduleRoot || candidate.root === realModuleRoot,
+);
 if (!module) throw new Error(`game module was not discovered: ${moduleRoot}`);
 if (!module.gameConfig) {
   throw new Error(`game module ${module.id} does not declare gameConfig`);
