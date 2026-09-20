@@ -27,3 +27,6 @@
 /perf/results/*_20*.json
 /perf/results/*_20*.md
 /perf/results/gate/
+
+# 本地跨仓库开发配置：把 DBProxy 依赖指向同级工作区，不进仓库。 / Local cross-repository override; never committed.
+.cargo/config.toml

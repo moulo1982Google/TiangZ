@@ -2304,9 +2304,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.43"
+version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0283386ce02abc0151e1761d08802dfe86c173b0b494af5cbc086574e453da06"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "aws-lc-rs",
  "once_cell",
@@ -2796,7 +2796,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -2888,6 +2888,7 @@ dependencies = [
 [[package]]
 name = "tiangz-dbproxy-client"
 version = "0.6.0"
+source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?tag=v0.6.1#60997cf27defbbffb41b2f504fe169d4a913b863"
 dependencies = [
  "async-trait",
  "thiserror 2.0.19",
@@ -2899,6 +2900,7 @@ dependencies = [
 [[package]]
 name = "tiangz-dbproxy-core"
 version = "0.6.0"
+source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?tag=v0.6.1#60997cf27defbbffb41b2f504fe169d4a913b863"
 dependencies = [
  "async-trait",
  "serde",
@@ -2909,6 +2911,7 @@ dependencies = [
 [[package]]
 name = "tiangz-dbproxy-protocol"
 version = "0.6.0"
+source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?tag=v0.6.1#60997cf27defbbffb41b2f504fe169d4a913b863"
 dependencies = [
  "prost",
  "prost-build",

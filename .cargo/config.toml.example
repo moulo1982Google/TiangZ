@@ -1,0 +1,14 @@
+# 本地跨仓库开发用：复制为 .cargo/config.toml 后，DBProxy 依赖指向同级工作区源码。
+# 提交的 Cargo.toml 按 tag 依赖已发布的 DBProxy；本文件只在本机生效，不进仓库。
+# Local cross-repository development: copy to .cargo/config.toml to build against the sibling DBProxy checkout.
+# The committed Cargo.toml depends on a published DBProxy tag; this override stays local.
+#
+# 注意：启用本覆盖后本地构建会把 Cargo.lock 改写为路径依赖，不要提交这种改动。
+# Note: with this override local builds rewrite Cargo.lock to path dependencies; do not commit that change.
+[build]
+jobs = 1
+
+[patch."https://github.com/moulo1982Google/TiangZ-DBProxy.git"]
+tiangz-dbproxy-client = { path = "../TiangZ-DBProxy/crates/dbproxy-client" }
+tiangz-dbproxy-core = { path = "../TiangZ-DBProxy/crates/dbproxy-core" }
+tiangz-dbproxy-protocol = { path = "../TiangZ-DBProxy/crates/dbproxy-protocol" }
