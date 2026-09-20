@@ -14,7 +14,7 @@
     "#tiangz/model": "./app/model/public.ts"
   },
   "dependencies": {
-    "@tiangz/dbproxy-sdk": "file:../TiangZ-DBProxy"
+    "@tiangz/dbproxy-sdk": "github:moulo1982Google/TiangZ-DBProxy#v0.6.1"
   },
   "scripts": {
     "clean": "node tools/clean_project.mjs",
@@ -39,7 +39,7 @@
     "test:module-native-scaffold-runtime": "node tools/module_native_scaffold_self_test.mjs --runtime",
     "soak:write-modes": "node tools/persistence_write_modes_soak.mjs",
     "test:write-modes-smoke": "node tools/persistence_write_modes_soak.mjs smoke",
-    "test:module-extensions":"node tools/module_public_api_self_test.mjs && node tools/module_native_self_test.mjs && node tools/module_generated_outputs_self_test.mjs && vitest run tests/unit/module_config_migration.test.ts",
+    "test:module-extensions": "node tools/module_public_api_self_test.mjs && node tools/module_native_self_test.mjs && node tools/module_generated_outputs_self_test.mjs && vitest run tests/unit/module_config_migration.test.ts",
     "test:module-native-runtime": "node --test tools/module_native_dependencies.test.mjs && node tools/module_native_self_test.mjs --rust && node tools/module_release_self_test.mjs",
     "test:module-dbproxy-migration": "node tools/module_dbproxy_migration_self_test.mjs",
     "codegen:proto": "node tools/codegen_proto.mjs",
