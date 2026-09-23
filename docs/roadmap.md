@@ -1,5 +1,26 @@
 # TiangZ 路线图
 
+## 2026-09-23 待办：模块可声明的异步 Native op（方案改进）
+
+状态：提案，未设计评审、未实现。来源是苟道三国 Rust 战斗接入实验，属于通用框架能力，不是某个游戏的特例。
+
+**问题。** 外置模块走 `.native` → `codegen:module-native` 的链路目前只能生成同步 op（`#[op2(fast)]`）。TS handler 虽然是异步的，但调用同步 op 时计算直接在进程唯一的 V8 线程上执行，`await` 不会让出线程；计算期间同一进程的其他 handler、Timer、Scene 消息全部等待。引擎自身已有异步 op（DBProxy 的 `op_host_dbproxy_*` 为 `async fn`，工作在 Tokio 上执行、TS 得到 Promise），但模块无法声明同类 op。
+
+**实测证据。** 与引擎同版本 deno_core 0.411 / V8 150.4、单线程 Tokio 驱动的实验宿主中，同一份 Rust 战斗计算：同步 op 让同进程其他工作在每场战斗期间停顿约 30 ms，接近满载时 50～66 ms，100 场同时到达时 V8 停住约 1.2 s；异步 op 把计算放到单独的计算线程后，其他工作延迟在任何负载下都保持空载基线（约 3 ms），战斗延迟不变或略低，吞吐相同。现状的 JS 战斗同样同步占用 V8，100 场突发停住约 100 ms。详见 [苟道三国战斗性能分析 7.4 节](../../GouDaoSanGuo_Server/GouDaoSanGuo/docs/rust-battle-performance-analysis.md) 与其 `tools/battle-op-bench` 实验工具。
+
+**需要满足的边界。**
+
+- 不改变"每进程一个 V8、一个 TS 业务线程"；异步 op 只把计算移到宿主线程，不引入 TS 多线程。
+- 默认不放进多线程 `spawn_blocking` 池。模块显式声明计算 worker，每个 worker 一个专用线程，按到达顺序串行执行；扩容仍靠多进程。
+- 有界队列、在途计数、过载时显式失败返回，不静默丢弃或无限排队；进程停止路由后等待在途任务排空再退出。
+- Rust 不回调 TS、不读取 TS 权威状态；输入输出为粗粒度 bytes/字符串，由 TS handler await 结果。
+- Scene mailbox 的 ordered/unordered 语义不变；在途异步 op 与 Hotfix 提交窗口、`Scene.Tasks` 的关系需要明确（至少计入在途统计，超时按现有恢复路径处理）。
+- 队列深度、在途数、单任务计算耗时、排队等待时间进入 Prometheus。
+
+**初步形态（待评审）。** `.native` 增加异步声明（例如 `async op BattleSimulate(input: bytes): bytes;` 并指定所属 worker），生成器产出 `#[op2] async fn` 注册、TS facade 返回 Promise；worker 的线程、队列上限和排空由宿主统一拥有，模块 crate 只实现同步计算函数。
+
+**待定问题。** 取消语义（请求方超时后计算是否继续）；worker 是按模块、按 op 还是按进程配置；与 Native 指纹、构建组合锁的关系；是否同时提供同步版本供低耗时调用。按 AGENTS.md，实现前需说明现有机制为何无法表达、影响范围和最小扩展方案，并同步 AI 项目上下文与业务开发手册。
+
 ## 2026-09-04 框架可靠性复审后续优先级
 
 状态：P0-P2 已于 2026-09-05 完成。进程级、网络级和故障验收继续保留在隔离的集成测试中，不强行迁入单元测试框架。
