@@ -299,7 +299,7 @@ TiangZ的内核不是“MMORPG内核”，而是先用MMORPG验证的通用运�
 
 运行时数据包与代码模块是两个独立发布面。Rust宿主从`process.dataPacks.sources`按配置文件相对路径递归发现固定名`runtime.pack.json`，在创建V8前校验来源、大小、JSON信封、SHA-256格式、重复ID和符号链接；随后把资料作为宿主投影交给`ProcessRuntime`。Core在任何Scene创建前建立进程级只读`RuntimeDataPackRegistry`，再次验证纯JSON树并深冻结，同时要求`ownerModuleId`已经存在于封闭模块图且数据包ID位于所有者命名空间。模块只能通过Stable API按所有者或ID读取不透明payload，payload schema、跨表引用、字段迁移和领域装配均由所有者模块负责；Core不认识地图、职业、任务、来源数据库或业务表。增加或替换数据包需要重启Process，但不再要求生成一个新的代码模块或改变模块图；代码行为、协议和稳定状态仍由代码模块拥有。当前实现是进程启动期全量载入，后续海量世界资料应扩展为经DBProxy/内容服务读取的分区快照，不能让Scene直接连接数据库。
 
-进程部署环境与安全随机数（0.6.1）：`process.environment`（`development | test | staging | production`，缺省 `development`）由 Rust 在解析配置时校验，投影给 Core 的进程级只读单例 `ProcessRuntimeInfo`，并出现在 `/runtime-identity`；Core 不解释环境，业务自行决定差异。宿主通过 `getrandom` 提供操作系统随机源，启动脚本在业务 V8 中挂一个冻结的 `__hostSecureRandom.fill`，Stable 包装为 `SecureRandom`；业务 V8 没有 Web Crypto，`Math.random`、GlobalId 与时间戳都可预测，身份凭证必须用 `SecureRandom`。模块协议工具提供开发期 `--dev-regen-schema-lock`，发布门禁下拒绝，见业务开发手册“开发阶段与Release锁定”。
+进程部署环境与安全随机数（0.6.2）：`process.environment`（`development | test | staging | production`，缺省 `development`）由 Rust 在解析配置时校验，投影给 Core 的进程级只读单例 `ProcessRuntimeInfo`，并出现在 `/runtime-identity`；Core 不解释环境，业务自行决定差异。宿主通过 `getrandom` 提供操作系统随机源，启动脚本在业务 V8 中挂一个冻结的 `__hostSecureRandom.fill`，Stable 包装为 `SecureRandom`；业务 V8 没有 Web Crypto，`Math.random`、GlobalId 与时间戳都可预测，身份凭证必须用 `SecureRandom`。模块协议工具提供开发期 `--dev-regen-schema-lock`，发布门禁下拒绝，见业务开发手册“开发阶段与Release锁定”。
 
 模块静态内容复用TiangZ现有Luban能力，不再建立一套面向来源数据库的配置系统。`tiangz.module.json.gameConfig`可声明模块根内的Luban工程、target及生成代码/数据目录；`tools/codegen_module_game_config.mjs`使用Core固定的Luban版本、严格validation、确定性聚合和SHA-256指纹生成模块自己的`Tables`。Core只验证声明路径与输出边界，不认识任何表或字段。来源游戏数据库、Excel或其他工具先转换成模块Luban源数据，运行时包再承载编译结果；所有者模块必须用生成类型解码并投影到中立Profile，禁止把导入JSON直接强转成运行时对象。schema与数据目前均按冷发布处理，改变后要重新生成、构建并重启Process；它不继承Core内置`GameConfig`的热表Reload。通用自测使用不含MMORPG概念的卡牌表证明该生成器不依赖首个游戏。
 
@@ -359,7 +359,7 @@ Numeric的`MoveSpeed`已从通用Numeric表拆到`app/model/mmorpg/numeric/Movem
 
 公共`LoginFlow.latestGatePing`保存最近一次Gate Ping的RTT、服务端Unix毫秒时间、估算时钟偏差和本地接收时间。客户端显示网络延迟必须使用RTT，不能直接用`Date.now() - serverTime`，否则客户端与服务器的时钟差会被误算成网络延迟。
 
-当前版本是`0.6.1`（2026-09-23 发布；`0.6.0` 于 2026-09-20 发布，此前为 `0.6.0-alpha.0` 开发预发布）。框架支持独立游戏模块，MMORPG 是领域示例，SLG 正在验证开发体验。模块 `<0.5.0` 宿主上限会拒绝本版本，须逐个验证后迁移并重新生成、构建和重启；不得自动放宽其他游戏声明。`v0.3.10`是框架能力的首个稳定基线。Phase 0到Phase 3.10.5的实现、专项验收以及Windows/Linux最终发布矩阵已经完成；Phase 4.0空间契约、Phase 4.1 Rust AOI和Phase 4.2.5 NavMesh3D动态障碍链已经完成。工程已有登录、选服、进入地图、2D/3D多人移动、状态广播、WebSocket/Cocos Web、KCP/Cocos Native、Pixi/H5和Godot 4.7.1验收链路，并完成Windows 3000玩家AOI正式容量回归；角色与怪物之间的动态阻挡和动态避让明确不做，尚未完成Linux/分布式空间负载、完整商业MMORPG业务和生产运维方案。
+当前版本是`0.6.2`（2026-09-23 发布；`0.6.0` 于 2026-09-20 发布，此前为 `0.6.0-alpha.0` 开发预发布）。框架支持独立游戏模块，MMORPG 是领域示例，SLG 正在验证开发体验。模块 `<0.5.0` 宿主上限会拒绝本版本，须逐个验证后迁移并重新生成、构建和重启；不得自动放宽其他游戏声明。`v0.3.10`是框架能力的首个稳定基线。Phase 0到Phase 3.10.5的实现、专项验收以及Windows/Linux最终发布矩阵已经完成；Phase 4.0空间契约、Phase 4.1 Rust AOI和Phase 4.2.5 NavMesh3D动态障碍链已经完成。工程已有登录、选服、进入地图、2D/3D多人移动、状态广播、WebSocket/Cocos Web、KCP/Cocos Native、Pixi/H5和Godot 4.7.1验收链路，并完成Windows 3000玩家AOI正式容量回归；角色与怪物之间的动态阻挡和动态避让明确不做，尚未完成Linux/分布式空间负载、完整商业MMORPG业务和生产运维方案。
 
 NavMesh3D的同一目标意图由Rust保留现有路径与游标，只更新较新的确认序号；目标变化、显式重置或障碍版本变化才触发重算。这个幂等性是通用导航运行时契约，业务模块仍只决定目标和行为节奏，不把具体游戏巡逻规则写入Core。
 

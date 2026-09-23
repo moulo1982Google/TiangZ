@@ -1382,7 +1382,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 ## 验证矩阵
 
-`0.3.10`框架稳定化和`0.4.0` Phase 4.0空间契约已经完成，当前版本为 `0.6.1`（2026-09-23 发布），直接进入模块化开发预发布线，尚未完成 0.6 正式发布验收。升级宿主先逐个检查模块版本范围；旧 `<0.5.0` 上限必须经消费方验证后迁移，不自动放宽其他游戏声明。随后重新生成、完整构建并重启。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议、空间模式或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
+`0.3.10`框架稳定化和`0.4.0` Phase 4.0空间契约已经完成，当前版本为 `0.6.2`（2026-09-23 发布），直接进入模块化开发预发布线，尚未完成 0.6 正式发布验收。升级宿主先逐个检查模块版本范围；旧 `<0.5.0` 上限必须经消费方验证后迁移，不自动放宽其他游戏声明。随后重新生成、完整构建并重启。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议、空间模式或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
 
 本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/cluster/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。需要在VS Code断点调试中持续Reload时使用`npm run dev:debug`：初始和后续候选都带内联sourcemap，Process/V8/Inspector连接不重启，新脚本会重新绑定TS断点。若V8正停在断点必须先Resume；当前栈继续旧代码，后续调用才使用新generation。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools把Model长期状态中的显式`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`字段和`as any`写属性视为错误；请使用稳定默认值或明确的数据结构。对象`T | null`、判别联合、显式Map/Record和普通DTO仍可正常使用。
 
@@ -1538,7 +1538,7 @@ entity Item extends Entity {
 
 日常Linux发布执行`npm run release:linux`。固定Builder镜像只保存Node、Rust、.NET Runtime、Luban和依赖，不保存业务源码；工具指纹未变化时不得重新下载工具链。每次发布仍必须重新执行Excel/Luban生成、全部codegen、TS构建和Rust Release编译，不能因为复用镜像而复用旧生成代码。只有修改`package-lock.json`、Cargo依赖/锁、Rust工具链、Luban版本或Builder Dockerfile时，才允许自动重建一次镜像。
 
-## 进程部署环境与安全随机数（0.6.1）
+## 进程部署环境与安全随机数（0.6.2）
 
 - **部署环境**：进程配置 `process.environment` 取 `development | test | staging | production`，缺省 `development`，未知值拒绝启动。业务在任何位置（含 Hotfix、System、Component）通过 `ProcessRuntimeInfo.Instance.Environment` 读取；框架只报告取值，不替业务决定各环境的差异（例如是否允许开发账号）。宿主不接受 `--env` 一类命令行参数，业务 V8 也读不到环境变量，不要试图从 argv 或 env 推断环境。生产配置必须显式写 `production`，由部署工具核对。
 - **安全随机数**：业务 V8 只有可预测的 `Math.random`，也没有 Web Crypto。凡是交给客户端、用于证明身份的值（登录凭证、重连凭证、邀请码、一次性令牌），必须用 `SecureRandom.Hex(n)` 或 `SecureRandom.Bytes(n)` 生成；GlobalId、时间戳、`Math.random` 都可预测，禁止替代。随机源不可用时 `SecureRandom` 抛错，不会退化；单次上限 65536 字节。
