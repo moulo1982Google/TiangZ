@@ -1,5 +1,19 @@
 # 版本记录
 
+## 0.6.1 — 2026-09-23（发布，标签 `v0.6.1`）
+
+非破坏性小版本；已有配置、模块和业务代码无需修改。需求来自苟道三国登录改造（按环境区分认证、不可猜测的一次性凭证、开发期修改模块协议字段）。
+
+### 新增
+
+- 进程配置 `process.environment`：`development | test | staging | production`，缺省 `development`，未知值拒绝启动；Stable API `ProcessRuntimeInfo` 供业务任意位置读取，健康端口 `/runtime-identity` 返回该值，启动日志打印。
+- Stable API `SecureRandom`：由宿主 `getrandom` 提供操作系统安全随机数，提供 `Fill`、`Bytes`、`Hex`；源不可用时抛错，不退化为弱随机。
+- 模块协议工具开发期参数 `--dev-regen-schema-lock`（`protocol-update --dev-regen-schema-lock`）：按当前 proto 重写 schema 锁，允许修改已有字段的类型、名称或编号；已删除字段与消息的编号保留为墓碑；发布成功后逐条列出破坏性变化；opcode 锁仍只追加；发布门禁下拒绝。
+
+### 验证
+
+- Rust：配置解析、健康端口运行身份、安全随机数（含真实 V8 冻结桥）单元测试；TS：`ProcessRuntimeInfo`、`SecureRandom` 单元测试；模块协议工具自测覆盖默认拒绝改类型、发布门禁拒绝、重写成功与差异输出、删除字段保留墓碑并拒绝异类型复用，且在 `TIANGZ_LOCK_VERSIONS=1` 下同样通过；`verify_core_api.mjs --strict-lock` 通过；`test:module-host` 以 `environment: staging` 真实启动并核对 `/runtime-identity`。完整矩阵以 GitHub CI 为准。
+
 ## 0.6.0 — 2026-09-20（发布，标签 `v0.6.0`）
 
 在 `0.6.0-alpha.0` 开发预发布基础上完成本轮持久化能力并打标签；版本号去掉 alpha 后缀，模块声明的 `minVersion: 0.6.0-alpha.0` 仍然满足。配套 DBProxy 为 `v0.6.0`。

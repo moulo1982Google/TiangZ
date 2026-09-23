@@ -16,7 +16,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 
-use crate::config::{HealthObservabilityConfig, HotfixOperationsConfig};
+use crate::config::{HealthObservabilityConfig, HotfixOperationsConfig, ProcessEnvironment};
 use crate::data_pack::{LoadedRuntimeDataPack, RuntimeDataPackIdentity};
 use crate::process::RuntimeControl;
 
@@ -34,6 +34,7 @@ pub(crate) struct ProcessHealthState {
     hotfix_snapshot: Mutex<HotfixObservabilitySnapshot>,
     game_config_snapshot: Mutex<GameConfigObservabilitySnapshot>,
     runtime_data_packs: OnceLock<Vec<RuntimeDataPackIdentity>>,
+    environment: OnceLock<ProcessEnvironment>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -311,7 +312,15 @@ impl ProcessHealthState {
             }),
             game_config_snapshot: Mutex::new(GameConfigObservabilitySnapshot::default()),
             runtime_data_packs: OnceLock::new(),
+            environment: OnceLock::new(),
         }
+    }
+
+    /// 在就绪前冻结部署环境，供部署工具核对。 / Freezes the deployment environment before readiness for deployment checks.
+    pub(crate) fn set_process_environment(&self, environment: ProcessEnvironment) {
+        self.environment
+            .set(environment)
+            .expect("process environment installed twice");
     }
 
     /// 在就绪前冻结本进程装载的数据身份，磁盘更新不会改变它。 / Freezes loaded identities before readiness; disk updates cannot change them.
@@ -978,6 +987,7 @@ fn probe_response(
                 "formatVersion": 1,
                 "process": process_name,
                 "status": if state.is_ready() { "ready" } else { "not-ready" },
+                "environment": state.environment.get().map(|environment| environment.as_str()),
                 "dataPacks": state.runtime_data_packs.get().map(Vec::as_slice).unwrap_or(&[]),
             })
             .to_string(),
@@ -3145,7 +3155,13 @@ mod tests {
         let body: Value = serde_json::from_str(&response.2).unwrap();
         assert_eq!(body["dataPacks"][0]["fileHash"], "a".repeat(64));
         assert_eq!(body["dataPacks"][0].as_object().unwrap().len(), 3);
+        assert!(body["environment"].is_null());
         assert!(state.runtime_data_packs.set(vec![]).is_err());
+        state.set_process_environment(ProcessEnvironment::Staging);
+        let body: Value =
+            serde_json::from_str(&probe_response("/runtime-identity", "fixture", &state).2)
+                .unwrap();
+        assert_eq!(body["environment"], "staging");
     }
 
     #[test]

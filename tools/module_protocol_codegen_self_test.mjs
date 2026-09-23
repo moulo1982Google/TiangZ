@@ -97,6 +97,10 @@ try {
   if (stale.code === 0 || !`${stale.stdout}\n${stale.stderr}`.includes("schema lock is missing")) {
     throw new Error("module protocol --check did not reject a schema change without a lock update");
   }
+  // 开发期重写 schema 锁：默认仍拒绝改类型；发布门禁下拒绝重写；重写后破坏性变化逐条可见。
+  // Development schema regeneration: type changes stay rejected by default, the release gate
+  // refuses regeneration, and every breaking change is reported.
+  await verifyDevRegenSchemaLock();
   // 自定义源目录与锁名必须贯穿整个生成链。 / Custom source and lock paths must reach every generator.
   await rename(path.join(moduleRoot, "proto"), path.join(moduleRoot, "wire"));
   await rename(path.join(moduleRoot, "wire/opcode.lock.json"), path.join(moduleRoot, "wire/codes.json"));
@@ -125,6 +129,59 @@ try {
 }
 
 process.stdout.write("module protocol codegen self-test passed\n");
+
+async function verifyDevRegenSchemaLock() {
+  const schemaFile = path.join(moduleRoot, "proto", "schema.lock.json");
+  const opcodeFile = path.join(moduleRoot, "proto", "opcode.lock.json");
+  const retyped = (await readFile(protoFile, "utf8")).replace("  string greeting = 1;", "  uint32 greeting = 1;");
+  await writeFile(protoFile, retyped, "utf8");
+  const beforeSchema = await readFile(schemaFile, "utf8");
+  const beforeOpcode = await readFile(opcodeFile, "utf8");
+
+  const strict = await runGenerator(["--update-locks"], true);
+  assert.notEqual(strict.code, 0, "--update-locks accepted a field type change");
+  assert.match(strict.stdout + strict.stderr, /schema lock mismatch/);
+  assert.equal(await readFile(schemaFile, "utf8"), beforeSchema, "rejected update changed the schema lock");
+
+  const release = await runGenerator(["--dev-regen-schema-lock"], true, undefined, { TIANGZ_LOCK_VERSIONS: "1" });
+  assert.notEqual(release.code, 0, "release gate accepted --dev-regen-schema-lock");
+  assert.match(release.stdout + release.stderr, /development-only/);
+  assert.equal(await readFile(schemaFile, "utf8"), beforeSchema, "refused regeneration changed the schema lock");
+
+  // 以下成功路径不能继承外层发布门禁（verify:release 会设置 TIANGZ_LOCK_VERSIONS=1）。
+  // Success paths below must not inherit an outer release gate (verify:release sets TIANGZ_LOCK_VERSIONS=1).
+  const development = { TIANGZ_LOCK_VERSIONS: "" };
+  const combined = await runGenerator(["--dev-regen-schema-lock", "--check"], true, undefined, development);
+  assert.notEqual(combined.code, 0, "--check accepted --dev-regen-schema-lock");
+
+  const regenerated = await runGenerator(["--dev-regen-schema-lock"], false, undefined, development);
+  assert.match(regenerated.stdout, /dev-regen org\.example\.cards: schema lock rebuilt from current proto; 1 breaking change/);
+  assert.match(regenerated.stdout, /S2C_CardsPing: field 1 string greeting -> uint32 greeting/);
+  const schema = JSON.parse(await readFile(schemaFile, "utf8"));
+  const ping = schema.entries.find((entry) => entry.name === "S2C_CardsPing");
+  const declared = ping.fields.filter((field) => !field.synthetic);
+  assert.deepEqual(declared.map((field) => `${field.type} ${field.name}=${field.number}`), ["uint32 greeting=1", "uint32 score=2"]);
+  assert.equal(await readFile(opcodeFile, "utf8"), beforeOpcode, "schema regeneration rewrote the opcode lock");
+  await runGenerator(["--check"]);
+
+  // 删除字段后重写：编号作为墓碑保留，之后不能以其他类型复用。 / Removed fields stay as tombstones and cannot be reused with another type.
+  const withScore = await readFile(protoFile, "utf8");
+  await writeFile(protoFile, withScore.replace("  uint32 score = 2;\n", ""), "utf8");
+  const removal = await runGenerator(["--dev-regen-schema-lock"], false, undefined, development);
+  assert.match(removal.stdout, /S2C_CardsPing: removed field score=2 \(number kept as tombstone\)/);
+  const tombstoned = JSON.parse(await readFile(schemaFile, "utf8")).entries.find((entry) => entry.name === "S2C_CardsPing");
+  assert.ok(tombstoned.fields.some((field) => field.number === 2 && field.name === "score" && field.type === "uint32"), "tombstone dropped");
+  await writeFile(protoFile, withScore.replace("  uint32 score = 2;", "  string score = 2;"), "utf8");
+  const reuse = await runGenerator(["--update-locks"], true, undefined, development);
+  assert.notEqual(reuse.code, 0, "tombstoned field number was reused with another type");
+  assert.match(reuse.stdout + reuse.stderr, /schema lock mismatch/);
+  // 恢复原字段：与墓碑一致，普通生成即可通过，锁不变。 / Restoring the original field matches the tombstone; a normal run passes without changing the lock.
+  await writeFile(protoFile, withScore, "utf8");
+  const lockWithTombstone = await readFile(schemaFile, "utf8");
+  await runGenerator([], false, undefined, development);
+  await runGenerator(["--check"], false, undefined, development);
+  assert.equal(await readFile(schemaFile, "utf8"), lockWithTombstone, "restoring a tombstoned field rewrote the lock");
+}
 
 async function verifyRollback() {
   const directory = path.join(temporary, "publish-rollback");
@@ -271,7 +328,7 @@ async function writeFixture() {
   }, null, 2)}\n`, "utf8");
 }
 
-function runGenerator(extraArguments, allowFailure = false, tool = "codegen_module_protocol.mjs") {
+function runGenerator(extraArguments, allowFailure = false, tool = "codegen_module_protocol.mjs", extraEnv = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [
       path.join(root, "tools", tool),
@@ -280,7 +337,7 @@ function runGenerator(extraArguments, allowFailure = false, tool = "codegen_modu
       ...extraArguments,
     ], {
       cwd: root,
-      env: process.env,
+      env: { ...process.env, ...extraEnv },
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });

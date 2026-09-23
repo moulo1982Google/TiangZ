@@ -1382,7 +1382,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 ## 验证矩阵
 
-`0.3.10`框架稳定化和`0.4.0` Phase 4.0空间契约已经完成，当前版本为 `0.6.0`（2026-09-20 发布），直接进入模块化开发预发布线，尚未完成 0.6 正式发布验收。升级宿主先逐个检查模块版本范围；旧 `<0.5.0` 上限必须经消费方验证后迁移，不自动放宽其他游戏声明。随后重新生成、完整构建并重启。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议、空间模式或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
+`0.3.10`框架稳定化和`0.4.0` Phase 4.0空间契约已经完成，当前版本为 `0.6.1`（2026-09-23 发布），直接进入模块化开发预发布线，尚未完成 0.6 正式发布验收。升级宿主先逐个检查模块版本范围；旧 `<0.5.0` 上限必须经消费方验证后迁移，不自动放宽其他游戏声明。随后重新生成、完整构建并重启。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议、空间模式或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
 
 本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/cluster/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。需要在VS Code断点调试中持续Reload时使用`npm run dev:debug`：初始和后续候选都带内联sourcemap，Process/V8/Inspector连接不重启，新脚本会重新绑定TS断点。若V8正停在断点必须先Resume；当前栈继续旧代码，后续调用才使用新generation。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools把Model长期状态中的显式`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`字段和`as any`写属性视为错误；请使用稳定默认值或明确的数据结构。对象`T | null`、判别联合、显式Map/Record和普通DTO仍可正常使用。
 
@@ -1538,11 +1538,18 @@ entity Item extends Entity {
 
 日常Linux发布执行`npm run release:linux`。固定Builder镜像只保存Node、Rust、.NET Runtime、Luban和依赖，不保存业务源码；工具指纹未变化时不得重新下载工具链。每次发布仍必须重新执行Excel/Luban生成、全部codegen、TS构建和Rust Release编译，不能因为复用镜像而复用旧生成代码。只有修改`package-lock.json`、Cargo依赖/锁、Rust工具链、Luban版本或Builder Dockerfile时，才允许自动重建一次镜像。
 
+## 进程部署环境与安全随机数（0.6.1）
+
+- **部署环境**：进程配置 `process.environment` 取 `development | test | staging | production`，缺省 `development`，未知值拒绝启动。业务在任何位置（含 Hotfix、System、Component）通过 `ProcessRuntimeInfo.Instance.Environment` 读取；框架只报告取值，不替业务决定各环境的差异（例如是否允许开发账号）。宿主不接受 `--env` 一类命令行参数，业务 V8 也读不到环境变量，不要试图从 argv 或 env 推断环境。生产配置必须显式写 `production`，由部署工具核对。
+- **安全随机数**：业务 V8 只有可预测的 `Math.random`，也没有 Web Crypto。凡是交给客户端、用于证明身份的值（登录凭证、重连凭证、邀请码、一次性令牌），必须用 `SecureRandom.Hex(n)` 或 `SecureRandom.Bytes(n)` 生成；GlobalId、时间戳、`Math.random` 都可预测，禁止替代。随机源不可用时 `SecureRandom` 抛错，不会退化；单次上限 65536 字节。
+
 ## 开发阶段与Release锁定
 
 当前主工程、两个VS Code插件和独立DBProxy都处于持续开发阶段。开发者可以迭代`package.json`/`package-lock.json`、`Cargo.toml`/`Cargo.lock`、插件版本和协议原型；日常使用`npm install`与普通Cargo命令，不要求版本副本、Stable API快照、opcode/schema锁或依赖解析完全冻结。生成物过期检查、类型检查、边界检查和运行时Protocol Fingerprint仍然有效，因为它们分别保护代码生成一致性、架构边界和在线连接兼容性。
 
 准备正式发布时再开启冻结门禁：主工程运行`npm run verify:release`，它会设置`TIANGZ_LOCK_VERSIONS=1`并强制比较项目版本、`public-api.lock.json`和协议锁；开发阶段可运行`npm run verify:locks:warn`，它只报告漂移、不阻塞提交。插件与DBProxy由各自仓库执行发布前的版本、依赖锁、协议指纹和完整测试审查。除非明确进入Release，不要手工更新锁文件来“让检查变绿”，也不要把Release命令加入普通开发流程。
+
+外置模块的协议生成工具默认严格检查 schema 锁：允许追加字段和删除字段（删除后锁保留该字段作为墓碑，编号永不复用），拒绝修改已有字段的类型、名称或编号。开发期确需修改这些时，在游戏工程执行 `node tools/tiangz.mjs protocol-update --dev-regen-schema-lock`（引擎侧为 `node tools/codegen_module_protocol.mjs --dev-regen-schema-lock`）。它按当前 proto 重写 schema 锁，同时保留旧锁中已删除字段与消息的墓碑，opcode 锁照常只追加；发布成功后逐条打印删除、改名、改类型、改请求响应关系等破坏性变化；在临时目录生成，失败时原锁不动；`TIANGZ_LOCK_VERSIONS=1` 的发布门禁下拒绝执行。重写属于破坏性协议变更，必须同时说明契约影响、重新生成客户端 SDK 并完整重启；不要为了绕开锁去改字段名。
 
 ## Action、Buff与Skill的当前规则
 

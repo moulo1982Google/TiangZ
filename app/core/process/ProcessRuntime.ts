@@ -19,6 +19,7 @@ import { CoreLogger } from "../logging/Logger";
 import { CoroutineLockSystem } from "../runtime/CoroutineLockSystem";
 import { ConfigureTraceContext } from "../telemetry/TraceContext";
 import { InitializeRuntimeDataPacks } from "../content/RuntimeDataPackRegistry";
+import { InitializeProcessRuntimeInfo } from "./ProcessRuntimeInfo";
 import type { GlobalIdCounterSource } from "../runtime/GlobalIdLayout";
 
 export interface ProcessUpdateResult {
@@ -61,6 +62,7 @@ export class ProcessRuntime implements LocalSceneRouter {
     try {
       InitializeGameSingletons(config.process.game, config.process.identity, idSource);
       InitializeRuntimeDataPacks(config.dataPacks);
+      InitializeProcessRuntimeInfo(config.process);
       processHost = new ProcessHost(config.process.name);
       this.processHost = processHost;
       for (const scene of config.scenes) {

@@ -131,5 +131,5 @@ npm run verify
 - TypeScript是默认主业务语言；性能敏感且规则稳定的领域可显式选择`../TiangZ-Examples/modules/mmorpg/rust/src/game`中的Rust模块，但修改后必须重新编译并重启Process。
 - Wasm只作为未来重计算模块的候选，例如确定性战斗核心；当前不接入。
 - Rhai只作为未来脚本后端候选；当前不为它增加兼容层。
-- 当前版本为 `0.6.0`（2026-09-20 发布），从 0.4.x 直接进入模块化线，`0.6.0-alpha.0` 是它此前的开发预发布号。
+- 当前版本为 `0.6.1`（2026-09-23 发布），在 `0.6.0`（2026-09-20）基础上新增进程部署环境、安全随机数和开发期重写模块 schema 锁，均为非破坏性变更；0.6 线从 0.4.x 直接进入模块化，`0.6.0-alpha.0` 是此前的开发预发布号。
 - DBProxy 依赖按已发布 tag 引用（当前 `v0.6.1`），提交的 `Cargo.lock` 记录该 tag，CI 只检出本仓库即可构建。需要同时改两边时，把 `.cargo/config.toml.example` 复制为 `.cargo/config.toml`，它把依赖指向同级 `../TiangZ-DBProxy`；该文件不进仓库，启用后本地构建会把 `Cargo.lock` 改写成路径依赖，这种改动不要提交。DBProxy 改动合入并发 tag 后，再更新本仓库的 tag 与锁。`v0.3.10`质量门和`0.4.0`空间契约是历史里程碑；Rust AOI、NavMesh3D运行时和Cocos3D/UE/Unity/Godot演示均已落地，地图空间继续遵循[地图空间与3D坐标契约](docs/design/spatial-world.md)。模块宿主版本范围须逐个验证后迁移，不能自动放宽其他游戏声明。

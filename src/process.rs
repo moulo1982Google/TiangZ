@@ -853,6 +853,7 @@ pub async fn run_runtime_config(
         hotfix = runtime_bundles.bundle_version(),
         game_config = runtime_bundles.config_fingerprint(),
         process = %config.process.name,
+        environment = config.process.environment.as_str(),
         scene_count = config.scenes.len(),
         data_pack_count = runtime_data_packs.len(),
         config = %resolved_config.display(),
@@ -896,6 +897,7 @@ pub async fn run_runtime_config(
         .unwrap_or_else(|| Duration::from_secs(15));
     let health_state = Arc::new(ProcessHealthState::starting(runtime_stale_after));
     health_state.set_runtime_data_packs(&runtime_data_packs);
+    health_state.set_process_environment(config.process.environment);
     let health_server = match config
         .process
         .observability

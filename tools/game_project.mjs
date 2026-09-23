@@ -15,6 +15,7 @@ const allowed = ["doctor", "setup", "check", "build", "host-build", "start", "sm
 let projectDirectory = process.cwd();
 let json = false;
 let debug = false;
+let devRegenSchemaLock = false;
 try {
   if (!allowed.includes(action)) throw new Error(`未知开发动作 ${action}；可用：${allowed.join(", ")}`);
   while (args.length) {
@@ -22,6 +23,7 @@ try {
     if (arg === "--project" && args[0] && !args[0].startsWith("--")) projectDirectory = args.shift();
     else if (arg === "--json" && action === "inspect") json = true;
     else if (arg === "--debug" && action === "dev") debug = true;
+    else if (arg === "--dev-regen-schema-lock" && action === "protocol-update") devRegenSchemaLock = true;
     else throw new Error(`未知或不完整参数：${arg}`);
   }
   const project = await loadGameProject(projectDirectory);
@@ -67,7 +69,7 @@ try {
     try {
       const catalog = await loadGameModuleCatalog({ projectRoot: engine, modulesDirectory: project.modulesDirectory });
       const hasNative = catalog.modules.some(module => module.native);
-      if (action === "setup" || action === "protocol-update") await prepareGameProject(project, tool, action === "protocol-update");
+      if (action === "setup" || action === "protocol-update") await prepareGameProject(project, tool, action === "protocol-update", devRegenSchemaLock);
       else if (action === "check") {
         await checkGameProject(project, tool);
         if (hasNative) await tool("build_module_native.mjs", ...moduleArgs, "--check");

@@ -2,7 +2,7 @@
 
 > 2026-09-17：Hotfix 与 Luban 配置改为完整配对发布、帧间原子提交。`build:hotfix` / `build:game-config` 均输出联合候选；`reload` 和本机 `hotfix plan/apply/status/rollback` 操作整套，`reload-config` 仅作联合加载别名。Hotfix manifest 包含 gameConfigHash/releaseId，配置单改也改变 bundleVersion。现有 pendingAsync/pendingIngress 安全条件保留；等待期间仍推进主循环。Model/schema/冷数据变化仍重启，客户端和持久业务状态不随发布回滚。旧的两条独立在线切换说明已被取代；首次使用须重建宿主与 Model 并重启。详细流程以 docs/design/typescript-hot-reload.md 的联合发布章节为准。
 
-更新时间：2026-09-15。当前宿主版本：`0.6.0`（此前基线 `0.6.0-alpha.0`，模块声明的 `minVersion` 仍然满足）。
+更新时间：2026-09-15。当前宿主版本：`0.6.1`（此前基线 `0.6.0`、`0.6.0-alpha.0`，模块声明的 `minVersion` 仍然满足）。
 
 ## 宿主装配模式
 

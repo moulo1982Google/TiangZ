@@ -49,7 +49,7 @@ Phase 3.10.1、3.10.2等是工作项，不使用四段版本号。客户端协�
 
 Phase 4历史上使用`0.4.x`版本线。`0.4.0`包含一次明确记录的空间协议破坏性升级；此后普通协议演进仍必须兼容schema lock，不能把`0.x`版本当作随意改写既有字段的理由。
 
-当前版本为 `0.6.0`（2026-09-20 发布），从 0.4.x 直接转入模块化线，不代表存在 0.5 正式发布，也不代表 0.6 正式发布验收完成。外置模块必须逐个验证宿主版本范围；原 `<0.5.0` 上限不能接受本版本。升级需要重新生成、完整构建并重启，版本号不能代替协议或 Model 兼容指纹。见[版本记录](../../CHANGELOG.md)。
+当前版本为 `0.6.1`（2026-09-23 发布；`0.6.0` 于 2026-09-20 发布），从 0.4.x 直接转入模块化线，不代表存在 0.5 正式发布，也不代表 0.6 正式发布验收完成。外置模块必须逐个验证宿主版本范围；原 `<0.5.0` 上限不能接受本版本。升级需要重新生成、完整构建并重启，版本号不能代替协议或 Model 兼容指纹。见[版本记录](../../CHANGELOG.md)。
 
 ## 四类代码边界
 
@@ -134,6 +134,15 @@ npm run verify:core-api
 7. 执行`npm run verify:quick`，涉及运行时语义时执行完整`npm run verify`。
 
 ## 迁移记录
+
+### 0.6.1（2026-09-23）
+
+以下均为非破坏性新增，已有业务无需修改。
+
+- 新增 Stable API `ProcessRuntimeInfo`（`Instance.Name`、`Instance.Environment`、`Instance.IsProduction`）与类型 `ProcessEnvironment`；`ProcessConfig` 新增可选字段 `environment`。对应进程配置 `process.environment`，缺省 `development`。
+- 新增 Stable API `SecureRandom`（`Fill`、`Bytes`、`Hex`、`IsAvailable`）与常量 `MAX_SECURE_RANDOM_BYTES`。TiangZ 宿主由 Rust `getrandom` 提供操作系统随机源；源不可用时抛错，不退化为 `Math.random`。
+- 模块协议工具新增开发期参数 `--dev-regen-schema-lock`（`protocol-update --dev-regen-schema-lock`），不属于 Stable API，发布门禁下拒绝执行。
+- `public-api.lock.json` 已更新：差异仅为上述新增导出（`MAX_SECURE_RANDOM_BYTES`、`ProcessEnvironment`、`ProcessRuntimeInfo`、`SecureRandom`）及 `ProcessConfig.environment`，`verify_core_api.mjs --strict-lock` 通过。
 
 ### 开发中
 

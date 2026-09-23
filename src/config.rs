@@ -22,6 +22,9 @@ pub struct RuntimeConfig {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessConfig {
     pub name: String,
+    /// 部署环境；缺省 development。宿主只校验并投影给业务，由业务选择环境相关逻辑。 / Deployment environment (default development); the host validates and projects it, business code decides what it means.
+    #[serde(default)]
+    pub environment: ProcessEnvironment,
     #[serde(default)]
     pub identity: ProcessIdentityConfig,
     #[serde(default)]
@@ -43,6 +46,28 @@ pub struct ProcessConfig {
     pub debug: Option<ProcessDebugConfig>,
     #[serde(default)]
     pub observability: Option<ProcessObservabilityConfig>,
+}
+
+/// 与部署工具的环境取值一致；未知取值在解析阶段拒绝。 / Matches deployment tooling values; unknown values are rejected at parse time.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProcessEnvironment {
+    #[default]
+    Development,
+    Test,
+    Staging,
+    Production,
+}
+
+impl ProcessEnvironment {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Development => "development",
+            Self::Test => "test",
+            Self::Staging => "staging",
+            Self::Production => "production",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -1256,6 +1281,7 @@ mod tests {
     fn process(inspector_port: Option<u16>) -> ProcessConfig {
         ProcessConfig {
             name: "test".to_string(),
+            environment: ProcessEnvironment::default(),
             identity: ProcessIdentityConfig::default(),
             logging: ProcessLoggingConfig::default(),
             network: ProcessNetworkConfig::default(),
@@ -1289,6 +1315,38 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(lifecycle_error.contains("stopTimoutMs"));
+    }
+
+    #[test]
+    fn parses_environment_with_development_default() {
+        let defaulted: ProcessConfig = serde_json::from_str(r#"{ "name": "map" }"#).unwrap();
+        assert_eq!(defaulted.environment, ProcessEnvironment::Development);
+        assert_eq!(
+            serde_json::to_value(&defaulted).unwrap()["environment"],
+            "development"
+        );
+
+        for (text, expected) in [
+            ("development", ProcessEnvironment::Development),
+            ("test", ProcessEnvironment::Test),
+            ("staging", ProcessEnvironment::Staging),
+            ("production", ProcessEnvironment::Production),
+        ] {
+            let process: ProcessConfig =
+                serde_json::from_str(&format!(r#"{{ "name": "map", "environment": "{text}" }}"#))
+                    .unwrap();
+            assert_eq!(process.environment, expected);
+            assert_eq!(process.environment.as_str(), text);
+        }
+
+        for invalid in ["prod", "Production", "release", ""] {
+            let error = serde_json::from_str::<ProcessConfig>(&format!(
+                r#"{{ "name": "map", "environment": "{invalid}" }}"#
+            ))
+            .unwrap_err()
+            .to_string();
+            assert!(error.contains("unknown variant"), "{invalid}: {error}");
+        }
     }
 
     #[test]

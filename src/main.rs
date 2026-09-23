@@ -20,6 +20,7 @@ mod host;
 mod hotfix;
 mod inspector;
 mod logging;
+mod secure_random;
 mod module_native {
     include!(concat!(env!("OUT_DIR"), "/module_native.rs"));
 }

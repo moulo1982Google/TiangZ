@@ -72,7 +72,7 @@ async function verifyRuntime(sceneType, success, failurePattern = /unknown scene
   while (scenePort === healthPort) scenePort = await freePort();
   await mkdir(path.join(fixture, "configs"), { recursive: true });
   const config = path.join(fixture, "configs/probe.json");
-  await writeFile(config, JSON.stringify({ process: { name: "module-probe", identity: { originServerId: 91, workerId: 0 },
+  await writeFile(config, JSON.stringify({ process: { name: "module-probe", environment: "staging", identity: { originServerId: 91, workerId: 0 },
     observability: { health: { ip: "127.0.0.1", port: healthPort } } },
     scenes: [{ name: "probe", sceneType, ip: "127.0.0.1", port: scenePort, protocol: "websocket", audience: "outer" }] }));
   const binary = path.join(root, "target/debug", process.platform === "win32" ? "TiangZ.exe" : "TiangZ");
@@ -99,6 +99,9 @@ async function verifyRuntime(sceneType, success, failurePattern = /unknown scene
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       assert.ok(ready, logs);
+      // 部署环境由宿主校验后投影到运行身份，部署工具据此核对。 / The host projects the validated environment for deployment checks.
+      const identity = await (await fetch(`http://127.0.0.1:${healthPort}/runtime-identity`, { signal: AbortSignal.timeout(1000) })).json();
+      assert.equal(identity.environment, "staging", JSON.stringify(identity));
       child.stdin.end("shutdown\n");
       assert.equal(await exited, 0, logs);
     } else {

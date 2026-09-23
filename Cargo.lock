@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "TiangZ"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -14,6 +14,7 @@ dependencies = [
  "deno_error",
  "deno_inspector_server",
  "futures-util",
+ "getrandom 0.3.4",
  "mimalloc",
  "opentelemetry",
  "opentelemetry-otlp",

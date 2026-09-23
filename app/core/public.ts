@@ -10,6 +10,9 @@ export { isPromiseLike } from "./async";
 export type { MaybePromise } from "./async";
 
 export { RuntimeDataPackRegistry } from "./content/RuntimeDataPackRegistry";
+export { ProcessRuntimeInfo } from "./process/ProcessRuntimeInfo";
+export type { ProcessEnvironment } from "./process/ProcessRuntimeInfo";
+export { SecureRandom, MAX_SECURE_RANDOM_BYTES } from "./runtime/SecureRandom";
 export { ModuleConfigRegistry } from "./content/ModuleConfigRegistry";
 export type { ModuleConfigCandidate } from "./content/ModuleConfigRegistry";
 export type {

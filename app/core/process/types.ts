@@ -69,6 +69,7 @@ import {
 import type { ProcessLoggingConfig } from "../logging/types";
 import type { Logger } from "../logging/Logger";
 import type { RuntimeDataPackInput } from "../content/RuntimeDataPackRegistry";
+import type { ProcessEnvironment } from "./ProcessRuntimeInfo";
 
 export interface SceneConfig {
   name: string;
@@ -101,6 +102,8 @@ export interface SceneConfig {
  */
 export interface ProcessConfig {
   name: string;
+  /** 部署环境；宿主已校验，省略时为 development。业务请通过 `ProcessRuntimeInfo` 读取。 / Deployment environment validated by the host; development when omitted. Business code reads it through `ProcessRuntimeInfo`. */
+  environment?: ProcessEnvironment;
   identity?: ProcessIdentityConfig;
   logging?: ProcessLoggingConfig;
   network?: ProcessNetworkConfig;

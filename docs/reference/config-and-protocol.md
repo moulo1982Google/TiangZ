@@ -20,6 +20,7 @@ Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置�
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `name` | string | Process 唯一名称，也作为 ProcessHost ID |
+| `environment` | string? | 部署环境：`development`、`test`、`staging`、`production`，缺省 `development`，其他取值拒绝启动。宿主投影给 TS 的 `ProcessRuntimeInfo.Instance.Environment`，并在健康端口 `/runtime-identity` 返回；框架不解释它，按环境切换的行为由业务决定。生产配置应显式填写，部署工具应核对它与部署规格一致（0.6.1） |
 | `identity` | object? | 全局持久ID来源身份；包含`originServerId`和`workerId` |
 | `logging` | object? | 日志级别、格式和输出目标；默认 INFO 文本控制台 |
 | `network` | object? | 操作系统 I/O Backend；默认 `epoll`，Linux 可实验性选择 `io-uring` |

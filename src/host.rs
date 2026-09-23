@@ -500,6 +500,7 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
         ets_runtime_host::init(),
         crate::dbproxy::init(),
         crate::event_stream::init(),
+        crate::secure_random::init(),
     ];
     extensions.extend(crate::module_native::extensions());
     let mut runtime = JsRuntime::new(RuntimeOptions {
@@ -590,6 +591,10 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
     runtime.execute_script(
         "ets-runtime:event-stream.js",
         crate::event_stream::BOOTSTRAP_SOURCE,
+    )?;
+    runtime.execute_script(
+        "ets-runtime:secure-random.js",
+        crate::secure_random::BOOTSTRAP_SOURCE,
     )?;
     for &(name, source) in crate::module_native::bootstraps() {
         runtime.execute_script(name.to_string(), source)?;
@@ -870,6 +875,32 @@ pub fn pump_js_event_loop_once(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn business_v8_gets_frozen_secure_random_bridge() {
+        let mut runtime = create_runtime(false, 0).unwrap();
+        runtime
+            .execute_script(
+                "test:secure-random.js",
+                r#"
+                const bridge = globalThis.__hostSecureRandom;
+                const a = new Uint8Array(32), b = new Uint8Array(32);
+                bridge.fill(a); bridge.fill(b);
+                if (a.every(v => v === 0) || a.every((v, i) => v === b[i])) throw new Error("not random");
+                bridge.fill(new Uint8Array(0));
+                let oversized = false;
+                try { bridge.fill(new Uint8Array(65537)); } catch { oversized = true; }
+                if (!oversized) throw new Error("oversized request accepted");
+                globalThis.__hostSecureRandom = null;
+                if (globalThis.__hostSecureRandom !== bridge || !Object.isFrozen(bridge)) throw new Error("bridge is mutable");
+                try { Deno.core.ops.op_host_secure_random_fill = t => t.fill(0); } catch {}
+                const c = new Uint8Array(32);
+                bridge.fill(c);
+                if (c.every(v => v === 0)) throw new Error("bridge was redirected through Deno.core.ops");
+                "#,
+            )
+            .unwrap();
+    }
 
     #[test]
     fn shutdown_promise_waits_for_host_completion_and_reports_rejection() {
