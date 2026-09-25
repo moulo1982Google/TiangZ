@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+0.7 健康指标格式入口集中在 src/health/metrics.rs；健康探针、管理请求及状态所有权仍在 health.rs。修改新指标时沿用同一标签转义/histogram 实现，不为每个指标创建文件或扩大状态字段可见性。此次 13 个函数纯搬移，规范化声明与基线相同，原 15 个健康测试通过；证据见[纯拆分记录](../design/v0.7-observability-split.md)，仍需重建 Rust 宿主。
+
 验证 Process 回滚必须让测试 OS 进程继续存活，检查第一业务端口和健康端口在第二端口绑定失败后可重绑；只等独立子进程退出会让操作系统自动回收掩盖框架泄漏。端点错误/panic/意外正常返回都须让实际 /ready 变为 503，停止期间 /live 仍为 200，最终 Process 返回失败并清理连接/握手名额。生产后端选择不新增故障开关，隔离测试只在同一协调函数的后端工厂注入完成原因。
 
 裸 V8 生命周期夹具须遵守真实制品和返回契约：GameConfigBundle 读取 game-config.manifest.json；Update 的采样帧为 JSON，非采样帧为 compact 数字字符串。首次夹具分别在文件读取和 compact 解析处失败，未触及待验证的 listener 故障。正确做法是入口先调用实际 Bundle 校验，并同时监听 Process 退出与 HTTP 状态，保留根因；禁止改生产契约或仅延长探针超时。原日志 temp/v0.7-process-lifecycle-{first,fixed,diagnostic}.log，修正后的定向证据为 -green.log；它不能替代真实业务模块与 Linux I/O 验收。

@@ -1,5 +1,7 @@
 # 2026-09-16 模块拆分后的当前事实
 
+0.7 可观测性按职责拆分：health/metrics.rs 集中 Prometheus 格式化，健康状态、HTTP 管理和所有权留在 health.rs；子模块可见性不扩散私有字段。13 个函数机械比对执行体/声明相同，15 个原测试通过，见[纯拆分记录](../design/v0.7-observability-split.md)。不得借纯搬移修改标签、顺序或失败行为，Rust 仍须重建/重启。
+
 Process 生命周期验证补充：后端工厂在原初始化位置注入，默认路径仍使用 create_io_backend，没有线上故障配置。隔离测试保持测试 OS 进程/Tokio 存活，验证第二端口绑定失败后第一端口/健康端口可重绑；真实 V8、listener 和 HTTP 探针配合可控端点完成，验证错误/panic/意外正常结束撤销 ready，停止期间 live 保持。测试入口是专用裸 V8 夹具，不能把它称为完整业务模块验收；普通模块运行仍由完整矩阵覆盖。
 
 生命周期夹具失败教训：先前错误使用 manifest.json 导致 GameConfigBundle 在监听前拒绝，随后 Update 全返 JSON 导致非采样帧的 compact state 解析失败。必须核对真实 game-config.manifest.json 文件名和采样/非采样双返回契约，并在等待 HTTP 状态时同时监视 Process 退出错误，不能只等探针超时或放宽生产解析。原证据 temp/v0.7-process-lifecycle-{first,fixed,diagnostic}.log；修正后两个场景通过，见 temp/v0.7-process-lifecycle-green.log。
