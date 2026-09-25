@@ -1,5 +1,17 @@
 # TiangZ 路线图
 
+## 0.7：可靠性、通用边界与开发工具
+
+状态：设计稿待评审，尚未完成实现和验收。完整范围、依据、验收矩阵和提交顺序以 [TiangZ 0.7 设计稿](design/v0.7-design.md) 为准。
+
+- P0：四项已复现的 Timer/RPC/Auto 握手问题，网络资源预算、慢连接与 listener 生命周期，以及 DBProxy 多租户共享配置修复。
+- P1：通用 Actor 寻址与 MMORPG 策略分层、地图部署配置迁移、现有静态规则覆盖和克制拆分；保留单 V8、ordered mailbox、稳定 Model 与 Hotfix/配置配对发布。
+- DBProxy 0.7：服务端与 Rust/TS SDK 一起规划请求总预算、结果未知、幂等与写入模式；继承已有删除/回执保留期设计，先评审和观测，自动清理与记录删除单列候选。
+- 插件：Developer Tools 更新共享诊断、Schema、宿主选择与任务入口；Native Language 验证语言核心/生成器/VSIX 兼容及持久化生成适配；AI 规则由宿主维护源生成，再同步 Codex/Claude/Cindy 分发包。
+- 六个仓库使用各自的 `feat/v0.7` worktree：TiangZ、DBProxy、两个 VS Code 插件、AI Plugins 和 Examples。联调显式选择本轮宿主，插件各自发行号通过兼容矩阵关联 0.7。
+
+已有 EntryScene 拆分仅为未提交、未验收的工作区草稿，不纳入本次文档提交。后续遵循[克制拆分](reference/coding-conventions.md#克制拆分)，逐边界实施并验证；发布冻结前通过正式入口复核版本、API 声明图、协议锁与真实制品。异步 Native op 保持下文的独立提案状态。
+
 ## 2026-09-23 待办：模块可声明的异步 Native op（方案改进）
 
 状态：提案，未设计评审、未实现。来源是苟道三国 Rust 战斗接入实验，属于通用框架能力，不是某个游戏的特例。

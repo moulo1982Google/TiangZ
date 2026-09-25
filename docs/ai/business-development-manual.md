@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-09-25：0.7 当前先交付[详细设计稿](../design/v0.7-design.md)，实现与验收尚未完成。目标是通用后端可靠性、模块边界、静态检查和[克制拆分](../reference/coding-conventions.md#克制拆分)，同时规划 DBProxy、两个 VS Code 插件和 AI 分发包。实现使用六仓库各自的 `feat/v0.7` worktree，业务仍通过 Stable 入口，不依赖 EntryScene 未提交拆分草稿的内部路径。总预算不等于撤销已执行业务，回执清理/记录删除和异步 Native op 仍按独立候选评审；包更新须验证实际生成/安装身份，不能把文档、dist 或部分测试当作完成交付。
+
 2026-09-18短时采样回归已通过：`sampling10-rd6WDP/report.json`为`sampling10-passed`，北京时间10:36:32开始测量，实测601201ms，10:46:54完成清理；21个有效资源样本通过原20个门槛、同PID及增长检查，26笔业务及26次原命令重放、29次对账、233次快照，最终冷重启恢复通过，游戏/代理/探针/存储全部停止。正式构建与24项工具测试通过；历史样本回放确定复现原18/20失败。本轮仅验证采样修复，未执行热更和五种故障，未启动新八小时测试，原八小时失败报告保持不变。 / The ten-minute sampling regression passed with 21 valid samples against the unchanged 20-sample threshold, same-process growth checks, 26 operations and replays, 29 reconciliations, 233 snapshots, final cold recovery and complete cleanup. The official build and all 24 tool tests passed, including replay of the original 18/20 failure. This verifies sampling only; no new eight-hour soak was started.
 
 2026-09-18八小时SLG长稳soak8h-Bkzmwd最终failed：恢复期23次点采样中，3次outbound=1、2次pending=1被静默过滤，仅18个空闲样本，结束时才触发至少20个门槛；随后资源增长检查及最终冷恢复未执行，原失败报告必须保留。修复采样器为60秒内等待两个不同指标发布周期均空闲，保存全部忙/旧快照，指标不刷新或持续忙碌则失败；固定采样时隙、运行中检查剩余容量、恢复期结束即执行数量和同PID增长门槛。禁止把最低数量改为18或复用同一快照补数。历史23个样本已冻结为回归夹具；复测为SLG正式build、node --test tools/acceptance/*.test.mjs，再node tools/soak_acceptance.mjs --profile sampling10 --confirm isolated-slg-authoritative-test。短测前8分钟每20秒采集、保持20个门槛，后2分钟收敛并冷恢复；它不替代八小时和五类故障验收。 / The completed soak failed because silent filtering left 18 of 23 samples. Preserve that failure; require two fresh idle publications within a bounded wait, check coverage early, and validate with recorded evidence plus a ten-minute real-storage regression.
@@ -22,6 +24,14 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 2026-09-17 SLG D1夹具隔离失败：run-cHJ8WY在D1提前退出；补齐子进程stdout/stderr日志后，run-TC9Bun确认StorageBackend初始化报publisher endpoint changed，尚未执行读取断言。原因是独立存储测试与SLG共用PG数据库，却以宿主机缓存Redis地址注册已被容器队列Redis占用的legacy Publisher。正确做法是在本轮隔离PG容器内创建authority_probe专用数据库；SLG原子批量探针仍检查SLG数据库，存储级断言单独标明范围。禁止清空Publisher注册表、放宽端点校验或手改构建哈希。复测：在Examples/packages/slg执行node tools/authoritative_acceptance.mjs build，再run --cases D1 --rounds 1 --confirm isolated-slg-authoritative-test；失败证据为temp/authoritative-acceptance/run-TC9Bun/D1-1/sql-snapshot-probe.log。修复后的结果以新报告为准。
 
 ## 失败教训与复测流程
+
+### 0.7 worktree 依赖准备与中止结果（2026-09-25）
+
+现象：新 worktree 执行 `npm ci --ignore-scripts` 后，codegen/检查找不到 `@tiangz/native-language-core`、`@tiangz/developer-tools-core` 和 `@tiangz/dbproxy-sdk` 的声明或 dist 入口；生成中止又导致后续 Generated 目录缺失。真实原因是 Git 依赖的 prepare 构建被跳过，属于依赖准备失败，不是 EntryScene 拆分导致的运行时缺陷。
+
+正确做法：按锁执行正常 `npm ci --no-audit --no-fund`，确认依赖入口可解析，再执行 `npm run codegen` 和对应验证。禁止从另一 worktree 复制旧 dist/Generated、修改类型为 any 或放宽检查来掩盖缺包。重装后依赖入口及部分检查恢复，但完整 quick 随用户要求停止讨论外的实现而中止；不得把部分通过汇总为整轮成功。
+
+复测：实施恢复后，在目标工作树依次执行正常依赖安装、正式 codegen、`npm run verify:quick`；按改动范围补完整集成验收。前置本机证据为 `dist/test-results/check-initial-dependency-failure.json` 与 `temp/verify-quick-refactor.log`（未提交的运行记录），新报告须记录中止/失败/跳过状态，不能用旧报告替代当前制品验证。
 
 2026-09-17 90分钟验收首次启动run-MeA1nL失败：夹具把主endpoint重复放入endpoints（failoverEndpoints旧别名），宿主在连接前正确拒绝；尚未进入业务或计时。修复为endpoint=A、failoverEndpoints=[B]，不放宽运行时校验。原报告和卷保留，隔离容器已停止。配置/源码改变后经正式build/check再开新报告，不能覆盖旧失败或手改构建哈希。
 
