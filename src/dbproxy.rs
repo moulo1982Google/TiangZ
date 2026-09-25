@@ -25,7 +25,7 @@ use tiangz_dbproxy_core::{
     TransactionRecordReceipt, TransactionalRecordWrite, TransactionalWrite,
     TransactionalWriteOutcome,
 };
-use tiangz_dbproxy_protocol::{ProtocolError, wire};
+use tiangz_dbproxy_protocol::wire;
 use tokio::{runtime::Handle, sync::Mutex};
 
 use crate::config::ProcessConfig;
@@ -38,6 +38,9 @@ const MAX_DBPROXY_ENDPOINTS: usize = 8;
 
 #[path = "dbproxy_latency.rs"]
 mod latency;
+
+#[path = "dbproxy_request.rs"]
+mod request;
 
 thread_local! {
     static DBPROXY_BRIDGE: RefCell<Option<DbProxyBridge>> = const { RefCell::new(None) };
@@ -68,8 +71,8 @@ fn maybe_drop_test_response(kind: &str) -> std::result::Result<(), JsErrorBox> {
     Ok(())
 }
 
-/// 一组按需建立的客户端连接；连接边界不确定时整组重建。
-/// One lazily connected group of client connections, rebuilt as a whole after an ambiguous failure.
+/// 一组按需建立的客户端连接；单连接恢复由 SDK 负责，健康连接不整组丢弃。
+/// One lazily connected group; the SDK repairs individual connections without discarding healthy peers.
 #[derive(Clone)]
 struct PoolSlot {
     label: &'static str,
@@ -111,10 +114,6 @@ impl PoolSlot {
         );
         *pool = Some(connected.clone());
         Ok(connected)
-    }
-
-    async fn invalidate(&self) {
-        *self.pool.lock().await = None;
     }
 }
 
@@ -309,12 +308,12 @@ fn record_request_failure(counter: &AtomicU64) -> Option<u64> {
 }
 
 impl DbProxyBridge {
-    /// 连接边界不确定时只重连并重放一次；调用方提供的幂等ID保持不变。
-    /// Reconnects and replays once after an ambiguous connection failure while preserving the caller's idempotency ID.
+    /// 在调用方预算内执行一次 Host 操作，传输重连重试由 SDK 持有原操作身份。
+    /// Executes one host operation within the caller's budget; the SDK owns transport retry identity.
     async fn execute<T, F, Fut>(&self, operation: F) -> std::result::Result<T, ClientError>
     where
         T: Send + 'static,
-        F: Fn(DbProxyClientPool) -> Fut + Send + 'static,
+        F: FnOnce(DbProxyClientPool) -> Fut + Send + 'static,
         Fut: Future<Output = std::result::Result<T, ClientError>> + Send + 'static,
     {
         self.execute_in(self.pool.clone(), operation).await
@@ -325,7 +324,7 @@ impl DbProxyBridge {
     async fn execute_queued<T, F, Fut>(&self, operation: F) -> std::result::Result<T, ClientError>
     where
         T: Send + 'static,
-        F: Fn(DbProxyClientPool) -> Fut + Send + 'static,
+        F: FnOnce(DbProxyClientPool) -> Fut + Send + 'static,
         Fut: Future<Output = std::result::Result<T, ClientError>> + Send + 'static,
     {
         let slot = self
@@ -342,14 +341,13 @@ impl DbProxyBridge {
     ) -> std::result::Result<T, ClientError>
     where
         T: Send + 'static,
-        F: Fn(DbProxyClientPool) -> Fut + Send + 'static,
+        F: FnOnce(DbProxyClientPool) -> Fut + Send + 'static,
         Fut: Future<Output = std::result::Result<T, ClientError>> + Send + 'static,
     {
         let config = self.config.clone();
-        self.host_runtime
-            .spawn(async move { execute_on_host(&config, &slot, operation).await })
-            .await
-            .map_err(|_| ClientError::UnexpectedResponse("DBProxy host task terminated"))?
+        request::execute(&self.host_runtime, config.request_timeout, move |deadline| async move {
+            execute_on_host(&config, &slot, deadline, operation).await
+        }).await
     }
 }
 
@@ -358,21 +356,16 @@ impl DbProxyBridge {
 async fn execute_on_host<T, F, Fut>(
     config: &ClientConfig,
     slot: &PoolSlot,
+    deadline: tokio::time::Instant,
     operation: F,
 ) -> std::result::Result<T, ClientError>
 where
-    F: Fn(DbProxyClientPool) -> Fut,
+    F: FnOnce(DbProxyClientPool) -> Fut,
     Fut: Future<Output = std::result::Result<T, ClientError>>,
 {
     let pool = slot.get(config).await?;
-    match operation(pool).await {
-        Err(error) if is_reconnectable(&error) => {
-            slot.invalidate().await;
-            let pool = slot.get(config).await?;
-            operation(pool).await
-        }
-        result => result,
-    }
+    request::check_deadline(deadline)?;
+    operation(pool).await
 }
 
 /// 为当前Process线程安装DBProxy配置。配置缺失时Bridge保持禁用；启用时令牌必须来自环境变量。
@@ -456,16 +449,6 @@ fn bridge() -> std::result::Result<DbProxyBridge, JsErrorBox> {
     DBPROXY_BRIDGE
         .with(|slot| slot.borrow().clone())
         .ok_or_else(|| JsErrorBox::generic("DBProxy is not configured for this Process"))
-}
-
-fn is_reconnectable(error: &ClientError) -> bool {
-    matches!(
-        error,
-        ClientError::RequestTimeout
-            | ClientError::ConnectionUnusable
-            | ClientError::ConnectionClosed
-            | ClientError::Protocol(ProtocolError::Io(_))
-    )
 }
 
 #[derive(Serialize)]
@@ -1420,11 +1403,5 @@ mod tests {
             assert_eq!(record_request_failure(&failures), None);
         }
         assert_eq!(failures.load(Ordering::Relaxed), 108);
-    }
-
-    #[test]
-    fn reconnectable_errors_exclude_remote_business_rejections() {
-        assert!(is_reconnectable(&ClientError::ConnectionClosed));
-        assert!(!is_reconnectable(&ClientError::InvalidConfig("test")));
     }
 }
