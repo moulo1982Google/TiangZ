@@ -1,5 +1,7 @@
 # 2026-09-16 模块拆分后的当前事实
 
+0.7 Timer 修复：异步到期/取消回调在真实完成前计入 InFlightCount，Process 的热更提交与 pendingAsync 读取该计数；每轮先冻结到期集合，回调中新建 Timer 下轮运行，重复期限须严格晚于当前帧。所有者销毁不提前释放在途计数；新增 Stable getter 需要完整构建重启。原失败反例与完整回归均已验证。
+
 0.7 EntryScene 的纯拆分将配置/路由契约留在 process/types.ts，实现及私有队列归 process/EntryScene.ts；Stable 导出不变，33 个非 import 声明机械比对一致。执行体不变但声明图/构建指纹变化，需完整构建重启，见[拆分记录](../design/v0.7-entry-scene-split.md)。缺陷修复另行提交。
 
 2026-09-25：新增 [0.7 设计稿](../design/v0.7-design.md)，当前为待评审文档，不代表实现或发布验收通过。范围包括 Runtime 可靠性、可选目录寻址、模块配置边界、克制拆分、DBProxy 服务端/SDK、Developer Tools 与 Native Language 两个 VS Code 插件、AI Plugins 和 Examples。六仓库已创建各自 `feat/v0.7` worktree，任务必须显式选择目标宿主；AI 规则源在 TiangZ `tools/ai-assistants/`，分发同步到 AI Plugins 工作树。EntryScene 拆分仍为未提交草稿，不能据此更改 Stable 依赖或认定当前基线已迁移；实施顺序和验收以设计稿为准。

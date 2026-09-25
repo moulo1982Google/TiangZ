@@ -117,6 +117,7 @@ export class ProcessRuntime implements LocalSceneRouter {
   get CanCommitHotfix(): boolean {
     return this.lifecycleState === "ready" &&
       this.processHost.SceneTaskInFlightCount === 0 &&
+      TimerSystem.Instance.InFlightCount === 0 &&
       this.entryScenes.every((scene) => scene.__canCommitHotfix());
   }
 
@@ -199,7 +200,7 @@ export class ProcessRuntime implements LocalSceneRouter {
       ...merged,
       actorMailbox: this.processHost.MailboxMetrics(),
     };
-    return this.processHost.SceneTaskInFlightCount === 0
+    return this.processHost.SceneTaskInFlightCount === 0 && TimerSystem.Instance.InFlightCount === 0
       ? result
       : { ...result, pendingAsync: true };
   }

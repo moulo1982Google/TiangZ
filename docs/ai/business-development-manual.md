@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+0.7 Timer 修复：取消定时器或销毁所有者不代表已触发的异步回调结束，热更必须等待真实 Promise 收敛；不要按定时器活动数判断安全。回调中新建的零延迟 Timer 留到下一轮，取消尚未执行的本轮项仍立即生效；重复 Timer 跳过错过周期并避免浮点误差导致同帧重触发。原反例及完整矩阵已通过，Stable getter 变化需重建重启。
+
 0.7 EntryScene 纯搬移：业务继续使用 Stable 导出的 EntryScene，不导入内部 process/EntryScene.ts。配置契约和实现物理分离，33 个非 import 声明保持；完整声明图与构建身份变化仍需重建/重启，不能只发 Hotfix，见[拆分记录](../design/v0.7-entry-scene-split.md)。
 
 2026-09-25：0.7 当前先交付[详细设计稿](../design/v0.7-design.md)，实现与验收尚未完成。目标是通用后端可靠性、模块边界、静态检查和[克制拆分](../reference/coding-conventions.md#克制拆分)，同时规划 DBProxy、两个 VS Code 插件和 AI 分发包。实现使用六仓库各自的 `feat/v0.7` worktree，业务仍通过 Stable 入口，不依赖 EntryScene 未提交拆分草稿的内部路径。总预算不等于撤销已执行业务，回执清理/记录删除和异步 Native op 仍按独立候选评审；包更新须验证实际生成/安装身份，不能把文档、dist 或部分测试当作完成交付。

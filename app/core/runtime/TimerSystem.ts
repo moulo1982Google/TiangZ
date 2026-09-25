@@ -43,6 +43,7 @@ export class TimerSystem extends Singleton {
 
   private readonly timers = new Map<TimerId, TimerEntry>();
   private readonly heap: TimerEntry[] = [];
+  private inFlightCount = 0;
 
   static get Instance(): TimerSystem {
     return SingletonRegistry.Get(TimerSystem);
@@ -111,11 +112,22 @@ export class TimerSystem extends Singleton {
     return this.timers.size;
   }
 
+  /** 返回已触发但尚未完成的回调数，包括排队中的 Actor 回调和取消通知；销毁所有者不提前释放。 / Counts triggered callbacks until settlement, including queued Actor callbacks and cancellation notifications; owner disposal does not release them early. */
+  get InFlightCount(): number {
+    return this.inFlightCount;
+  }
+
   __update(now: number): void {
+    // 先冻结本轮到期集合；回调中新建的 Timer 留给下一轮，且不会挡住原有到期项。
+    // Freeze due candidates before invoking callbacks so new timers wait for the next update.
+    const due: TimerEntry[] = [];
     while (this.heap.length > 0) {
       const timer = this.heap[0];
       if (timer.dueTime > now) break;
       this.pop();
+      if (this.timers.get(timer.id) === timer) due.push(timer);
+    }
+    for (const timer of due) {
       if (this.timers.get(timer.id) !== timer) continue;
 
       if (timer.intervalMs === 0) {
@@ -126,6 +138,9 @@ export class TimerSystem extends Singleton {
       if (timer.intervalMs > 0 && this.timers.get(timer.id) === timer) {
         const missed = Math.floor(Math.max(0, now - timer.dueTime) / timer.intervalMs);
         timer.dueTime += (missed + 1) * timer.intervalMs;
+        // 浮点减法可能把整周期低估为 8.999…；仍需保证下次触发严格晚于本轮。
+        // Floating-point subtraction can undercount whole periods; keep the next deadline after this update.
+        if (timer.dueTime <= now) timer.dueTime += timer.intervalMs;
         this.push(timer);
       }
     }
@@ -163,8 +178,11 @@ export class TimerSystem extends Singleton {
     try {
       const result = timer.callback();
       if (isPromiseLike(result)) {
+        this.inFlightCount++;
         void Promise.resolve(result).catch((error) => {
           CoreLogger.error("async timer failed", { timerId: timer.id, error });
+        }).finally(() => {
+          this.inFlightCount--;
         });
       }
     } catch (error) {
@@ -180,12 +198,15 @@ export class TimerSystem extends Singleton {
         cancelledAt: TimeSystem.Instance.FrameTime,
       });
       if (isPromiseLike(result)) {
+        this.inFlightCount++;
         void Promise.resolve(result).catch((error) => {
           CoreLogger.error("async timer cancellation failed", {
             timerId: timer.id,
             reason,
             error,
           });
+        }).finally(() => {
+          this.inFlightCount--;
         });
       }
     } catch (error) {
