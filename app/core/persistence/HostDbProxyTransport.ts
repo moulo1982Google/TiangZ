@@ -1,5 +1,6 @@
 import {
   type DbProxyRecordCommit,
+  type DbProxyRequestOptions,
   DbProxyErrorCode,
   DbProxyRemoteError,
   type DbProxyBatchSnapshotEnqueueResult,
@@ -133,9 +134,12 @@ interface HostLoadMultiTransactionResponse {
 
 interface HostDbProxyApi {
   readonly supportsOutboxRelay?: boolean;
-  commitRecords?(request: DbProxyRecordCommit): Promise<HostMultiTransactionResponse>;
-  load(namespace: string, key: string): Promise<HostLoadResponse>;
-  loadMulti(records: readonly DbProxyRecordKey[]): Promise<HostLoadMultiResponse>;
+  readonly supportsRequestTimeout?: boolean;
+  readonly requestTimeoutMs?: number;
+  monotonicNowMs?(): number;
+  commitRecords?(request: DbProxyRecordCommit, deadlineMs?: number): Promise<HostMultiTransactionResponse>;
+  load(namespace: string, key: string, deadlineMs?: number): Promise<HostLoadResponse>;
+  loadMulti(records: readonly DbProxyRecordKey[], deadlineMs?: number): Promise<HostLoadMultiResponse>;
   save(request: {
     readonly requestId: string;
     readonly namespace: string;
@@ -145,8 +149,8 @@ interface HostDbProxyApi {
     readonly payload: Uint8Array;
     readonly expectedRevision?: string;
     readonly updatedAtUnixMs: string;
-  }): Promise<HostWriteResponse>;
-  saveMulti(writes: readonly HostSnapshotWriteInput[]): Promise<HostBatchWriteResponse>;
+  }, deadlineMs?: number): Promise<HostWriteResponse>;
+  saveMulti(writes: readonly HostSnapshotWriteInput[], deadlineMs?: number): Promise<HostBatchWriteResponse>;
   enqueueSnapshot(request: {
     readonly requestId: string;
     readonly namespace: string;
@@ -155,9 +159,10 @@ interface HostDbProxyApi {
     readonly schemaVersion: number;
     readonly payload: Uint8Array;
     readonly updatedAtUnixMs: string;
-  }): Promise<HostEnqueueResponse>;
+  }, deadlineMs?: number): Promise<HostEnqueueResponse>;
   enqueueMultiSnapshot(
     writes: readonly HostSnapshotWriteInput[],
+    deadlineMs?: number,
   ): Promise<HostBatchEnqueueResponse>;
   applyTransaction(request: {
     readonly operationId: string;
@@ -169,11 +174,12 @@ interface HostDbProxyApi {
     readonly payload: Uint8Array;
     readonly result: Uint8Array;
     readonly updatedAtUnixMs: string;
-  }): Promise<HostTransactionResponse>;
+  }, deadlineMs?: number): Promise<HostTransactionResponse>;
   loadTransaction(
     operationId: string,
     namespace: string,
     key: string,
+    deadlineMs?: number,
   ): Promise<HostLoadTransactionResponse>;
   applyMultiTransaction(request: {
     readonly operationId: string;
@@ -186,10 +192,11 @@ interface HostDbProxyApi {
       readonly updatedAtUnixMs: string;
     }[];
     readonly result: Uint8Array;
-  }): Promise<HostMultiTransactionResponse>;
+  }, deadlineMs?: number): Promise<HostMultiTransactionResponse>;
   loadMultiTransaction(
     operationId: string,
     records: readonly DbProxyMultiTransactionalWrite["writes"][number]["record"][],
+    deadlineMs?: number,
   ): Promise<HostLoadMultiTransactionResponse>;
 }
 
@@ -209,12 +216,37 @@ export class HostDbProxyTransport implements DbProxyTransport {
   /** 仅新版宿主且握手验证Relay能力时启用。 / Enabled only by a relay-aware, handshake-validating host. */
   get supportsOutboxRelay(): boolean { return this.host.supportsOutboxRelay === true; }
 
+  /** 只有 Host 确认可取消物理 I/O 时才允许预算范围。 / Enables scopes only when the host can cancel physical I/O. */
+  get supportsRequestTimeout(): boolean { return this.host.supportsRequestTimeout === true; }
+
+  /** 读取 Host 配置，不改变共享池或其他调用的期限。 / Reads host settings without changing shared pools or other calls. */
+  get requestTimeoutMs(): number { return this.host.requestTimeoutMs ?? 5000; }
+
+  /** 使用 Rust Instant 时钟；裸 V8 不需要 performance 或墙钟替代。 / Uses Rust Instant so bare V8 needs neither performance nor a wall-clock fallback. */
+  monotonicNowMs(): number {
+    if (!this.host.monotonicNowMs) throw new Error("Rust Host does not provide a monotonic DBProxy clock");
+    return this.host.monotonicNowMs();
+  }
+
+  /** 转换前固定 Host 绝对期限，让序列化和 Rust 参数解析同样消耗预算。 / Freezes the host deadline before conversion so serialization and Rust parsing consume the same budget. */
+  private RequestDeadline(options?: DbProxyRequestOptions): [] | [number] {
+    if (!options) return [];
+    if (!this.supportsRequestTimeout) throw new Error("Rust Host does not support DBProxy request timeouts");
+    if (!Number.isInteger(options.timeoutMs) || options.timeoutMs < 1 || options.timeoutMs > 120_000) {
+      throw new RangeError("DBProxy request timeout must be an integer from 1 to 120000 ms");
+    }
+    const now = this.monotonicNowMs();
+    if (!Number.isFinite(now)) throw new Error("Rust Host returned an invalid monotonic clock");
+    return [now + options.timeoutMs];
+  }
+
   constructor(host: HostDbProxyApi = requireHostDbProxyApi()) {
     this.host = host;
   }
 
-  async load(record: DbProxyRecordKey): Promise<DbProxySnapshotEnvelope | undefined> {
-    const response = await this.host.load(record.namespace, record.key);
+  async load(record: DbProxyRecordKey, options?: DbProxyRequestOptions): Promise<DbProxySnapshotEnvelope | undefined> {
+    const deadlineArgs = this.RequestDeadline(options);
+    const response = await this.host.load(record.namespace, record.key, ...deadlineArgs);
     throwRemoteError(response.error);
     const snapshot = response.snapshot;
     if (!snapshot) return undefined;
@@ -223,13 +255,16 @@ export class HostDbProxyTransport implements DbProxyTransport {
 
   async loadMulti(
     records: readonly DbProxyRecordKey[],
+    options?: DbProxyRequestOptions,
   ): Promise<readonly (DbProxySnapshotEnvelope | undefined)[]> {
-    const response = await this.host.loadMulti(records);
+    const deadlineArgs = this.RequestDeadline(options);
+    const response = await this.host.loadMulti(records, ...deadlineArgs);
     throwRemoteError(response.error);
     return response.snapshots.map((snapshot) => snapshot && fromHostSnapshot(snapshot));
   }
 
-  async save(write: DbProxySnapshotWrite): Promise<DbProxySnapshotWriteResult> {
+  async save(write: DbProxySnapshotWrite, options?: DbProxyRequestOptions): Promise<DbProxySnapshotWriteResult> {
+    const deadlineArgs = this.RequestDeadline(options);
     const response = await this.host.save({
       requestId: write.requestId,
       namespace: write.record.namespace,
@@ -239,7 +274,7 @@ export class HostDbProxyTransport implements DbProxyTransport {
       payload: write.payload,
       expectedRevision: write.expectedRevision?.toString(),
       updatedAtUnixMs: write.updatedAtUnixMs.toString(),
-    });
+    }, ...deadlineArgs);
     throwRemoteError(response.error);
     return {
       disposition: requireDisposition(response.disposition),
@@ -249,8 +284,10 @@ export class HostDbProxyTransport implements DbProxyTransport {
 
   async saveMulti(
     writes: readonly DbProxySnapshotWrite[],
+    options?: DbProxyRequestOptions,
   ): Promise<readonly DbProxyBatchSnapshotWriteResult[]> {
-    const response = await this.host.saveMulti(writes.map(toHostSnapshotWrite));
+    const deadlineArgs = this.RequestDeadline(options);
+    const response = await this.host.saveMulti(writes.map(toHostSnapshotWrite), ...deadlineArgs);
     throwRemoteError(response.error);
     return response.entries.map((entry) => {
       if (!entry.ok) return { ok: false, error: fromHostBatchError(entry.error) };
@@ -264,7 +301,8 @@ export class HostDbProxyTransport implements DbProxyTransport {
     });
   }
 
-  async enqueueSnapshot(write: DbProxySnapshotWrite): Promise<void> {
+  async enqueueSnapshot(write: DbProxySnapshotWrite, options?: DbProxyRequestOptions): Promise<void> {
+    const deadlineArgs = this.RequestDeadline(options);
     const response = await this.host.enqueueSnapshot({
       requestId: write.requestId,
       namespace: write.record.namespace,
@@ -273,15 +311,17 @@ export class HostDbProxyTransport implements DbProxyTransport {
       schemaVersion: write.schemaVersion,
       payload: write.payload,
       updatedAtUnixMs: write.updatedAtUnixMs.toString(),
-    });
+    }, ...deadlineArgs);
     throwRemoteError(response.error);
     if (!response.accepted) throw new Error("DBProxy rejected snapshot enqueue without an error");
   }
 
   async enqueueMultiSnapshot(
     writes: readonly DbProxySnapshotWrite[],
+    options?: DbProxyRequestOptions,
   ): Promise<readonly DbProxyBatchSnapshotEnqueueResult[]> {
-    const response = await this.host.enqueueMultiSnapshot(writes.map(toHostSnapshotWrite));
+    const deadlineArgs = this.RequestDeadline(options);
+    const response = await this.host.enqueueMultiSnapshot(writes.map(toHostSnapshotWrite), ...deadlineArgs);
     throwRemoteError(response.error);
     return response.entries.map((entry) => entry.ok
       ? { ok: true }
@@ -290,7 +330,9 @@ export class HostDbProxyTransport implements DbProxyTransport {
 
   async applyTransaction(
     write: DbProxyTransactionalWrite,
+    options?: DbProxyRequestOptions,
   ): Promise<DbProxyTransactionalWriteResult> {
+    const deadlineArgs = this.RequestDeadline(options);
     const response = await this.host.applyTransaction({
       operationId: write.operationId,
       namespace: write.record.namespace,
@@ -301,7 +343,7 @@ export class HostDbProxyTransport implements DbProxyTransport {
       payload: write.payload,
       result: write.result,
       updatedAtUnixMs: write.updatedAtUnixMs.toString(),
-    });
+    }, ...deadlineArgs);
     throwRemoteError(response.error);
     return {
       disposition: requireDisposition(response.disposition),
@@ -313,11 +355,14 @@ export class HostDbProxyTransport implements DbProxyTransport {
   async loadTransaction(
     operationId: string,
     record: DbProxyRecordKey,
+    options?: DbProxyRequestOptions,
   ): Promise<DbProxyTransactionReceipt | undefined> {
+    const deadlineArgs = this.RequestDeadline(options);
     const response = await this.host.loadTransaction(
       operationId,
       record.namespace,
       record.key,
+      ...deadlineArgs,
     );
     throwRemoteError(response.error);
     const receipt = response.receipt;
@@ -332,7 +377,9 @@ export class HostDbProxyTransport implements DbProxyTransport {
 
   async applyMultiTransaction(
     write: DbProxyMultiTransactionalWrite,
+    options?: DbProxyRequestOptions,
   ): Promise<DbProxyMultiTransactionalWriteResult> {
+    const deadlineArgs = this.RequestDeadline(options);
     const response = await this.host.applyMultiTransaction({
       operationId: write.operationId,
       writes: write.writes.map((item) => ({
@@ -344,7 +391,7 @@ export class HostDbProxyTransport implements DbProxyTransport {
         updatedAtUnixMs: item.updatedAtUnixMs.toString(),
       })),
       result: write.result,
-    });
+    }, ...deadlineArgs);
     throwRemoteError(response.error);
     return {
       disposition: requireDisposition(response.disposition),
@@ -357,9 +404,10 @@ export class HostDbProxyTransport implements DbProxyTransport {
   }
 
   /** 将通用事务效果交给宿主；旧宿主明确拒绝，不降级丢弃效果。 / Sends all effects to the host, rejecting unsupported hosts without fallback. */
-  async commitRecords(write: DbProxyRecordCommit): Promise<DbProxyMultiTransactionalWriteResult> {
+  async commitRecords(write: DbProxyRecordCommit, options?: DbProxyRequestOptions): Promise<DbProxyMultiTransactionalWriteResult> {
+    const deadlineArgs = this.RequestDeadline(options);
     if (!this.host.commitRecords) throw new Error("Rust Host does not support CommitRecords");
-    const response = await this.host.commitRecords(write);
+    const response = await this.host.commitRecords(write, ...deadlineArgs);
     throwRemoteError(response.error);
     return {
       disposition: requireDisposition(response.disposition),
@@ -371,8 +419,10 @@ export class HostDbProxyTransport implements DbProxyTransport {
   async loadMultiTransaction(
     operationId: string,
     records: readonly DbProxyMultiTransactionalWrite["writes"][number]["record"][],
+    options?: DbProxyRequestOptions,
   ): Promise<DbProxyMultiTransactionReceipt | undefined> {
-    const response = await this.host.loadMultiTransaction(operationId, records);
+    const deadlineArgs = this.RequestDeadline(options);
+    const response = await this.host.loadMultiTransaction(operationId, records, ...deadlineArgs);
     throwRemoteError(response.error);
     const receipt = response.receipt;
     if (!receipt) return undefined;

@@ -131,8 +131,9 @@ implements VersionedEntityRepository<TSnapshot, TEntity> {
   }
 
   async Load(key: string): Promise<VersionedEntityLoadResult<TSnapshot> | undefined> {
+    const client = this.client.WithRequestBudget();
     for (let attempt = 0; attempt <= SAVE_ATTEMPTS; attempt++) {
-      const snapshot = await this.client.Load({ namespace: this.codec.recordNamespace, key });
+      const snapshot = await client.Load({ namespace: this.codec.recordNamespace, key });
       if (!snapshot) return undefined;
       const payload = MigrateVersionedEntityPayload(this.codec, snapshot.schema, snapshot.schemaVersion, snapshot.payload);
       const data = this.codec.Decode(payload);
@@ -141,7 +142,7 @@ implements VersionedEntityRepository<TSnapshot, TEntity> {
       }
       if (attempt === SAVE_ATTEMPTS) break;
       try {
-        await this.PersistSnapshot(key, data, snapshot.revision);
+        await this.PersistSnapshot(client, key, data, snapshot.revision);
       } catch (error) {
         if (!IsVersionedEntityRevisionConflict(error)) throw error;
       }
@@ -152,19 +153,25 @@ implements VersionedEntityRepository<TSnapshot, TEntity> {
   }
 
   Save(key: string, value: TEntity, expectedRevision: bigint): Promise<VersionedEntitySaveResult> {
-    return this.SaveSnapshot(key, this.codec.Capture(value), expectedRevision);
+    const client = this.client.WithRequestBudget();
+    return this.SaveSnapshotIn(client, key, this.codec.Capture(value), expectedRevision);
   }
 
   async SaveSnapshot(key: string, value: TSnapshot, expectedRevision: bigint): Promise<VersionedEntitySaveResult> {
+    return this.SaveSnapshotIn(this.client.WithRequestBudget(), key, value, expectedRevision);
+  }
+
+  /** 版本读取与保存共用调用入口创建的期限，内部步骤不得续期。 / Shares the entry deadline across version reads and saving; internal steps never renew it. */
+  private async SaveSnapshotIn(client: DbProxyClient, key: string, value: TSnapshot, expectedRevision: bigint): Promise<VersionedEntitySaveResult> {
     // 新建记录由CAS保护；更新前验证存储版本，防止回滚的旧代码降级已迁移记录。
     // CAS protects creation; validate stored versions before updates so rolled-back code cannot downgrade migrated records.
     if (expectedRevision > 0n) {
-      const previous = await this.client.Load({ namespace: this.codec.recordNamespace, key });
+      const previous = await client.Load({ namespace: this.codec.recordNamespace, key });
       if (previous && (previous.schema !== this.codec.schema || previous.schemaVersion !== this.codec.schemaVersion)) {
         throw new Error(`unsupported entity snapshot schema: ${previous.schema}@${previous.schemaVersion}; load and migrate before saving`);
       }
     }
-    return this.PersistSnapshot(key, value, expectedRevision);
+    return this.PersistSnapshot(client, key, value, expectedRevision);
   }
 
   /** 生成事务写入记录，不访问存储；交给CommitRecords与其他记录一起提交。
@@ -181,17 +188,17 @@ implements VersionedEntityRepository<TSnapshot, TEntity> {
   /** 写入已校验版本的快照；迁移使用读取到的revision，所有重试复用请求身份。
    * Writes a version-checked snapshot; migrations use the loaded revision and all retries preserve request identity.
    */
-  private PersistSnapshot(key: string, value: TSnapshot, expectedRevision: bigint): Promise<VersionedEntitySaveResult> {
+  private PersistSnapshot(client: DbProxyClient, key: string, value: TSnapshot, expectedRevision: bigint): Promise<VersionedEntitySaveResult> {
     const write: DbProxySnapshotWrite = {
       requestId: this.requestIds.Next(),
       record: { namespace: this.codec.recordNamespace, key },
       schema: this.codec.schema,
       schemaVersion: this.codec.schemaVersion,
-      payload: this.codec.Encode(value),
+      payload: Uint8Array.from(this.codec.Encode(value)),
       expectedRevision,
       updatedAtUnixMs: BigInt(Date.now()),
     };
-    return RetryStorageUnavailable(() => this.client.Save(write));
+    return RetryStorageUnavailable(client, () => client.Save(write));
   }
 }
 
@@ -222,7 +229,8 @@ implements QueuedEntityRepository<TSnapshot, TEntity> {
   }
 
   async Enqueue(key: string, value: TEntity): Promise<void> {
-    return this.EnqueueSnapshot(key, this.codec.Capture(value));
+    const client = this.client.WithRequestBudget();
+    return this.EnqueueSnapshotIn(client, key, this.codec.Capture(value));
   }
 
   /** 排队写入，只发送一次、不在仓库内重试：下一次排队写本来就会取代它，重试只会在存储过载时放大负载。
@@ -232,6 +240,11 @@ implements QueuedEntityRepository<TSnapshot, TEntity> {
    * errors reject rather than throw synchronously.
    */
   async EnqueueSnapshot(key: string, value: TSnapshot): Promise<void> {
+    return this.EnqueueSnapshotIn(this.client.WithRequestBudget(), key, value);
+  }
+
+  /** 编码和发送共享入口预算；排队 ACK 语义与单次尝试保持不变。 / Shares the entry budget across encoding and sending, preserving queued ACK semantics and a single attempt. */
+  private async EnqueueSnapshotIn(client: DbProxyClient, key: string, value: TSnapshot): Promise<void> {
     const write: DbProxySnapshotWrite = {
       requestId: this.requestIds.Next(),
       record: { namespace: this.codec.recordNamespace, key },
@@ -240,7 +253,7 @@ implements QueuedEntityRepository<TSnapshot, TEntity> {
       payload: this.codec.Encode(value),
       updatedAtUnixMs: BigInt(Date.now()),
     };
-    return this.client.EnqueueSnapshot(write);
+    return client.EnqueueSnapshot(write);
   }
 }
 
@@ -300,14 +313,14 @@ class RepositoryRequestIds {
 /** 仅对存储暂不可用做有界重试；调用方必须在所有尝试中复用同一请求身份。
  * Bounded retry for storage unavailability only; callers must reuse one request identity across attempts.
  */
-async function RetryStorageUnavailable<T>(operation: () => Promise<T>): Promise<T> {
+async function RetryStorageUnavailable<T>(client: DbProxyClient, operation: () => Promise<T>): Promise<T> {
   for (let attempt = 1; attempt <= SAVE_ATTEMPTS; attempt += 1) {
     try {
       return await operation();
     } catch (error) {
       if (attempt === SAVE_ATTEMPTS || !(error instanceof DbProxyRemoteError) || error.code !== DbProxyErrorCode.StorageUnavailable) throw error;
       // 提交结果不明确时只能复用同一requestId；更换ID可能重复覆盖。 / Ambiguous commits must retry the same requestId.
-      await waitBeforeStorageRetry(attempt);
+      if (!await waitBeforeStorageRetry(attempt, client)) throw error;
     }
   }
   throw new Error("unreachable DBProxy entity save retry state");
@@ -318,7 +331,7 @@ async function LoadWithoutWriteBack<TSnapshot, TEntity>(
   codec: VersionedEntityCodec<TSnapshot, TEntity>,
   key: string,
 ): Promise<VersionedEntityLoadResult<TSnapshot> | undefined> {
-  const snapshot = await client.Load({ namespace: codec.recordNamespace, key });
+  const snapshot = await client.WithRequestBudget().Load({ namespace: codec.recordNamespace, key });
   if (!snapshot) return undefined;
   const payload = MigrateVersionedEntityPayload(codec, snapshot.schema, snapshot.schemaVersion, snapshot.payload);
   return { data: codec.Decode(payload), revision: snapshot.revision, updatedAtUnixMs: snapshot.updatedAtUnixMs };
@@ -342,22 +355,24 @@ function CreateTransactionalRecordWrite<TSnapshot, TEntity>(
   };
 }
 
-/** 使用墙钟指数退避与full jitter，避免同一故障窗口内的Entity同步重试。 / Uses wall-clock exponential backoff with full jitter so Entities do not retry in lockstep during one outage. */
-async function waitBeforeStorageRetry(failedAttempt: number): Promise<void> {
+/** full jitter 退避也消耗同一预算；剩余时间容不下退避时保留最后错误，不再发起重试。 / Backoff consumes the shared budget; if it cannot fit, preserve the last error without another retry. */
+async function waitBeforeStorageRetry(failedAttempt: number, client: DbProxyClient): Promise<boolean> {
   const ceiling = Math.min(
     SAVE_RETRY_MAX_DELAY_MS,
     SAVE_RETRY_BASE_DELAY_MS * (2 ** Math.max(0, failedAttempt - 1)),
   );
   const delayMs = Math.floor(Math.random() * (ceiling + 1));
-  if (delayMs === 0) return;
+  if (delayMs >= client.GetRemainingRequestBudgetMs()) return false;
+  if (delayMs === 0) return true;
   const hostSleep = (globalThis as unknown as {
     __hostSleep?: (milliseconds: number) => Promise<void>;
   }).__hostSleep;
   if (hostSleep) {
     await hostSleep(delayMs);
-    return;
+    return true;
   }
   await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+  return true;
 }
 
 interface InMemoryVersionedEntityRecord {

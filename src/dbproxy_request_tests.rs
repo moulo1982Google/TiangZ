@@ -8,6 +8,36 @@ use std::{
 };
 use tokio::sync::oneshot;
 
+#[test]
+fn absolute_deadlines_preserve_the_clock_and_configured_ceiling() {
+    let now_ms = monotonic_now_ms();
+    let short = deadline(Duration::from_secs(5), Some(now_ms + 50.0)).unwrap();
+    assert!(short.saturating_duration_since(Instant::now()) <= Duration::from_millis(50));
+    let capped = deadline(Duration::from_millis(10), Some(now_ms + 5000.0)).unwrap();
+    assert!(capped.saturating_duration_since(Instant::now()) <= Duration::from_millis(10));
+    for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::MAX] {
+        assert!(deadline(Duration::from_secs(1), Some(invalid)).is_err());
+    }
+    assert!(deadline(Duration::ZERO, None).is_err());
+}
+
+#[tokio::test]
+async fn parsing_time_cannot_renew_an_already_expired_deadline() {
+    let absolute = monotonic_now_ms() + 10.0;
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    let result = execute(
+        &Handle::current(),
+        deadline(Duration::from_secs(5), Some(absolute)).unwrap(),
+        |_| async {
+            panic!("expired operation was admitted");
+            #[allow(unreachable_code)]
+            Ok(())
+        },
+    )
+    .await;
+    assert!(matches!(result, Err(ClientError::RequestTimeout)));
+}
+
 struct Completion(Option<oneshot::Sender<()>>);
 impl Drop for Completion {
     fn drop(&mut self) {
@@ -24,7 +54,7 @@ async fn host_queue_time_counts_and_expired_work_never_starts() {
     let runtime = Handle::current();
     let mut request = Box::pin(execute(
         &runtime,
-        Duration::from_millis(20),
+        deadline(Duration::from_millis(20), None).unwrap(),
         move |_| async move {
             operation_called.fetch_add(1, Ordering::SeqCst);
             Ok(7)
@@ -48,7 +78,7 @@ async fn deadline_drops_an_in_flight_host_operation() {
     let (dropped, completed) = oneshot::channel();
     let result = execute(
         &Handle::current(),
-        Duration::from_millis(30),
+        deadline(Duration::from_millis(30), None).unwrap(),
         move |_| async move {
             let _completion = Completion(Some(dropped));
             std::future::pending::<Result<(), ClientError>>().await
@@ -69,7 +99,7 @@ async fn caller_cancellation_drops_the_owned_host_operation() {
     let caller = tokio::spawn(async move {
         execute(
             &Handle::current(),
-            Duration::from_secs(3),
+            deadline(Duration::from_secs(3), None).unwrap(),
             move |_| async move {
                 let _completion = Completion(Some(dropped));
                 started.send(()).unwrap();
@@ -90,16 +120,20 @@ async fn caller_cancellation_drops_the_owned_host_operation() {
 #[tokio::test]
 async fn success_and_business_error_are_returned_once() {
     assert_eq!(
-        execute(&Handle::current(), Duration::from_secs(1), |_| async {
-            Ok(42)
-        })
+        execute(
+            &Handle::current(),
+            deadline(Duration::from_secs(1), None).unwrap(),
+            |_| async { Ok(42) }
+        )
         .await
         .unwrap(),
         42
     );
-    let result = execute(&Handle::current(), Duration::from_secs(1), |_| async {
-        Err::<(), _>(ClientError::InvalidConfig("original error"))
-    })
+    let result = execute(
+        &Handle::current(),
+        deadline(Duration::from_secs(1), None).unwrap(),
+        |_| async { Err::<(), _>(ClientError::InvalidConfig("original error")) },
+    )
     .await;
     assert!(matches!(
         result,
