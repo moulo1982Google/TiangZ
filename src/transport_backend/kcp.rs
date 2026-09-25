@@ -9,6 +9,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+use super::lifecycle::{
+    ConnectionRegistration, OwnedTask, drain_writer, next_write_batch, stopped,
+};
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
 use tokio::net::UdpSocket;
@@ -16,7 +19,7 @@ use tokio::sync::{mpsc, watch};
 
 use super::{
     CONNECTION_OUTBOUND_FRAME_CAPACITY, ConnectionKind, ConnectionWriteBatch, ConnectionWriter,
-    EndpointContext, MAX_FRAME_LEN, validate_frame_access,
+    EndpointContext, EndpointTask, MAX_FRAME_LEN, validate_frame_access,
 };
 use crate::process::ProcessEvent;
 use tiangz_transport::kcp::{KcpConfig, KcpProfile, KcpSession};
@@ -38,17 +41,27 @@ struct KcpServerSession {
     peer: SocketAddr,
     kcp: KcpSession,
     last_activity: Instant,
-    queued_bytes: Arc<AtomicUsize>,
-    queued_frames: Arc<AtomicUsize>,
     shutdown_tx: watch::Sender<bool>,
+    _registration: ConnectionRegistration,
+    forwarder: Option<OwnedTask<Result<()>>>,
 }
 
 enum OutboundEvent {
-    Frame { local_conn: u32, frame: Bytes },
-    Closed { local_conn: u32 },
+    Frame {
+        local_conn: u32,
+        frame: Bytes,
+        reservation: Option<Arc<super::QueueReservation>>,
+    },
+    Closed {
+        local_conn: u32,
+    },
 }
 
-pub(crate) fn start_kcp_endpoint(context: EndpointContext) -> Result<()> {
+/// KCP 只承载外部 Session，绑定后将 listener 所有权交给 Process。 / Restricts KCP to outer sessions and hands listener ownership to the process.
+pub(crate) fn start_kcp_endpoint(context: EndpointContext) -> Result<EndpointTask> {
+    if context.scene.audience != crate::config::EndpointAudience::Outer {
+        bail!("KCP endpoints only support outer audience");
+    }
     let bind_addr = format!("{}:{}", context.scene.bind_ip(), context.scene.port);
     let socket = std::net::UdpSocket::bind(&bind_addr).with_context(|| {
         format!(
@@ -62,15 +75,18 @@ pub(crate) fn start_kcp_endpoint(context: EndpointContext) -> Result<()> {
         "scene {} ({}) listening on {} protocol=Kcp audience={:?} io_backend=epoll",
         context.scene.name, context.scene.scene_type, bind_addr, context.scene.audience
     );
-    tokio::spawn(async move {
-        if let Err(error) = run_kcp_endpoint(socket, context).await {
-            tracing::error!(target: "tiangz::transport", error = ?error, "KCP endpoint stopped");
-        }
-    });
-    Ok(())
+    let (shutdown, shutdown_rx) = watch::channel(false);
+    let scene_name = context.scene.name.clone();
+    let task = tokio::spawn(run_kcp_endpoint(socket, context, shutdown_rx));
+    Ok(EndpointTask::new(scene_name, shutdown, task))
 }
 
-async fn run_kcp_endpoint(socket: UdpSocket, context: EndpointContext) -> Result<()> {
+/// 停止新 Session 后排空已有发送；Session 与转发任务随端点销毁。 / Drains existing sessions after stopping admission and owns their forwarding tasks.
+async fn run_kcp_endpoint(
+    socket: UdpSocket,
+    context: EndpointContext,
+    mut shutdown: watch::Receiver<bool>,
+) -> Result<()> {
     let mut datagram = vec![0_u8; 2048];
     let mut sessions = HashMap::<u32, KcpServerSession>::new();
     let mut session_by_peer = HashMap::<(SocketAddr, u32), u32>::new();
@@ -79,9 +95,20 @@ async fn run_kcp_endpoint(socket: UdpSocket, context: EndpointContext) -> Result
     let (outbound_tx, mut outbound_rx) = mpsc::channel::<OutboundEvent>(OUTBOUND_CAPACITY);
     let mut tick = tokio::time::interval(Duration::from_millis(10));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut accepting = true;
 
     loop {
+        if !accepting && sessions.is_empty() {
+            return Ok(());
+        }
         tokio::select! {
+            biased;
+            _ = stopped(&mut shutdown), if accepting => {
+                accepting = false;
+                for session in sessions.values() {
+                    let _ = session.shutdown_tx.send(true);
+                }
+            }
             received = socket.recv_from(&mut datagram) => {
                 // Windows surfaces an ICMP port-unreachable from a closed UDP peer as WSAECONNRESET.
                 let (length, peer) = match received {
@@ -89,6 +116,9 @@ async fn run_kcp_endpoint(socket: UdpSocket, context: EndpointContext) -> Result
                     Err(error) if error.kind() == ErrorKind::ConnectionReset => continue,
                     Err(error) => return Err(error.into()),
                 };
+                if !accepting && length > 0 && matches!(datagram[0], HELLO | CONNECT) {
+                    continue;
+                }
                 context.stats.transport_read_completed(0, length);
                 handle_datagram(
                     &socket,
@@ -104,9 +134,13 @@ async fn run_kcp_endpoint(socket: UdpSocket, context: EndpointContext) -> Result
             }
             Some(outbound) = outbound_rx.recv() => {
                 match outbound {
-                    OutboundEvent::Frame { local_conn, frame } => {
+                    OutboundEvent::Frame { local_conn, frame, reservation } => {
+                        if reservation.as_ref().is_some_and(|reservation| reservation.admitted_at.elapsed() >= context.write_timeout) {
+                            tracing::warn!(target: "tiangz::transport", local_conn, bytes = frame.len(), "KCP frame expired before reliable transport admission");
+                            remove_session(&socket, local_conn, &context, &mut sessions, &mut session_by_peer, true).await?;
+                            continue;
+                        }
                         if let Some(session) = sessions.get_mut(&local_conn) {
-                            let frame_len = frame.len();
                             if let Err(error) = validate_frame_access(ConnectionKind::External, &frame)
                                 .and_then(|_| session.kcp.send(&frame))
                             {
@@ -114,8 +148,6 @@ async fn run_kcp_endpoint(socket: UdpSocket, context: EndpointContext) -> Result
                             } else {
                                 session.last_activity = Instant::now();
                             }
-                            session.queued_bytes.fetch_sub(frame_len, Ordering::Relaxed);
-                            session.queued_frames.fetch_sub(1, Ordering::Relaxed);
                         }
                     }
                     OutboundEvent::Closed { local_conn } => {
@@ -136,6 +168,22 @@ async fn run_kcp_endpoint(socket: UdpSocket, context: EndpointContext) -> Result
         let now = elapsed_ms(started_at);
         let mut expired = Vec::new();
         for session in sessions.values_mut() {
+            if session
+                .forwarder
+                .as_ref()
+                .is_some_and(OwnedTask::is_finished)
+            {
+                let result = session
+                    .forwarder
+                    .take()
+                    .expect("completed forwarder exists")
+                    .await;
+                if !matches!(result, Ok(Ok(()))) {
+                    tracing::warn!(target: "tiangz::transport", local_conn = session.local_conn, error = ?result, "KCP outbound forwarding failed");
+                    expired.push(session.local_conn);
+                    continue;
+                }
+            }
             session.kcp.update(now);
             flush_kcp_output(&socket, session, &context).await?;
             if session.last_activity.elapsed() >= SESSION_IDLE_TIMEOUT {
@@ -213,21 +261,25 @@ async fn handle_datagram(
                 mpsc::channel::<ConnectionWriteBatch>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
             let queued_bytes = Arc::new(AtomicUsize::new(0));
             let queued_frames = Arc::new(AtomicUsize::new(0));
-            let (shutdown_tx, shutdown_rx) = watch::channel(false);
-            context
-                .writers
-                .lock()
-                .expect("connection writer map poisoned")
-                .insert(
-                    connection_id,
-                    ConnectionWriter {
-                        sender: write_tx,
-                        queued_bytes: Arc::clone(&queued_bytes),
-                        queued_frames: Arc::clone(&queued_frames),
-                        shutdown_tx: shutdown_tx.clone(),
-                    },
-                );
-            spawn_outbound_forwarder(local_conn, write_rx, shutdown_rx, outbound_tx.clone());
+            let (shutdown_tx, _) = watch::channel(false);
+            let registration = ConnectionRegistration::new(
+                context.writers.clone(),
+                connection_id,
+                ConnectionWriter {
+                    sender: write_tx,
+                    queued_bytes: Arc::clone(&queued_bytes),
+                    queued_frames: Arc::clone(&queued_frames),
+                    shutdown_tx: shutdown_tx.clone(),
+                },
+            );
+            let forwarder = spawn_outbound_forwarder(
+                local_conn,
+                write_rx,
+                shutdown_tx.clone(),
+                outbound_tx.clone(),
+                context.write_timeout,
+                context.shutdown_timeout,
+            );
             sessions.insert(
                 local_conn,
                 KcpServerSession {
@@ -237,9 +289,9 @@ async fn handle_datagram(
                     peer,
                     kcp,
                     last_activity: Instant::now(),
-                    queued_bytes,
-                    queued_frames,
                     shutdown_tx,
+                    _registration: registration,
+                    forwarder: Some(forwarder),
                 },
             );
             session_by_peer.insert((peer, client_conn), local_conn);
@@ -254,29 +306,39 @@ async fn handle_datagram(
             if session.remote_conn != remote_conn || session.peer != peer {
                 return Ok(());
             }
-            session.kcp.input(&packet[DATA_HEADER_BYTES..])?;
-            session.kcp.update(elapsed_ms(started_at));
-            session.last_activity = Instant::now();
-            while let Some(frame) = session.kcp.receive()? {
-                if !(2..=MAX_FRAME_LEN).contains(&frame.len()) {
-                    bail!("invalid KCP frame length: {}", frame.len());
+            let received: Result<()> = async {
+                session.kcp.input(&packet[DATA_HEADER_BYTES..])?;
+                session.kcp.update(elapsed_ms(started_at));
+                session.last_activity = Instant::now();
+                while let Some(frame) = session.kcp.receive()? {
+                    if !(2..=MAX_FRAME_LEN).contains(&frame.len()) {
+                        bail!("invalid KCP frame length: {}", frame.len());
+                    }
+                    validate_frame_access(ConnectionKind::External, &frame)?;
+                    context
+                        .event_tx
+                        .send(
+                            ProcessEvent::Frame {
+                                internal: false,
+                                scene_index: context.scene_index,
+                                connection_id: session.connection_id,
+                                frame: frame.into(),
+                            },
+                            None,
+                        )
+                        .await
+                        .map_err(anyhow::Error::msg)?;
                 }
-                validate_frame_access(ConnectionKind::External, &frame)?;
-                context
-                    .event_tx
-                    .send(
-                        ProcessEvent::Frame {
-                            internal: false,
-                            scene_index: context.scene_index,
-                            connection_id: session.connection_id,
-                            frame: frame.into(),
-                        },
-                        None,
-                    )
-                    .await
-                    .map_err(anyhow::Error::msg)?;
+                flush_kcp_output(socket, session, context).await
             }
-            flush_kcp_output(socket, session, context).await?;
+            .await;
+            if let Err(error) = received {
+                // 对端已由 conn/peer 匹配确认，只回收它的 Session；非法帧不能停止共享 listener。
+                // The conn/peer pair is verified: reclaim only this session, never the shared listener for a bad frame.
+                tracing::warn!(target: "tiangz::transport", local_conn, error = ?error, "KCP session rejected incoming data");
+                remove_session(socket, local_conn, context, sessions, session_by_peer, true)
+                    .await?;
+            }
         }
         CLOSE if packet.len() == CLOSE_BYTES => {
             let remote_conn = read_u32(packet, 2);
@@ -336,52 +398,44 @@ async fn flush_kcp_output(
     Ok(())
 }
 
+/// Session 持有转发任务，取消 Session 时同步撤销仍在等待队列的转发。 / Makes the session own and cancel a forwarder waiting on queue capacity.
 fn spawn_outbound_forwarder(
     local_conn: u32,
     mut write_rx: mpsc::Receiver<ConnectionWriteBatch>,
-    mut shutdown_rx: watch::Receiver<bool>,
+    shutdown: watch::Sender<bool>,
     outbound_tx: mpsc::Sender<OutboundEvent>,
-) {
-    tokio::spawn(async move {
-        loop {
-            let batch = tokio::select! {
-                changed = shutdown_rx.changed() => {
-                    if changed.is_err() || *shutdown_rx.borrow() {
-                        // 关闭前转发已经入队的帧；Closed 事件必须排在这些帧之后。
-                        // Forward queued frames before Closed so the close event
-                        // cannot overtake a final business notice.
-                        while let Ok(batch) = write_rx.try_recv() {
-                            for frame in batch.frames {
-                                if outbound_tx
-                                    .send(OutboundEvent::Frame { local_conn, frame })
-                                    .await
-                                    .is_err()
-                                {
-                                    return;
-                                }
-                            }
+    write_timeout: Duration,
+    close_timeout: Duration,
+) -> OwnedTask<Result<()>> {
+    let mut shutdown_rx = shutdown.subscribe();
+    OwnedTask::new(tokio::spawn(drain_writer(
+        async move {
+            while let Some(batch) = next_write_batch(&mut write_rx, &mut shutdown_rx).await {
+                batch
+                    .write_within(write_timeout, async {
+                        for frame in &batch.frames {
+                            outbound_tx
+                                .send(OutboundEvent::Frame {
+                                    local_conn,
+                                    frame: frame.clone(),
+                                    reservation: batch.reservation.clone(),
+                                })
+                                .await
+                                .context("KCP endpoint outbound queue closed")?;
                         }
-                        break;
-                    }
-                    continue;
-                }
-                batch = write_rx.recv() => {
-                    let Some(batch) = batch else { break; };
-                    batch
-                }
-            };
-            for frame in batch.frames {
-                if outbound_tx
-                    .send(OutboundEvent::Frame { local_conn, frame })
-                    .await
-                    .is_err()
-                {
-                    return;
-                }
+                        Ok(())
+                    })
+                    .await?;
             }
-        }
-        let _ = outbound_tx.send(OutboundEvent::Closed { local_conn }).await;
-    });
+            outbound_tx
+                .send(OutboundEvent::Closed { local_conn })
+                .await
+                .context("KCP endpoint closed before final notice")?;
+            Ok(())
+        },
+        shutdown,
+        close_timeout,
+    )))
 }
 
 async fn remove_session(

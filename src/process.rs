@@ -1,5 +1,9 @@
 //! 协调有界宿主队列、单 V8 业务线程、端点、Update 与停机。 / Coordinates bounded host queues, one V8 business thread, endpoints, updates, and shutdown.
 
+#[cfg(test)]
+#[path = "process_endpoint_tests.rs"]
+mod endpoint_tests;
+
 use std::collections::BTreeMap;
 use std::collections::{HashMap, VecDeque};
 use std::ffi::c_void;
@@ -11,6 +15,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sysinfo::{Pid, ProcessesToUpdate, System};
@@ -43,7 +48,7 @@ use crate::transport_backend::{
 };
 use crate::transport_backend::{
     ConnectionQueueError, ConnectionWriteBatch, ConnectionWriters, EndpointContext,
-    WRITE_BATCH_BYTE_CAPACITY, WRITE_BATCH_FRAME_CAPACITY, create_io_backend,
+    WRITE_BATCH_BYTE_CAPACITY, WRITE_BATCH_FRAME_CAPACITY, create_io_backend, stop_endpoints,
     try_queue_connection_batch, try_queue_connection_frame,
 };
 
@@ -929,15 +934,32 @@ pub async fn run_runtime_config(
         io_backend = io_backend.name(),
         "process I/O backend selected"
     );
+    let stop_budget = Duration::from_millis(config.process.lifecycle.stop_timeout_ms);
+    let mut endpoints = FuturesUnordered::new();
     for (scene_index, scene) in config.scenes.iter().cloned().enumerate() {
-        io_backend.start_endpoint(EndpointContext {
+        let endpoint = io_backend.start_endpoint(EndpointContext {
+            shutdown_timeout: stop_budget,
+            write_timeout: Duration::from_millis(config.process.network.write_timeout_ms),
             scene_index: scene_index as u32,
             scene,
             event_tx: event_tx.clone(),
             writers: Arc::clone(&writers),
             next_connection_id: Arc::clone(&next_connection_id),
             stats: Arc::clone(&queue_stats),
-        })?;
+        });
+        match endpoint {
+            Ok(endpoint) => endpoints.push(endpoint),
+            Err(error) => {
+                health_state.mark_stopping();
+                if let Err(cleanup) = stop_endpoints(&mut endpoints, stop_budget).await {
+                    tracing::warn!(target: "tiangz::transport", error = ?cleanup, "endpoint startup rollback failed");
+                }
+                if let Some(server) = health_server {
+                    server.stop().await;
+                }
+                return Err(error).context("failed to start process endpoints");
+            }
+        }
     }
     health_state.mark_endpoints_ready();
 
@@ -974,15 +996,30 @@ pub async fn run_runtime_config(
     let mut parent_control = spawn_parent_control_receiver();
     let shutdown_signal = wait_for_shutdown_signal();
     tokio::pin!(shutdown_signal);
+    let mut supervision_error = None;
     let runtime_exited_early = loop {
         tokio::select! {
             result = &mut shutdown_signal => {
-                result?;
+                supervision_error = result.err();
                 break false;
             }
             _ = &mut runtime_exit_rx => break true,
+            result = endpoints.next(), if !endpoints.is_empty() => {
+                supervision_error = Some(match result {
+                    Some(Err(error)) => error,
+                    _ => anyhow::anyhow!("network endpoint exited unexpectedly"),
+                });
+                break false;
+            }
             command = receive_parent_control(&mut parent_control) => {
-                match command? {
+                let command = match command {
+                    Ok(command) => command,
+                    Err(error) => {
+                        supervision_error = Some(error);
+                        break false;
+                    }
+                };
+                match command {
                     ParentControlCommand::Shutdown => break false,
                     ParentControlCommand::Reload(candidate_directory) | ParentControlCommand::ReloadConfig(candidate_directory) => {
                         let candidate_directory = if candidate_directory.is_absolute() {
@@ -991,13 +1028,16 @@ pub async fn run_runtime_config(
                             root.join(candidate_directory)
                         };
                         let (response, completed) = tokio::sync::oneshot::channel();
-                        runtime_control_tx
+                        if runtime_control_tx
                             .send(RuntimeControl::ReloadHotfix {
                                 candidate_directory,
                                 requested_at: Instant::now(),
                                 response,
                             })
-                            .map_err(|_| anyhow::anyhow!("V8 runtime control channel is stopped"))?;
+                            .is_err() {
+                            supervision_error = Some(anyhow::anyhow!("V8 runtime control channel is stopped"));
+                            break false;
+                        }
                         tokio::spawn(async move {
                             match completed.await {
                                 Ok(Ok(report)) => tracing::info!(
@@ -1016,6 +1056,9 @@ pub async fn run_runtime_config(
         }
     };
     health_state.mark_stopping();
+    for endpoint in endpoints.iter() {
+        endpoint.request_stop();
+    }
     shutdown_all_connections(&writers);
     let shutdown_send_error = if !runtime_exited_early {
         event_tx
@@ -1026,18 +1069,25 @@ pub async fn run_runtime_config(
     } else {
         None
     };
-    let runtime_result = tokio::task::spawn_blocking(move || runtime_thread.join())
-        .await
-        .context("failed to join process runtime task")?
-        .map_err(|_| anyhow::anyhow!("process runtime thread panicked"))?;
+    let (runtime_join, network_result) = tokio::join!(
+        tokio::task::spawn_blocking(move || runtime_thread.join()),
+        stop_endpoints(&mut endpoints, stop_budget),
+    );
     if let Some(server) = health_server {
         server.stop().await;
     }
+    if let Some(error) = supervision_error {
+        return Err(error).context("process supervision failed; shutdown completed");
+    }
+    let runtime_result = runtime_join
+        .context("failed to join process runtime task")?
+        .map_err(|_| anyhow::anyhow!("process runtime thread panicked"))?;
     if runtime_exited_early {
         runtime_result.context("V8 runtime failed before process shutdown was requested")?;
         bail!("V8 runtime exited unexpectedly before process shutdown was requested");
     }
     runtime_result?;
+    network_result?;
     if let Some(error) = shutdown_send_error {
         return Err(error).context("failed to deliver shutdown to V8 runtime");
     }
@@ -2676,12 +2726,14 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(queued_frames.load(Ordering::Relaxed), 3);
+        assert_eq!(queued_bytes.load(Ordering::Relaxed), 6);
         assert_eq!(receiver.try_recv().unwrap().frames[0].as_ref(), [0, 1]);
         assert_eq!(receiver.try_recv().unwrap().frames[0].as_ref(), [0, 2]);
         assert_eq!(receiver.try_recv().unwrap().frames[0].as_ref(), [0, 3]);
         assert!(receiver.try_recv().is_err());
-        assert_eq!(queued_frames.load(Ordering::Relaxed), 3);
-        assert_eq!(queued_bytes.load(Ordering::Relaxed), 6);
+        assert_eq!(queued_frames.load(Ordering::Relaxed), 0);
+        assert_eq!(queued_bytes.load(Ordering::Relaxed), 0);
     }
 
     #[test]

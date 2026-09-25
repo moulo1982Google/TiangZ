@@ -2,6 +2,8 @@
 
 ## 边界
 
+0.7 准入修正：`inner` 只接受通过凭据认证的内部 TCP，`outer` 只接受外部连接，`mixed` 允许两者。TCP/Auto 在 writer 注册前执行该规则；WebSocket 在 HTTP Upgrade 前检查外部准入。内部身份和内部 msgcode 校验继续生效。WebSocket 解码器的单帧、分片消息均限制为既有 1 MiB，避免接收超大载荷后才检查逻辑帧。
+
 网络层分成两个正交维度：
 
 - `IoBackend` 决定操作系统如何执行 I/O，当前为 `epoll` 或 `io-uring`；
@@ -28,6 +30,10 @@
 - `websocket`：二进制 WebSocket，当前由 epoll Backend 支持；
 - `auto`：读取连接前导数据，在 TCP 与 WebSocket 间探测；当前 Gate 同端口兼容内部 TCP 和浏览器 WebSocket 时需要使用它；
 - `kcp`：UDP + KCP 可靠消息协议，当前由 epoll Backend 支持；包含 Challenge 握手、连接 ID、超时回收、CLOSE 和队列背压。
+
+0.7 的 Auto 探测会等待完整三字节前缀，允许 `G/ET`、`GE/T` 分片；已读字节原样交还 HTTP 握手或 TCP 前导解析，不使用重复 peek 的忙轮询。Auto 从开始接收握手起共用 **5000ms 墙钟期限**，覆盖协议探测、WebSocket HTTP 升级或内部 TCP 凭据校验；新分片不重置期限。到期即关闭尚未注册的连接。客户端应在建立连接后立即发起握手，不能依赖空闲预连永久保留。该首批期限采用现有 DBProxy 握手默认值的量级，但两者配置独立；后续统一网络预算以版本化配置契约为准。
+
+第二批已将同一 **5000ms** 握手期限扩展到显式 `tcp`/`websocket` 与 io_uring TCP；空闲预连须及时发出前导。该期限不是业务 RPC 超时，也不是首帧之后的读写期限；连接总量与慢写期限仍分别验收。本地 Windows Socket 用例不能替代 Linux/io_uring/KCP 的联合运行验收。
 
 客户端建立Gate会话后每5秒调用一次`C2G_Ping -> G2C_Ping`，回包包含Gate的Unix毫秒时间。Gate以任意客户端入站帧刷新Route存活时间，连续30秒无入站消息才关闭`connectionId`并调用Map的最终`PlayerOffline`。普通transport disconnect只进入30秒重连宽限，不立即删除Map Unit。该机制与KCP自身的UDP会话回收不是同一层：前者判断游戏玩家是否最终离线，后者负责传输资源兜底。
 
@@ -72,6 +78,8 @@ io_uring 必须显式启用，并把本进程启动的 Scene 标记为 `tcp`：
 
 配置限制：
 
+- 0.7 新增 `writeTimeoutMs`，正整数 1..300000，默认 10000ms。每个出站批次从准入到完整写出共用期限，包含排队；KCP 只限制交给可靠传输前的宿主排队，不代表 ACK/重传完成。超过期限断开连接，部分写仍属于结果未知；0.6.x 宿主不接受此字段。
+- 开始关闭后，所有已接受批次共享 `process.lifecycle.stopTimeoutMs` 排空时间，不逐批重置。批次期限或关闭期限先到即停止；只有写出成功才记录完成指标。
 - `uringEntries` 必须是 64 到 32768 之间的 2 次幂；
 - `uringReadBufferBytes` 必须在 4KB 到 1MB 之间；
 - 未在 Linux 上使用 `--features io-uring` 构建时，选择 io_uring 会明确启动失败，不会静默降级；

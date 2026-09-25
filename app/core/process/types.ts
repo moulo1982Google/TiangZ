@@ -83,6 +83,8 @@ export interface ProcessLifecycleConfig {
 }
 
 export interface ProcessNetworkConfig {
+  /** 0.7：出站批次从准入起的总写出预算，1..300000ms，默认10000。 / Since 0.7: total outbound budget from admission, 1..300000ms, default 10000. */
+  writeTimeoutMs?: number;
   ioBackend?: "epoll" | "io-uring";
   uringEntries?: number;
   uringReadBufferBytes?: number;

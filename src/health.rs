@@ -637,18 +637,21 @@ impl HealthServer {
             .with_context(|| format!("failed to bind process health endpoint {address}"))?;
         let (shutdown, mut shutdown_rx) = watch::channel(false);
         let task = tokio::spawn(async move {
+            let mut connections = tokio::task::JoinSet::new();
             loop {
                 tokio::select! {
+                    biased;
                     changed = shutdown_rx.changed() => {
                         if changed.is_err() || *shutdown_rx.borrow() { break; }
                     }
+                    _ = connections.join_next(), if !connections.is_empty() => {}
                     accepted = listener.accept() => {
                         match accepted {
                             Ok((stream, peer)) => {
                                 let state = Arc::clone(&state);
                                 let process_name = process_name.clone();
                                 let hotfix_operations = hotfix_operations.clone();
-                                tokio::spawn(async move {
+                                connections.spawn(async move {
                                     if let Err(error) = serve_connection(
                                         stream,
                                         peer,
@@ -668,18 +671,26 @@ impl HealthServer {
                     }
                 }
             }
+            connections.shutdown().await;
         });
         tracing::info!(target: "tiangz::health", %address, "process health endpoint listening");
         Ok(Self { shutdown, task })
     }
 
-    /// 关闭监听并等待 accept 循环退出，不会终止已经进入写回阶段的短连接。
+    /// 关闭监听并取消所有健康连接，等待 accept 循环完成清理。
     ///
-    /// Closes the listener and waits for the accept loop. Short connections already writing a
-    /// response are not forcefully aborted.
-    pub(crate) async fn stop(self) {
+    /// Closes the listener, cancels health connections and awaits accept-loop cleanup.
+    pub(crate) async fn stop(mut self) {
         let _ = self.shutdown.send(true);
-        let _ = self.task.await;
+        let _ = (&mut self.task).await;
+    }
+}
+
+impl Drop for HealthServer {
+    /// 启动失败或所有者取消时不遗留健康 listener。 / Prevents an orphaned health listener on startup failure or owner cancellation.
+    fn drop(&mut self) {
+        let _ = self.shutdown.send(true);
+        self.task.abort();
     }
 }
 
@@ -3131,6 +3142,42 @@ fn escape_prometheus_label(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn dropping_health_owner_reclaims_partial_http_connections_and_port() {
+        let reserved = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = reserved.local_addr().unwrap();
+        drop(reserved);
+        let config = HealthObservabilityConfig {
+            ip: "127.0.0.1".into(),
+            port: address.port(),
+            stale_after_ms: 1000,
+        };
+        let state = Arc::new(ProcessHealthState::starting(Duration::from_secs(1)));
+        let (runtime_control, _receiver) = mpsc::channel();
+        let server = HealthServer::start(
+            &config,
+            None,
+            1000,
+            "fixture".into(),
+            state,
+            runtime_control,
+        )
+        .await
+        .unwrap();
+        let mut client = TcpStream::connect(address).await.unwrap();
+        client.write_all(b"GET /").await.unwrap();
+        tokio::task::yield_now().await;
+        drop(server);
+        let result = tokio::time::timeout(Duration::from_secs(1), client.read(&mut [0u8]))
+            .await
+            .unwrap();
+        assert!(
+            matches!(result, Ok(0))
+                || matches!(result, Err(ref error) if error.kind() == std::io::ErrorKind::ConnectionReset)
+        );
+        let _rebound = std::net::TcpListener::bind(address).unwrap();
+    }
 
     #[test]
     fn runtime_identity_is_startup_owned_and_respects_readiness() {

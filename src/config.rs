@@ -320,6 +320,9 @@ pub enum IoBackendKind {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessNetworkConfig {
+    /// 出站批次从准入到写出完成的总期限，包含排队。 / Total outbound batch budget from admission through writing, including queue wait.
+    #[serde(default = "default_connection_write_timeout_ms")]
+    pub write_timeout_ms: u64,
     #[serde(default, alias = "backend")]
     pub io_backend: IoBackendKind,
     #[serde(default = "default_uring_entries")]
@@ -332,6 +335,7 @@ impl Default for ProcessNetworkConfig {
     fn default() -> Self {
         Self {
             io_backend: IoBackendKind::default(),
+            write_timeout_ms: default_connection_write_timeout_ms(),
             uring_entries: default_uring_entries(),
             uring_read_buffer_bytes: default_uring_read_buffer_bytes(),
         }
@@ -579,6 +583,11 @@ fn default_fixed_update_ms() -> u64 {
 }
 
 fn default_stop_timeout_ms() -> u64 {
+    10_000
+}
+
+/// 使用独立的慢写默认值，不能因未来停机配置调整而隐式改变。 / Keeps the slow-write default independent from future shutdown-default changes.
+fn default_connection_write_timeout_ms() -> u64 {
     10_000
 }
 
@@ -948,6 +957,9 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
         bail!(
             "process network.uringReadBufferBytes must be between 4096 and {MAX_URING_READ_BUFFER_BYTES}"
         );
+    }
+    if !(1..=300_000).contains(&config.process.network.write_timeout_ms) {
+        bail!("process network.writeTimeoutMs must be between 1 and 300000");
     }
     if config.process.scheduling.idle_tick_ms == Some(0) {
         bail!("process scheduling.idleTickMs must be greater than 0");
@@ -1372,6 +1384,35 @@ mod tests {
             known_scenes: vec![],
         };
         assert!(validate_runtime_config(&config).is_err());
+    }
+
+    #[test]
+    fn validates_total_outbound_write_budget_and_legacy_default() {
+        let defaulted: ProcessConfig = serde_json::from_str(r#"{"name":"test"}"#).unwrap();
+        assert_eq!(defaulted.network.write_timeout_ms, 10_000);
+        for milliseconds in [0, 1, 10_000, 300_000, 300_001] {
+            let mut process = process(None);
+            process.network.write_timeout_ms = milliseconds;
+            let config = RuntimeConfig {
+                process,
+                scenes: vec![scene("gate", 7201)],
+                known_scenes: vec![],
+            };
+            let result = validate_runtime_config(&config);
+            if (1..=300_000).contains(&milliseconds) {
+                result.unwrap();
+            } else {
+                assert!(result.unwrap_err().to_string().contains("writeTimeoutMs"));
+            }
+        }
+        for invalid in ["-1", "1.5", "\"1000\""] {
+            assert!(
+                serde_json::from_str::<ProcessNetworkConfig>(&format!(
+                    r#"{{"writeTimeoutMs":{invalid}}}"#
+                ))
+                .is_err()
+            );
+        }
     }
 
     #[test]
