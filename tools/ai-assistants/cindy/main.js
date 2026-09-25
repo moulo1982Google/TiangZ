@@ -28,6 +28,10 @@
     rule("protocol.inner-identity", "内外协议身份", "C协议不能用于Inner RPC，字段相同也需生成S descriptor；不关闭访问校验、不手改协议锁和SDK。", "docs/ai/business-development-manual.md"),
     rule("persistence.no-fallback", "数据库故障不降级", "IsHostDbProxyAvailable仅表示宿主桥存在，不表示进程配置或连接就绪；配置数据库后故障不可回退内存或重置资产。", "docs/ai/business-development-manual.md"),
     rule("persistence.unknown-result", "结果未知重试", "丢ACK保留原操作号与完整事务（含随机结果）重试；多记录一致性使用事务，批量保存不等于原子成功。", "docs/ai/skill-development-contract.md"),
+    rule("persistence.operation-budget", "操作共享期限", "在当前SDK/Host已实现预算时，读取、迁移、编码、退避和同ID同字节重试共用期限；Promise.race不代表物理I/O取消，超时不代表写入回滚。", "docs/ai/skill-development-contract.md"),
+    rule("lifecycle.in-flight-owner", "在途所有权", "Timer取消不代表已触发异步回调结束；热更等待真实收敛。移除句柄不代表Socket/任务释放，验收检查资源归位。", "docs/ai/skill-development-contract.md"),
+    rule("routing.optional-directory", "按需逻辑目录", "已持有Actor地址时直接路由；LocationDirectory是可选逻辑所有者目录，不是地图坐标或MMORPG必装服务。MapHost/AOI留在领域模块。", "docs/design/capability-ownership.md"),
+    rule("compatibility.package-identity", "独立版本身份", "框架0.7不改变各插件的版本序列；分别核对Core、VSIX、AI清单和宿主实际依赖，同名类型不能替代当前Host声明身份。", "docs/ai/skill-development-contract.md"),
     rule("hotfix.atomic-config", "原子发布", "当前保持单Hotfix包与配置进程内原子切换，沿用帧间切换和主动暂停入口、默认3000ms窗口；超时恢复旧版。不是全Pod同时切换，也不保证任何30秒RPC都不超时；Model/协议/Native变化须重建重启。", "docs/design/typescript-hot-reload.md"),
     rule("sync.durable-fact", "事实与持久保证", "latest只覆盖可替代当前状态，抽卡/扣费/结算事实不能静默覆盖；可靠网络队列不等于持久exactly-once。", "docs/patterns/state-replication.md"),
     rule("validation.evidence", "证据与授权", "分别报告单测、假存储、真实RPC、真实DB恢复、UI和长稳；故障原因及复测留档，Rust重建前旧结果不能算给新版。故障/清库/长稳只在用户授权范围执行。", "docs/ai/business-development-manual.md"),
@@ -51,14 +55,15 @@
   };
 
   var ENVIRONMENT_REQUIREMENTS = {
-    summary: "2026-09-17工作区基线：TiangZ 0.6.0，Node.js 24.x，Rust按rust-toolchain.toml（当前1.97.1）。版本不是在线探测结果，换分支先核对清单。游戏示例已拆到TiangZ-Examples；Docker仅用于需要的本地数据库/容器验证，不是技能运行前提。",
+    summary: "本工具不读取本机文件或网络，不宣称已经探测工作版本。按目标worktree的清单、锁和已安装依赖核对版本；框架0.7升级目标不是插件版本号。游戏示例在TiangZ-Examples；Docker用于需要的容器/存储验证，不是技能运行前提。",
+    versionStatus: "not-probed",
     repositories: [
       {
         name: "TiangZ",
         url: "https://github.com/moulo1982Google/TiangZ.git",
-        branch: "main",
-        workingVersion: "0.6.0",
-        stableBaseline: "0.3.10"
+        workingVersion: null,
+        versionSources: ["Cargo.toml", "package.json", "Cargo.lock", "package-lock.json"],
+        note: "读取用户选定worktree；本地候选依赖的通过结果不能冒充默认npm ci或发布标签验证。"
       },
       {
         name: "TiangZ Native Language",
@@ -66,11 +71,16 @@
         note: "以当前检出的package.json与扩展清单为准，Core与VS Code扩展可能分开记版本；从同一兼容源码构建，不声明未核验的最新发布版本。"
       },
       {
+        name: "TiangZ Developer Tools",
+        url: "https://github.com/moulo1982Google/tiangz-developer-tools.git",
+        note: "分别核对Core/VSIX清单及宿主安装依赖；复用确定性CLI/LS规则，AI建议不替代编译和检查。"
+      },
+      {
         name: "TiangZ DBProxy",
         url: "https://github.com/moulo1982Google/TiangZ-DBProxy.git",
-        branch: "main",
-        workingPackageVersion: "0.6.0",
-        note: "持久化开发建议与 TiangZ main 配套使用；不要把旧 release tag 当作当前工作分支。"
+        workingPackageVersion: null,
+        versionSources: ["Cargo.toml", "package.json", "sdk/typescript/src/index.ts"],
+        note: "与所选TiangZ宿主实际依赖配套；发布tag、本地候选和工作分支分别记录，不能靠目录名推断兼容。"
       }
     ],
     prerequisites: {

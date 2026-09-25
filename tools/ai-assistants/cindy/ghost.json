@@ -20,7 +20,7 @@
     },
     {
       "name": "get_environment_requirements",
-      "description": "说明当前 TiangZ 仓库对应的 Native Language 版本、Node/Rust/VS Code 要求，以及哪些开发路径需要 Docker/DBProxy。只读，不下载、不安装、不启动服务。",
+      "description": "提供 TiangZ、DBProxy 与插件版本的核对入口，以及 Node/Rust/VS Code 和 Docker 使用条件；不读取本机清单、不宣称已探测版本。只读，不下载、不安装、不启动服务。",
       "parameters": {
         "type": "object",
         "properties": {}

@@ -43,6 +43,21 @@ Compress-Archive -LiteralPath dist/ai-assistants/claude/tiangz-game-backend -Des
 
 ## 当前验证记录
 
+0.7 开发 worktree 更新（AI 清单仍为 0.2.0，发行号独立冻结）：技能/随包契约补入操作预算、在途回调、可选逻辑目录与独立版本身份。Cindy 环境工具停止把旧 0.6.0/main 作为当前版本；返回 `versionStatus: not-probed`、空工作版本和应核对的清单。四个只读工具与六类领域建议保持，规则为 36 条。
+
+分发须显式指定目标 worktree，避免把开发分支内容写回原仓库：
+
+```powershell
+node tools/ai-assistants/build.mjs
+node tools/ai-assistants/check.mjs
+python tools/ai-assistants/distribute.py --repository ../TiangZ-AI-Plugins-0.7
+python tools/ai-assistants/distribute.py --repository ../TiangZ-AI-Plugins-0.7 --check
+```
+
+分发脚本在写入前核对两个插件清单与 Cindy 版本，保存 SHA256 身份清单，并按既有归档结构生成确定性 `.cindy`（根目录 ghost.json/main.js）。当前环境没有 Cindy Forge 工具：已从实际归档提取内容，用 `check.mjs --root <提取夹具>` 执行四个工具与六类建议，并校验 CRC/逐文件哈希；这是本地制品验证，不能冒充 Forge 校验、客户端安装或新会话效果。已有插件清单、MCP 配置、工作区技能与用户插件缓存没有自动覆盖。
+
+技能 quick_validate 已在独立临时 venv 通过。当前 python 来自 MSYS2 UCRT，venv 的解释器在 bin 下；不是通常的 Scripts 路径。该环境缺少 PyYAML，默认 C 扩展构建失败，设置进程级 `PYYAML_FORCE_LIBYAML=0` 安装纯 Python 依赖后通过，不改整机 Python/编译器。原失败与依赖记录保留在 `temp/v0.7-skill-validation-*`，后续先查询解释器和 venv 布局再运行，不能据路径差异宣称 Python 未安装。
+
 0.2.0：便携生成、一致性检查、规则 ID 唯一性、四个工具/六类建议的沙箱接口测试通过。Cindy Forge 返回 `action: updated`，启用状态保留；安装后真实调用 list_design_rules 返回 32 条规则，包含时间禁令、C/S协议、DB故障不降级、原事务重试和原子热更。
 
 没有触碰游戏运行进程、数据库或三类联合故障测试。技能结构检查不是模型行为完全正确的证明；换客户端后仍需一次实际调用确认。

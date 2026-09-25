@@ -21,6 +21,7 @@ Before implementation or review, read [portable development constraints](referen
 2. Locate the actual TiangZ repository and read its root AGENTS.md before code changes; do not assume the opened workspace is the engine root.
 3. In `TiangZ-DBProxy`, read its root README.md before persistence-service changes.
 4. Classify the request before editing: gameplay/domain, protocol, configuration/code generation, client, runtime/framework, persistence, external module, observability, or performance.
+5. Identify the selected worktrees and installed package identities. Framework 0.7 does not set the versions of Native Core, VSIX, Developer Tools or this AI plugin. Verify APIs against the selected host; a locally installed candidate is distinct from the published dependency lock.
 
 Read only the additional source material relevant to the request:
 
@@ -43,6 +44,9 @@ Read only the additional source material relevant to the request:
 - Protocol code uses generated descriptors and typed clients. Do not hand-write message codes, codecs, or request/response tables.
 - DBProxy stores opaque versioned payloads and generic persistence effects; it does not own game rules. TiangZ business code should use the Repository and versioned DBProxy SDK, not direct Redis/PostgreSQL access or a database client inside a Component.
 - Preserve idempotency identifiers across retries and endpoint failover. `SaveMultiSnapshot` can partially succeed; use the appropriate transaction API such as `ApplyMultiTransaction` or `CommitRecords` when the business requires atomicity.
+- Where the selected SDK/Host supports operation budgets, keep reads, migration, encoding, backoff and retries within one deadline and preserve the same payload bytes. A timeout does not prove a write was rolled back; stopping a Promise wait does not cancel physical I/O.
+- An Actor address permits direct routing. LocationDirectory is an optional logical-owner directory, not a spatial service or a mandatory dependency for every game. Keep MapHost/AOI in their domain modules.
+- Timer cancellation does not settle already-running callbacks. Hotfix drain must track their real completion; lifecycle tests must check task and resource release, not only removal from a registry.
 
 ## Change routing
 
@@ -53,6 +57,7 @@ Read only the additional source material relevant to the request:
 - Static game data: modify the source Excel/configuration under `game_config/Datas`, use the fixed Luban commands, and do not edit generated data.
 - Player persistence: assign each field to exactly one persistence domain, update pure DTO/codec/recovery logic, and define the result-unknown/idempotent retry behavior before changing the Entity.
 - DBProxy service or SDK: keep the service game-agnostic; update protocol, Rust server/client, TypeScript SDK, tests, and documentation together when the contract changes.
+- Framework code splitting: extract coherent responsibilities, preserve existing public entry points, and keep pure moves separately reviewable from behavior changes. Avoid one-file-per-function or pass-through layers.
 - External game module: use `tiangz.module.json`, `defineGameModule`, Stable Model/Core entry points, and explicit Model/Hotfix loaders. Do not move game-specific protocols, maps, jobs, skills, or content into Core.
 
 ## Validation
