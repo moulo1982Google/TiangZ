@@ -1,5 +1,7 @@
 # 2026-09-16 模块拆分后的当前事实
 
+0.7 DBProxy 已提供独立 `dbproxy_capacity`：固定 18 表、分区叶子字节与 catalog 估算，默认不扫描业务时间；`--include-server-age` 仅针对已存在的服务器时间列，250ms/表，总预算默认 10 秒，独立只读事务且无迁移/worker。业务 `updated_at_unix_ms` 不能当保留年龄；未知估算/缺表/RLS/超时必须明确，不做 TTL 或回执删除。临时 PG18.4/Redis8.8.1 上真实容量与 7 项恢复用例通过，含 COMMIT 回包丢失、部分成功和 Outbox 双消费组去重；这不等于长稳、断电或备份恢复。范围、提交和日志入口见[进度](../design/v0.7-progress.md)，测试容器已核对身份并回收。
+
 0.7 增加 ConnectionWriter 共享 `maxOutboundBufferedBytes`（64 MiB 默认、1..1 GiB）：资源守卫从批次入队持续到写出/最后转发引用释放，满队列、关闭、取消/panic 均回收。广播按接收者保守累计；总预算拒绝与每连接慢消费分开统计。该额度只覆盖已登记 Writer payload，不含独立主动 Inner 链路、入站/V8/系统缓冲及 KCP 内部重传，不能宣称整个 Process 内存有界。Rust/TS/Schema/固定 kind 指标同步，详见[传输说明](../reference/transport-backend.md)。
 
 0.7 生命周期/Timer 类型规则由 Developer Tools 唯一维护；Host/外置模块传自己的 TypeScript API 和当前 Program，不能跨 TS 版本复用 SyntaxKind 或按同名类猜 Core 身份。主工程 CLI/LSP 已共用类型规则，实际 receiver、当前取消上下文与生成 System 声明参与判断；明确违例 error，动态未证明 warning。普通 tsc 不自动加载规则。模块实时 LSP 仍待接线，现有宿主检查任务已复用规则，详见[Program 记录](../design/v0.7-program-contracts.md)。LSP 必须随 VSIX 携带匹配标准库并释放工程缓存；测试通信使用生产的对象参数协议，不以超时或“0 条错误”冒充成功。

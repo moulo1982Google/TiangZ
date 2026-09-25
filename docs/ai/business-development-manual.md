@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+0.7 DBProxy 容量诊断使用独立 `dbproxy_capacity --postgres-url-env <变量名>`，默认只读固定表目录与大小，不跟每次请求/scrape 查询。显式 `--include-server-age` 有逐表期限，仍须检查每表时间状态；客户端提供的时间不是回执保留时钟。无自动清理，不按 TTL 删回执/事实/未确认 Outbox。真实存储恢复验证已覆盖同 ID 同内容恢复、异内容拒绝、批量逐条结果与重复 Outbox 消费；业务重试不能换操作号或重做随机效果，消费 inbox 与投影同事务后再 ACK。最新隔离范围与证据见[进度](../design/v0.7-progress.md)，不能把短测当长稳或生产就绪。
+
 0.7 部署可用 `maxOutboundBufferedBytes` 限制已登记 ConnectionWriter 的总 payload（默认 64 MiB，1..1 GiB）。排队/正在发送/转发引用都持有资源预留，最后释放才归还；满额度的发送会被拒绝并关闭其连接，不给失败批次额外排队。Process 级压力有独立原因和指标，不能直接归咎慢客户端。额度不覆盖独立主动 Inner 链路、入站/V8/Socket 及 KCP 内部重传，不能以此推导整机内存或可靠发送已全部有界；见[传输说明](../reference/transport-backend.md)。
 
 生命周期/Timer 契约现在复用 Developer Tools 的 Program 规则，业务工程须运行声明宿主的 check/modules:typecheck，普通 tsc 不会自动执行它。只有当前 Core 的实体/组件钩子和方法名 Timer 被识别；Timer 实际接收者、生成 System 方法、参数和当前 TimerCancelledContext 共同检查。可忽略回调参数并使用可选参数，动态字符串/any/未实例化泛型只表示未证明，不等于运行安全。主工程 CLI/实时 LSP 使用同源诊断；模块仍通过宿主任务获得完整类型错误，不能宣称其未保存修改已完成实时类型检查。实现、边界与夹具教训见[Program 记录](../design/v0.7-program-contracts.md)。
