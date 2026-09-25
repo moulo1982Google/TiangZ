@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+Process 生命周期验证补充：后端工厂在原初始化位置注入，默认路径仍使用 create_io_backend，没有线上故障配置。隔离测试保持测试 OS 进程/Tokio 存活，验证第二端口绑定失败后第一端口/健康端口可重绑；真实 V8、listener 和 HTTP 探针配合可控端点完成，验证错误/panic/意外正常结束撤销 ready，停止期间 live 保持。测试入口是专用裸 V8 夹具，不能把它称为完整业务模块验收；普通模块运行仍由完整矩阵覆盖。
+
+生命周期夹具失败教训：先前错误使用 manifest.json 导致 GameConfigBundle 在监听前拒绝，随后 Update 全返 JSON 导致非采样帧的 compact state 解析失败。必须核对真实 game-config.manifest.json 文件名和采样/非采样双返回契约，并在等待 HTTP 状态时同时监视 Process 退出错误，不能只等探针超时或放宽生产解析。原证据 temp/v0.7-process-lifecycle-{first,fixed,diagnostic}.log；修正后两个场景通过，见 temp/v0.7-process-lifecycle-green.log。
+
 0.7 Process 入站准入新增 maxAcceptedConnections（默认 65536）和 maxPendingHandshakes（默认 1024），均为 1..1000000 的整数。全部业务 listener 共享即时准入，TCP/WS 在 spawn 前取连接和握手名额；KCP 验证 cookie 后才取连接名额，重复 CONNECT 复用 Session。握手完成只退握手名额，失败、任务取消/panic、断开及停机由所有者归还；不排队等待额度。固定 kind 标签的占用/上限/拒绝指标与 Rust、TS、插件 Schema 同步。此边界不包含出站 Inner 链接、health HTTP、帧字节或 KCP 未确认缓存，不能宣称整个进程内存有界。详见[传输说明](../reference/transport-backend.md)。
 
 准入指标首轮反例属于夹具错误：未设 sample_timestamp_ms，已有指标逻辑按“尚未采样”不导出；必须给夹具有效采样时间，不能删除生产采样门槛。原日志 temp/v0.7-admission-first.log 保留，修正后含 KCP 的宿主 159 条及 Clippy 通过（temp/v0.7-admission-green.log、v0.7-admission-clippy.log）；重建宿主与完整矩阵另行验收。

@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+验证 Process 回滚必须让测试 OS 进程继续存活，检查第一业务端口和健康端口在第二端口绑定失败后可重绑；只等独立子进程退出会让操作系统自动回收掩盖框架泄漏。端点错误/panic/意外正常返回都须让实际 /ready 变为 503，停止期间 /live 仍为 200，最终 Process 返回失败并清理连接/握手名额。生产后端选择不新增故障开关，隔离测试只在同一协调函数的后端工厂注入完成原因。
+
+裸 V8 生命周期夹具须遵守真实制品和返回契约：GameConfigBundle 读取 game-config.manifest.json；Update 的采样帧为 JSON，非采样帧为 compact 数字字符串。首次夹具分别在文件读取和 compact 解析处失败，未触及待验证的 listener 故障。正确做法是入口先调用实际 Bundle 校验，并同时监听 Process 退出与 HTTP 状态，保留根因；禁止改生产契约或仅延长探针超时。原日志 temp/v0.7-process-lifecycle-{first,fixed,diagnostic}.log，修正后的定向证据为 -green.log；它不能替代真实业务模块与 Linux I/O 验收。
+
 0.7 入站准入在 Process 全部业务端点之间共享：maxAcceptedConnections 默认 65536、maxPendingHandshakes 默认 1024，均为 1..1000000 整数。流式 Socket 在创建任务前申请两个名额，超限立即关闭、不排队；握手完成仅归还握手名额。KCP HELLO/cookie 不创建 Session，认证 CONNECT 才申请连接名额，重传不可重复扣减。名额随实际连接任务/Session 生命周期回收，取消和 panic 也不可泄漏。观察 tiangz_transport_admission_in_use/limit/rejections_total 的固定 kind=connection|handshake 标签；配置旧宿主时不要写 0.7 字段。它不限制帧字节、KCP 未确认缓存或主动 Inner/health 连接，详见[传输说明](../reference/transport-backend.md)。
 
 准入指标测试失败教训：首轮没有设置 sample_timestamp_ms，触发既有“未采样不导出”逻辑。修正测试采样时间并保留生产门槛，不能以删除过滤/弱化断言使测试通过。原证据 temp/v0.7-admission-first.log；cargo test --bin TiangZ --features kcp --locked 159 条通过、Clippy 通过（通过现有 run_cargo 工具运行），包括双真实 listener 共享、KCP cookie/重传、任务取消与 panic 回收；完整矩阵和 Linux 证据单列。

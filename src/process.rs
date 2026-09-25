@@ -3,6 +3,9 @@
 #[cfg(test)]
 #[path = "process_endpoint_tests.rs"]
 mod endpoint_tests;
+#[cfg(test)]
+#[path = "process_lifecycle_tests.rs"]
+mod lifecycle_tests;
 
 use std::collections::BTreeMap;
 use std::collections::{HashMap, VecDeque};
@@ -861,6 +864,18 @@ pub async fn run_runtime_config(
     resolved_config: &Path,
     config: RuntimeConfig,
 ) -> Result<()> {
+    run_runtime_config_with_backend(root, resolved_config, config, create_io_backend).await
+}
+
+/// 后端工厂在原有初始化位置调用，使隔离测试可验证同一生产监督/回滚路径。 / Calls the backend factory at the original initialization point so isolated tests exercise production supervision/rollback.
+async fn run_runtime_config_with_backend(
+    root: &Path,
+    resolved_config: &Path,
+    config: RuntimeConfig,
+    backend_factory: impl FnOnce(
+        &crate::config::ProcessNetworkConfig,
+    ) -> Result<Arc<dyn crate::transport_backend::IoBackend>>,
+) -> Result<()> {
     let runtime_data_packs = load_runtime_data_packs(resolved_config, &config.process.data_packs)?;
     init_remote_transport();
     let runtime_bundles = RuntimeBundles::load(root)?;
@@ -943,7 +958,7 @@ pub async fn run_runtime_config(
     let completion_sink: crate::host::HostSceneCompletionSink =
         Arc::new(move |completion| completion_sender.try_send_completion(completion));
 
-    let io_backend = create_io_backend(&config.process.network)?;
+    let io_backend = backend_factory(&config.process.network)?;
     tracing::info!(
         target: "tiangz::transport",
         process = %config.process.name,

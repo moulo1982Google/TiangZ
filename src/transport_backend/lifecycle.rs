@@ -56,7 +56,7 @@ pub(crate) struct EndpointTask {
 
 impl EndpointTask {
     /// 将后端任务及其协作停止信号交给 Process。 / Hands the backend task and its cooperative stop signal to the process.
-    pub(super) fn new(
+    pub(crate) fn new(
         scene_name: String,
         shutdown: watch::Sender<bool>,
         task: JoinHandle<Result<()>>,
