@@ -33,6 +33,16 @@ void InvalidThenableLifecycle;
 void InvalidOverloadedLifecycle;
 void InvalidTimerContracts;
 
+// TS 6 也应按调用语义接受默认参数。 / TS 6 must accept undefined for defaulted callback parameters.
+class ValidDefaultTimer extends Component {
+  Schedule(now?: number): void {
+    this.NewRepeatedTimer(5000, "DefaultTick");
+    this.NewOnceTimer(1, "DefaultTick", now);
+  }
+  DefaultTick(now = Date.now()): void { void now; }
+}
+void ValidDefaultTimer;
+
 // 同名工具类不属于 Core 生命周期。 / Same-named utility methods are not runtime hooks.
 class Unrelated { async Awake(): Promise<void> {} }
 void Unrelated;

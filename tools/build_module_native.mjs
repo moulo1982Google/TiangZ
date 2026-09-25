@@ -4,7 +4,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
 import { moduleNativeFingerprint } from "./module_native.mjs";
-import { assertNativeDenoIdentity } from "./module_native_dependencies.mjs";
+import { assertNativeDenoIdentity, assertNativeHostIdentity } from "./module_native_dependencies.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
@@ -61,6 +61,7 @@ const metadata = JSON.parse(run("cargo", ["metadata", "--format-version", "1", "
     "--filter-platform", hostTarget.trim(),
     ...(args.includes("--offline") ? ["--offline"] : []), ...(args.includes("--locked") ? ["--locked"] : [])], { capture: true }));
 assertNativeDenoIdentity(metadata, modules);
+assertNativeHostIdentity(metadata, await realpath(root));
 if (process.platform === "win32") {
   const v8 = metadata.packages.find((item) => item.name === "v8");
   if (v8) {

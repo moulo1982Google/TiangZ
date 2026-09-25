@@ -20,9 +20,9 @@ export interface SceneConfig {
   port: number;
   protocol?: "auto" | "tcp" | "websocket" | "kcp";
   audience?: "mixed" | "inner" | "outer";
-  /** MapHost启动时创建的静态地图配置ID；动态副本由业务管理器运行时创建。 / Static map configs created at MapHost startup; business managers create dynamic instances at runtime. */
+  /** @deprecated 地图部署由 MMORPG 模块数据包拥有；过渡期显式双写必须一致。 / Map deployment belongs to the MMORPG data pack; explicit legacy values must agree during migration. */
   staticMapIds?: number[];
-  /** 是否接受MapManager分配的动态地图；false时仅承载staticMapIds。 / Whether this MapHost accepts dynamic instances assigned by MapManager. */
+  /** @deprecated 使用 MMORPG 模块部署配置；缺失保持旧默认 false。 / Use module-owned MMORPG deployment; absence retains the legacy false default. */
   acceptDynamicMaps?: boolean;
 }
 

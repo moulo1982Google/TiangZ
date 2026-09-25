@@ -1,5 +1,11 @@
 # 2026-09-16：先选业务工程，再写模块
 
+0.7 地图部署走 MMORPG 自有 `map-deployment.json` → 官方生成器 → `map-deployment/runtime.pack.json`，复用通用数据信封，地图策略不进入 Core。过渡期旧字段仍接受，显式双写必须一致；声明包漏当前 MapHost 时失败。不可把部署拓扑写成玩法表，也不能用任意 Scene 字典绕过类型边界。操作、重启要求与证据见[迁移记录](../design/v0.7-map-deployment.md)。
+
+房间类业务可先看 Examples `tools/fixtures/room`：使用现有模块脚手架和生成协议，一个 Scene 的 ordered mailbox 加 Component 即可实现有界房间集合与重连快照。`npm run test:room` 在独立工程运行真实 SDK/Socket 并检查正常退出，无需 Location/MapHost。演示密钥不等于账号鉴权/会话 fencing，内存快照不等于数据库恢复，不能把示例限制转写为 Core 特例。
+
+本轮联合验证先暴露四类问题：内部 SingletonRegistry 不在 Stable 导出；Timer 默认参数收到 undefined 被共享规则误报；测试从两个宿主加载 SDK 导致错误类型身份不同；Native 模块 Cargo 仍指向主线库。正确做法分别是使用现有 RuntimeDataPackRegistry.Instance、按默认参数调用语义修规则并保留负例、令测试从所选宿主解析 Core/SDK、显式对齐 Cargo 输入并在构建前验证实际源。禁止扩大 public 入口、削弱错误断言、改正确 Timer 回调或仅凭版本号接受混合来源。Cargo 全树 paths override 会扫描缓存/其他临时 crate 并改变依赖图，本轮 metadata 试验失败后弃用；没有写入全局配置。复测命令和准确日志见迁移记录。
+
 0.7 DBProxy 容量诊断使用独立 `dbproxy_capacity --postgres-url-env <变量名>`，默认只读固定表目录与大小，不跟每次请求/scrape 查询。显式 `--include-server-age` 有逐表期限，仍须检查每表时间状态；客户端提供的时间不是回执保留时钟。无自动清理，不按 TTL 删回执/事实/未确认 Outbox。真实存储恢复验证已覆盖同 ID 同内容恢复、异内容拒绝、批量逐条结果与重复 Outbox 消费；业务重试不能换操作号或重做随机效果，消费 inbox 与投影同事务后再 ACK。最新隔离范围与证据见[进度](../design/v0.7-progress.md)，不能把短测当长稳或生产就绪。
 
 0.7 部署可用 `maxOutboundBufferedBytes` 限制已登记 ConnectionWriter 的总 payload（默认 64 MiB，1..1 GiB）。排队/正在发送/转发引用都持有资源预留，最后释放才归还；满额度的发送会被拒绝并关闭其连接，不给失败批次额外排队。Process 级压力有独立原因和指标，不能直接归咎慢客户端。额度不覆盖独立主动 Inner 链路、入站/V8/Socket 及 KCP 内部重传，不能以此推导整机内存或可靠发送已全部有界；见[传输说明](../reference/transport-backend.md)。

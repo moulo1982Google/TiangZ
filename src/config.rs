@@ -484,14 +484,30 @@ pub struct SceneConfig {
     pub protocol: EndpointProtocol,
     #[serde(default)]
     pub audience: EndpointAudience,
-    /// 由该 MapHost 在启动时创建的静态地图配置 ID。动态地图不写入启动配置。
-    /// Static map config IDs created by this MapHost during startup. Dynamic maps are never listed here.
-    #[serde(default)]
-    pub static_map_ids: Vec<u32>,
-    /// 是否接受MapManager分配的动态地图；静态地图与动态副本仍使用同一种MapHost实现。
-    /// Whether this MapHost accepts dynamic instances assigned by MapManager.
-    #[serde(default)]
-    pub accept_dynamic_maps: bool,
+    /// 兼容旧地图部署字段；保留缺失信息，让模块检查显式双写冲突。
+    /// Legacy map deployment field; preserve absence for module-owned conflict checks.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_present"
+    )]
+    pub static_map_ids: Option<Vec<u32>>,
+    /// 兼容旧动态地图开关；缺失与显式 false 不可混为同一配置来源。
+    /// Legacy dynamic-map switch; absence and explicit false have distinct configuration origins.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_present"
+    )]
+    pub accept_dynamic_maps: Option<bool>,
+}
+
+/// 缺失字段用默认 None，显式 null 仍按原字段类型拒绝。
+/// Missing fields default to None while explicit null remains invalid for the original type.
+fn deserialize_present<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<T>, D::Error> {
+    T::deserialize(deserializer).map(Some)
 }
 
 impl SceneConfig {
@@ -1277,6 +1293,48 @@ mod tests {
     use super::*;
 
     #[test]
+    fn legacy_map_projection_preserves_absence_and_explicit_defaults() {
+        let base =
+            serde_json::json!({"name":"map_1","sceneType":"MapHost","ip":"127.0.0.1","port":7301});
+        let omitted: SceneConfig = serde_json::from_value(base.clone()).unwrap();
+        let projected = serde_json::to_value(&omitted).unwrap();
+        assert!(projected.get("staticMapIds").is_none());
+        assert!(projected.get("acceptDynamicMaps").is_none());
+        let mut explicit = base.clone();
+        explicit["staticMapIds"] = serde_json::json!([]);
+        explicit["acceptDynamicMaps"] = serde_json::json!(false);
+        let defaults: SceneConfig = serde_json::from_value(explicit).unwrap();
+        let projected = serde_json::to_value(defaults).unwrap();
+        assert_eq!(projected["staticMapIds"], serde_json::json!([]));
+        assert_eq!(projected["acceptDynamicMaps"], false);
+        for (field, values) in [
+            (
+                "staticMapIds",
+                vec![
+                    serde_json::Value::Null,
+                    serde_json::json!([-1]),
+                    serde_json::json!([1.5]),
+                    serde_json::json!([4294967296_u64]),
+                ],
+            ),
+            (
+                "acceptDynamicMaps",
+                vec![
+                    serde_json::Value::Null,
+                    serde_json::json!(0),
+                    serde_json::json!("false"),
+                ],
+            ),
+        ] {
+            for value in values {
+                let mut invalid = base.clone();
+                invalid[field] = value;
+                assert!(serde_json::from_value::<SceneConfig>(invalid).is_err());
+            }
+        }
+    }
+
+    #[test]
     fn loads_shared_known_scene_files_and_dynamic_map_role() {
         let directory =
             std::env::temp_dir().join(format!("tiangz-known-scenes-{}", std::process::id()));
@@ -1299,7 +1357,7 @@ mod tests {
         .unwrap();
 
         let config = load_runtime_config(&process_path).unwrap();
-        assert!(config.scenes[0].accept_dynamic_maps);
+        assert_eq!(config.scenes[0].accept_dynamic_maps, Some(true));
         assert_eq!(config.known_scenes.len(), 2);
         assert!(
             config
@@ -1321,8 +1379,8 @@ mod tests {
             port,
             protocol: EndpointProtocol::Auto,
             audience: EndpointAudience::Mixed,
-            static_map_ids: Vec::new(),
-            accept_dynamic_maps: false,
+            static_map_ids: None,
+            accept_dynamic_maps: None,
         }
     }
 

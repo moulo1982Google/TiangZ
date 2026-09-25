@@ -42,6 +42,7 @@ for (const expected of [
 }
 
 assert.ok(!output.includes("Unrelated"), output);
+assert.ok(!output.includes("DefaultTick"), output);
 const fixture = await mkdtemp(path.join(tmpdir(), "tiangz-test-wrappers-"));
 try {
   await mkdir(path.join(fixture, "tools"));

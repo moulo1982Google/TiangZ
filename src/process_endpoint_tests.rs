@@ -65,8 +65,8 @@ fn endpoint_with_admission(
         port: address.port(),
         protocol,
         audience,
-        static_map_ids: Vec::new(),
-        accept_dynamic_maps: false,
+        static_map_ids: None,
+        accept_dynamic_maps: None,
     };
     let task = create_io_backend(&ProcessNetworkConfig::default())
         .unwrap()

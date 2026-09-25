@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {assertNativeDenoIdentity} from './module_native_dependencies.mjs';
+import {assertNativeDenoIdentity, assertNativeHostIdentity} from './module_native_dependencies.mjs';
+import path from 'node:path';
 
 const edge=(name,pkg,kind=null)=>({name,pkg,dep_kinds:[{kind}]});
 function fixture(){return {packages:[
@@ -33,4 +34,21 @@ test('uncompiled dev dependencies do not reject a valid extension',()=>{
 test('missing composition metadata cannot silently pass',()=>{
  const data=fixture();data.resolve.nodes=[];
  assert.throws(()=>assertNativeDenoIdentity(data,modules),/missing the host/);
+});
+
+test('Native transport must come from the selected host even when versions match', () => {
+ const engine = path.resolve('fixture/current host');
+ const data = fixture();
+ data.packages[0].name = 'tiangz-module-host';
+ data.packages.push({ id: 'transport', name: 'TiangZ', version: '1', manifest_path: path.join(engine, 'Cargo.toml') });
+ data.resolve.nodes.push({ id: 'transport', deps: [] });
+ data.resolve.nodes[1].deps.push(edge('tiangz_transport', 'transport'));
+ assert.doesNotThrow(() => assertNativeHostIdentity(data, engine));
+ data.packages.at(-1).manifest_path = path.resolve('fixture/previous host/Cargo.toml');
+ assert.throws(() => assertNativeHostIdentity(data, engine), /Native host mismatch.*Explicitly align/);
+ data.resolve.nodes[1].deps.at(-1).dep_kinds = [{ kind: 'dev' }];
+ assert.doesNotThrow(() => assertNativeHostIdentity(data, engine));
+ data.resolve.nodes[1].deps.at(-1).dep_kinds = [{ kind: null }];
+ data.resolve.nodes.pop();
+ assert.throws(() => assertNativeHostIdentity(data, engine), /Incomplete Native host/);
 });

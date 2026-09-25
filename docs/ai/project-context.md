@@ -1,5 +1,13 @@
 # 2026-09-16 模块拆分后的当前事实
 
+0.7 G2 将地图部署迁到 MMORPG 的 `org.tiangz.mmorpg.map-deployment` 数据包；Core 只保留信封和旧字段兼容投影。缺失旧字段不得补成显式 `[]/false`，双写冲突或声明包缺当前实例必须拒绝。文件名严格为 `runtime.pack.json`，独立目录表达用途。模块使用 Stable `RuntimeDataPackRegistry.Instance`，不向 public 添加内部 SingletonRegistry。见[地图部署契约](../design/v0.7-map-deployment.md)。
+
+无目录服务的最小房间已作为 Examples `tools/fixtures/room` 的真实消费者：一个 Room Scene、Model Component 状态、Hotfix 行为、生成 SDK，直接地址连接和 roomId 查找，创建/加入/离开/新 Socket 重连快照及容量拒绝均通过。它证明简单游戏无需部署 Location/MapHost，不证明跨进程迁移、生产鉴权或持久恢复。复跑与证据见[房间消费方](../design/v0.7-room-consumer.md)。
+
+跨 worktree 验证必须统一 TS Core、DBProxy SDK 和 Native TiangZ 库身份。Examples 的历史相对导入与 SDK 由所选宿主解析；立即完成的内存 Transport 夹具显式声明预算能力，真实 I/O 不得只加标记。Native 构建前核对 Cargo 实际依赖源，不能以相同版本掩盖旧宿主；模块 Cargo 路径由开发者显式对齐，禁止通过全树 Cargo paths override 扫描依赖缓存。本轮具体失败、反例与重建证据见地图部署记录。
+
+Timer 默认参数 `Tick(now = Date.now())` 的声明内类型是 number，但调用时 undefined 合法；共享检查器必须验证默认值调用语义，不能改正确游戏代码规避误报。插件 TS 5 正反例、宿主 TS 6 夹具和 MMORPG 实际 check 均覆盖这一教训。
+
 0.7 DBProxy 已提供独立 `dbproxy_capacity`：固定 18 表、分区叶子字节与 catalog 估算，默认不扫描业务时间；`--include-server-age` 仅针对已存在的服务器时间列，250ms/表，总预算默认 10 秒，独立只读事务且无迁移/worker。业务 `updated_at_unix_ms` 不能当保留年龄；未知估算/缺表/RLS/超时必须明确，不做 TTL 或回执删除。临时 PG18.4/Redis8.8.1 上真实容量与 7 项恢复用例通过，含 COMMIT 回包丢失、部分成功和 Outbox 双消费组去重；这不等于长稳、断电或备份恢复。范围、提交和日志入口见[进度](../design/v0.7-progress.md)，测试容器已核对身份并回收。
 
 0.7 增加 ConnectionWriter 共享 `maxOutboundBufferedBytes`（64 MiB 默认、1..1 GiB）：资源守卫从批次入队持续到写出/最后转发引用释放，满队列、关闭、取消/panic 均回收。广播按接收者保守累计；总预算拒绝与每连接慢消费分开统计。该额度只覆盖已登记 Writer payload，不含独立主动 Inner 链路、入站/V8/系统缓冲及 KCP 内部重传，不能宣称整个 Process 内存有界。Rust/TS/Schema/固定 kind 指标同步，详见[传输说明](../reference/transport-backend.md)。
