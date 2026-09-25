@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+0.7 入站准入在 Process 全部业务端点之间共享：maxAcceptedConnections 默认 65536、maxPendingHandshakes 默认 1024，均为 1..1000000 整数。流式 Socket 在创建任务前申请两个名额，超限立即关闭、不排队；握手完成仅归还握手名额。KCP HELLO/cookie 不创建 Session，认证 CONNECT 才申请连接名额，重传不可重复扣减。名额随实际连接任务/Session 生命周期回收，取消和 panic 也不可泄漏。观察 tiangz_transport_admission_in_use/limit/rejections_total 的固定 kind=connection|handshake 标签；配置旧宿主时不要写 0.7 字段。它不限制帧字节、KCP 未确认缓存或主动 Inner/health 连接，详见[传输说明](../reference/transport-backend.md)。
+
+准入指标测试失败教训：首轮没有设置 sample_timestamp_ms，触发既有“未采样不导出”逻辑。修正测试采样时间并保留生产门槛，不能以删除过滤/弱化断言使测试通过。原证据 temp/v0.7-admission-first.log；cargo test --bin TiangZ --features kcp --locked 159 条通过、Clippy 通过（通过现有 run_cargo 工具运行），包括双真实 listener 共享、KCP cookie/重传、任务取消与 panic 回收；完整矩阵和 Linux 证据单列。
+
 AI 插件候选从 tools/ai-assistants 唯一源生成，使用 distribute.py --repository 显式选择分发 worktree，不靠 sibling 默认目录或框架 0.7 给插件改版本。当前实际包内四工具/六建议验证通过，Cindy 版本输出改为未探测与核对入口；不能宣称用户客户端已更新。技能校验要检查解释器真实来源：本机 MSYS2 venv 为 bin/python.exe，缺 PyYAML 时用独立 venv 的纯 Python 安装，保留最初默认扩展构建失败记录。详见[交付记录](assistant-packages.md)，不修改整机 PATH/CC 或第三方源码绕过。
 
 0.7 持久化调用使用共享预算：一个 Repository Load/Save/Enqueue 入口包含编码、版本读取、迁移回写/重读及退避；并发调用各自独立，不给重试续期。相同幂等号必须携带相同字节，Codec 返回复用缓冲区时框架也必须在首发前复制。旧 Transport 未实现物理超时不能声明 supportsRequestTimeout；不使用 Promise.race 假装取消 I/O。Host 将期限固定在参数转换前，并由 Rust Instant 与 OwnedRequest 管理真实任务。候选 SDK/Host 证据和发布依赖限制见[第二批记录](../design/v0.7-batch2-contracts.md)。

@@ -83,6 +83,10 @@ export interface ProcessLifecycleConfig {
 }
 
 export interface ProcessNetworkConfig {
+  /** 0.7：全部业务监听端口共享的入站连接上限，含握手；1..1000000，默认65536。 / Since 0.7: shared inbound connection limit including handshakes; 1..1000000, default 65536. */
+  maxAcceptedConnections?: number;
+  /** 0.7：全部流式监听端口共享的未完成握手上限；1..1000000，默认1024。 / Since 0.7: shared pending stream handshake limit; 1..1000000, default 1024. */
+  maxPendingHandshakes?: number;
   /** 0.7：出站批次从准入起的总写出预算，1..300000ms，默认10000。 / Since 0.7: total outbound budget from admission, 1..300000ms, default 10000. */
   writeTimeoutMs?: number;
   ioBackend?: "epoll" | "io-uring";

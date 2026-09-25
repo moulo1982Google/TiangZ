@@ -78,6 +78,9 @@ io_uring 必须显式启用，并把本进程启动的 Scene 标记为 `tcp`：
 
 配置限制：
 
+- 0.7 新增 `maxAcceptedConnections`（默认 65536）和 `maxPendingHandshakes`（默认 1024），均为 1..1000000 整数。当前 Process 全部业务 listener 共享额度；TCP/Auto/WebSocket 在创建连接任务前取得连接与握手名额，超限即关闭新增 Socket，不排队等待额度。完成前导、认证和 HTTP 升级后归还握手名额，连接名额保留到任务销毁；失败、断开、取消/panic、停机均归还。两项独立配置，握手实际数量也受连接上限约束，不保证端点间公平。
+- KCP 在有效 cookie 的 CONNECT 后取得同一 Process 连接名额；HELLO/Challenge 无 Session 分配，不占流握手名额，重复 CONNECT 复用已有 Session。KCP 既有每端点 65536 Session 上限仍生效。主动建立的 Inner 链接、健康 HTTP 不计入这两项业务入站额度；帧字节、KCP 未确认/重传缓存另行控制，连接数量上限不是整个进程的内存上限。
+- `tiangz_transport_admission_in_use`、`tiangz_transport_admission_limit`、`tiangz_transport_admission_rejections_total` 使用固定 `kind="connection"|"handshake"`，分别观察当前占用、配置上限、即时拒绝总数，不附加连接 ID 或地址标签。并发读写时两个占用 gauge 为近似同时的快照。旧 `tiangz_process_active_connections` 继续表示已登记 writer，不能拿它代替握手计数。
 - 0.7 新增 `writeTimeoutMs`，正整数 1..300000，默认 10000ms。每个出站批次从准入到完整写出共用期限，包含排队；KCP 只限制交给可靠传输前的宿主排队，不代表 ACK/重传完成。超过期限断开连接，部分写仍属于结果未知；0.6.x 宿主不接受此字段。
 - 开始关闭后，所有已接受批次共享 `process.lifecycle.stopTimeoutMs` 排空时间，不逐批重置。批次期限或关闭期限先到即停止；只有写出成功才记录完成指标。
 - `uringEntries` 必须是 64 到 32768 之间的 2 次幂；

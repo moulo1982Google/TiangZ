@@ -6,6 +6,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use super::admission::ConnectionPermit;
 use super::lifecycle::{
     ConnectionRegistration, OwnedTask, drain_writer, next_write_batch, stopped,
 };
@@ -108,6 +109,9 @@ async fn run_scene_listener(
             }
             accepted = listener.accept() => accepted?,
         };
+        let Some(permit) = context.stats.admission.accept_stream() else {
+            continue;
+        };
         let connection_id = context.next_connection_id.fetch_add(1, Ordering::Relaxed);
         tracing::debug!(target: "tiangz::transport",
             "{} accepted {} as conn {} backend=io-uring",
@@ -122,6 +126,7 @@ async fn run_scene_listener(
                 stream,
                 connection_shutdown,
                 read_buffer_bytes,
+                permit,
             )
             .await
             {
@@ -145,6 +150,7 @@ async fn handle_raw_connection(
     stream: TcpStream,
     mut shutdown: watch::Receiver<bool>,
     read_buffer_bytes: usize,
+    mut permit: ConnectionPermit,
 ) -> Result<()> {
     let scene_index = context.scene_index;
     let event_tx = &context.event_tx;
@@ -164,6 +170,7 @@ async fn handle_raw_connection(
         return Ok(());
     };
     validate_connection_audience(context.scene.audience, connection_kind)?;
+    permit.complete_handshake();
 
     let (write_tx, write_rx) =
         mpsc::channel::<ConnectionWriteBatch>(CONNECTION_OUTBOUND_FRAME_CAPACITY);

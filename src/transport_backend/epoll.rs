@@ -13,6 +13,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
 use tokio_tungstenite::tungstenite::Message;
 
+use super::admission::ConnectionPermit;
 use super::handshake::{AcceptedConnection, AcceptedTcp, AcceptedWebSocket, accept_connection};
 use super::lifecycle::{
     ConnectionRegistration, OwnedTask, drain_writer, next_write_batch, stopped,
@@ -83,6 +84,9 @@ async fn run_scene_listener(
             }
             accepted = listener.accept() => accepted?,
         };
+        let Some(permit) = context.stats.admission.accept_stream() else {
+            continue;
+        };
         let connection_id = context.next_connection_id.fetch_add(1, Ordering::Relaxed);
         tracing::debug!(target: "tiangz::transport",
             "{} accepted {} as conn {} backend=epoll",
@@ -97,6 +101,7 @@ async fn run_scene_listener(
                 connection_id,
                 stream,
                 connection_shutdown,
+                permit,
             )
             .await
             {
@@ -119,6 +124,7 @@ async fn handle_connection(
     connection_id: u64,
     stream: TcpStream,
     mut shutdown: watch::Receiver<bool>,
+    mut permit: ConnectionPermit,
 ) -> Result<()> {
     stream
         .set_nodelay(true)
@@ -128,6 +134,7 @@ async fn handle_connection(
         _ = stopped(&mut shutdown) => return Ok(()),
         accepted = accept_connection(stream, context.scene.protocol, context.scene.audience) => accepted?,
     };
+    permit.complete_handshake();
     match accepted {
         Some(AcceptedConnection::WebSocket(websocket)) => {
             handle_websocket_connection(context, connection_id, *websocket, shutdown).await

@@ -320,6 +320,12 @@ pub enum IoBackendKind {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessNetworkConfig {
+    /// 全部业务监听端口共享的入站连接名额，包含未完成握手。 / Accepted connection slots shared by all business listeners, including pending handshakes.
+    #[serde(default = "default_max_accepted_connections")]
+    pub max_accepted_connections: usize,
+    /// 全部流式监听端口共享的未完成握手名额。 / Pending stream handshake slots shared by all listeners.
+    #[serde(default = "default_max_pending_handshakes")]
+    pub max_pending_handshakes: usize,
     /// 出站批次从准入到写出完成的总期限，包含排队。 / Total outbound batch budget from admission through writing, including queue wait.
     #[serde(default = "default_connection_write_timeout_ms")]
     pub write_timeout_ms: u64,
@@ -335,6 +341,8 @@ impl Default for ProcessNetworkConfig {
     fn default() -> Self {
         Self {
             io_backend: IoBackendKind::default(),
+            max_accepted_connections: default_max_accepted_connections(),
+            max_pending_handshakes: default_max_pending_handshakes(),
             write_timeout_ms: default_connection_write_timeout_ms(),
             uring_entries: default_uring_entries(),
             uring_read_buffer_bytes: default_uring_read_buffer_bytes(),
@@ -589,6 +597,16 @@ fn default_stop_timeout_ms() -> u64 {
 /// 使用独立的慢写默认值，不能因未来停机配置调整而隐式改变。 / Keeps the slow-write default independent from future shutdown-default changes.
 fn default_connection_write_timeout_ms() -> u64 {
     10_000
+}
+
+/// 保留既有 KCP 端点的最大会话数量级，新增 Process 共享上限。 / Preserves the existing KCP session scale with a new shared process limit.
+fn default_max_accepted_connections() -> usize {
+    65_536
+}
+
+/// 慢握手具有独立额度，避免先占满所有已接受连接。 / Gives slow handshakes a separate bound before they exhaust accepted connections.
+fn default_max_pending_handshakes() -> usize {
+    1_024
 }
 
 fn default_hotfix_reload_timeout_ms() -> u64 {
@@ -960,6 +978,12 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     }
     if !(1..=300_000).contains(&config.process.network.write_timeout_ms) {
         bail!("process network.writeTimeoutMs must be between 1 and 300000");
+    }
+    if !(1..=1_000_000).contains(&config.process.network.max_accepted_connections) {
+        bail!("process network.maxAcceptedConnections must be between 1 and 1000000");
+    }
+    if !(1..=1_000_000).contains(&config.process.network.max_pending_handshakes) {
+        bail!("process network.maxPendingHandshakes must be between 1 and 1000000");
     }
     if config.process.scheduling.idle_tick_ms == Some(0) {
         bail!("process scheduling.idleTickMs must be greater than 0");
@@ -1412,6 +1436,39 @@ mod tests {
                 ))
                 .is_err()
             );
+        }
+    }
+
+    #[test]
+    fn validates_process_admission_bounds_and_legacy_defaults() {
+        let legacy: ProcessConfig = serde_json::from_str(r#"{"name":"test"}"#).unwrap();
+        assert_eq!(legacy.network.max_accepted_connections, 65_536);
+        assert_eq!(legacy.network.max_pending_handshakes, 1_024);
+        for field in ["maxAcceptedConnections", "maxPendingHandshakes"] {
+            for limit in [0, 1, 1_000_000, 1_000_001] {
+                let mut process = process(None);
+                process.network =
+                    serde_json::from_value(serde_json::json!({ field: limit })).unwrap();
+                let config = RuntimeConfig {
+                    process,
+                    scenes: vec![scene("gate", 7201)],
+                    known_scenes: vec![],
+                };
+                let result = validate_runtime_config(&config);
+                if (1..=1_000_000).contains(&limit) {
+                    result.unwrap();
+                } else {
+                    assert!(result.unwrap_err().to_string().contains(field));
+                }
+            }
+            for invalid in ["-1", "1.5", "\"1000\""] {
+                assert!(
+                    serde_json::from_str::<ProcessNetworkConfig>(&format!(
+                        r#"{{"{field}":{invalid}}}"#
+                    ))
+                    .is_err()
+                );
+            }
         }
     }
 

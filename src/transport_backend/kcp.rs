@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+use super::admission::ConnectionPermit;
 use super::lifecycle::{
     ConnectionRegistration, OwnedTask, drain_writer, next_write_batch, stopped,
 };
@@ -35,6 +36,7 @@ const SESSION_CAPACITY: usize = 65_536;
 const OUTBOUND_CAPACITY: usize = 8_192;
 
 struct KcpServerSession {
+    _admission: ConnectionPermit,
     connection_id: u64,
     local_conn: u32,
     remote_conn: u32,
@@ -253,6 +255,9 @@ async fn handle_datagram(
             if sessions.len() >= SESSION_CAPACITY {
                 return Ok(());
             }
+            let Some(admission) = context.stats.admission.accept_session() else {
+                return Ok(());
+            };
             let connection_id = context.next_connection_id.fetch_add(1, Ordering::Relaxed);
             let local_conn = allocate_local_conn(connection_id, sessions)?;
             let profile = KcpProfile::Outer;
@@ -283,6 +288,7 @@ async fn handle_datagram(
             sessions.insert(
                 local_conn,
                 KcpServerSession {
+                    _admission: admission,
                     connection_id,
                     local_conn,
                     remote_conn: client_conn,

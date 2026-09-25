@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+0.7 Process 入站准入新增 maxAcceptedConnections（默认 65536）和 maxPendingHandshakes（默认 1024），均为 1..1000000 的整数。全部业务 listener 共享即时准入，TCP/WS 在 spawn 前取连接和握手名额；KCP 验证 cookie 后才取连接名额，重复 CONNECT 复用 Session。握手完成只退握手名额，失败、任务取消/panic、断开及停机由所有者归还；不排队等待额度。固定 kind 标签的占用/上限/拒绝指标与 Rust、TS、插件 Schema 同步。此边界不包含出站 Inner 链接、health HTTP、帧字节或 KCP 未确认缓存，不能宣称整个进程内存有界。详见[传输说明](../reference/transport-backend.md)。
+
+准入指标首轮反例属于夹具错误：未设 sample_timestamp_ms，已有指标逻辑按“尚未采样”不导出；必须给夹具有效采样时间，不能删除生产采样门槛。原日志 temp/v0.7-admission-first.log 保留，修正后含 KCP 的宿主 159 条及 Clippy 通过（temp/v0.7-admission-green.log、v0.7-admission-clippy.log）；重建宿主与完整矩阵另行验收。
+
 0.7 AI 源与分发已同步候选：操作预算、Timer 在途、可选逻辑目录及各插件独立版本规则进入 tools/ai-assistants，Cindy 明示版本未探测，规则 36 条。显式分发脚本只写指定仓库生成物，核对清单版本/哈希；实际归档内四个工具、六类建议通过，未安装或调用 Forge。见[交付记录](assistant-packages.md)。技能校验缺 PyYAML 且 MSYS2 venv 使用 bin 路径，独立 venv 纯 Python 安装后通过；不要误认没有 Python或改系统工具链。
 
 0.7 DBProxy 外层预算已接通候选 SDK：每次 Repository 操作新建独立 WithRequestBudget 范围，读取/迁移/编码/同 ID 重试/退避共享期限；缓冲区在首次发送前复制，避免 Codec 复用后改变重试字节。Host 在转换前固定 Rust Instant 绝对期限，过期不启动新 I/O，未知提交结果仍按未知处理，不以 Promise.race 冒充取消。SDK 29 条、Repository 23 条和裸 V8/TCP 回收通过，见[第二批记录](../design/v0.7-batch2-contracts.md)。当前 npm 候选是显式本地安装，默认发布 tag/锁尚未冻结，npm ci 会恢复旧 SDK，不能把候选通过写成默认检出通过。

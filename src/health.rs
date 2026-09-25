@@ -97,6 +97,7 @@ pub(crate) struct ProcessObservabilitySnapshot {
     pub(crate) transport_write_frames: u64,
     pub(crate) transport_write_bytes: u64,
     pub(crate) active_connections: u64,
+    pub(crate) admission: crate::transport_backend::admission::AdmissionSnapshot,
     pub(crate) remote_transport_active_connections: u64,
     pub(crate) remote_transport_opened_connections: u64,
     pub(crate) remote_transport_pending_calls: u64,
@@ -2022,6 +2023,47 @@ fn append_process_metrics_prometheus(
     .expect("formatting metric");
     writeln!(
         output,
+        "# HELP tiangz_transport_admission_in_use Shared business listener admission slots in use"
+    )
+    .expect("formatting metric help");
+    writeln!(output, "# TYPE tiangz_transport_admission_in_use gauge")
+        .expect("formatting metric type");
+    writeln!(output, "# HELP tiangz_transport_admission_limit Configured shared business listener admission limit")
+        .expect("formatting metric help");
+    writeln!(output, "# TYPE tiangz_transport_admission_limit gauge")
+        .expect("formatting metric type");
+    writeln!(output, "# HELP tiangz_transport_admission_rejections_total Business listener admissions rejected immediately at capacity")
+        .expect("formatting metric help");
+    writeln!(
+        output,
+        "# TYPE tiangz_transport_admission_rejections_total counter"
+    )
+    .expect("formatting metric type");
+    for (kind, used, limit, rejected) in [
+        (
+            "connection",
+            snapshot.admission.connections,
+            snapshot.admission.connection_limit,
+            snapshot.admission.connection_rejections,
+        ),
+        (
+            "handshake",
+            snapshot.admission.handshakes,
+            snapshot.admission.handshake_limit,
+            snapshot.admission.handshake_rejections,
+        ),
+    ] {
+        for (metric, value) in [
+            ("in_use", used),
+            ("limit", limit),
+            ("rejections_total", rejected),
+        ] {
+            writeln!(output, "tiangz_transport_admission_{metric}{{process=\"{process_name}\",kind=\"{kind}\"}} {value}")
+                .expect("formatting admission metric");
+        }
+    }
+    writeln!(
+        output,
         "# HELP tiangz_transport_inner_active_connections Active inner transport connections"
     )
     .expect("formatting metric help");
@@ -3288,6 +3330,40 @@ mod tests {
         assert!(body.contains(
             "tiangz_process_queue_stage_backpressure_wait_ms_total{process=\"map1\",stage=\"frame\"} 4.500"
         ));
+    }
+
+    #[test]
+    fn process_admission_metrics_distinguish_handshakes_and_connections_with_fixed_labels() {
+        let state = ProcessHealthState::starting(Duration::from_secs(15));
+        state.set_observability_snapshot(ProcessObservabilitySnapshot {
+            sample_timestamp_ms: 1,
+            admission: crate::transport_backend::admission::AdmissionSnapshot {
+                connections: 2,
+                handshakes: 1,
+                connection_limit: 8,
+                handshake_limit: 3,
+                connection_rejections: 5,
+                handshake_rejections: 7,
+            },
+            ..ProcessObservabilitySnapshot::default()
+        });
+        let body = format_prometheus_metrics("worker", &state);
+        for (metric, kind, expected) in [
+            ("in_use", "connection", 2),
+            ("in_use", "handshake", 1),
+            ("limit", "connection", 8),
+            ("limit", "handshake", 3),
+            ("rejections_total", "connection", 5),
+            ("rejections_total", "handshake", 7),
+        ] {
+            assert!(body.contains(&format!("tiangz_transport_admission_{metric}{{process=\"worker\",kind=\"{kind}\"}} {expected}")));
+        }
+        assert_eq!(
+            body.lines()
+                .filter(|line| line.starts_with("tiangz_transport_admission_"))
+                .count(),
+            6
+        );
     }
 
     #[test]

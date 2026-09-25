@@ -445,6 +445,7 @@ extern "C" fn v8_gc_epilogue(
 }
 
 pub(crate) struct ProcessQueueStats {
+    pub(crate) admission: Arc<crate::transport_backend::admission::ConnectionAdmission>,
     capacity: usize,
     depth: AtomicUsize,
     max_depth: AtomicUsize,
@@ -484,8 +485,20 @@ struct ProcessQueueStageStats {
 }
 
 impl ProcessQueueStats {
+    /// 未显式配置的夹具和默认状态沿用同一套网络默认值。 / Uses the network defaults for fixtures and default state.
     fn new(capacity: usize) -> Self {
+        Self::with_network_limits(capacity, &crate::config::ProcessNetworkConfig::default())
+    }
+
+    /// Process 只创建一次准入所有者，端点通过共享统计句柄使用它。 / Creates one admission owner per process, shared through the endpoint statistics handle.
+    fn with_network_limits(capacity: usize, network: &crate::config::ProcessNetworkConfig) -> Self {
         Self {
+            admission: Arc::new(
+                crate::transport_backend::admission::ConnectionAdmission::new(
+                    network.max_accepted_connections,
+                    network.max_pending_handshakes,
+                ),
+            ),
             capacity,
             depth: AtomicUsize::default(),
             max_depth: AtomicUsize::default(),
@@ -879,7 +892,10 @@ pub async fn run_runtime_config(
     let (data_tx, data_rx) = mpsc::sync_channel::<ProcessEvent>(data_queue_capacity);
     let (wake_tx, wake_rx) = mpsc::sync_channel::<()>(1);
     let (runtime_control_tx, runtime_control_rx) = mpsc::channel::<RuntimeControl>();
-    let queue_stats = Arc::new(ProcessQueueStats::new(event_queue_capacity));
+    let queue_stats = Arc::new(ProcessQueueStats::with_network_limits(
+        event_queue_capacity,
+        &config.process.network,
+    ));
     let writers: ConnectionWriters = Arc::new(Mutex::new(HashMap::new()));
     let event_tx = ProcessEventSender {
         control_sender: control_tx,
@@ -2096,6 +2112,7 @@ fn maybe_log_metrics(
         transport_write_frames: queue_stats.transport_write_frames.load(Ordering::Relaxed),
         transport_write_bytes: queue_stats.transport_write_bytes.load(Ordering::Relaxed),
         active_connections,
+        admission: queue_stats.admission.snapshot(),
         remote_transport_active_connections: remote_transport
             .as_ref()
             .map(|snapshot| snapshot.active_connections)
