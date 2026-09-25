@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+0.7 RPC ID 修复：请求赋值或编码可以同步抛错，预留请求号之后的全部工作必须位于 try/finally 内；Actor 转发的帧重写也一样。不能只在发送失败时清理。9 条 SceneCallContext 回归含原 6 条失败已通过，失败后原 ID 可重新使用。
+
 0.7 Timer 修复：取消定时器或销毁所有者不代表已触发的异步回调结束，热更必须等待真实 Promise 收敛；不要按定时器活动数判断安全。回调中新建的零延迟 Timer 留到下一轮，取消尚未执行的本轮项仍立即生效；重复 Timer 跳过错过周期并避免浮点误差导致同帧重触发。原反例及完整矩阵已通过，Stable getter 变化需重建重启。
 
 0.7 EntryScene 纯搬移：业务继续使用 Stable 导出的 EntryScene，不导入内部 process/EntryScene.ts。配置契约和实现物理分离，33 个非 import 声明保持；完整声明图与构建身份变化仍需重建/重启，不能只发 Hotfix，见[拆分记录](../design/v0.7-entry-scene-split.md)。

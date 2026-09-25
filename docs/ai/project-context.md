@@ -1,5 +1,7 @@
 # 2026-09-16 模块拆分后的当前事实
 
+0.7 RPC 预留修复：SceneCallContext 在 reserveRpcId 后立即进入 finally 保护，覆盖请求赋值、编码、Actor 信封封装、发送和响应解析；同步编码失败也必须释放 ID。9 条回归覆盖冻结请求、编码/封装与响应错误，原 6 条失败已转绿；不能仅捕获网络异常。
+
 0.7 Timer 修复：异步到期/取消回调在真实完成前计入 InFlightCount，Process 的热更提交与 pendingAsync 读取该计数；每轮先冻结到期集合，回调中新建 Timer 下轮运行，重复期限须严格晚于当前帧。所有者销毁不提前释放在途计数；新增 Stable getter 需要完整构建重启。原失败反例与完整回归均已验证。
 
 0.7 EntryScene 的纯拆分将配置/路由契约留在 process/types.ts，实现及私有队列归 process/EntryScene.ts；Stable 导出不变，33 个非 import 声明机械比对一致。执行体不变但声明图/构建指纹变化，需完整构建重启，见[拆分记录](../design/v0.7-entry-scene-split.md)。缺陷修复另行提交。

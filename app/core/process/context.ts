@@ -62,9 +62,9 @@ export class SceneCallContext {
     options: SceneCallOptions = {},
   ): Promise<TResp> {
     const rpcId = this.reserveRpcId();
-    request.rpcId = rpcId;
-    const frame = packFrame(descriptor.requestCode, descriptor.requestCodec.encode(request));
     try {
+      request.rpcId = rpcId;
+      const frame = packFrame(descriptor.requestCode, descriptor.requestCodec.encode(request));
       const responseFrame = await this.callFrame(target, frame, options);
       return this.decodeRpcResponse(descriptor, responseFrame, rpcId);
     } finally {
@@ -80,18 +80,18 @@ export class SceneCallContext {
     options: SceneCallOptions = {},
   ): Promise<TResp> {
     const rpcId = this.reserveRpcId();
-    request.rpcId = rpcId;
-    const innerFrame = packFrame(
-      descriptor.requestCode,
-      descriptor.requestCodec.encode(request),
-    );
-    const frame = encodeActorLocationEnvelope({
-      instanceId: target.instanceId,
-      fenceToken: target.fenceToken,
-      frame: innerFrame,
-      rpcId,
-    });
     try {
+      request.rpcId = rpcId;
+      const innerFrame = packFrame(
+        descriptor.requestCode,
+        descriptor.requestCodec.encode(request),
+      );
+      const frame = encodeActorLocationEnvelope({
+        instanceId: target.instanceId,
+        fenceToken: target.fenceToken,
+        frame: innerFrame,
+        rpcId,
+      });
       const responseFrame = await this.callFrame(target.scene, frame, options);
       return this.decodeRpcResponse(descriptor, responseFrame, rpcId);
     } finally {
@@ -111,14 +111,14 @@ export class SceneCallContext {
       throw new RpcError(SystemErrCode.MalformedFrame, "actor RPC request has no rpcId");
     }
     const internalRpcId = this.reserveRpcId();
-    const innerFrame = rewriteFrameRpcId(frame, internalRpcId);
-    const envelope = encodeActorLocationEnvelope({
-      instanceId: target.instanceId,
-      fenceToken: target.fenceToken,
-      frame: innerFrame,
-      rpcId: internalRpcId,
-    });
     try {
+      const innerFrame = rewriteFrameRpcId(frame, internalRpcId);
+      const envelope = encodeActorLocationEnvelope({
+        instanceId: target.instanceId,
+        fenceToken: target.fenceToken,
+        frame: innerFrame,
+        rpcId: internalRpcId,
+      });
       const responseFrame = await this.callFrame(target.scene, envelope, options);
       if (responseFrame.length < 2 || readU16BE(responseFrame, 0) !== expectedResponseCode) {
         throw new RpcError(
