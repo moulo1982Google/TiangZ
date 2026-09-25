@@ -1,12 +1,32 @@
 # 2026-09-16：先选业务工程，再写模块
 
+接续夜间工作以[0.7 实施进度](../design/v0.7-progress.md)为准：最新 full 8/8、quick 32/32、check 8/8；源码已按职责本地提交。两个候选 VSIX 已在独立用户数据/扩展目录安装并校验，日常用户扩展未改。Native/Developer 包身份字段不同，读取时按实际清单映射，不能假设同一 schema 后把脚本失败当成包损坏；实际 CLI/LS、安装内容与可视 UI 证据分别记录。
+
 0.7 RPC ID 修复：请求赋值或编码可以同步抛错，预留请求号之后的全部工作必须位于 try/finally 内；Actor 转发的帧重写也一样。不能只在发送失败时清理。9 条 SceneCallContext 回归含原 6 条失败已通过，失败后原 ID 可重新使用。
 
 0.7 Timer 修复：取消定时器或销毁所有者不代表已触发的异步回调结束，热更必须等待真实 Promise 收敛；不要按定时器活动数判断安全。回调中新建的零延迟 Timer 留到下一轮，取消尚未执行的本轮项仍立即生效；重复 Timer 跳过错过周期并避免浮点误差导致同帧重触发。原反例及完整矩阵已通过，Stable getter 变化需重建重启。
 
 0.7 EntryScene 纯搬移：业务继续使用 Stable 导出的 EntryScene，不导入内部 process/EntryScene.ts。配置契约和实现物理分离，33 个非 import 声明保持；完整声明图与构建身份变化仍需重建/重启，不能只发 Hotfix，见[拆分记录](../design/v0.7-entry-scene-split.md)。
 
-2026-09-25：0.7 当前先交付[详细设计稿](../design/v0.7-design.md)，实现与验收尚未完成。目标是通用后端可靠性、模块边界、静态检查和[克制拆分](../reference/coding-conventions.md#克制拆分)，同时规划 DBProxy、两个 VS Code 插件和 AI 分发包。实现使用六仓库各自的 `feat/v0.7` worktree，业务仍通过 Stable 入口，不依赖 EntryScene 未提交拆分草稿的内部路径。总预算不等于撤销已执行业务，回执清理/记录删除和异步 Native op 仍按独立候选评审；包更新须验证实际生成/安装身份，不能把文档、dist 或部分测试当作完成交付。
+共享时间检查的失败教训：字符串别名表跨函数/块传播会把参数或同级局部数据库回调误判为时间等待。Developer Tools 三个反例原各报 3 项、期望仅 1 项；改为按词法声明解析，同一导入别名在外层仍必须拒绝。Core 61 项通过，证据为插件 `dist/v0.7-time-scope-{red,green}.log`；需继续核对 CLI/实际 LS。禁止用删规则、换诊断级别或认为候选源码已自动更新宿主依赖来绕过。跨文件动态包装仍需审查。
+
+网络阶段复测：Windows 含 KCP 的 179 条全目标测试和 Clippy 通过；真实 TCP 客户端收到帧头后停止读取，服务端写期限生效并清零资源，Linux 条件编译也通过。见[第二批记录](../design/v0.7-batch2-contracts.md)，该证据不能代替 Linux io_uring 运行、KCP ACK 或真实存储恢复。
+
+夜间入口差异：矩阵和 Native 构建已过滤 MSVC 下的 GNU CC/CXX，但 `npm run build:runtime:debug` 以前直连 Cargo，再次出现 LNK1143（`temp/v0.7-write-budget-host-build.log`），完整 verify 尚未启动。修复该 npm 入口使用 `tools/run_cargo.mjs`，依据目标过滤当前子进程变量，保留显式非 MSVC 目标，不修改系统设置或清理第三方缓存。复测同一构建入口及完整 verify，不能把之前单元测试通过当作宿主重建成功。
+
+插件联合验收必须分别记录 Core/VSIX/宿主已安装核心。Native 当前候选为 0.17.0/0.16.0，宿主仍为 0.16.0；修复旧 0.14.0 打包名并增加包内身份，29 个用例及四类生成兼容夹具通过，但不能写成已发布/已安装。使用候选 `check-host-compatibility.mjs --engine <显式宿主>`，CompilerHost 虚拟挂载生成文件，保留 rootDir/严格选项。import-only 依赖的 CJS 解析失败及 TS6059 夹具失败均保留，过程见[插件兼容记录](../design/v0.7-plugin-compatibility.md)；不得通过手工改 Generated 或屏蔽诊断获得通过。
+
+0.7 显式协议握手也受限：TCP/WebSocket/io_uring TCP 沿用 Auto 已有的 5000ms 总期限，覆盖初始前导/内部认证/HTTP Upgrade；空闲预连不可无限等待。真实默认入口的两个反例在旧代码均超过 6 秒保护期限，不能用 Auto 专用辅助函数的测试代替显式路径。该期限不覆盖后续慢写或 Process 总量，详见[传输说明](../reference/transport-backend.md)。
+
+出站预算回归：批次资源守卫负责队列销毁/写入失败/取消时释放计数，KCP 转发帧共享该守卫，最后一帧完成前保守持有整个批次。禁止在各 backend 继续手工减同一计数。原顺序夹具销毁批次后仍断言 3 帧/6 字节，首轮因此失败（`temp/v0.7-network-all-targets.log`）；现保留逐帧顺序并检查释放前 3/6、后 0/0。另有队列销毁反例 `temp/v0.7-outbound-accounting-red.log`，该反例先失败才引入守卫。此修复不包含 KCP 内部重传缓冲和 Process 总量预算。
+
+0.7 生命周期补充：不得丢弃 endpoint/connection/writer 的 JoinHandle 形成后台孤儿；正常停机取消握手、停止准入并排空最后通知，超出既有 `stopTimeoutMs` 取消异步任务，CPU/V8 硬卡死仍需进程监督。健康 listener 和请求也要随所有者收回。KCP 单客户端非法帧不能让共享 listener 失败：先通过 conn/peer 识别，再只移除该 Session；真正 listener 失败仍必须报告 Process。真实 Socket 取消/重绑/排空、KCP 双客户端隔离及错误/取消测试已纳入当前 141 条 Windows KCP 二进制用例，详见[第二批记录](../design/v0.7-batch2-contracts.md)。
+
+0.7 网络补充：TCP/Auto 的 `inner/outer/mixed` 必须在 writer 注册前执行，内部连接仍须凭据认证；WebSocket 在 HTTP Upgrade 前检查外部准入。单帧及分片重组的 1 MiB 限制前移到 WebSocket 解码器；只做业务层长度检查无法约束接收内存。真实 Socket 反例验证未完成的超大帧/分片也会断开，恰好上限可用，阶段证据见[第二批记录](../design/v0.7-batch2-contracts.md)。不可据此宣称 Linux/io_uring、全部资源或退出已经通过。
+
+2026-09-26 夜间继续：第二批按[具体契约](../design/v0.7-batch2-contracts.md)推进。DBProxy Rust SDK 现在由同一逻辑请求拥有许可、写锁、响应、重连及重试的总期限；默认 5 秒，超时仅在整个操作从未写入时报告 `RequestNotSentTimeout`，任何先前可能发送都保持结果未知。客户端 28 条通过，Host/Repository 的外层预算仍待收口，不能以此宣称整个 D2 通过。
+
+2026-09-25 用户确认开始实施[详细设计稿](../design/v0.7-design.md)；2026-09-26 首批 R1–R4 和 DBProxy D1 本地验收完成：TiangZ check 8/8、quick 32/32、full 8/8；DBProxy Rust 190 条、TS SDK 21 条通过，47 条真实存储/显式故障用例未运行。源码尚未提交，Stable Core API 锁漂移留待发布冻结，证据见[首批实现与验收记录](../design/v0.7-batch1-acceptance.md)。六仓库各自使用 `feat/v0.7` worktree，插件继续自身发行版本序列；业务仍通过 Stable 入口，不依赖 EntryScene 拆分后的内部路径。总预算不等于撤销已执行业务，回执清理/记录删除和异步 Native op 仍按独立候选评审；包更新须验证实际生成/安装身份，不能把首批结果、dist 或部分测试当作 0.7 完成交付。
 
 2026-09-18短时采样回归已通过：`sampling10-rd6WDP/report.json`为`sampling10-passed`，北京时间10:36:32开始测量，实测601201ms，10:46:54完成清理；21个有效资源样本通过原20个门槛、同PID及增长检查，26笔业务及26次原命令重放、29次对账、233次快照，最终冷重启恢复通过，游戏/代理/探针/存储全部停止。正式构建与24项工具测试通过；历史样本回放确定复现原18/20失败。本轮仅验证采样修复，未执行热更和五种故障，未启动新八小时测试，原八小时失败报告保持不变。 / The ten-minute sampling regression passed with 21 valid samples against the unchanged 20-sample threshold, same-process growth checks, 26 operations and replays, 29 reconciliations, 233 snapshots, final cold recovery and complete cleanup. The official build and all 24 tool tests passed, including replay of the original 18/20 failure. This verifies sampling only; no new eight-hour soak was started.
 
@@ -30,6 +50,34 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 2026-09-17 SLG D1夹具隔离失败：run-cHJ8WY在D1提前退出；补齐子进程stdout/stderr日志后，run-TC9Bun确认StorageBackend初始化报publisher endpoint changed，尚未执行读取断言。原因是独立存储测试与SLG共用PG数据库，却以宿主机缓存Redis地址注册已被容器队列Redis占用的legacy Publisher。正确做法是在本轮隔离PG容器内创建authority_probe专用数据库；SLG原子批量探针仍检查SLG数据库，存储级断言单独标明范围。禁止清空Publisher注册表、放宽端点校验或手改构建哈希。复测：在Examples/packages/slg执行node tools/authoritative_acceptance.mjs build，再run --cases D1 --rounds 1 --confirm isolated-slg-authoritative-test；失败证据为temp/authoritative-acceptance/run-TC9Bun/D1-1/sql-snapshot-probe.log。修复后的结果以新报告为准。
 
 ## 失败教训与复测流程
+
+### 0.7 请求预算与部分写夹具（2026-09-26）
+
+Host 任务现在从提交前起计时，涵盖任务排队、连接池和 SDK，并由调用方 RAII 持有；调用方取消请求 abort，不能留下脱离所有者的后台 I/O。删除 Host 的整池重试层，让 SDK 的单连接恢复保留原身份，Host 仅执行一次闭包。4 个所有权/期限测试通过，`temp/v0.7-host-budget-msvc.log`。第一次手动复跑再次出现 LNK1143，是只匹配 `CC=gcc` 而遗漏 工具链目录下的 `gcc.exe` 完整路径；过滤必须按 basename 匹配 gcc/g++，或直接使用已有正式矩阵环境过滤，不能只比较完整变量字符串。原失败 `temp/v0.7-host-budget.log` 保留；修正后重建，不调整测试期望。
+
+原 Rust SDK 在拿到许可/写锁后才计时，重连后又得到完整预算；5 个受控 TCP 反例分别覆盖许可、写锁、排队后响应、重连锁和慢候选握手，原实现全部失败。逻辑 API 首次 poll 时创建同一单调期限，排队和全部自动尝试共用；过期且锁 ready 也不能再发包。许可/pending 用 RAII 释放，未发送与结果未知分开，原操作 ID/payload 不重建。DBProxy 证据为 `target/test-results/v0.7-budget-red.log` 和 `v0.7-budget-green-complete.log`（28 条客户端测试通过）。宿主尚未联调，不能把 SDK 单仓通过当作跨仓库通过。
+
+部分写夹具最初用本机 TCP 的小发送/接收缓冲，但观测到帧头到达时写锁已释放，实际已进入等待响应；因此两个“应关闭半帧流”断言失败，不能据此宣称 RAII 有缺陷。修正为 64 字节 Tokio duplex，先读取帧头并确认仍持写锁，再执行取消/超时，严格检查截断、EOF 与写端不可复用。它验证同一通用写路径，真实 Socket 的慢写仍须另验；禁止删除断言、扩大生产 timeout 或把响应超时冒充部分写。原日志为 DBProxy `target/test-results/v0.7-write-budget-fixture.log`、`v0.7-write-budget-controlled.log`，复测 `cargo test --locked -p tiangz-dbproxy-client`。
+
+### 0.7 首批运行时修复与构建环境（2026-09-25）
+
+以下为运行时代码缺陷，不能通过调整测试期望掩盖：
+
+- 异步 Actor/Component Timer 在途时，`CanCommitHotfix` 曾提前为 true。TimerSystem 在实际 Promise 完成前保留计数，并把到期、取消和销毁路径纳入排空；未来尚未触发的 Timer 不阻塞热更。不要因所有者被移除而清零，也不要超时后直接解锁有序 mailbox。
+- Update 回调新建的零延迟 Timer 曾在同一轮执行。先快照本轮到期项，再逐项检查是否取消，保留“下一轮执行”和立即取消两个语义。重复周期计算也存在浮点边界：`28.003 + 10` 开始、更新到 `128.003` 时，差值商会得到 `8.999999999999998`；计算后必须保证期限推进，不能仅把测试时钟取整后宣布修好。
+- RPC 请求赋值、编码、Actor 信封校验曾在 try/finally 外抛出，导致 ID 泄漏。所有 reserve 之后的操作都进入同一释放范围，失败后还要验证后续请求能复用 ID 并正确关联响应。
+- DBProxy 多租户的共享 listener 不能默取首租户的并发限制。不同 `maxInFlightPerConnection` 必须在打开后端前拒绝，正反顺序均覆盖，诊断包含字段和安全租户标识，不包含凭据。
+- Auto 首次 peek 收到 `G` 或 `GE` 时曾误判为 TCP。流握手现在由独立所有者消费并重放完整前缀，探测、HTTP 和内部认证共用 5000ms 墙钟期限；收到分片不能重置总预算。显式 TCP/WebSocket 和慢写期限仍属于后续 N 工作包。不要循环等待已可读但未消费的短前缀，也不能丢掉探测字节。
+
+握手夹具初次还出现 `Junk after client request`：测试在收到 HTTP 101 之前发送了 WebSocket 数据帧，违反客户端握手顺序。修正夹具后，完整 GET 与显式 WebSocket 通过，仅 `G/ET` 和 `GE/T` 两项仍失败，才是本次框架缺陷证据。禁止放宽 Tungstenite 协议校验来迁就夹具。
+
+Windows 首次 Rust 构建还暴露两项环境问题：Cargo 缓存与 target 跨盘时，V8 的 build.rs 尝试创建 `target/debug/gn_root` 符号链接，缺少权限导致错误 1314；可在确认该路径尚不存在后，为本工作树建立指向实际锁定 V8 源目录的目录联接，或选用与缓存同盘的独立 target。不要修改第三方 build.rs 或关闭真实链接检查。另一个失败为 `mimalloc` 对象的 LNK1143，原因是 MSVC 构建继承了 `CC=gcc` / `CXX=g++`；只在当前构建子进程清除这两个冲突值，使用已安装 MSVC。正式矩阵已有相同环境过滤，手动 cargo 复测也需遵守。目录联接不是新增 Rust 工具，也不应提交到仓库。
+
+新 worktree 还需先运行 `npm run build:runtime:debug` 再执行含真实宿主步骤的 verify。`cargo test --bin TiangZ` 生成的是测试程序，不能证明 `target/debug/TiangZ.exe` 已存在；不得复制主线旧二进制来填补。首次模块宿主检查因此失败，补建后已单独通过真实启停和错误配置拒绝，完整矩阵结果仍以其最终报告为准。
+
+首轮 full 的开发热更/故障矩阵还有 `RUST_LOG=warn` 环境污染：测试依赖 `tiangz::hotfix` 的 INFO 完成/暂停事件，日志被过滤后，开发测试误报 reload 超时；故障驱动不释放远程请求，宿主在 2900ms 排空期限后正确恢复旧版。隔离测试的子进程现在显式使用 `warn,tiangz::hotfix=info`，不改变调用终端或宿主日志默认值。禁止放宽 3000ms 热更窗口或提前解除在途计数来迁就驱动；保留原 `temp/hotfix-load-Masa3B/fault-report.json` 及 main.log，再复跑 `test:hotfix-faults`、`test:game-project-dev`。
+
+定向复测入口为 `vitest run tests/unit/hotfix_timer_drain.test.ts tests/unit/timer_system.test.ts tests/unit/scene_call_cleanup.test.ts`、Rust 的 `transport_backend::handshake::tests` 和 DBProxy `tenant_config_tests`/`tenancy`。修复后的完整 `npm run verify` 已在 2026-09-26 通过；完整命令、首轮失败和最终报告集中记录在[首批验收记录](../design/v0.7-batch1-acceptance.md)。Windows 链接仍有已有 LNK4098 告警，不能称为零告警构建；环境失败不能算行为测试失败或通过，修正环境后必须真实重跑。
 
 ### 0.7 worktree 依赖准备与中止结果（2026-09-25）
 
@@ -187,6 +235,10 @@ SLG 首次玩法 smoke（临时目录 tiangz-slg-smoke-Lipipu）报 `DBProxy is 
 ---
 
 # TiangZ AI 业务开发手册
+
+0.7 慢写候选：`process.network.writeTimeoutMs` 为 1..300000 的正整数，默认 10000ms，包含出站批次排队与写入；关闭时全部批次另共用 stopTimeoutMs，先到期者生效。超时可能已发送部分字节，不等于操作取消或业务确认。KCP 此期限只覆盖可靠传输前的宿主队列；业务结果未知仍需原幂等号恢复。旧宿主不接受新字段，变更后重建/重启；见[具体契约](../design/v0.7-batch2-contracts.md)。
+
+慢写首轮复测出现 Windows KCP 端口 bind 失败：148 通过、2 失败，证据 `temp/v0.7-write-budget-first.log`。真实原因是测试用 TCP 端口 0 选择的端口在 UDP 上不可绑定，并非 KCP 协议失败。夹具必须按真实协议申请端口；禁止修改系统保留端口或跳过失败。复测 `cargo test --bin TiangZ --features kcp --locked`。确定性 duplex 的生产 vectored writer 已确实写出 64 字节半帧后超时，证明资源基线回收；不能据此冒充操作系统 Socket 慢写通过。
 
 2026-09-16 客户端开发入口迁移：先在 TiangZ 运行 npm run codegen，再到独立 TiangZ-Examples 执行 npm run sdk:sync、npm run check。Cocos/Pixi/Godot/Unity/UE 的手写业务位于该工程 clients/；不得在主工程重新创建 client_demo 或用联接伪装旧目录。SDK 同步命令只更新 tiangz.clients.json 声明的生成目标，--check 不写文件，编辑器 .meta 保留。服务端 MMORPG、Native 与 ModuleGame/WoW335 公共模块依赖迁移仍待完成，本次没有修改玩法或现有数据库。详见 [示例拆分状态](../design/example-extraction.md)。
 

@@ -1,12 +1,42 @@
 # 2026-09-16 模块拆分后的当前事实
 
+夜间最新检查点见[0.7 实施进度](../design/v0.7-progress.md)：已分开本地提交纯搬移、Timer/RPC、网络、Host/SDK 和插件修复；宿主最新完整矩阵全绿，两 VSIX 在专用目录安装并验证版本/哈希。未推送或发布，TS 外层预算、总量上限、Program 规则、G/AI/S/O 等继续推进，历史“未提交/未安装”描述仅属于其当时批次。
+
 0.7 RPC 预留修复：SceneCallContext 在 reserveRpcId 后立即进入 finally 保护，覆盖请求赋值、编码、Actor 信封封装、发送和响应解析；同步编码失败也必须释放 ID。9 条回归覆盖冻结请求、编码/封装与响应错误，原 6 条失败已转绿；不能仅捕获网络异常。
 
 0.7 Timer 修复：异步到期/取消回调在真实完成前计入 InFlightCount，Process 的热更提交与 pendingAsync 读取该计数；每轮先冻结到期集合，回调中新建 Timer 下轮运行，重复期限须严格晚于当前帧。所有者销毁不提前释放在途计数；新增 Stable getter 需要完整构建重启。原失败反例与完整回归均已验证。
 
 0.7 EntryScene 的纯拆分将配置/路由契约留在 process/types.ts，实现及私有队列归 process/EntryScene.ts；Stable 导出不变，33 个非 import 声明机械比对一致。执行体不变但声明图/构建指纹变化，需完整构建重启，见[拆分记录](../design/v0.7-entry-scene-split.md)。缺陷修复另行提交。
 
-2026-09-25：新增 [0.7 设计稿](../design/v0.7-design.md)，当前为待评审文档，不代表实现或发布验收通过。范围包括 Runtime 可靠性、可选目录寻址、模块配置边界、克制拆分、DBProxy 服务端/SDK、Developer Tools 与 Native Language 两个 VS Code 插件、AI Plugins 和 Examples。六仓库已创建各自 `feat/v0.7` worktree，任务必须显式选择目标宿主；AI 规则源在 TiangZ `tools/ai-assistants/`，分发同步到 AI Plugins 工作树。EntryScene 拆分仍为未提交草稿，不能据此更改 Stable 依赖或认定当前基线已迁移；实施顺序和验收以设计稿为准。
+编译检查候选发现真实误报：Developer Tools 以全文件字符串表传播时间函数别名，参数、块/catch 和同级函数的同名合法调用被错误阻断。三个反例先红后绿，改为词法作用域绑定，61 项 Core 测试通过；不可删除别名检查来消除误报，须同时保留真实时间等待反例。CLI/LS 与宿主安装版本的证据分开，见[插件兼容记录](../design/v0.7-plugin-compatibility.md)。
+
+慢写实测更新：真实 TCP 不读对端已证明已开始写入后按期限退出，Windows 全目标含 KCP 179 条及 Clippy 通过；Linux 条件分支检查通过。证据 `temp/v0.7-write-budget-green.log`、`v0.7-write-budget-clippy.log`、`v0.7-linux-write-check.log`；后续完整 verify 独立报告，不等价于生产长稳或 KCP ACK 恢复。
+
+夜间构建入口修正：`build:runtime:debug` 原先直接执行 Cargo，绕过测试矩阵里的 CC/CXX 过滤，导致本机继承 GNU 编译器后 LNK1143 再现（`temp/v0.7-write-budget-host-build.log`）。该脚本现经 `tools/run_cargo.mjs`，确定 MSVC 目标后仅对子进程移除 GNU CC/CXX，保留显式其他目标和系统设置；不要只靠人工清变量或清 Cargo 缓存。复测应从同一 npm 入口重新构建，再完整 verify。
+
+0.7 慢写候选增加 `process.network.writeTimeoutMs`（1..300000，默认 10000ms），从批次准入覆盖排队和写出；正常关闭的所有批次另共享既有 stopTimeoutMs。TCP/WebSocket/io_uring 超时结束字节流，KCP 仅约束交给可靠传输前的排队；不能将本机写入当成业务确认。writer 完成/失败/panic 通过 RAII 通知读侧清理，队列停止新准入再按原顺序排空。Rust/TS 配置、插件 Schema 和[传输说明](../reference/transport-backend.md)同步，旧 0.6.x 配置保持默认行为来源但超时规则在 0.7 收紧，旧宿主不接受新增字段。
+
+网络测试夹具修正：Windows 首轮慢写测试 148 通过、2 个 KCP bind 失败（`temp/v0.7-write-budget-first.log`）。夹具先申请 TCP 空闲端口再绑定 UDP，TCP 可用不能证明 UDP 不在系统保留范围；按真实协议以端口 0 申请，再运行 `cargo test --bin TiangZ --features kcp --locked`，不改系统端口保留设置、不将失败跳过。确定性 duplex 已证明生产 vectored writer 实际写出 64 字节半帧后超时和预算回收；实际 Socket 慢写还需独立证据。
+
+0.7 插件候选：Native Core 0.17.0 / VSIX 0.16.0 保持自身版本序列，打包文件名改为读取扩展清单，包内记录两个版本及 bundle 哈希。29 个插件用例、真实 VSIX 内容核对、四类夹具 21 份输出对照与 11 份生成 TS 的宿主 TypeScript 6.0.3 检查通过；宿主仍固定 Core 0.16.0，未安装候选插件。具体证据与边界见[插件兼容记录](../design/v0.7-plugin-compatibility.md)。import-only 包不能用 CJS resolve 判断缺失；跨仓库生成夹具使用 CompilerHost 虚拟挂载，不能放宽宿主规则或写入其他工作树 Generated。
+
+出站预算由批次守卫持有，排队、写出、KCP 转发结束或取消时恰好释放一次；取出队列并不释放，实际丢弃批次才释放。`small_outbound_sets_keep_direct_connection_order` 的旧夹具在丢弃批次后仍期待计数为 3/6，与新契约冲突；保持原顺序断言，改为验证丢弃前 3/6、后 0/0。独立队列销毁反例已先在旧代码失败，不能靠后端测试手工减计数伪造释放。KCP 内部重传缓冲及 Process 总量尚不由此证明有界。
+
+0.7 端点所有权补充：Process 监督实际 EndpointTask，端点用 JoinSet 持有连接，连接持有 writer 和 RAII 登记；异常结束走 Process 停机并返回失败，不能只记日志。停止准入取消未完成握手，正常连接仍排空已入队通知，网络排空使用既有 `stopTimeoutMs`，超过期限取消异步任务。健康 listener/HTTP 任务同样绑定所有者。KCP 的非法 Session 数据曾终止共享 listener；真实双客户端反例先红后绿，现仅关闭该 Session。当前 Windows `--features kcp` 二进制 141 条通过，源码与阶段边界见[第二批记录](../design/v0.7-batch2-contracts.md)。
+
+0.7 网络补充：TCP/Auto 已把 `inner/outer/mixed` 贯穿真实连接准入，WebSocket 在 HTTP Upgrade 前检查 audience；内部连接仍需凭据。WebSocket 解码器同步应用既有 1 MiB 单帧/重组消息上限，不能仅在收到完整消息后检查。准入矩阵先红后绿，Windows 二进制 130 条通过；收包反例与后续结果见[第二批记录](../design/v0.7-batch2-contracts.md)。Linux/io_uring、连接总量及退出所有权尚未由这些结果覆盖。
+
+2026-09-26 夜间继续：用户要求持续推进并由本任务处理常规选择。第二批具体契约见[夜间实施记录](../design/v0.7-batch2-contracts.md)。DBProxy Rust SDK 的 5 个总预算反例已先失败后修复，客户端 28 条、工作区 200 条和 Clippy 通过。Host 已让任务排队/池等待/I/O 共享预算并绑定调用方取消，删除整池重放层，4 个定向测试通过；Repository 的外层预算仍需接续。部分写使用确定性 64 字节 duplex 验证；本机 TCP 的小缓冲夹具实际已经完成写入，不能把响应等待当部分写。阶段、原因和原失败证据同步见开发手册，首批报告保留为历史验收，不代表第二批也已完成。
+
+2026-09-25 用户确认开始实施 [0.7 设计稿](../design/v0.7-design.md)；2026-09-26 首批 R1–R4 与 DBProxy D1 的本地验收完成：TiangZ check 8/8、quick 32/32、full 8/8；DBProxy Rust 190 条、TS SDK 21 条通过，47 条真实存储/显式故障用例未运行，详见[首批实现与验收记录](../design/v0.7-batch1-acceptance.md)。Stable Core API 锁有已记录的声明图漂移，源码尚未提交；其余预算、模块迁移及插件兼容仍依设计分批推进，不能把首批通过当作 0.7 发布通过。六仓库各自使用 `feat/v0.7` worktree；插件保留自身发行序列，工作树后缀不表示插件降版。AI 规则源仍在 TiangZ `tools/ai-assistants/`，分发使用 AI Plugins 工作树。EntryScene 机械拆分已独立验证声明和执行体，业务只通过 Stable 入口访问 Core。
+
+首批运行时约束：TimerSystem 跟踪已触发的异步到期/取消回调直到真实完成，包括 Actor mailbox 中的排队回调；所有者销毁不能提前释放热更排空计数。每次 Update 先冻结到期集合，回调新建的 Timer 最早下一轮执行，取消仍立即生效；浮点帧时间不能使重复 Timer 的下次期限停留在当前周期。RPC 编码、请求赋值、Actor 信封封装及发送均属于预留 ID 的 finally 释放范围。失败复现与 Windows 工具链教训同步见[开发手册](business-development-manual.md#07-首批运行时修复与构建环境2026-09-25)。
+
+流识别/握手集中在 `src/transport_backend/handshake.rs`，原生 TCP 半流和已升级 WebSocket 再交还 epoll 连接所有者。Auto 消费的三字节前缀必须重放。第二批把既有 5000ms 总握手期限扩展到显式 TCP/WebSocket 和 io_uring TCP；初始帧长度、HTTP 升级或内部认证都不能因分片刷新预算。连接读写/总量仍需单独验收，参见[传输说明](../reference/transport-backend.md)，不能推导为全部慢连接已受限。
+
+本次真实构建补充了工具链证据：MSVC 构建子进程清除继承的 GNU CC/CXX，跨盘 V8 源码使用工作树内目录联接；完整 verify 前先构建 debug 宿主，不能以 cargo test 的测试二进制代替。原因和原始失败记录见上述首批文档及开发手册，不更改整机安全设置。
+
+隔离热更测试必须保留自身依赖的 INFO 事件：外部 `RUST_LOG=warn` 曾让开发流程与故障驱动错过完成/暂停日志，导致测试超时及驱动未释放请求。两个夹具的子进程固定 `warn,tiangz::hotfix=info` 后复测，不能改宿主日志默认值、放宽热更窗口或绕过真实排空来处理此环境问题。原失败和当前结果见首批记录。
 
 新 worktree 依赖准备教训：Git 依赖的 prepare 产物不能通过 `npm ci --ignore-scripts` 获得；正常 `npm ci` 后再 codegen/验证。前置 quick 因依赖缺产物失败，重装后的运行被主动停止，不能记为整轮通过。现象、修法和复测入口见 [AI 业务开发手册](business-development-manual.md#07-worktree-依赖准备与中止结果2026-09-25)。
 
