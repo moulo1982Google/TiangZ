@@ -19,7 +19,9 @@ assert.ok(Number.isInteger(rounds) && rounds >= 1 && rounds <= 20);
 const endpoint = args.get("--dbproxy-endpoint");
 if (endpoint && !/^127\.0\.0\.1:\d+$/.test(endpoint)) throw new Error("only an explicitly selected loopback DBProxy is supported");
 if (!endpoint && args.has("--dbproxy-env-file")) throw new Error("env file requires --dbproxy-endpoint");
-const env = { ...process.env, TIANGZ_SOAK_TOKEN: "local-hotfix-soak", TIANGZ_WATCHER_CONTROL: "stdin" };
+// 暂停检查依赖热更 INFO 事件，不能继承外部 warn/off 过滤而错过释放时机。
+// Pause coordination needs Hotfix INFO events even when the caller filters logs at warn/off.
+const env = { ...process.env, RUST_LOG: "warn,tiangz::hotfix=info", TIANGZ_SOAK_TOKEN: "local-hotfix-soak", TIANGZ_WATCHER_CONTROL: "stdin" };
 if (endpoint && args.has("--dbproxy-env-file")) {
   const content = await readFile(path.resolve(args.get("--dbproxy-env-file")), "utf8");
   const token = /^(?:SLG_)?DBPROXY_AUTH_TOKEN=(.+)$/m.exec(content)?.[1]?.trim().replace(/^(['"])(.*)\1$/, "$2");
