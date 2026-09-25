@@ -9,7 +9,7 @@ import type {
   AnyRpcDescriptor,
   RpcDescriptor,
 } from "../protocol/rpc";
-import type { EntryScene } from "./types";
+import type { EntryScene } from "./EntryScene";
 import { HotfixBindingStore } from "../hotReload/HotfixSystem";
 
 type SceneClass<TScene extends EntryScene> = new (...args: any[]) => TScene;

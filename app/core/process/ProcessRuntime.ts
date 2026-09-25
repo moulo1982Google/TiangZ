@@ -6,8 +6,8 @@ import { TimeSystem } from "../runtime/TimeSystem";
 import { TimerSystem } from "../runtime/TimerSystem";
 import { UpdateSystem } from "../runtime/UpdateSystem";
 import { getEntrySceneCtor, listEntrySceneTypes } from "./registry";
+import type { EntryScene } from "./EntryScene";
 import type {
-  EntryScene,
   LocalSceneRouter,
   OutboundBatch,
   ProcessRuntimeConfig,

@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+0.7 EntryScene 纯搬移：业务继续使用 Stable 导出的 EntryScene，不导入内部 process/EntryScene.ts。配置契约和实现物理分离，33 个非 import 声明保持；完整声明图与构建身份变化仍需重建/重启，不能只发 Hotfix，见[拆分记录](../design/v0.7-entry-scene-split.md)。
+
 2026-09-25：0.7 当前先交付[详细设计稿](../design/v0.7-design.md)，实现与验收尚未完成。目标是通用后端可靠性、模块边界、静态检查和[克制拆分](../reference/coding-conventions.md#克制拆分)，同时规划 DBProxy、两个 VS Code 插件和 AI 分发包。实现使用六仓库各自的 `feat/v0.7` worktree，业务仍通过 Stable 入口，不依赖 EntryScene 未提交拆分草稿的内部路径。总预算不等于撤销已执行业务，回执清理/记录删除和异步 Native op 仍按独立候选评审；包更新须验证实际生成/安装身份，不能把文档、dist 或部分测试当作完成交付。
 
 2026-09-18短时采样回归已通过：`sampling10-rd6WDP/report.json`为`sampling10-passed`，北京时间10:36:32开始测量，实测601201ms，10:46:54完成清理；21个有效资源样本通过原20个门槛、同PID及增长检查，26笔业务及26次原命令重放、29次对账、233次快照，最终冷重启恢复通过，游戏/代理/探针/存储全部停止。正式构建与24项工具测试通过；历史样本回放确定复现原18/20失败。本轮仅验证采样修复，未执行热更和五种故障，未启动新八小时测试，原八小时失败报告保持不变。 / The ten-minute sampling regression passed with 21 valid samples against the unchanged 20-sample threshold, same-process growth checks, 26 operations and replays, 29 reconciliations, 233 snapshots, final cold recovery and complete cleanup. The official build and all 24 tool tests passed, including replay of the original 18/20 failure. This verifies sampling only; no new eight-hour soak was started.

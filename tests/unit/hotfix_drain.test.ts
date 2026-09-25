@@ -3,7 +3,7 @@ import { ProcessRuntime } from "../../app/core/process/ProcessRuntime";
 import { TimerSystem } from "../../app/core/runtime/TimerSystem";
 import { UpdateSystem } from "../../app/core/runtime/UpdateSystem";
 import { TimeSystem } from "../../app/core/runtime/TimeSystem";
-import { EntryScene } from "../../app/core/process/types";
+import { EntryScene } from "../../app/core/process/EntryScene";
 import { entryScene } from "../../app/core/process/registry";
 
 let active: DrainFixture;

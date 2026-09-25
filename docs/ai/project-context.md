@@ -1,5 +1,7 @@
 # 2026-09-16 模块拆分后的当前事实
 
+0.7 EntryScene 的纯拆分将配置/路由契约留在 process/types.ts，实现及私有队列归 process/EntryScene.ts；Stable 导出不变，33 个非 import 声明机械比对一致。执行体不变但声明图/构建指纹变化，需完整构建重启，见[拆分记录](../design/v0.7-entry-scene-split.md)。缺陷修复另行提交。
+
 2026-09-25：新增 [0.7 设计稿](../design/v0.7-design.md)，当前为待评审文档，不代表实现或发布验收通过。范围包括 Runtime 可靠性、可选目录寻址、模块配置边界、克制拆分、DBProxy 服务端/SDK、Developer Tools 与 Native Language 两个 VS Code 插件、AI Plugins 和 Examples。六仓库已创建各自 `feat/v0.7` worktree，任务必须显式选择目标宿主；AI 规则源在 TiangZ `tools/ai-assistants/`，分发同步到 AI Plugins 工作树。EntryScene 拆分仍为未提交草稿，不能据此更改 Stable 依赖或认定当前基线已迁移；实施顺序和验收以设计稿为准。
 
 新 worktree 依赖准备教训：Git 依赖的 prepare 产物不能通过 `npm ci --ignore-scripts` 获得；正常 `npm ci` 后再 codegen/验证。前置 quick 因依赖缺产物失败，重装后的运行被主动停止，不能记为整轮通过。现象、修法和复测入口见 [AI 业务开发手册](business-development-manual.md#07-worktree-依赖准备与中止结果2026-09-25)。

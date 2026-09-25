@@ -21,7 +21,7 @@ import {
 } from "../app/core/process/sceneHandlers";
 import {
   EntryScene,
-} from "../app/core/process/types";
+} from "../app/core/process/EntryScene";
 import {
   sessionMessageHandler,
   type SessionMessageHandler,
