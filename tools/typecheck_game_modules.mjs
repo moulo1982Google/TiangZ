@@ -13,6 +13,7 @@ const root = path.resolve(import.meta.dirname, "..");
 let modulesOnly;
 let catalog;
 const json = process.argv.includes("--json");
+const contractWarnings = [];
 try {
   modulesOnly = resolveHostProfile() === "modules";
   const modulesArgument = argumentValue("--modules-dir") ?? process.env.TIANGZ_MODULES_DIR;
@@ -40,7 +41,7 @@ try {
     await runCompiler(project, module.id);
   }
 
-  process.stdout.write(json ? `${JSON.stringify({ formatVersion: 1, ok: true, modules: catalog.modules.map(module => module.id), diagnostics: [] })}\n` : `game module typecheck passed: modules=${catalog.modules.length}\n`);
+  process.stdout.write(json ? `${JSON.stringify({ formatVersion: 1, ok: true, modules: catalog.modules.map(module => module.id), diagnostics: contractWarnings })}\n` : `game module typecheck passed: modules=${catalog.modules.length}\n`);
 } catch (error) {
   if (json) process.stdout.write(`${JSON.stringify({ formatVersion: 1, ok: false, diagnostics: error.diagnostics ?? [{ code: "tiangz.module.typecheck", message: error.message }] })}\n`);
   else process.stderr.write(`${error.message}\n`);
@@ -90,6 +91,16 @@ function runCompiler(project, moduleId) {
     }) });
   }
   const owner = catalog.modules.find(module => module.id === moduleId);
+  if (typeof developerTools.runtimeContractDiagnostics !== "function") throw new Error("Developer Tools 缺少共享 Program 契约检查；请安装当前联合验证的 @tiangz/developer-tools-core。");
+  // 复用已绑定当前宿主和 System 声明的 Program；不得重读旧宿主 tsconfig。
+  // Reuse the Program bound to this host and generated System declarations.
+  const contracts = developerTools.runtimeContractDiagnostics(program, {
+    typescript: ts, projectRoot: owner.root, coreRoot: path.join(root, "app/core"),
+    sourceFiles: program.getSourceFiles().filter(source => [...owner.entries.modelRoots, ...owner.entries.hotfixRoots].some(directory => isWithin(directory, source.fileName))),
+  }).map(item => ({ code: item.code, severity: item.severity, file: path.resolve(owner.root, item.location.relativePath), line: item.location.line + 1, column: item.location.character + 1, message: item.message }));
+  if (contracts.some(item => item.severity === "error")) throw Object.assign(new Error(`game module ${moduleId} runtime contracts failed:\n${contracts.map(item => `${item.file}:${item.line}:${item.column} [${item.code}] ${item.message}`).join("\n")}`), { diagnostics: contracts });
+  contractWarnings.push(...contracts);
+  if (!json) for (const item of contracts) process.stderr.write(`warning ${item.file}:${item.line}:${item.column} [${item.code}] ${item.message}\n`);
   if (typeof developerTools.businessTimeDiagnostics !== "function") throw new Error("Developer Tools 缺少业务时间等待检查；请更新 @tiangz/developer-tools-core 并构建，再检查模块。");
   const timeDiagnostics = program.getSourceFiles()
     .filter(source => [...owner.entries.modelRoots, ...owner.entries.hotfixRoots].some(directory => isWithin(directory, source.fileName)))

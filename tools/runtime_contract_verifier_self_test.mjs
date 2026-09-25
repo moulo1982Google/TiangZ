@@ -27,7 +27,10 @@ const output = `${result.stdout}\n${result.stderr}`;
 for (const expected of [
   "Awake must be synchronous; remove the async modifier",
   "CaptureTransfer must be synchronous",
-  "method name must be a string literal",
+  "OnDestroy must be synchronous",
+  "[tiangz.timer.unverifiable] NewOnceTimer method name must have a string literal type",
+  "[tiangz.lifecycle.async-method]",
+  "[tiangz.timer.argument-mismatch]",
   "target does not exist on InvalidTimerContracts: Missing",
   "arguments (\"wrong args\") do not match Tick",
   "target does not exist on InvalidTimerContracts: MissingCancellation",
@@ -38,6 +41,7 @@ for (const expected of [
   }
 }
 
+assert.ok(!output.includes("Unrelated"), output);
 const fixture = await mkdtemp(path.join(tmpdir(), "tiangz-test-wrappers-"));
 try {
   await mkdir(path.join(fixture, "tools"));

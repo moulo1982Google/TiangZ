@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+0.7 生命周期/Timer 类型规则由 Developer Tools 唯一维护；Host/外置模块传自己的 TypeScript API 和当前 Program，不能跨 TS 版本复用 SyntaxKind 或按同名类猜 Core 身份。主工程 CLI/LSP 已共用类型规则，实际 receiver、当前取消上下文与生成 System 声明参与判断；明确违例 error，动态未证明 warning。普通 tsc 不自动加载规则。模块实时 LSP 仍待接线，现有宿主检查任务已复用规则，详见[Program 记录](../design/v0.7-program-contracts.md)。LSP 必须随 VSIX 携带匹配标准库并释放工程缓存；测试通信使用生产的对象参数协议，不以超时或“0 条错误”冒充成功。
+
+Program 接线完整矩阵曾有一次热更故障夹具 ENOBUFS（500 业务连接后的 admin HTTP connect），full 为 7/8；同命令三轮复测通过，不等于已查明资源失败。保留原报告与候选身份，不能通过缩减并发、修改系统 TCP 参数或把单项复测写成原整轮全绿。详见[实施进度](../design/v0.7-progress.md)。
+
 N3 V8 夹具已按每故障场景一个测试子进程隔离；端口重绑/名额归零仍在该子进程退出前断言，父测试确认实际执行一条用例，超时只回收自身子进程。不使用全局单线程测试绕过问题。隔离后全目标 KCP 189 条和 Clippy 通过；原 0xc0000409 缺原生栈、未再复现，仍是待定位现象，不能写成已证明的 V8 修复。
 
 Process 采样/快照转换现归 process/observability.rs，8 个内部 DTO/枚举、完整采样函数和两个原解析测试机械搬移；类型字段仍私有，V8 GC 回调及其 Box 指针生命周期留在 Process。规范化声明/执行体相同，证据见[纯拆分记录](../design/v0.7-observability-split.md)。联跑出现过一次 0xc0000409，无原生栈；后续并发多轮及本机 CDB 均 161 条通过，但原因尚未确定，不能宣称已修复。新增 N3 的多 Process/V8 测试应按宿主真实 OS 边界隔离，不能靠全套测试串行或降低断言掩盖异常。
