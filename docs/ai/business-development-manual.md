@@ -1,5 +1,13 @@
 # 2026-09-16：先选业务工程，再写模块
 
+AI 插件候选从 tools/ai-assistants 唯一源生成，使用 distribute.py --repository 显式选择分发 worktree，不靠 sibling 默认目录或框架 0.7 给插件改版本。当前实际包内四工具/六建议验证通过，Cindy 版本输出改为未探测与核对入口；不能宣称用户客户端已更新。技能校验要检查解释器真实来源：本机 MSYS2 venv 为 bin/python.exe，缺 PyYAML 时用独立 venv 的纯 Python 安装，保留最初默认扩展构建失败记录。详见[交付记录](assistant-packages.md)，不修改整机 PATH/CC 或第三方源码绕过。
+
+0.7 持久化调用使用共享预算：一个 Repository Load/Save/Enqueue 入口包含编码、版本读取、迁移回写/重读及退避；并发调用各自独立，不给重试续期。相同幂等号必须携带相同字节，Codec 返回复用缓冲区时框架也必须在首发前复制。旧 Transport 未实现物理超时不能声明 supportsRequestTimeout；不使用 Promise.race 假装取消 I/O。Host 将期限固定在参数转换前，并由 Rust Instant 与 OwnedRequest 管理真实任务。候选 SDK/Host 证据和发布依赖限制见[第二批记录](../design/v0.7-batch2-contracts.md)。
+
+新增 async Host op 参数后的最低复测必须包括真实 V8：这轮 Cargo check 成功，实际启动因 10 参数超过 Deno 包装器上限失败；namespace/key 合并为一个结构化 record、保留 payload/result 字节参数后，Host 16 条定向通过并验证隔离 TCP 超时 EOF。原始/修复日志 `temp/v0.7-ts-host-budget-tests.log`、`temp/v0.7-ts-host-budget-tests-fixed.log`。禁止改第三方源码或省略启动测试。旧 Repository 夹具若绕过 SDK、不声明新能力，须更新为真实 SDK + 明确即时内存替身，不给真实旧实现伪造能力。当前开发 worktree 安装本地 npm 候选，默认 npm ci 仍恢复旧 SDK；正式依赖冻结前不能宣称干净检出验收完成。
+
+可选参数也有兼容边界：本轮完整矩阵中 CommitRecords 的既有调用形状断言检出新增 undefined 实参。保留原断言，SDK 和 Host Transport 无预算时维持原参数个数；不能把“可选类型”当成运行时一定不可见。红测在 `temp/v0.7-ts-budget-verify.log`，SDK 29 条复测在其 `target/test-results/v0.7-ts-budget-legacy-args.log`。Rust 候选联调使用独立源码副本和局部 path patch，16 条通过、主 Cargo.lock 哈希未变；不可把该局部路径锁提交到正式宿主。
+
 接续夜间工作以[0.7 实施进度](../design/v0.7-progress.md)为准：最新 full 8/8、quick 32/32、check 8/8；源码已按职责本地提交。两个候选 VSIX 已在独立用户数据/扩展目录安装并校验，日常用户扩展未改。Native/Developer 包身份字段不同，读取时按实际清单映射，不能假设同一 schema 后把脚本失败当成包损坏；实际 CLI/LS、安装内容与可视 UI 证据分别记录。
 
 0.7 RPC ID 修复：请求赋值或编码可以同步抛错，预留请求号之后的全部工作必须位于 try/finally 内；Actor 转发的帧重写也一样。不能只在发送失败时清理。9 条 SceneCallContext 回归含原 6 条失败已通过，失败后原 ID 可重新使用。

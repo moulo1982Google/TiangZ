@@ -1,6 +1,14 @@
 # 2026-09-16 模块拆分后的当前事实
 
-夜间最新检查点见[0.7 实施进度](../design/v0.7-progress.md)：已分开本地提交纯搬移、Timer/RPC、网络、Host/SDK 和插件修复；宿主最新完整矩阵全绿，两 VSIX 在专用目录安装并验证版本/哈希。未推送或发布，TS 外层预算、总量上限、Program 规则、G/AI/S/O 等继续推进，历史“未提交/未安装”描述仅属于其当时批次。
+0.7 AI 源与分发已同步候选：操作预算、Timer 在途、可选逻辑目录及各插件独立版本规则进入 tools/ai-assistants，Cindy 明示版本未探测，规则 36 条。显式分发脚本只写指定仓库生成物，核对清单版本/哈希；实际归档内四个工具、六类建议通过，未安装或调用 Forge。见[交付记录](assistant-packages.md)。技能校验缺 PyYAML 且 MSYS2 venv 使用 bin 路径，独立 venv 纯 Python 安装后通过；不要误认没有 Python或改系统工具链。
+
+0.7 DBProxy 外层预算已接通候选 SDK：每次 Repository 操作新建独立 WithRequestBudget 范围，读取/迁移/编码/同 ID 重试/退避共享期限；缓冲区在首次发送前复制，避免 Codec 复用后改变重试字节。Host 在转换前固定 Rust Instant 绝对期限，过期不启动新 I/O，未知提交结果仍按未知处理，不以 Promise.race 冒充取消。SDK 29 条、Repository 23 条和裸 V8/TCP 回收通过，见[第二批记录](../design/v0.7-batch2-contracts.md)。当前 npm 候选是显式本地安装，默认发布 tag/锁尚未冻结，npm ci 会恢复旧 SDK，不能把候选通过写成默认检出通过。
+
+Host op 新参数教训：Cargo check 通过不等于 Deno 包装器可以启动。单记录事务 op 增至 10 参数后真实 V8 报 `Too many arguments for async op codegen`（`temp/v0.7-ts-host-budget-tests.log`）；记录身份改为结构化参数后 16 条 Host 定向测试通过（`-fixed.log`）。必须重建并运行真实 V8 与新参数路径，不修改第三方运行时/跳过启动测试；TS 测试夹具也必须覆盖真实 SDK 验证与防御性复制，而非伪装客户端对象。
+
+预算联合回归保留普通调用形状：完整矩阵的旧 CommitRecords 断言发现额外 undefined 参数（`temp/v0.7-ts-budget-verify.log`），未开启预算也能被宿主观察到参数个数变化。SDK 与 Host Transport 改为无预算时省略参数、开启时才传期限；保留原断言并增加 SDK 回归，不能通过放宽旧断言隐藏兼容差异。DBProxy Rust 候选已在隔离源码副本显式链接，16 条 Host 测试通过（`temp/v0.7-dbproxy-joint.log`），主 Cargo.lock 哈希保持，副本自身路径锁不提交。
+
+夜间最新检查点见[0.7 实施进度](../design/v0.7-progress.md)：已分开本地提交纯搬移、Timer/RPC、网络、Host/SDK/Repository 和插件修复；宿主 TS 预算轮完整矩阵全绿，两 VSIX 在专用目录安装并验证版本/哈希，AI 分发产物已核对。未推送或发布，默认依赖冻结、总量上限、Program 规则、G/S/O 等继续推进，历史“未提交/未安装”描述仅属于其当时批次。
 
 0.7 RPC 预留修复：SceneCallContext 在 reserveRpcId 后立即进入 finally 保护，覆盖请求赋值、编码、Actor 信封封装、发送和响应解析；同步编码失败也必须释放 ID。9 条回归覆盖冻结请求、编码/封装与响应错误，原 6 条失败已转绿；不能仅捕获网络异常。
 
