@@ -326,6 +326,9 @@ pub struct ProcessNetworkConfig {
     /// 全部流式监听端口共享的未完成握手名额。 / Pending stream handshake slots shared by all listeners.
     #[serde(default = "default_max_pending_handshakes")]
     pub max_pending_handshakes: usize,
+    /// 全部已登记 ConnectionWriter 的批次 payload 总预算。 / Total payload budget for batches held by registered ConnectionWriters.
+    #[serde(default = "default_max_outbound_buffered_bytes")]
+    pub max_outbound_buffered_bytes: usize,
     /// 出站批次从准入到写出完成的总期限，包含排队。 / Total outbound batch budget from admission through writing, including queue wait.
     #[serde(default = "default_connection_write_timeout_ms")]
     pub write_timeout_ms: u64,
@@ -343,6 +346,7 @@ impl Default for ProcessNetworkConfig {
             io_backend: IoBackendKind::default(),
             max_accepted_connections: default_max_accepted_connections(),
             max_pending_handshakes: default_max_pending_handshakes(),
+            max_outbound_buffered_bytes: default_max_outbound_buffered_bytes(),
             write_timeout_ms: default_connection_write_timeout_ms(),
             uring_entries: default_uring_entries(),
             uring_read_buffer_bytes: default_uring_read_buffer_bytes(),
@@ -607,6 +611,11 @@ fn default_max_accepted_connections() -> usize {
 /// 慢握手具有独立额度，避免先占满所有已接受连接。 / Gives slow handshakes a separate bound before they exhaust accepted connections.
 fn default_max_pending_handshakes() -> usize {
     1_024
+}
+
+/// 默认共享出站预算为 64 MiB，不替代每连接限制。 / Defaults the shared outbound budget to 64 MiB alongside per-connection limits.
+fn default_max_outbound_buffered_bytes() -> usize {
+    64 * 1024 * 1024
 }
 
 fn default_hotfix_reload_timeout_ms() -> u64 {
@@ -984,6 +993,9 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     }
     if !(1..=1_000_000).contains(&config.process.network.max_pending_handshakes) {
         bail!("process network.maxPendingHandshakes must be between 1 and 1000000");
+    }
+    if !(1..=1024 * 1024 * 1024).contains(&config.process.network.max_outbound_buffered_bytes) {
+        bail!("process network.maxOutboundBufferedBytes must be between 1 and 1073741824");
     }
     if config.process.scheduling.idle_tick_ms == Some(0) {
         bail!("process scheduling.idleTickMs must be greater than 0");
@@ -1469,6 +1481,40 @@ mod tests {
                     .is_err()
                 );
             }
+        }
+    }
+
+    #[test]
+    fn validates_shared_outbound_payload_budget_and_default() {
+        let legacy: ProcessConfig = serde_json::from_str(r#"{"name":"test"}"#).unwrap();
+        assert_eq!(legacy.network.max_outbound_buffered_bytes, 64 * 1024 * 1024);
+        for limit in [0, 1, 1024 * 1024 * 1024, 1024 * 1024 * 1024 + 1] {
+            let mut process = process(None);
+            process.network.max_outbound_buffered_bytes = limit;
+            let config = RuntimeConfig {
+                process,
+                scenes: vec![scene("gate", 7201)],
+                known_scenes: vec![],
+            };
+            let result = validate_runtime_config(&config);
+            if (1..=1024 * 1024 * 1024).contains(&limit) {
+                result.unwrap();
+            } else {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .to_string()
+                        .contains("maxOutboundBufferedBytes")
+                );
+            }
+        }
+        for invalid in ["-1", "1.5", "\"4096\""] {
+            assert!(
+                serde_json::from_str::<ProcessNetworkConfig>(&format!(
+                    r#"{{"maxOutboundBufferedBytes":{invalid}}}"#
+                ))
+                .is_err()
+            );
         }
     }
 

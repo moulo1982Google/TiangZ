@@ -178,6 +178,7 @@ async fn handle_raw_connection(
     let queued_frames = Arc::new(AtomicUsize::new(0));
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let connection_writer = ConnectionWriter {
+        process_buffer_budget: context.stats.outbound_buffers.clone(),
         sender: write_tx,
         queued_bytes: Arc::clone(&queued_bytes),
         queued_frames: Arc::clone(&queued_frames),

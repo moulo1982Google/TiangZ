@@ -276,6 +276,7 @@ extern "C" fn v8_gc_epilogue(
 
 pub(crate) struct ProcessQueueStats {
     pub(crate) admission: Arc<crate::transport_backend::admission::ConnectionAdmission>,
+    pub(crate) outbound_buffers: Arc<tiangz_transport::buffer_budget::BufferBudget>,
     capacity: usize,
     depth: AtomicUsize,
     max_depth: AtomicUsize,
@@ -323,6 +324,9 @@ impl ProcessQueueStats {
     /// Process 只创建一次准入所有者，端点通过共享统计句柄使用它。 / Creates one admission owner per process, shared through the endpoint statistics handle.
     fn with_network_limits(capacity: usize, network: &crate::config::ProcessNetworkConfig) -> Self {
         Self {
+            outbound_buffers: tiangz_transport::buffer_budget::BufferBudget::new(
+                network.max_outbound_buffered_bytes,
+            ),
             admission: Arc::new(
                 crate::transport_backend::admission::ConnectionAdmission::new(
                     network.max_accepted_connections,
@@ -1758,6 +1762,9 @@ fn flush_outbound(
             if error == ConnectionQueueError::Closed {
                 tracing::debug!(target: "tiangz::transport", connection_id,
                     "removing connection whose outbound receiver is closed");
+            } else if error == ConnectionQueueError::ProcessByteLimit {
+                tracing::warn!(target: "tiangz::transport", connection_id, reason = %error,
+                    "closing connection: shared process outbound payload budget exceeded");
             } else {
                 queue_stats
                     .slow_client_disconnects
@@ -1773,6 +1780,52 @@ fn flush_outbound(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn process_buffer_pressure_closes_rejected_recipient_without_blaming_slow_clients() {
+        let network = crate::config::ProcessNetworkConfig {
+            max_outbound_buffered_bytes: 2,
+            ..Default::default()
+        };
+        let stats = ProcessQueueStats::with_network_limits(16, &network);
+        let writers = Arc::new(Mutex::new(HashMap::new()));
+        let mut receivers = Vec::new();
+        let mut shutdowns = Vec::new();
+        for id in 1..=2 {
+            let (sender, receiver) = tokio::sync::mpsc::channel(1);
+            let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+            writers.lock().unwrap().insert(
+                id,
+                ConnectionWriter {
+                    process_buffer_budget: stats.outbound_buffers.clone(),
+                    sender,
+                    shutdown_tx,
+                    queued_bytes: Arc::new(AtomicUsize::new(0)),
+                    queued_frames: Arc::new(AtomicUsize::new(0)),
+                },
+            );
+            receivers.push(receiver);
+            shutdowns.push(shutdown_rx);
+        }
+        flush_outbound(
+            vec![BinaryOutboundBatch {
+                connection_ids: vec![1, 2],
+                frame: Bytes::from_static(&[0, 1]),
+            }],
+            &writers,
+            &stats,
+        )
+        .unwrap();
+        assert_eq!(writers.lock().unwrap().len(), 1);
+        assert!(writers.lock().unwrap().contains_key(&1));
+        assert!(!*shutdowns[0].borrow());
+        assert!(*shutdowns[1].borrow());
+        assert_eq!(stats.slow_client_disconnects.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.outbound_buffers.snapshot().used_bytes, 2);
+        assert_eq!(stats.outbound_buffers.snapshot().rejections, 1);
+        drop(receivers);
+        assert_eq!(stats.outbound_buffers.snapshot().used_bytes, 0);
+    }
 
     #[tokio::test]
     async fn bounded_process_queue_applies_backpressure() {
@@ -1950,6 +2003,9 @@ mod tests {
         writers.lock().unwrap().insert(
             7,
             ConnectionWriter {
+                process_buffer_budget: tiangz_transport::buffer_budget::BufferBudget::new(
+                    64 * 1024 * 1024,
+                ),
                 sender,
                 queued_bytes: Arc::new(AtomicUsize::new(CONNECTION_OUTBOUND_BYTE_CAPACITY)),
                 queued_frames: Arc::new(AtomicUsize::new(0)),
@@ -1991,6 +2047,9 @@ mod tests {
             writers.lock().unwrap().insert(
                 7,
                 ConnectionWriter {
+                    process_buffer_budget: tiangz_transport::buffer_budget::BufferBudget::new(
+                        64 * 1024 * 1024,
+                    ),
                     sender,
                     queued_bytes: Arc::clone(&queued_bytes),
                     queued_frames: Arc::clone(&queued_frames),
@@ -2023,6 +2082,9 @@ mod tests {
         writers.lock().unwrap().insert(
             7,
             ConnectionWriter {
+                process_buffer_budget: tiangz_transport::buffer_budget::BufferBudget::new(
+                    64 * 1024 * 1024,
+                ),
                 sender,
                 queued_bytes: Arc::new(AtomicUsize::new(0)),
                 queued_frames: Arc::new(AtomicUsize::new(0)),
@@ -2046,6 +2108,9 @@ mod tests {
             writers.lock().unwrap().insert(
                 connection_id,
                 ConnectionWriter {
+                    process_buffer_budget: tiangz_transport::buffer_budget::BufferBudget::new(
+                        64 * 1024 * 1024,
+                    ),
                     sender,
                     queued_bytes: Arc::new(AtomicUsize::new(0)),
                     queued_frames: Arc::new(AtomicUsize::new(0)),
@@ -2086,6 +2151,9 @@ mod tests {
         writers.lock().unwrap().insert(
             7,
             ConnectionWriter {
+                process_buffer_budget: tiangz_transport::buffer_budget::BufferBudget::new(
+                    64 * 1024 * 1024,
+                ),
                 sender,
                 queued_bytes: Arc::clone(&queued_bytes),
                 queued_frames: Arc::clone(&queued_frames),
@@ -2132,6 +2200,9 @@ mod tests {
         writers.lock().unwrap().insert(
             7,
             ConnectionWriter {
+                process_buffer_budget: tiangz_transport::buffer_budget::BufferBudget::new(
+                    64 * 1024 * 1024,
+                ),
                 sender,
                 queued_bytes: Arc::new(AtomicUsize::new(0)),
                 queued_frames: Arc::new(AtomicUsize::new(0)),

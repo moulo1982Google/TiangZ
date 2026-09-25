@@ -82,6 +82,7 @@ io_uring 必须显式启用，并把本进程启动的 Scene 标记为 `tcp`：
 - KCP 在有效 cookie 的 CONNECT 后取得同一 Process 连接名额；HELLO/Challenge 无 Session 分配，不占流握手名额，重复 CONNECT 复用已有 Session。KCP 既有每端点 65536 Session 上限仍生效。主动建立的 Inner 链接、健康 HTTP 不计入这两项业务入站额度；帧字节、KCP 未确认/重传缓存另行控制，连接数量上限不是整个进程的内存上限。
 - `tiangz_transport_admission_in_use`、`tiangz_transport_admission_limit`、`tiangz_transport_admission_rejections_total` 使用固定 `kind="connection"|"handshake"`，分别观察当前占用、配置上限、即时拒绝总数，不附加连接 ID 或地址标签。并发读写时两个占用 gauge 为近似同时的快照。旧 `tiangz_process_active_connections` 继续表示已登记 writer，不能拿它代替握手计数。
 - 0.7 新增 `writeTimeoutMs`，正整数 1..300000，默认 10000ms。每个出站批次从准入到完整写出共用期限，包含排队；KCP 只限制交给可靠传输前的宿主排队，不代表 ACK/重传完成。超过期限断开连接，部分写仍属于结果未知；0.6.x 宿主不接受此字段。
+- 0.7 新增 `maxOutboundBufferedBytes`，整数 1..1073741824，默认 67108864（64 MiB）。全部已登记 ConnectionWriter 共享批次 payload 预算，包含正在写出的数据，广播按接收者保守累计；每连接限制继续生效。总量不足立即拒绝该发送并关闭该连接，由 `tiangz_transport_buffer_rejections_total{kind="outbound"}` 记录，不归入慢客户端计数。占用/上限分别为 `tiangz_transport_buffer_bytes` / `tiangz_transport_buffer_limit_bytes`，相同固定 kind 标签。资源守卫跨排队、写出与 KCP 转发持有，到最后引用释放才归还；不承诺不同连接的公平性。此项不包括独立 InnerTransport 主动链路、入站/V8、系统 Socket 缓冲、KCP 内部未确认数据，不是 Process 总内存上限。
 - 开始关闭后，所有已接受批次共享 `process.lifecycle.stopTimeoutMs` 排空时间，不逐批重置。批次期限或关闭期限先到即停止；只有写出成功才记录完成指标。
 - `uringEntries` 必须是 64 到 32768 之间的 2 次幂；
 - `uringReadBufferBytes` 必须在 4KB 到 1MB 之间；

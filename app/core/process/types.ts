@@ -87,6 +87,8 @@ export interface ProcessNetworkConfig {
   maxAcceptedConnections?: number;
   /** 0.7：全部流式监听端口共享的未完成握手上限；1..1000000，默认1024。 / Since 0.7: shared pending stream handshake limit; 1..1000000, default 1024. */
   maxPendingHandshakes?: number;
+  /** 0.7：全部 ConnectionWriter 持有批次的 payload 字节预算，1..1073741824，默认64MiB；不含主动 Inner 链路及 KCP 内部缓存。 / Since 0.7: shared ConnectionWriter batch payload budget, 1..1073741824, default 64MiB; excludes active Inner links and KCP internals. */
+  maxOutboundBufferedBytes?: number;
   /** 0.7：出站批次从准入起的总写出预算，1..300000ms，默认10000。 / Since 0.7: total outbound budget from admission, 1..300000ms, default 10000. */
   writeTimeoutMs?: number;
   ioBackend?: "epoll" | "io-uring";

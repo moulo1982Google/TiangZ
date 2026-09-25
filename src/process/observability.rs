@@ -543,6 +543,7 @@ pub(super) fn maybe_log_metrics(
         transport_write_bytes: queue_stats.transport_write_bytes.load(Ordering::Relaxed),
         active_connections,
         admission: queue_stats.admission.snapshot(),
+        outbound_buffers: queue_stats.outbound_buffers.snapshot(),
         remote_transport_active_connections: remote_transport
             .as_ref()
             .map(|snapshot| snapshot.active_connections)

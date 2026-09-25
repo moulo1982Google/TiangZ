@@ -271,6 +271,7 @@ async fn handle_datagram(
                 context.writers.clone(),
                 connection_id,
                 ConnectionWriter {
+                    process_buffer_budget: context.stats.outbound_buffers.clone(),
                     sender: write_tx,
                     queued_bytes: Arc::clone(&queued_bytes),
                     queued_frames: Arc::clone(&queued_frames),

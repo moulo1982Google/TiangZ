@@ -15,6 +15,7 @@ fn queued(
     let (sender, receiver) = mpsc::channel(4);
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let writer = ConnectionWriter {
+        process_buffer_budget: super::BufferBudget::new(64 * 1024 * 1024),
         sender,
         shutdown_tx,
         queued_bytes: Arc::new(AtomicUsize::new(0)),
@@ -44,6 +45,7 @@ async fn expired_queue_budget_never_polls_a_ready_write() {
     drop(batch);
     assert_eq!(writer.queued_bytes.load(Ordering::Relaxed), 0);
     assert_eq!(writer.queued_frames.load(Ordering::Relaxed), 0);
+    assert_eq!(writer.process_buffer_budget.snapshot().used_bytes, 0);
 }
 
 #[tokio::test]
@@ -73,6 +75,7 @@ async fn partial_vectored_write_expires_and_releases_batch_and_stream() {
     assert_eq!(&received[..4], &4096_u32.to_be_bytes());
     assert_eq!(writer.queued_bytes.load(Ordering::Relaxed), 0);
     assert_eq!(writer.queued_frames.load(Ordering::Relaxed), 0);
+    assert_eq!(writer.process_buffer_budget.snapshot().used_bytes, 0);
 }
 
 #[tokio::test]
@@ -102,6 +105,7 @@ async fn close_budget_caps_in_flight_write_and_all_remaining_batches() {
     assert!(writer.sender.is_closed());
     assert_eq!(writer.queued_bytes.load(Ordering::Relaxed), 0);
     assert_eq!(writer.queued_frames.load(Ordering::Relaxed), 0);
+    assert_eq!(writer.process_buffer_budget.snapshot().used_bytes, 0);
     let mut received = Vec::new();
     peer.read_to_end(&mut received).await.unwrap();
     assert_eq!(received.len(), 64);

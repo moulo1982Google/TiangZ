@@ -169,6 +169,7 @@ async fn handle_raw_tcp_connection(
     let queued_frames = Arc::new(AtomicUsize::new(0));
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let connection_writer = ConnectionWriter {
+        process_buffer_budget: stats.outbound_buffers.clone(),
         sender: write_tx,
         queued_bytes,
         queued_frames,
@@ -293,6 +294,7 @@ async fn handle_websocket_connection(
         writers.clone(),
         connection_id,
         ConnectionWriter {
+            process_buffer_budget: stats.outbound_buffers.clone(),
             sender: write_tx,
             queued_bytes,
             queued_frames,

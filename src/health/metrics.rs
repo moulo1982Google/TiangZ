@@ -1035,6 +1035,36 @@ fn append_process_metrics_prometheus(
                 .expect("formatting admission metric");
         }
     }
+    for (metric, kind, description, value) in [
+        (
+            "bytes",
+            "gauge",
+            "Reserved payload bytes held by ConnectionWriter batches",
+            snapshot.outbound_buffers.used_bytes,
+        ),
+        (
+            "limit_bytes",
+            "gauge",
+            "Configured shared ConnectionWriter payload byte limit",
+            snapshot.outbound_buffers.limit_bytes,
+        ),
+        (
+            "rejections_total",
+            "counter",
+            "ConnectionWriter batches rejected at the shared payload byte limit",
+            snapshot.outbound_buffers.rejections,
+        ),
+    ] {
+        writeln!(
+            output,
+            "# HELP tiangz_transport_buffer_{metric} {description}"
+        )
+        .expect("formatting buffer help");
+        writeln!(output, "# TYPE tiangz_transport_buffer_{metric} {kind}")
+            .expect("formatting buffer type");
+        writeln!(output, "tiangz_transport_buffer_{metric}{{process=\"{process_name}\",kind=\"outbound\"}} {value}")
+            .expect("formatting buffer metric");
+    }
     writeln!(
         output,
         "# HELP tiangz_transport_inner_active_connections Active inner transport connections"
