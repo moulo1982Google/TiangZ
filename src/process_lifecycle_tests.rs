@@ -231,14 +231,60 @@ async fn process_partial_start_failure_reclaims_health_and_preceding_listener_wi
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn process_endpoint_failure_withdraws_real_readiness_and_reclaims_all_listeners() {
-    for (reason, message) in [
+    const CASE_ENV: &str = "TIANGZ_TEST_PROCESS_LIFECYCLE_CASE";
+    const TEST_NAME: &str = "process::lifecycle_tests::process_endpoint_failure_withdraws_real_readiness_and_reclaims_all_listeners";
+    let selected = match std::env::var(CASE_ENV) {
+        Ok(value) => value
+            .parse::<usize>()
+            .expect("invalid lifecycle fixture case"),
+        Err(std::env::VarError::NotPresent) => {
+            // 每个故障场景拥有独立 V8 平台和 OS 进程；端口重绑断言仍在子进程退出前执行。
+            // Each fault scenario owns one V8 platform/OS process; rebinding assertions still precede child exit.
+            for case in 0..3 {
+                let mut child = tokio::process::Command::new(std::env::current_exe().unwrap());
+                child
+                    .args(["--exact", TEST_NAME, "--nocapture"])
+                    .env(CASE_ENV, case.to_string())
+                    .kill_on_drop(true);
+                #[cfg(windows)]
+                child.creation_flags(0x0800_0000);
+                let output = timeout(Duration::from_secs(15), child.output())
+                    .await
+                    .expect("lifecycle child exceeded its watchdog")
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "lifecycle case {case} exited {}\n{}\n{}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                assert!(
+                    String::from_utf8_lossy(&output.stdout)
+                        .contains("test result: ok. 1 passed; 0 failed;"),
+                    "lifecycle child must actually execute its selected test: {}",
+                    String::from_utf8_lossy(&output.stdout)
+                );
+            }
+            return;
+        }
+        Err(error) => panic!("invalid lifecycle fixture environment: {error}"),
+    };
+    assert!(selected < 3, "invalid lifecycle fixture case");
+    for (index, (reason, message)) in [
         (ExitKind::Error, "controlled accept failure"),
         (ExitKind::Panic, "task failed"),
         (
             ExitKind::UnexpectedSuccess,
             "network endpoint exited unexpectedly",
         ),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if index != selected {
+            continue;
+        }
         let fixture = runtime_fixture(true);
         let (config, ports) = process_config();
         let (fail, failed) = oneshot::channel();
