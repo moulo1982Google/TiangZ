@@ -1,7 +1,8 @@
 //! 验证控制名额的真实 V8 转交、队列退出及独立完成通路。 / Verifies actual V8 handoff, receiver teardown and independent completions.
 
-use super::control_ingress::{ControlAdmission, HostEventPayload, PublishedControls};
+use super::control_ingress::{ControlAdmission, PublishedControls};
 use super::*;
+use crate::host::event_buffer::HostEventPayload;
 
 fn channel(capacity: usize) -> (ProcessEventSender, ProcessEventReceiver) {
     let (control_sender, control_receiver) = mpsc::sync_channel(4);
@@ -136,9 +137,11 @@ async fn control_ingress_real_v8_retains_slots_until_ack_and_completion_bypasses
         call_js_update_binary(&event_loop, &mut runtime, &entrypoints, false, false).unwrap();
         assert_eq!(admission.snapshot().reserved, 0);
         event_loop.block_on(sender.send(disconnect(6), None)).unwrap();
+        let published_before_skip = sender.stats.host_backing_store.snapshot().created_total;
         runtime.execute_script("test:skip.js", "globalThis.skipBatch = true;").unwrap();
         call_js_push_host_events(&mut runtime, &entrypoints, pack(&mut receiver, &sender.stats)).unwrap();
         assert_eq!(admission.snapshot().reserved, 0, "unconsumed TLS batch must be dropped");
+        assert_eq!(sender.stats.host_backing_store.snapshot().created_total, published_before_skip, "unconsumed TLS payload is not a V8 store");
         runtime.execute_script("test:take.js", "globalThis.skipBatch = false;").unwrap();
         event_loop.block_on(async {
             sender.send(disconnect(7), None).await.unwrap();
@@ -148,6 +151,8 @@ async fn control_ingress_real_v8_retains_slots_until_ack_and_completion_bypasses
         let mut stopped_wait = Box::pin(sender.send(disconnect(9), None));
         event_loop.block_on(async { assert!(futures_util::poll!(&mut stopped_wait).is_pending()); });
         drop(entrypoints); drop(runtime);
+        assert_eq!(sender.stats.host_backing_store.snapshot().bytes, 0);
+        assert_eq!(sender.stats.host_backing_store.snapshot().buffers, 0);
         assert_eq!(admission.snapshot().reserved, 0, "isolate drop releases published guards");
         assert!(event_loop.block_on(stopped_wait).unwrap_err().contains("stopped"));
         assert_eq!(admission.snapshot().peak, 2);

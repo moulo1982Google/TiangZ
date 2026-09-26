@@ -620,6 +620,7 @@ pub(super) fn maybe_log_metrics(
             .max_host_event_batch_bytes
             .load(Ordering::Relaxed) as u64,
         host_event_batch_splits: queue_stats.host_event_batch_splits.load(Ordering::Relaxed),
+        host_backing_store: queue_stats.host_backing_store.snapshot(),
         outbound_batches: queue_stats.outbound_batches.load(Ordering::Relaxed),
         outbound_recipients: queue_stats.outbound_recipients.load(Ordering::Relaxed),
         outbound_bridge_bytes: queue_stats.outbound_bridge_bytes.load(Ordering::Relaxed),

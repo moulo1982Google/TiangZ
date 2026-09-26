@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+Host 原缓冲区必须按整块 backing store 的最后所有者观测，不能按小子视图长度或请求完成时刻释放。真实 V8/Process 已分别验证子视图持有、最后 Native 引用、正常/停机批次与退出回收；Windows 含 KCP 完整 **8/33/9**、543205ms、Rust 263 项，`temp/v0.7-host-backing-verify.log`。Host/两报告 SHA256 `ba921afd32e5f0fa3d3b9f85824756e8fc6c283cf79dceac3a094b241ea58e90`，Linux 实际原生 **267 项**、Clippy 和 AI 实际归档通过，三宿主正常退出。真实控制请求排空后仍记录 129414 字节，此非零不能直接归因为泄漏，也未强制 GC；见[完整证据](../design/v0.7-host-backing-store.md)。观测排除显式业务复制/其他 op/总堆，未来硬额度须独立保证完成通路。
+
+原生 API 探针要先沿用当前 Host 的真实导入路径：首轮 backing store 集成测试 E0432，`Uint8Array` 实际位于 `deno_core::convert`，`temp/v0.7-host-backing-probe-initial.log`。此时未运行任何 GC/寿命断言，是夹具编译错误；不能改依赖、跳过 V8 或把失败当成框架泄漏。修正路径后复测 `node tools/run_cargo.mjs test --test host_backing_store_ownership --features kcp --locked -- --nocapture`，见[探针边界](../design/v0.7-host-backing-store.md)。
+
 控制入站现按 Process 共享 65536 个未开始项，确认必须等 TS 真正开始或丢弃未执行节点；转入忙碌 Scene mailbox 不得提前释放。实际完成通知和 Shutdown 保留独立通路。最终 Windows 含 KCP **8/33/9**、471440ms、Rust 262 项，`temp/v0.7-control-ingress-verify-final.log`；Host/报告 SHA256 `305b6dc50b08c6bf0347a5a0cf010b84fbef8bb69a2a035550c0685324adae05`。真实峰值 65536 后归零，77825 输入全部获得成功或明确过载，热更/原连接恢复及三宿主正常停机通过；Linux 实际原生 **266 项**、Clippy 和 AI 实际归档通过。完整失败、LE 过载信封夹具修正与边界见[验收](../design/v0.7-control-ingress.md)。必须使用配套新 Model 并重启；聚合确认只适合同质数量槽，不能拿它计不同大小或仍被 Actor DTO 持有的 backing buffer。
 
 io-uring 的 Socket 与 accept 所有权修复已通过真实专项 **4/4**，同一 listener 保持存活时验证关闭、恢复、阻塞控制通知及末条写入排空。最终 Linux **260 项**与全目标 Clippy 通过，`temp/v0.7-linux-native-final.log`；Windows 含 KCP 完整 **8/33/9**、524857ms，`temp/v0.7-linux-native-verify.log`，Host/两报告 SHA256 `4370b245a006fd8f3d642962446f49e5cd08674da4f92082291687c0fad6b500`。Linux 普通 Host SHA256 `2338a1ba0b463851372c65eb5255587dc15d1de3137238aedf9d6cc149e0f8c4`，AI 实际归档通过，三个 Windows 宿主正常退出。完整命令、原始失败与限制见[Linux 验收](../design/v0.7-linux-native-validation.md)；不将 Linux 原生验证说成完整 Linux 游戏热更矩阵。

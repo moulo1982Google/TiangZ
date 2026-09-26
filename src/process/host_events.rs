@@ -1,9 +1,10 @@
 //! 在复制前约束单个 Rust→V8 批次，满批保留原事件所有权。 / Bounds each Rust-to-V8 batch before copying, retaining original events when full.
 
-use super::control_ingress::{ControlReservation, HostEventPayload};
+use super::control_ingress::ControlReservation;
 use super::{ProcessEvent, ProcessEventKind, ProcessQueueStats};
+use crate::host::event_buffer::HostEventPayload;
 use anyhow::{Context, Result, bail};
-use std::sync::atomic::Ordering;
+use std::sync::{Arc, atomic::Ordering};
 
 pub(super) const HOST_EVENT_BATCH_MAX_BYTES: usize = 64 * 1024 * 1024;
 const BATCH_HEADER_BYTES: usize = 4;
@@ -132,6 +133,7 @@ impl HostEventBatch {
         HostEventPayload {
             bytes: self.bytes,
             reservations: self.reservations,
+            backing_stats: Arc::clone(&stats.host_backing_store),
         }
     }
 }

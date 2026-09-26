@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+Host 原缓冲区观测按[backing store 契约](../design/v0.7-host-backing-store.md)完成：4 字节闭包视图仍持有整块 65536 字节，真实 Process 的两个一字节视图使 80×1 MiB 跨批存储全部保留，isolate 退出归零。固定指标计整块逻辑字节至最后 Native/V8 所有者释放，未取 TLS 与空 take 不计。最终含 KCP **8/33/9**、543205ms、Rust 263 项，`temp/v0.7-host-backing-verify.log`；Host/两报告 SHA256 `ba921afd32e5f0fa3d3b9f85824756e8fc6c283cf79dceac3a094b241ea58e90`。Linux 实际原生 **267 项**与 Clippy、AI 实际归档通过，三个宿主正常退出；真实控制满额后排空仍观测到 129414 字节，不把请求完成等同于自然 GC 释放。该观测不是泄漏判定、业务堆或新硬额度；Linux 完整 TS 游戏矩阵和字节满额策略继续独立验证。
+
+Host backing store 探针首次仅编译失败：`temp/v0.7-host-backing-probe-initial.log` E0432，`Uint8Array` 位于当前依赖的 `deno_core::convert`，没有从根模块重导出。按现有 Host 的实际 import 修正，不更换依赖或绕过真实 V8；尚未执行寿命/GC 断言，不归因为框架内存问题。复测 `node tools/run_cargo.mjs test --test host_backing_store_ownership --features kcp --locked -- --nocapture`，范围见[backing store 审查](../design/v0.7-host-backing-store.md)。
+
 控制入站共享 65536 项未开始额度已贯穿 Native 队列、V8 批次和 TS 实际开始/丢弃；Disconnect 等待仍属于原清理任务，完成与 Shutdown 不竞争额度。最终含 KCP **8/33/9**、471440ms、Rust 262 项，`temp/v0.7-control-ingress-verify-final.log`；Host/两报告 SHA256 `305b6dc50b08c6bf0347a5a0cf010b84fbef8bb69a2a035550c0685324adae05`。真实 77825 输入中 69631 完成、8194 明确过载，共享峰值 65536 后归零，完成旁路、380.65ms 热更暂停和原连接恢复通过，三宿主正常退出。Linux 实际 V8/io-uring/kcp **266 项**与 Clippy、AI 0.2.0 实际归档通过。原实现/夹具失败与最终结果见[控制入站验收](../design/v0.7-control-ingress.md)，内部桥需重建重启；此数量额度不等于 TS 存活 backing buffer 或业务堆上限。
 
 Linux 原生验收现已从条件编译推进到实际运行：发现并修复 io-uring 握手/写失败后遗留 Socket、收割连接时遗弃 pending accept 两项问题，四项专项 **4/4**。最终 Linux V8/全目标 **260 项**与 Clippy `-D warnings` 通过，`temp/v0.7-linux-native-final.log`；Linux Host SHA256 `2338a1ba0b463851372c65eb5255587dc15d1de3137238aedf9d6cc149e0f8c4`。Windows 含 KCP 完整 **8/33/9**、524857ms、Rust 256 项，`temp/v0.7-linux-native-verify.log`，Host/两报告 SHA256 `4370b245a006fd8f3d642962446f49e5cd08674da4f92082291687c0fad6b500`，三个宿主正常退出。真实反例、编译错误、容器策略与平台验收边界均见[Linux 完整验收](../design/v0.7-linux-native-validation.md)。

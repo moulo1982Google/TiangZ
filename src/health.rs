@@ -91,6 +91,7 @@ pub(crate) struct ProcessObservabilitySnapshot {
     pub(crate) host_event_batch_limit_bytes: u64,
     pub(crate) max_host_event_batch_bytes: u64,
     pub(crate) host_event_batch_splits: u64,
+    pub(crate) host_backing_store: crate::host::event_buffer::HostBackingStoreSnapshot,
     pub(crate) outbound_batches: u64,
     pub(crate) outbound_recipients: u64,
     pub(crate) outbound_bridge_bytes: u64,
@@ -1206,6 +1207,12 @@ mod tests {
             host_event_batch_limit_bytes: 67108864,
             max_host_event_batch_bytes: 12345,
             host_event_batch_splits: 4,
+            host_backing_store: crate::host::event_buffer::HostBackingStoreSnapshot {
+                bytes: 4096,
+                max_bytes: 8192,
+                buffers: 2,
+                created_total: 7,
+            },
             queue_stages: vec![ProcessQueueStageObservabilitySnapshot {
                 stage: "frame".to_string(),
                 depth: 7,
@@ -1223,6 +1230,20 @@ mod tests {
         );
         assert!(body.contains("tiangz_process_host_event_batch_max_bytes{process=\"map1\"} 12345"));
         assert!(body.contains("tiangz_process_host_event_batch_splits_total{process=\"map1\"} 4"));
+        for (suffix, value, kind) in [
+            ("bytes", 4096, "gauge"),
+            ("max_bytes", 8192, "gauge"),
+            ("buffers", 2, "gauge"),
+            ("created_total", 7, "counter"),
+        ] {
+            let name = format!("tiangz_process_host_backing_store_{suffix}");
+            assert!(body.contains(&format!("# TYPE {name} {kind}")));
+            let rows: Vec<_> = body
+                .lines()
+                .filter(|line| line.starts_with(&format!("{name}{{")))
+                .collect();
+            assert_eq!(rows, vec![format!("{name}{{process=\"map1\"}} {value}")]);
+        }
         assert!(
             body.contains("tiangz_process_queue_stage_depth{process=\"map1\",stage=\"frame\"} 7")
         );

@@ -679,6 +679,30 @@ fn append_process_metrics_prometheus(
             "counter",
             snapshot.host_event_batch_splits,
         ),
+        (
+            "tiangz_process_host_backing_store_bytes",
+            "Logical bytes in original Host stores not yet released by their final Native or V8 owner, including pending GC",
+            "gauge",
+            snapshot.host_backing_store.bytes,
+        ),
+        (
+            "tiangz_process_host_backing_store_max_bytes",
+            "Peak logical bytes in original Host stores, not a capacity or total heap measure",
+            "gauge",
+            snapshot.host_backing_store.max_bytes,
+        ),
+        (
+            "tiangz_process_host_backing_store_buffers",
+            "Original Host stores whose final owner has not released them",
+            "gauge",
+            snapshot.host_backing_store.buffers,
+        ),
+        (
+            "tiangz_process_host_backing_store_created_total",
+            "Nonempty Host stores created for transfer to V8",
+            "counter",
+            snapshot.host_backing_store.created_total,
+        ),
     ] {
         writeln!(output, "# HELP {name} {help}\n# TYPE {name} {kind}\n{name}{{process=\"{process_name}\"}} {value}")
             .expect("formatting host event batch metric");

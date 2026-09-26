@@ -18,6 +18,8 @@
 
 ## 相关能力被修改时再核对
 
+- **Host backing store 观测**：packed 字节通过原 Process 的 Arc 账本随 Box 安全转交 V8；小子视图仍保留整块存储，计数至最后 Native/V8 所有者释放，GC 尚未回收也继续计。指标不是子视图长度之和、总堆、泄漏判定或硬额度，不含显式业务复制/其他 op；不按请求完成、控制确认或入站出队提前减计数。满额策略必须另行保证完成通路进展，不能伪装已执行请求为准入拒绝。实际 V8/API、原 Process 正常/停机交付与自然 GC 分层验证，不为指标强制 GC；当前安全 API 不适用于 V8 sandbox 构建。见[backing store](../design/v0.7-host-backing-store.md)。
+
 - **控制入站数量**：每 Process 共享 65536 项未开始 Inner RPC/Disconnect，Native 入队前准入并将守卫转交批次与实际 isolate；TS 真正开始或销毁未执行节点才单次确认，搬入忙碌 mailbox 不释放。RPC 复用 1011，断线等待留在原连接清理，Host completion/Shutdown 不占额度。聚合确认先验证再原子归还，只适用于同质数量槽；旧 Model 缺少必需确认入口应启动失败。接收器/isolate 退出唤醒等待并回收原所有者；不能丢 Disconnect、使用当前 Runtime 释放旧节点，或将数量上限称为 TS 对象/字节上限。见[控制入站](../design/v0.7-control-ingress.md)。
 
 - **io-uring 实际所有权**：Future drop 不代表内核 I/O/FD 已释放；握手关闭守卫成功后转交 writer，错误/取消 shutdown，正常写入先排空。listener 保留 pending accept，收割连接不得丢弃它；停止在原总预算内 shutdown/消费 accept 结果并排空连接，不能遗弃成功返回的 Socket。验收要在 listener/测试 Runtime 仍存活时检查超时 Socket、恢复连接及控制通知堵塞，计数归零、条件编译或仅创建 ring 均不能代替实际后端验证。见[Linux 原生验收](../design/v0.7-linux-native-validation.md)。

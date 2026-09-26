@@ -5,20 +5,21 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::process::control_ingress::{HostEventPayload, PublishedControls};
+use crate::process::control_ingress::PublishedControls;
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
-use deno_core::convert::Uint8Array;
 use deno_core::error::AnyError;
 use deno_core::{
     FsModuleLoader, JsBuffer, JsRuntime, ModuleSpecifier, OpState, PollEventLoopOptions,
     RuntimeOptions, op2, v8,
 };
 use deno_error::JsErrorBox;
+use event_buffer::{HostEventBuffer, HostEventPayload};
 use tiangz_transport::buffer_budget::BufferBudget;
 use tokio::runtime::Handle;
 
 mod deadlines;
+pub(crate) mod event_buffer;
 pub(crate) mod scene_operations;
 
 #[cfg(test)]
@@ -171,7 +172,7 @@ async fn op_host_sleep(ms: u32) {
 }
 
 #[op2]
-fn op_host_take_event_batch(state: &mut OpState) -> Result<Uint8Array, JsErrorBox> {
+fn op_host_take_event_batch(state: &mut OpState) -> Result<HostEventBuffer, JsErrorBox> {
     let payload = NEXT_HOST_EVENT_BATCH.with(|slot| slot.borrow_mut().take().unwrap_or_default());
     if !payload.reservations.is_empty() {
         state
@@ -181,7 +182,10 @@ fn op_host_take_event_batch(state: &mut OpState) -> Result<Uint8Array, JsErrorBo
             })?
             .publish(payload.reservations);
     }
-    Ok(payload.bytes.into())
+    Ok(HostEventBuffer {
+        bytes: payload.bytes,
+        stats: payload.backing_stats,
+    })
 }
 
 #[op2]

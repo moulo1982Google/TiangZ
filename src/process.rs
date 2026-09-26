@@ -307,6 +307,7 @@ extern "C" fn v8_gc_epilogue(
 }
 
 pub(crate) struct ProcessQueueStats {
+    pub(crate) host_backing_store: Arc<crate::host::event_buffer::HostBackingStoreStats>,
     pub(crate) control_admission: Arc<control_ingress::ControlAdmission>,
     pub(crate) host_scene_batches: Arc<crate::host::scene_operations::BatchAdmission>,
     pub(crate) admission: Arc<crate::transport_backend::admission::ConnectionAdmission>,
@@ -364,6 +365,7 @@ impl ProcessQueueStats {
         Self {
             host_scene_batches: crate::host::scene_operations::BatchAdmission::new(),
             control_admission: control_ingress::ControlAdmission::new(),
+            host_backing_store: Arc::default(),
             outbound_buffers: tiangz_transport::buffer_budget::BufferBudget::new(
                 network.max_outbound_buffered_bytes,
             ),

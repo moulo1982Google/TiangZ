@@ -44,10 +44,12 @@ async fn host_batches_bound_real_v8_delivery_during_running_and_shutdown() {
         r#"
         const duringStop = {during_stop};
         let received = 0, batches = 0, stopping = false, finish;
+        const retained = [];
         for (const name of ['__etsStartProcess', '__etsBeginHotfix', '__etsCommitHotfix', '__etsAbortHotfix'])
             globalThis[name] = () => '{{}}';
         globalThis.__etsDispatchHostEvents = () => {{
             const bytes = globalThis.__hostTakeEventBatch();
+            retained.push(bytes.subarray(4, 5));
             if (bytes.byteLength > 64 * 1024 * 1024) throw new Error('Host batch exceeds 64 MiB: ' + bytes.byteLength);
             if (stopping !== duringStop) throw new Error('completion delivered in wrong lifecycle phase');
             const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -67,6 +69,7 @@ async fn host_batches_bound_real_v8_delivery_during_running_and_shutdown() {
         }};
         function verify() {{
             if (received !== 80 || batches < 2) throw new Error('missing completion or split: ' + received + '/' + batches);
+            if (retained.length !== batches || retained.some(view => view[0] !== 3)) throw new Error('retained view changed');
         }}
         globalThis.__etsStopProcess = () => {{
             stopping = true;
@@ -141,6 +144,14 @@ async fn host_batches_bound_real_v8_delivery_during_running_and_shutdown() {
     assert_eq!(stats.host_completions.load(Ordering::Relaxed), 80);
     assert_eq!(stats.depth.load(Ordering::Relaxed), 0);
     assert_eq!(stats.host_event_batch_splits.load(Ordering::Relaxed), 1);
+    let backing = stats.host_backing_store.snapshot();
+    assert_eq!(backing.created_total, 2);
+    assert_eq!(backing.max_bytes, 8 + 80 * (13 + 1024 * 1024));
+    assert_eq!(
+        backing.bytes, 0,
+        "isolate exit releases both retained batch views"
+    );
+    assert_eq!(backing.buffers, 0);
     assert_eq!(
         stats.max_host_event_batch_bytes.load(Ordering::Relaxed),
         4 + 63 * (13 + 1024 * 1024)

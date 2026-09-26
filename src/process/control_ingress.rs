@@ -171,13 +171,6 @@ impl Drop for PublishedControls {
     }
 }
 
-/// 编码字节与其控制名额同时跨过 take-batch，不能只移动字节。 / Moves encoded bytes and their control reservations through take-batch together.
-#[derive(Default)]
-pub(crate) struct HostEventPayload {
-    pub(crate) bytes: Vec<u8>,
-    pub(crate) reservations: Vec<ControlReservation>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

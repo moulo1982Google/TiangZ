@@ -109,6 +109,14 @@ export async function runControlIngressFault({ port, healthPort, protocol, token
       const matching = lines.filter(line => line.startsWith(`tiangz_control_ingress_${name}{`));
       assert.equal(matching.length, 1); result[name] = Number(matching[0].split(" ").at(-1));
     }
+    result.backingStore = {};
+    for (const name of ["bytes", "max_bytes", "buffers", "created_total"]) {
+      const matching = lines.filter(line => line.startsWith(`tiangz_process_host_backing_store_${name}{`));
+      assert.equal(matching.length, 1);
+      const value = Number(matching[0].split(" ").at(-1));
+      assert.ok(Number.isSafeInteger(value) && value >= 0);
+      result.backingStore[name] = value;
+    }
     return result;
   };
   const control = await open(port);
@@ -143,7 +151,11 @@ export async function runControlIngressFault({ port, healthPort, protocol, token
     await producer.send(1);
     await until(() => producer.status().successes === successes + 1, "same Inner socket recovers after quota release");
     await control.call(94);
-    return { ...delivery, capacity: 65536, peak: current.max_reserved, reservedAfter: 0, completionBypassedFullQuota: true, pauseMs, recovered: true };
+    const after = await metrics();
+    assert.ok(after.backingStore.created_total > before.backingStore.created_total);
+    assert.ok(after.backingStore.max_bytes > 0);
+    // 自然 GC 没有业务完成时限；记录实际存活，不要求请求排空时字节已归零。 / Natural GC has no request deadline; record retention without requiring zero bytes at RPC drain.
+    return { ...delivery, capacity: 65536, peak: current.max_reserved, reservedAfter: 0, backingStoreAtCapacity: current.backingStore, backingStoreAfter: after.backingStore, completionBypassedFullQuota: true, pauseMs, recovered: true };
   } finally {
     producer?.close();
     await workerControl.call(81).catch(() => {});
