@@ -49,6 +49,12 @@ export interface GameMetricsSnapshot {
   sceneTaskCapacity: number;
   sceneTaskMaxInFlight: number;
   sceneTaskRejections: number;
+  actorMailboxInFlight: number;
+  actorMailboxCapacity: number;
+  actorMailboxPerActorCapacity: number;
+  actorMailboxMaxInFlight: number;
+  actorMailboxActorRejections: number;
+  actorMailboxProcessRejections: number;
 }
 
 export class ProcessRuntime implements LocalSceneRouter {
@@ -238,7 +244,7 @@ export class ProcessRuntime implements LocalSceneRouter {
     return this.sceneByName(targetName).dispatchLocalCall(frame);
   }
 
-  /** 将进程内单向帧入队；已关闭目标同步拒绝，接受后的 Handler 失败只记录日志。 / Enqueues a local one-way frame; closed targets reject synchronously while accepted handler failures are logged. */
+  /** 将进程内单向帧入队；关闭或满额同步拒绝，第一跳接受后的失败记录日志。 / Enqueues a local one-way frame; closed/full targets reject synchronously while failures after first-hop acceptance are logged. */
   sendLocalScene(_sourceName: string, targetName: string, frame: Uint8Array): MaybePromise<void> {
     const target = this.sceneByName(targetName);
     try {
@@ -250,7 +256,8 @@ export class ProcessRuntime implements LocalSceneRouter {
       }
     } catch (error) {
       // 同步准入失败必须返回调用者；它不同于已接受单向任务的执行失败。 / Synchronous admission failure belongs to the caller, unlike an accepted one-way handler failure.
-      if (error instanceof RpcError && error.code === SystemErrCode.SceneNotFound) throw error;
+      if (error instanceof RpcError &&
+        (error.code === SystemErrCode.SceneNotFound || error.code === SystemErrCode.SceneOverloaded)) throw error;
       CoreLogger.error("local one-way message failed", { targetScene: targetName, error });
     }
     return undefined;
@@ -350,6 +357,7 @@ function resolveMaxEventsPerUpdate(config: ProcessRuntimeConfig["process"]["sche
 function gameMetricsSnapshot(processHost: ProcessHost): GameMetricsSnapshot {
   return {
     ...processHost.SceneTaskMetrics(),
+    ...processHost.ActorMailboxTaskMetrics(),
     fixedUpdateMs: Game.Instance.FixedUpdateMs,
     frameCount: TimeSystem.Instance.FrameCount,
     skippedFixedUpdates: Game.Instance.SkippedFixedUpdates,

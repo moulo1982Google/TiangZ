@@ -276,6 +276,8 @@ export class SceneCallContext {
       }
     };
     const mapError = (error: unknown): RpcError => {
+      // 本地准入已有类型，不能因缺少 Rust 文本前缀而丢失 1011。 / Local admission is typed; missing a Rust text prefix must not erase 1011.
+      if (error instanceof RpcError && error.code === SystemErrCode.SceneOverloaded) return error;
       const text = error instanceof Error ? error.message : String(error);
       return new RpcError(
         text.includes("[scene-overloaded]")

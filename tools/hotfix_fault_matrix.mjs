@@ -288,6 +288,69 @@ try {
       return { admittedTasks: 4096, disposedOwners: 16, overloadResponses: 2, recovered: true };
     } finally { await control.call(28); await control.call(32); }
   });
+  await test("actor-mailbox-quotas-propagate-rejection-and-retain-disposed-work", async () => {
+    const quotaMetrics = async () => {
+      const response = await fetch(`http://127.0.0.1:${config.process.observability.health.port}/metrics`, { signal: AbortSignal.timeout(2000) });
+      assert.ok(response.ok);
+      const lines = (await response.text()).split(/\r?\n/);
+      return Object.fromEntries(["in_flight", "capacity", "per_actor_capacity", "max_in_flight", "actor_rejected_total", "process_rejected_total"].map(name => {
+        const matching = lines.filter(line => line.startsWith(`tiangz_process_actor_mailbox_tasks_${name}{`));
+        assert.equal(matching.length, 1, "Actor task quotas have one Process series");
+        return [name, Number(matching[0].split(" ").at(-1))];
+      }));
+    };
+    const closeSource = async actorIndex => {
+      const before = (await control.call(33)).count, victim = await open(mainScene.port);
+      try {
+        await victim.sendQuota(actorIndex);
+        await until(victim.closed, "overloaded one-way physical source is closed by server");
+        await until(async () => (await control.call(33)).count === before + 1, "real Disconnect reaches TS");
+        assert.equal(control.closed(), false, "unrelated control connection survives overload");
+      } finally { victim.close(); }
+    };
+    try {
+      const probes = (await control.call(42)).count;
+      assert.equal((await control.call(34)).count, 4096);
+      await assert.rejects(control.call(36), error => error.code === 1011 && /actor mailbox capacity exceeded/.test(error.message) && error.response.rpcId > 0);
+      await assert.rejects(control.call(45), error => error.code === 1011 && error.response.rpcId > 0);
+      await closeSource(0);
+      assert.equal((await control.call(35)).count, 16384);
+      await assert.rejects(control.call(37), error => error.code === 1011 && /process actor mailbox capacity exceeded/.test(error.message) && error.response.rpcId > 0);
+      await assert.rejects(control.call(46), error => error.code === 1011 && error.response.rpcId > 0);
+      await closeSource(4);
+      assert.equal((await control.call(43)).count, 16384, "only admitted Actor bodies started");
+      assert.equal((await control.call(38)).count, 4);
+      await assert.rejects(control.call(37), error => error.code === 1011);
+      await until(async () => (await quotaMetrics()).process_rejected_total === 4, "Actor quota HTTP metrics update");
+      assert.deepEqual(await quotaMetrics(), { in_flight: 16384, capacity: 16384, per_actor_capacity: 4096,
+        max_in_flight: 16384, actor_rejected_total: 3, process_rejected_total: 4 });
+      assert.equal((await control.call(42)).count, probes, "rejected Actor probes never execute");
+      assert.equal((await workerControl.call(34)).count, 4096, "another Process has an independent Actor quota");
+      await workerControl.call(39);
+      await until(async () => (await workerControl.call(40)).count === 0, "independent Process Actors complete");
+      assert.equal((await workerControl.call(44)).count, 0);
+      await workerControl.call(41);
+      const before = await admin("status"), op = begin(undefined, 422);
+      await op.paused();
+      assert.match((await op.pending).error, /drain deadline exceeded/);
+      assert.equal((await admin("status")).hotfix.generation, before.hotfix.generation);
+      await control.call(39);
+      await until(async () => (await control.call(40)).count === 0, "disposed Actor waits actually finish");
+      assert.equal((await control.call(37)).count, 1);
+      assert.equal((await control.call(42)).count, probes + 1, "released quota permits exactly one probe");
+      assert.equal((await control.call(44)).count, 0, "only expected disposal failures occurred");
+      await until(async () => (await quotaMetrics()).in_flight === 0, "Actor quotas return to zero");
+      const recovery = begin(); await recovery.paused(); await commit(recovery);
+      assert.equal((await admin("status")).hotfix.generation, before.hotfix.generation + 1);
+      return { admittedCalls: 16384, disposedOwners: 4, rpcOverloads: 5, publicSendOverloads: 2, oneWaySourceClosures: 2, recovered: true };
+    } finally {
+      for (const client of [control, workerControl]) {
+        await client.call(39);
+        await until(async () => (await client.call(40)).count === 0, "quota fixture drain");
+        await client.call(41);
+      }
+    }
+  });
   await test("disconnected-in-flight-rpc-does-not-refill-response-cache", async () => {
     const sourceMetrics = async () => {
       const response = await fetch(`http://127.0.0.1:${config.process.observability.health.port}/metrics`, { signal: AbortSignal.timeout(2000) });

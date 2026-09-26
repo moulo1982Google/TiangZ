@@ -1284,16 +1284,32 @@ export abstract class EntryScene extends Scene {
 
     this.onClientReceive(item.connectionId);
     if (this.consumeClientControlFrame(item.connectionId, item.frame)) return;
-    const response = this.handleFrame(item.frame, {
-      connectionId: item.connectionId,
-    });
+    let response: MaybePromise<Uint8Array | undefined>;
+    try {
+      response = this.handleFrame(item.frame, { connectionId: item.connectionId });
+    } catch (error) {
+      this.handleIngressFailure(item.connectionId, error);
+      return;
+    }
     if (isPromiseLike(response)) {
       const source = this.connections.retainAsyncIngressSource(item.connectionId);
       return Promise.resolve(response)
-        .then(value => { this.enqueueResponse(item.connectionId, value, source); })
+        .then(
+          value => { this.enqueueResponse(item.connectionId, value, source); },
+          error => { this.handleIngressFailure(item.connectionId, error, source); },
+        )
         .finally(() => this.connections.releaseAsyncIngressSource(item.connectionId, source));
     }
     this.enqueueResponse(item.connectionId, response);
+  }
+
+  /** 仅关闭仍有效的原入站来源，不使用路由 context 或误关同号新连接；其他异常保持原路径。 / Closes only the valid original source, never a routing context or reused connection ID; other failures keep their existing path. */
+  private handleIngressFailure(connectionId: number, error: unknown, source?: AsyncIngressSource): void {
+    if (error instanceof RpcError && error.code === SystemErrCode.SceneOverloaded) {
+      if (!this.mailboxClosed && !source?.disconnected) this.disconnectClient(connectionId);
+      return;
+    }
+    throw error;
   }
 
   private enqueueResponse(
@@ -1381,6 +1397,7 @@ export abstract class EntryScene extends Scene {
         return RunWithTraceContext(envelope.context, () =>
           this.routeOrHandleFrame(envelope.frame, tracedContext));
       } catch (error) {
+        if (error instanceof RpcError && error.code === SystemErrCode.SceneOverloaded) throw error;
         this.registry.reportSystemError(
           SystemErrCode.MalformedFrame,
           `invalid trace envelope: ${errorText(error)}`,
@@ -1401,6 +1418,7 @@ export abstract class EntryScene extends Scene {
           logger: context.logger,
         });
       } catch (error) {
+        if (error instanceof RpcError && error.code === SystemErrCode.SceneOverloaded) throw error;
         this.registry.reportSystemError(
           SystemErrCode.MalformedFrame,
           `invalid actor location envelope: ${errorText(error)}`,
@@ -1414,6 +1432,7 @@ export abstract class EntryScene extends Scene {
       try {
         return this.dispatchActorLocationBatch(frame, context);
       } catch (error) {
+        if (error instanceof RpcError && error.code === SystemErrCode.SceneOverloaded) throw error;
         this.registry.reportSystemError(
           SystemErrCode.MalformedFrame,
           `invalid actor location batch envelope: ${errorText(error)}`,
@@ -1593,22 +1612,29 @@ export abstract class EntryScene extends Scene {
     context: ProtocolContext,
   ): MaybePromise<Uint8Array | undefined> {
     const pending: Promise<unknown>[] = [];
-    forEachActorLocationBatchEntry(frame, (entry) => {
-      const msgcode = readU16BE(entry.frame, 0);
-      const descriptor = this.knownMessagesByCode.get(msgcode);
-      if (descriptor?.routing !== "actor-location" || descriptor.forwarding !== "latest") {
-        throw new Error(`nested msgcode ${msgcode} is not a latest ActorLocation message`);
-      }
-      const result = this.actorRegistry.handle(entry.frame, {
-        actorInstanceId: entry.instanceId,
-        actorLocationFenceToken: entry.fenceToken,
-        traceId: context.traceId,
-        spanId: context.spanId,
-        traceSampled: context.traceSampled,
-        logger: context.logger,
+    try {
+      forEachActorLocationBatchEntry(frame, (entry) => {
+        const msgcode = readU16BE(entry.frame, 0);
+        const descriptor = this.knownMessagesByCode.get(msgcode);
+        if (descriptor?.routing !== "actor-location" || descriptor.forwarding !== "latest") {
+          throw new Error(`nested msgcode ${msgcode} is not a latest ActorLocation message`);
+        }
+        const result = this.actorRegistry.handle(entry.frame, {
+          actorInstanceId: entry.instanceId,
+          actorLocationFenceToken: entry.fenceToken,
+          traceId: context.traceId,
+          spanId: context.spanId,
+          traceSampled: context.traceSampled,
+          logger: context.logger,
+        });
+        if (isPromiseLike(result)) pending.push(Promise.resolve(result));
       });
-      if (isPromiseLike(result)) pending.push(Promise.resolve(result));
-    });
+    } catch (error) {
+      // 后续项同步拒绝不能使先前等待无人观察；Registry 已记录各项失败，真实任务仍由 Actor 持有。
+      // A later synchronous rejection must not orphan earlier waits; Registry records failures and Actors retain actual tasks.
+      void Promise.all(pending).catch(() => {});
+      throw error;
+    }
     if (pending.length === 0) return;
     return Promise.all(pending).then(() => undefined);
   }

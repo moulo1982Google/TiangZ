@@ -1,5 +1,17 @@
 # 2026-09-16 模块拆分后的当前事实
 
+Actor 两级准入与公开 send/网络拒绝传播已完成：定向 **42/42**、含 KCP 完整 **check 8/8、quick 33/33、full 9/9**，412040ms。实际 V8 16384 项、5 次 RPC 1011（含公开 send）、2 次来源关闭及销毁后保留/释放/热更恢复均通过，普通 Host 与报告共同 SHA256 `25e9130a1c4d0a9c9378c8348da865fb57d22f6ca2295c788f74d17302289281`，最终日志 `temp/v0.7-actor-capacity-verify-final.log`。Rust 233 项、Linux 条件编译和 AI 实际 0.2.0 归档通过，详情及此前各层失败保留在[Actor 验收](../design/v0.7-actor-mailbox-capacity.md)。本地 Scene 总量、TS 控制积压与二进制保留仍另行推进，不把本项当作全部 TS 内存上限。
+
+容量验收必须覆盖业务公开入口：内部 ProcessRuntime.sendLocalScene 已返回 1011 后，SceneCallContext.sendFrame 仍仅识别 Rust 的 `[scene-overloaded]` 文本，并将本地 RpcError(1011) 重映射为 1006。`temp/v0.7-actor-capacity-public-send-first.log` 的公开 scene.scenes.send 断言失败，不能只用低层 router 通过证明对业务可用。需保留本地已知过载类型，同时保留远程 Host 字符串映射，再从生成协议验证公开路径并重跑最终矩阵；不改错误文本来匹配旧判断。
+
+新增过载传播初版还需服从断线来源身份：异步单向调用在旧来源断开、30 秒墓碑过期并有同号新等待后失败，曾关闭新连接，`temp/v0.7-actor-capacity-late-source-first.log` 为 1 failed/13 passed。错误回调必须携带原 AsyncIngressSource，Scene 已关闭或原来源已失效时只保留失败结果、不再次关闭同号连接。当前相关 41/41 与类型检查通过；不要延长墓碑、提前结束业务或取消其他来源来绕过，最终矩阵另验。
+
+Actor 容量真实夹具首轮在模块类型检查被 TS2305 拒绝：新增生成的 StarterMessages 未进入模块 Model 导出与 modelExports 桥，日志 `temp/v0.7-actor-capacity-v8.log`、现场 `temp/hotfix-load-RnNoA6`。修正临时模块 Model 的生成描述符导出并从头正规 protocol-update/build，不手改生成物、不在 Hotfix 深层导入；此轮未到宿主运行，不能记作容量运行失败或通过。
+
+Actor mailbox 容量已按[两级准入契约](../design/v0.7-actor-mailbox-capacity.md)实现：每 Actor 4096、原 ProcessHost 16384 项排队加真实运行任务，销毁不提前释放实际等待。初始 5/6 边界用例失败证明旧实现无上限；加额度后，单向传播另有 7 项反例：Registry 吞掉 1011，本地 send 同步失败不返回、网络来源不关闭。须保留过载类型/失败指标，网络关闭实际 item.connectionId，不能用路由改写的 context，也不能把它当作业务取消或自动重试依据。
+
+继续验证发现 Trace/Actor/批次外壳把同步过载误报成 MalformedFrame，3 项反例均失败；批次后续项同步拒绝还会遗失此前 Promise 的拒绝观察者（4 failed/9 passed、1 unhandled rejection，`temp/v0.7-actor-capacity-partial-batch-first.log`）。正确做法是外壳保留 1011，先前已接受项继续由原 Actor 记账并观察真实结果，不能将它们删除或将整体批次宣称为原子事务；现有 RPC/void/来源/外壳相关 40/40 通过，完整宿主和指标验证仍待完成。
+
 EntryScene 连接记账已按独立职责搬到 `app/core/process/EntrySceneConnections.ts`，不加入 Socket/Session/业务取消能力；118 项 AST/声明比对、定向 21/21 和含 KCP check 8/8、quick 33/33、full 9/9 通过，完整构建与真实宿主身份见[纯拆分记录](../design/v0.7-connection-state-split.md)。提取脚本初版把清理语句误当作直接位于 __dispose，AST 数量断言在写源码前拒绝执行；真实所有者是 discardQueuedWork。移动前须先定位实际语句块，不能删除数量检查来让脚本继续。
 
 连接记账拆分的声明检查随后发现原 processIngress 仍直接删除旧缓存字段；应在原 Disconnect 消费点调用新所有者，不能把删除提前到入站通知时机来消除编译错误。除了迁移执行体，也要展开所有权调用后比对 EntryScene 剩余方法，防止搬移漏接或时序变化。

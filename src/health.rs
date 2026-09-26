@@ -261,6 +261,12 @@ pub(crate) struct GameObservabilitySnapshot {
     pub(crate) scene_task_capacity: u64,
     pub(crate) scene_task_max_in_flight: u64,
     pub(crate) scene_task_rejections: u64,
+    pub(crate) actor_mailbox_in_flight: u64,
+    pub(crate) actor_mailbox_capacity: u64,
+    pub(crate) actor_mailbox_per_actor_capacity: u64,
+    pub(crate) actor_mailbox_max_in_flight: u64,
+    pub(crate) actor_mailbox_actor_rejections: u64,
+    pub(crate) actor_mailbox_process_rejections: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1338,6 +1344,40 @@ mod tests {
         }
         assert!(body.contains("# TYPE tiangz_scene_tasks_rejected_total counter"));
         assert!(body.contains("# TYPE tiangz_scene_tasks_in_flight gauge"));
+    }
+
+    #[test]
+    fn process_actor_task_quota_has_only_process_labels_and_separate_rejections() {
+        let state = ProcessHealthState::starting(Duration::from_secs(15));
+        state.set_observability_snapshot(ProcessObservabilitySnapshot {
+            game: Some(GameObservabilitySnapshot {
+                actor_mailbox_in_flight: 21,
+                actor_mailbox_capacity: 16384,
+                actor_mailbox_per_actor_capacity: 4096,
+                actor_mailbox_max_in_flight: 16384,
+                actor_mailbox_actor_rejections: 4,
+                actor_mailbox_process_rejections: 5,
+                ..GameObservabilitySnapshot::default()
+            }),
+            ..ProcessObservabilitySnapshot::default()
+        });
+        let body = format_prometheus_metrics("worker", &state);
+        for (suffix, value, kind) in [
+            ("in_flight", 21, "gauge"),
+            ("capacity", 16384, "gauge"),
+            ("per_actor_capacity", 4096, "gauge"),
+            ("max_in_flight", 16384, "gauge"),
+            ("actor_rejected_total", 4, "counter"),
+            ("process_rejected_total", 5, "counter"),
+        ] {
+            let name = format!("tiangz_process_actor_mailbox_tasks_{suffix}");
+            let lines: Vec<_> = body
+                .lines()
+                .filter(|line| line.starts_with(&format!("{name}{{")))
+                .collect();
+            assert_eq!(lines, [format!("{name}{{process=\"worker\"}} {value}")]);
+            assert!(body.contains(&format!("# TYPE {name} {kind}")));
+        }
     }
 
     #[test]

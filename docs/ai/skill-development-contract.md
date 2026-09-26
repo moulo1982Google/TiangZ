@@ -18,6 +18,8 @@
 
 ## 相关能力被修改时再核对
 
+- **Actor 准入**：0.7 候选每 Actor 4096、原 ProcessHost 16384 项排队加实际运行任务，RPC/void 与 ordered/unordered 共用；先检查 Actor 再检查 Process，超限在业务执行前同步 1011。销毁只立即释放未执行队列，运行中的原任务完成后归还原所有者，不能误减新 Actor/Host。单向错误保留类型与失败指标：网络关闭仍有效的原物理来源、本地同步准入返回；异步错误携带原来源状态，不能关闭同号新连接。Trace/Actor 外壳不误报坏包，部分批次继续观察已接受项。send 返回不是最终送达或事务完成，不自动重放；固定 Process 指标区分两级拒绝，本项不界定 Scene mailbox、DTO/backing buffer 或 RSS，见[Actor 容量](../design/v0.7-actor-mailbox-capacity.md)。
+
 - **迟到响应**：来源断开而 Scene 仍存活时，原业务 Promise 仍需真实排空，但完成后不能再排队响应或重新填入连接缓存。异步等待绑定断线状态，不能依赖 30 秒墓碑一直存在；最后释放需核对状态身份，不能删除同号新连接等待或其他来源。业务已执行与网络未回包分别判断，不自动重放事实；指标区分连接来源数与实际任务数，见[迟到响应](../design/v0.7-late-responses.md)。
 
 - **Spawn 总量**：0.7 候选保留每 Scope 256 项，原 ProcessHost 总计最多 4096 项，超限同步 SceneOverloaded，不创建无限等待/自动重试。未开始、取消及 owner 已销毁但未真正完成的任务继续占用；同步失败回滚，成功后才更新高水位，释放绑定原 Host。固定 Process 指标中的拒绝数只包括总额度拒绝。它不是全部 mailbox、业务 Promise 或堆字节预算，见[任务容量](../design/v0.7-scene-task-capacity.md)。

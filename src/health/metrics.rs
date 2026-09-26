@@ -1914,6 +1914,42 @@ fn append_game_metrics_prometheus(
             "Spawn attempts rejected by the Process-wide limit, excluding Scope-local limits",
             snapshot.scene_task_rejections,
         ),
+        (
+            "tiangz_process_actor_mailbox_tasks_in_flight",
+            "gauge",
+            "Accepted queued and executing Actor calls, including disposed running owners",
+            snapshot.actor_mailbox_in_flight,
+        ),
+        (
+            "tiangz_process_actor_mailbox_tasks_capacity",
+            "gauge",
+            "Process-wide Actor mailbox task limit",
+            snapshot.actor_mailbox_capacity,
+        ),
+        (
+            "tiangz_process_actor_mailbox_tasks_per_actor_capacity",
+            "gauge",
+            "Task limit for each Actor mailbox",
+            snapshot.actor_mailbox_per_actor_capacity,
+        ),
+        (
+            "tiangz_process_actor_mailbox_tasks_max_in_flight",
+            "gauge",
+            "Maximum admitted concurrent Actor mailbox tasks",
+            snapshot.actor_mailbox_max_in_flight,
+        ),
+        (
+            "tiangz_process_actor_mailbox_tasks_actor_rejected_total",
+            "counter",
+            "Calls rejected by the per-Actor limit, checked before the Process limit",
+            snapshot.actor_mailbox_actor_rejections,
+        ),
+        (
+            "tiangz_process_actor_mailbox_tasks_process_rejected_total",
+            "counter",
+            "Calls rejected by the Process limit after passing the per-Actor limit",
+            snapshot.actor_mailbox_process_rejections,
+        ),
     ] {
         writeln!(output, "# HELP {name} {help}").expect("formatting metric help");
         writeln!(output, "# TYPE {name} {kind}").expect("formatting metric type");

@@ -1,5 +1,17 @@
 # 2026-09-16：先选业务工程，再写模块
 
+Actor 容量最终复测：四个相关文件 **42/42**，`temp/v0.7-actor-capacity-focused-final.log`；公开 send 修复后重新执行含 KCP **check 8/8、quick 33/33、full 9/9**，412040ms，`temp/v0.7-actor-capacity-verify-final.log`。真实生成协议验证两级额度、5 次带关联号的 1011（含两次公开 send）、2 次单向来源关闭、销毁保留和热更恢复，Rust 233 项及 Linux 条件编译通过；宿主、报告、AI 归档身份见[最终验收](../design/v0.7-actor-mailbox-capacity.md)。下方阶段失败按发生顺序保留，阶段通过不能覆盖后来发现的公开 API 缺口；现行完整证据以上述最终轮为准。
+
+单测内部 router 通过不能替代公开 Scene API：新增 scene.scenes.send 用例收到 1006 而不是 1011（`temp/v0.7-actor-capacity-public-send-first.log`，1 failed/14 skipped）。原因是外层 SceneCallContext.sendFrame 的 mapError 只按 Rust `[scene-overloaded]` 文本识别过载，本地有类型的错误被重映射。应保留本地 RpcError(1011)，其他原有错误映射保持，并继续支持远程 Host 文本；禁止拼接假 Rust 错误文本或只改断言。真实生成协议须再调用公开 send 验证两级拒绝，改动后重跑完整矩阵。
+
+容量修复自身的来源交叉反例：异步过载的关闭操作也必须验证原等待身份。初版只给成功响应传 AsyncIngressSource，错误回调则直接按 connectionId 关闭，导致旧来源已断开、墓碑过期、同号新等待被误关；`temp/v0.7-actor-capacity-late-source-first.log` 为 1 failed/13 passed。正确修法给错误回调携带同一原状态，Scene 关闭/来源失效后不再发关闭命令，业务实际任务仍自行排空；禁止永久墓碑或全量取消绕过。新增用例同时断言新等待仍正确回包，最终四个相关文件 41/41、类型检查通过，完整矩阵待完成。
+
+新增单向协议时须同步 Model 的值导出和 modelExports：Actor 容量 V8 夹具首轮生成五个消息成功，但 Hotfix 导入 StarterMessages 时 TS2305（`temp/v0.7-actor-capacity-v8.log`、`temp/hotfix-load-RnNoA6`）。消息类型的 export type * 不能导出描述符值；正确修法在临时模块 Model 导入生成 messageDescriptors，同时显式导出与加入运行时桥，再重新走 protocol-update/build。禁止手改 generated 文件、用 Hotfix 深层导入绕过模块边界，或将尚未启动的 Host 算作容量验收。
+
+Actor 两级额度不能只加计数器：`temp/v0.7-actor-capacity-first.log` 为 5 failed/1 passed，反映旧 mailbox 无任务上限。按[契约](../design/v0.7-actor-mailbox-capacity.md)同步拒绝 1011 后，`temp/v0.7-actor-capacity-delivery-first.log` 仍 7 failed/2 passed，原因是单向 Registry 吞错、send 同步准入错误只记日志。修复须把真实过载传给入站所有者：网络关闭物理来源、本地同步错误返回，保留 rpcId/失败指标，不冒充完成、自动重放或提前取消运行任务。
+
+外壳也要验证：Trace、ActorLocation、批次三个 try/catch 曾将运行时过载错分为 MalformedFrame，`temp/v0.7-actor-capacity-envelope-first.log` 为 3 failed/9 passed。部分批次已开始异步工作、下一项同步拒绝时，旧代码没有安装 Promise 聚合观察者，进一步出现未处理拒绝，`temp/v0.7-actor-capacity-partial-batch-first.log` 为 4 failed/9 passed 加 1 unhandled rejection。外壳保留 1011，失败返回前给已接受项安装拒绝观察者；Registry 各自记录失败、Actor 持有实际任务，不能清空在途、等无限长任务后才关闭来源或把批次称为原子操作。当前 `npx vitest run tests/unit/actor_mailbox_capacity.test.ts tests/unit/mailbox_overload_delivery.test.ts tests/unit/mailbox_lifetime.test.ts tests/unit/actor_missing_error.test.ts` 40/40；真实宿主/最终矩阵待完成。
+
 纯拆分应比对实际 AST 所有者：连接记账提取脚本首次在 __dispose 顶层查到 0 个 clear，期望 3，因而在生产源码写入前停止。清理实际位于 discardQueuedWork；修正定位并保留数量/不重叠断言，禁止按方法名称猜测、删断言或在提取时顺手改行为。EntrySceneConnections 只拥有缓存/墓碑/异步来源与指标；118 项执行体/声明比对、原测试路径迁移后的 21/21 和含 KCP 完整 check 8/8、quick 33/33、full 9/9 通过，实际二进制/报告身份见[拆分记录](../design/v0.7-connection-state-split.md)。
 
 拆分声明验证的 TS2339 指向 processIngress 遗漏迁移的 connectionIdBytes.delete，日志 `temp/v0.7-connections-split-diagnostics.log`。正确做法是在原 Disconnect 消费位置调用新所有者的缓存删除，不提前到通知接收时机，也不暴露旧影子字段让编译通过。须同时证明所有保留方法在展开已审核所有权调用后保持；这是拆分接线错误，不是此前已验收行为本身失败。

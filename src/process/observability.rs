@@ -99,6 +99,18 @@ pub(super) struct GameMetricsSnapshot {
     scene_task_max_in_flight: u64,
     #[serde(default)]
     scene_task_rejections: u64,
+    #[serde(default)]
+    actor_mailbox_in_flight: u64,
+    #[serde(default)]
+    actor_mailbox_capacity: u64,
+    #[serde(default)]
+    actor_mailbox_per_actor_capacity: u64,
+    #[serde(default)]
+    actor_mailbox_max_in_flight: u64,
+    #[serde(default)]
+    actor_mailbox_actor_rejections: u64,
+    #[serde(default)]
+    actor_mailbox_process_rejections: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -483,6 +495,12 @@ pub(super) fn maybe_log_metrics(
         scene_task_capacity: game.scene_task_capacity,
         scene_task_max_in_flight: game.scene_task_max_in_flight,
         scene_task_rejections: game.scene_task_rejections,
+        actor_mailbox_in_flight: game.actor_mailbox_in_flight,
+        actor_mailbox_capacity: game.actor_mailbox_capacity,
+        actor_mailbox_per_actor_capacity: game.actor_mailbox_per_actor_capacity,
+        actor_mailbox_max_in_flight: game.actor_mailbox_max_in_flight,
+        actor_mailbox_actor_rejections: game.actor_mailbox_actor_rejections,
+        actor_mailbox_process_rejections: game.actor_mailbox_process_rejections,
     });
     let native_snapshot = native_data_metrics.map(|native| NativeDataObservabilitySnapshot {
         scalar_gets: native.scalar_gets,
@@ -704,7 +722,13 @@ mod tests {
                     "sceneTaskInFlight": 17,
                     "sceneTaskCapacity": 4096,
                     "sceneTaskMaxInFlight": 4096,
-                    "sceneTaskRejections": 3
+                    "sceneTaskRejections": 3,
+                    "actorMailboxInFlight": 21,
+                    "actorMailboxCapacity": 16384,
+                    "actorMailboxPerActorCapacity": 4096,
+                    "actorMailboxMaxInFlight": 16384,
+                    "actorMailboxActorRejections": 4,
+                    "actorMailboxProcessRejections": 5
                 },
                 "actorMailbox": {
                     "queuedCalls": 8,
@@ -732,6 +756,12 @@ mod tests {
         assert_eq!(game.scene_task_capacity, 4096);
         assert_eq!(game.scene_task_max_in_flight, 4096);
         assert_eq!(game.scene_task_rejections, 3);
+        assert_eq!(game.actor_mailbox_in_flight, 21);
+        assert_eq!(game.actor_mailbox_capacity, 16384);
+        assert_eq!(game.actor_mailbox_per_actor_capacity, 4096);
+        assert_eq!(game.actor_mailbox_max_in_flight, 16384);
+        assert_eq!(game.actor_mailbox_actor_rejections, 4);
+        assert_eq!(game.actor_mailbox_process_rejections, 5);
         assert_eq!(result.actor_mailbox.queued_calls, 8);
         assert_eq!(result.actor_mailbox.one_way_queued_calls, 9);
         assert_eq!(result.actor_mailbox.queued_depth, 2);
