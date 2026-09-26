@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+任务准入修复最终定向 12/12、含 KCP 完整 check 8/8、quick 33/33、full 9/9 通过，含真实 V8 拒绝后热更恢复；实际 Host/报告身份及 AI 0.2.0 归档已核对，见[准入验收](../design/v0.7-scene-task-admission.md)。既有 Godot、Linux 实际 I/O 和发布冻结缺口仍保留。
+
+Spawn 准入失败原子性反例：缺少 TimerSystem 或 watchdog 注册抛错后，旧 Scope 已插入 record 却未创建任务微任务，InFlightCount 永久为 1。首轮 3 个反例均失败；现只撤回本次 record，成功注册后一起保存 Timer owner/句柄并更新成功高水位。原异常保持，body 不运行，同 Scope 重试可恢复，其他 Scene 已接受任务保持；禁止吞错、停掉 watchdog 或清空其他工作。定向与真实 V8 验证见[任务准入](../design/v0.7-scene-task-admission.md)，不等于新增 Process 总额度。
+
 Host 批次首轮完整矩阵为 quick 32/33、full 8/9，唯一失败是 Rust 测试模块放在 impl 前触发 Clippy `items_after_test_module`；不是运行用例失败。移动测试块并保留检查，不加 allow 或把单测通过当整轮通过。两条跨批次队首仍计入深度与高水位，不能沿用 mpsc capacity 截掉实际暂存量；复测和最终宿主身份见[批次验收](../design/v0.7-host-event-batches.md)。
 
 0.7 Host 入站批次在复制前按含头部的 64 MiB 上限拆分，普通运行与停机 completion 共用。满批保留原事件，先 Update，再续同通道 FIFO；控制/数据各最多暂存一条，守卫和队列深度不提前归还，退回恢复公平计数。单个合法网络/Inner 响应帧仍限 1 MiB；异常内部事件放不入空批则复制前明确失败，不截断成功结果或伪造业务过载。首次真实 V8 两路径均出现 83887124 字节单批，证明 ingress 准入不能覆盖打包副本。禁止通过调大阈值、减小反例或只测编码器掩盖问题；重建宿主与复测证据见[Host 批次](../design/v0.7-host-event-batches.md)。这不是 V8/TS 存活缓冲、completion 总量或 RSS 的上限。

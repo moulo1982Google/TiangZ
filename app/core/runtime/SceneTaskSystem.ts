@@ -93,8 +93,11 @@ export class SceneTaskScope {
       warned: false,
     };
     this.tasks.set(id, record);
+    // watchdog 注册失败时尚未排入任务微任务；只撤回本次准入，不能留下无法完成的计数。
+    // The body is not queued yet if watchdog registration fails; roll back only this admission.
+    try { this.scheduleWatchdog(); }
+    catch (error) { this.tasks.delete(id); throw error; }
     this.maxInFlightCount = Math.max(this.maxInFlightCount, this.tasks.size);
-    this.scheduleWatchdog();
 
     void Promise.resolve()
       .then(() => {
@@ -182,8 +185,8 @@ export class SceneTaskScope {
       );
     }
     if (!Number.isFinite(delayMs)) return;
-    this.watchdogOwner = TimerSystem.Instance;
-    this.watchdogTimer = this.watchdogOwner.NewOnceTimer(delayMs, () => {
+    const owner = TimerSystem.Instance;
+    const timer = owner.NewOnceTimer(delayMs, () => {
       this.watchdogTimer = undefined;
       this.watchdogOwner = undefined;
       if (this.disposed) return;
@@ -201,6 +204,10 @@ export class SceneTaskScope {
       }
       this.scheduleWatchdog();
     });
+    // 原服务和句柄作为同一份所有权发布，创建异常时不留下半个 owner。
+    // Publish the original service and handle together, leaving no partial owner on failure.
+    this.watchdogOwner = owner;
+    this.watchdogTimer = timer;
   }
 
   private requireAlive(): void {

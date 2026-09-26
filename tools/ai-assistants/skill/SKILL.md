@@ -58,6 +58,8 @@ Read only the additional source material relevant to the request:
 
 ## Change routing
 
+- Spawn admission is atomic: synchronous watchdog failure must remove only the new record before its body is queued. Publish the original timer owner/handle and successful high-water count only after registration succeeds. Preserve the original error, allow retry, and leave other scopes' accepted work intact; do not swallow errors or clear all tasks.
+
 - New player, item, buff, quest, numeric, combat, or map behavior: first inspect `docs/patterns`, the capability ownership table, and the closest existing Model/Hotfix example.
 - New stable fields, constructors, Component types, Scene/Entity types, or public signatures: modify Model, run code generation/build, and plan for a Process restart.
 - New Handler or behavior-only change: modify Hotfix and use the Hotfix-only path only if the fingerprint checks permit it.

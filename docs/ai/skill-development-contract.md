@@ -18,6 +18,8 @@
 
 ## 相关能力被修改时再核对
 
+- **任务准入回滚**：Spawn 同步失败不能留下尚未启动却永远在途的 record；只撤回本次接受过程，保持其他 Scope 的任务。watchdog 成功创建后才一起保存原 Timer owner/句柄并增加成功高水位，body 不执行、原异常仍抛出，同 Scope 可重试。不要吞错、关闭监控或清空全部任务，见 [任务准入](../design/v0.7-scene-task-admission.md)。
+
 - **依赖方向**：Model/Hotfix/Stable 使用 Developer Tools dependency ruleset 1，CLI/LSP/模块 Host worker 与宿主边界命令共用。包含 import-type/import-equals 和字面量动态导入，计算目标 warning 不证明安全；当前 Program 解析别名，路径比较遵循平台身份而非直接比较字符串。Model 走 Core public，启动和生成 ABI 只保留精确例外，不忽略整目录。跨模块公共 API 须证明直接依赖。正式生成锁/指纹仍单独验证，纯 AST 不代替实际安装 LSP；详见 [依赖方向](../design/v0.7-dependency-rules.md)。
 
 - **类型规则**：生命周期/方法名 Timer/Hotfix 成员禁令复用 Developer Tools 的 Program ruleset 2，调用者传配套 TS API、当前 Core 和生成声明。Hotfix 装饰器须有当前 Core 声明证据，同名业务函数和旧宿主不能冒充；缺环境的稳定入口候选只给未证明 warning，确定违反仍为 error。模块 Host 按声明指定 Hotfix 范围。普通 tsc 不自动接入。默认参数允许 undefined；动态名称/any 等未证明情况保留 warning。模块实时 LSP 仅在受信任工作区使用已保存声明指定的 Host worker；既有 TS 可内存覆盖，配置未保存/环境缺失/超限须显示不可用。检查复用 CLI 入口，不代替生成锁或完整构建。详见 [Program 契约](../design/v0.7-program-contracts.md)。

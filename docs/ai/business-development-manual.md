@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+任务准入最终复测已补充同 Scope 的旧任务不能被误清理这一反例，相关测试从 11/11 增至 12/12；测试类型检查与含 KCP 完整 check 8/8、quick 33/33、full 9/9 均通过。真实 V8 新用例验证拒绝后热更恢复；AI 0.2.0 归档和实际宿主身份核对见[准入验收](../design/v0.7-scene-task-admission.md)，保留首轮失败证据。
+
+`Tasks.Spawn` 返回 ID 才表示接受；watchdog 注册同步抛错必须撤回本次 task record。原实现先插入/增加高水位再注册 Timer，失败时 body 尚未排微任务，留下不能完成的在途计数并阻挡热更。`temp/v0.7-scene-task-admission-first.log` 的三个反例均在 1→0 断言失败。修复保留原异常、禁止 body 执行、Timer owner/句柄创建成功后一起发布，保留其他 Scene 的真实任务；不能吞错误、清空全表或把失败尝试算成功高水位。复测 `npx vitest run tests/unit/scene_task_admission.test.ts tests/unit/scene_task_disposal.test.ts tests/unit/hotfix_drain.test.ts` 为 11/11；真实 V8 与完整矩阵见[任务准入](../design/v0.7-scene-task-admission.md)。
+
 Host 批次首轮完整矩阵的 quick 32/33、full 8/9 不能标为通过：Clippy 正确拒绝放在 impl 前的测试模块。应把测试移至实现之后并重新执行完整矩阵，不关闭 `items_after_test_module`，也不用已通过的运行测试替代静态门禁；原 `temp/v0.7-host-batches-verify.log` 保留。新增接收器暂存队首时，还要同步深度高水位的范围，物理队列 capacity 与包含暂存的观测值不是同一数字。最终复测见[Host 批次](../design/v0.7-host-event-batches.md)。
 
 Host 批次的入站额度反例：旧代码复制一帧就释放原守卫，生产者可补入；真实 Process/V8 的普通运行与停机 completion 都产生了 83887124 字节单批。正确做法是复制前核对完整批次成本，64 MiB 满批先 Update、保留原事件与 FIFO，控制/数据各一条暂存且退回恢复公平计数；不截断完成结果、不伪造业务拒绝、不把 TS backing buffer 当作已受 ingress 保护。非法单事件须在修改批次前明确失败。禁止提高阈值、缩减反例或将旧二进制通过算作修复；失败日志、`node tools/run_cargo.mjs test --bin TiangZ --features kcp host_batch` 与完整矩阵见[Host 批次](../design/v0.7-host-event-batches.md)。原诊断缺口属于框架缺陷；命令误写大小写 bin 名和漏迁移旧私有编码测试属于测试接线问题，均单独留档。

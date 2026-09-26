@@ -146,7 +146,7 @@ export class CounterScene extends EntryScene {
     .replace('import { CounterScene }', 'import { CounterScene, DrainActor, DrainScene }')
     .replace('export { CounterScene,', 'export { CounterScene, DrainActor, DrainScene,')
     .replace('modelExports: { CounterScene,', 'modelExports: { CounterScene, DrainActor, DrainScene,'));
-  await writeFile(handlerPath, `import { rpcHandler, type SceneRpcHandler } from "#tiangz/model";
+  await writeFile(handlerPath, `import { rpcHandler, TimerSystem, type SceneRpcHandler } from "#tiangz/model";
 import { CounterScene, CounterComponent, DrainActor, DrainScene, StarterProtocol, type C2S_Increment, type S2C_Increment } from "#tiangz/module";
 @rpcHandler(CounterScene, StarterProtocol.Increment)
 @rpcHandler(CounterScene, StarterProtocol.Work)
@@ -202,6 +202,22 @@ export class IncrementHandler implements SceneRpcHandler<CounterScene, C2S_Incre
       if (!scene.DespawnChildScene("drain-task") || !owner.IsDisposed) throw new Error("child Scene must be disposed before acknowledgement");
       return { count: 0 };
     }
+    if (request.mode === 24) {
+      const owner = scene.SpawnChildScene("failed-task-admission", DrainScene);
+      const timers = TimerSystem.Instance, original = timers.NewOnceTimer;
+      const failure = new Error("injected watchdog registration failure");
+      scene.detachedState = 0;
+      try {
+        // 只在此同步夹具栈内注入注册失败，返回请求前恢复原服务方法。 / Inject only within this synchronous fixture stack and restore before returning.
+        timers.NewOnceTimer = () => { throw failure; };
+        try {
+          owner.Tasks.Spawn("must-not-run", () => { scene.detachedState = 99; });
+          throw new Error("Spawn must propagate watchdog failure");
+        } catch (error) { if (error !== failure) throw error; }
+      } finally { timers.NewOnceTimer = original; }
+      return { count: owner.Tasks.InFlightCount };
+    }
+    if (request.mode === 25) return { count: scene.DespawnChildScene("failed-task-admission") ? 1 : 0 };
     if ((request.mode ?? 0) >= 1000) return scene.scenes.call(scene.scenes.byName("counter"), StarterProtocol.Work, { mode: (request.mode ?? 0) - 1000 }, { timeoutMs: 30000 });
     if (request.mode === 4) await scene.scenes.call(scene.scenes.byName("worker"), StarterProtocol.Work, { mode: 1 }, { timeoutMs: 30000 });
     if (request.mode === 10 && (await scene.repository.Load("probe"))?.data !== 42) throw new Error("stored fixture value changed");

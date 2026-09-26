@@ -236,6 +236,18 @@ try {
       return { startedRequestCompleted: true, ownerDisposed: mode === 17 || mode === 23, generationPreserved: true };
     });
   }
+  await test("failed-scene-spawn-does-not-block-hotfix", async () => {
+    try {
+      assert.equal((await control.call(24)).count, 0, "rejected admission must leave no phantom task");
+      assert.equal((await control.call(19)).count, 0, "rejected task body must not execute");
+      const before = await admin("status");
+      const op = begin();
+      await op.paused();
+      const pauseMs = await commit(op);
+      assert.equal((await admin("status")).hotfix.generation, before.hotfix.generation + 1);
+      return { rejectedTaskCount: 0, taskBodyStarted: false, generationAdvanced: true, pauseMs };
+    } finally { assert.equal((await control.call(25)).count, 1); }
+  });
   for (let round = 0; round < rounds; round++) {
     await test(`remote-completion-and-500-queued-${round}`, async () => {
       const held = await holdRemote(), op = begin(); await op.paused();
