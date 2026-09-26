@@ -1,6 +1,8 @@
 import type { MaybePromise } from "../async";
 import { Game, InitializeGameSingletons, monotonicNow } from "../runtime/Game";
 import { ProcessHost } from "../runtime/host";
+import { RpcError } from "../protocol/RpcError";
+import { SystemErrCode } from "../protocol/SystemErrCode";
 import { SingletonRegistry } from "../runtime/Singleton";
 import { TimeSystem } from "../runtime/TimeSystem";
 import { TimerSystem } from "../runtime/TimerSystem";
@@ -117,6 +119,7 @@ export class ProcessRuntime implements LocalSceneRouter {
   get CanCommitHotfix(): boolean {
     return this.lifecycleState === "ready" &&
       this.processHost.SceneTaskInFlightCount === 0 &&
+      this.processHost.ActorMailboxPendingCount === 0 &&
       TimerSystem.Instance.InFlightCount === 0 &&
       this.entryScenes.every((scene) => scene.__canCommitHotfix());
   }
@@ -200,7 +203,8 @@ export class ProcessRuntime implements LocalSceneRouter {
       ...merged,
       actorMailbox: this.processHost.MailboxMetrics(),
     };
-    return this.processHost.SceneTaskInFlightCount === 0 && TimerSystem.Instance.InFlightCount === 0
+    return this.processHost.SceneTaskInFlightCount === 0 &&
+      this.processHost.ActorMailboxPendingCount === 0 && TimerSystem.Instance.InFlightCount === 0
       ? result
       : { ...result, pendingAsync: true };
   }
@@ -229,7 +233,7 @@ export class ProcessRuntime implements LocalSceneRouter {
     return this.sceneByName(targetName).dispatchLocalCall(frame);
   }
 
-  /** 将进程内单向帧入队；后续 Handler 失败只记录日志，不阻塞发送方。 / Enqueues an in-process one-way frame and logs later handler failure without blocking the sender. */
+  /** 将进程内单向帧入队；已关闭目标同步拒绝，接受后的 Handler 失败只记录日志。 / Enqueues a local one-way frame; closed targets reject synchronously while accepted handler failures are logged. */
   sendLocalScene(_sourceName: string, targetName: string, frame: Uint8Array): MaybePromise<void> {
     const target = this.sceneByName(targetName);
     try {
@@ -240,6 +244,8 @@ export class ProcessRuntime implements LocalSceneRouter {
         });
       }
     } catch (error) {
+      // 同步准入失败必须返回调用者；它不同于已接受单向任务的执行失败。 / Synchronous admission failure belongs to the caller, unlike an accepted one-way handler failure.
+      if (error instanceof RpcError && error.code === SystemErrCode.SceneNotFound) throw error;
       CoreLogger.error("local one-way message failed", { targetScene: targetName, error });
     }
     return undefined;

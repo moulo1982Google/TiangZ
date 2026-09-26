@@ -123,6 +123,7 @@ interface PendingLatestActorLocationFrame {
 }
 
 export abstract class EntryScene extends Scene {
+  private static readonly MAX_RECYCLED_MAILBOX_TASKS = 64;
   private static readonly MAX_UNORDERED_IN_FLIGHT = 4096;
   private static readonly MAX_CONSECUTIVE_DATA_INGRESS = 8;
   private static readonly MAX_TRANSFER_FRAMES_PER_CONNECTION = 64;
@@ -138,9 +139,9 @@ export abstract class EntryScene extends Scene {
   private readonly processHost: ProcessHost;
   protected readonly actorLocations = new ActorLocationDirectory();
   protected readonly mailbox: SceneMailboxType = "ordered";
-  private readonly controlIngress: QueuedEvent[] = [];
+  private readonly controlIngress: (QueuedEvent | undefined)[] = [];
   private controlIngressHead = 0;
-  private readonly dataIngress: QueuedEvent[] = [];
+  private readonly dataIngress: (QueuedEvent | undefined)[] = [];
   private dataIngressHead = 0;
   private consecutiveDataIngress = 0;
   private readonly outboundControl: OutboundBatch[] = [];
@@ -203,7 +204,9 @@ export abstract class EntryScene extends Scene {
   private readonly unorderedTasks = new Set<Promise<void>>();
   private orderedTask: Promise<void> | undefined;
   private mailboxBusy = false;
-  private readonly mailboxTasks: MailboxTask[] = [];
+  private mailboxClosed = false;
+  private mailboxInFlight = 0;
+  private readonly mailboxTasks: (MailboxTask | undefined)[] = [];
   private readonly metrics = {
     processedFrames: 0,
     failedFrames: 0,
@@ -462,6 +465,7 @@ export abstract class EntryScene extends Scene {
    * and Map must never own raw client frames.
    */
   protected beginActorTransfer(connectionId: number): void {
+    this.requireMailboxAlive();
     if (!this.actorTransferBuffers.has(connectionId)) {
       this.actorTransferBuffers.set(connectionId, {
         frames: [],
@@ -573,11 +577,51 @@ export abstract class EntryScene extends Scene {
   }
 
   __disposeRuntime(): void {
-    this.dropLatestActorLocationFrames();
     this.__dispose();
   }
 
+  /** 先关闭准入并终结待执行节点；在途 Promise 仍等待真实完成，最后级联析构。 / Closes admission and queued work before disposal; active promises retain their real completion lifetime. */
+  override __dispose(): void {
+    if (this.mailboxClosed) return;
+    this.mailboxClosed = true;
+    try { this.discardQueuedWork(); }
+    finally { super.__dispose(); }
+  }
+
+  /** 终结尚未执行的框架节点并断开载荷引用，不取消正在运行的业务。 / Settles unexecuted framework nodes and drops payload references without cancelling running business work. */
+  private discardQueuedWork(): void {
+    const error = new RpcError(SystemErrCode.SceneNotFound, `scene disposed: ${this.self.name}`);
+    let droppedOneWay = 0;
+    let task: MailboxTask | undefined;
+    while ((task = this.dequeueMailboxTask())) {
+      if (task.reject) task.reject(error);
+      else droppedOneWay += 1;
+      this.recycleMailboxTask(task);
+    }
+    this.recycledMailboxTasks.length = 0;
+    const droppedIngress = this.ingressLength;
+    this.controlIngress.length = 0;
+    this.dataIngress.length = 0;
+    this.controlIngressHead = this.dataIngressHead = 0;
+    this.outboundControl.length = this.outboundReliable.length = this.outboundLatest.length = 0;
+    this.connectionIdBytes.clear();
+    this.disconnectedFrameTombstones.clear();
+    this.dropLatestActorLocationFrames();
+    // 整个 Scene 退出时无需为失效连接编码回复；唤醒框架等待后由关闭身份拒绝迟到结果。 / On Scene disposal, wake framework waits without encoding replies for dead connections.
+    for (const buffer of this.actorTransferBuffers.values()) {
+      this.actorTransferMetrics.cancelled += 1;
+      for (const item of buffer.frames) item.resolve?.(undefined);
+      buffer.frames.length = 0;
+      buffer.bytes = 0;
+    }
+    this.actorTransferBuffers.clear();
+    if (droppedOneWay || droppedIngress) {
+      this.ctx.logger.warn("scene disposal discarded unexecuted work", { droppedOneWay, droppedIngress });
+    }
+  }
+
   pushHostFrame(connectionId: number, frame: Uint8Array): void {
+    if (this.mailboxClosed) return;
     if (this.isDisconnectedFrame(connectionId)) {
       this.droppedFramesAfterDisconnect += 1;
       return;
@@ -591,6 +635,7 @@ export abstract class EntryScene extends Scene {
   }
 
   pushHostControlFrame(connectionId: number, frame: Uint8Array): void {
+    if (this.mailboxClosed) return;
     if (this.isDisconnectedFrame(connectionId)) {
       this.droppedFramesAfterDisconnect += 1;
       return;
@@ -604,6 +649,7 @@ export abstract class EntryScene extends Scene {
   }
 
   pushHostDisconnect(connectionId: number): void {
+    if (this.mailboxClosed) return;
     this.markDisconnectedFrame(connectionId);
     this.enqueueIngress({
       kind: "disconnect",
@@ -628,6 +674,7 @@ export abstract class EntryScene extends Scene {
   }
 
   __pumpMailbox(maxFrames = 512): number {
+    if (this.mailboxClosed) return 0;
     this.expireActorTransfers(nowMs());
     const startedAt = nowMs();
     const processed = this.mailbox === "unordered"
@@ -648,6 +695,7 @@ export abstract class EntryScene extends Scene {
       this.latestActorLocationFrameCount === 0 &&
       this.unorderedTasks.size === 0 &&
       this.orderedTask === undefined &&
+      this.mailboxInFlight === 0 &&
       this.Tasks.InFlightCount === 0 &&
       !this.mailboxBusy &&
       this.mailboxTaskLength() === 0;
@@ -733,6 +781,7 @@ export abstract class EntryScene extends Scene {
     frame: Uint8Array,
     delivery: ClientFrameDelivery = "reliable",
   ): void {
+    this.requireMailboxAlive();
     if (delivery === "latest") this.onClientLatestFrameQueued([connectionId]);
     else this.onClientSendQueued([connectionId]);
     this.outboundQueue(delivery).push({
@@ -747,6 +796,7 @@ export abstract class EntryScene extends Scene {
     frame: Uint8Array,
     delivery: ClientFrameDelivery = "reliable",
   ): void {
+    this.requireMailboxAlive();
     if (connectionIds.length === 0) return;
     if (connectionIds.length === 1) {
       this.sendClientFrame(connectionIds[0]!, frame, delivery);
@@ -762,11 +812,13 @@ export abstract class EntryScene extends Scene {
 
   /** 按正常 mailbox 与协议分发语义路由本地 call。 / Routes a local call through normal mailbox and protocol dispatch semantics. */
   dispatchLocalCall(frame: Uint8Array): Promise<Uint8Array> {
-    const result = this.dispatchMailbox(() => this.handleFrame(frame));
-    return Promise.resolve(result).then((response) => {
-      if (!response) throw new Error(`scene ${this.self.name} returned no RPC response`);
-      return response;
-    });
+    try {
+      const result = this.dispatchMailbox(() => this.handleFrame(frame));
+      return Promise.resolve(result).then((response) => {
+        if (!response) throw new Error(`scene ${this.self.name} returned no RPC response`);
+        return response;
+      });
+    } catch (error) { return Promise.reject(error); }
   }
 
   /** 路由本地单向帧，不创建响应完成项。 / Routes a local one-way frame without creating a response completion. */
@@ -946,10 +998,12 @@ export abstract class EntryScene extends Scene {
   }
 
   private dequeueIngressQueue(
-    queue: QueuedEvent[],
+    queue: (QueuedEvent | undefined)[],
     headKey: "controlIngressHead" | "dataIngressHead",
   ): QueuedEvent {
-    const item = queue[this[headKey]++];
+    const item = queue[this[headKey]]!;
+    // 帧切片可能引用整个 Host 批次，消费旧槽后不得等数组压缩才释放它。 / A frame can retain a whole Host batch; release the slot without waiting for compaction.
+    queue[this[headKey]++] = undefined;
     if (this[headKey] === queue.length) {
       queue.length = 0;
       this[headKey] = 0;
@@ -968,6 +1022,7 @@ export abstract class EntryScene extends Scene {
       metrics: includeMetrics ? this.metricsSnapshot() : undefined,
       pendingAsync: this.orderedTask !== undefined ||
         this.unorderedTasks.size > 0 ||
+        this.mailboxInFlight > 0 || this.mailboxBusy || this.mailboxTaskLength() > 0 ||
         this.Tasks.InFlightCount > 0,
       pendingIngress: this.ingressLength > 0,
     };
@@ -1033,9 +1088,10 @@ export abstract class EntryScene extends Scene {
   }
 
   private dispatchMailbox<T>(run: () => MaybePromise<T>): MaybePromise<T> {
+    this.requireMailboxAlive();
     if (this.mailbox === "unordered") {
       this.mailboxMetrics.fastPathCalls += 1;
-      const result = run();
+      const result = this.executeMailboxTask(run);
       if (isPromiseLike(result)) this.mailboxMetrics.asyncCalls += 1;
       return result;
     }
@@ -1063,13 +1119,14 @@ export abstract class EntryScene extends Scene {
    * the caller can observe and log the failure.
    */
   private dispatchMailboxVoid(run: () => MaybePromise<unknown>): MaybePromise<void> {
+    this.requireMailboxAlive();
     if (this.mailbox === "unordered") {
       this.mailboxMetrics.oneWayFastPathCalls += 1;
-      const result = run();
+      const result = this.executeMailboxTask(run);
       if (isPromiseLike(result)) {
         this.mailboxMetrics.oneWayAsyncCalls += 1;
-        // unordered 不需要等待或改写返回值；直接透传 Handler 自己的 Promise，避免再包一层。
-        // Unordered does not need ordering or a rewritten value; pass through the Handler Promise without another wrapper.
+        // unordered 透传已跟踪生命周期的结果，不进入串行队列。
+        // Unordered passes through the lifetime-tracked result without entering the serial queue.
         return result as Promise<void>;
       }
       return undefined;
@@ -1089,7 +1146,7 @@ export abstract class EntryScene extends Scene {
     oneWay = false,
   ): MaybePromise<T> {
     try {
-      const result = run();
+      const result = this.executeMailboxTask(run);
       if (isPromiseLike(result)) {
         if (oneWay) this.mailboxMetrics.oneWayAsyncCalls += 1;
         else this.mailboxMetrics.asyncCalls += 1;
@@ -1124,7 +1181,7 @@ export abstract class EntryScene extends Scene {
         return;
       }
       try {
-        const result = next.run!();
+        const result = this.executeMailboxTask(next.run!);
         if (isPromiseLike(result)) {
           if (next.oneWay === true) this.mailboxMetrics.oneWayAsyncCalls += 1;
           else this.mailboxMetrics.asyncCalls += 1;
@@ -1176,7 +1233,8 @@ export abstract class EntryScene extends Scene {
 
   private dequeueMailboxTask(): MailboxTask | undefined {
     if (this.mailboxTaskHead >= this.mailboxTasks.length) return undefined;
-    const task = this.mailboxTasks[this.mailboxTaskHead++];
+    const task = this.mailboxTasks[this.mailboxTaskHead];
+    this.mailboxTasks[this.mailboxTaskHead++] = undefined;
     if (this.mailboxTaskHead === this.mailboxTasks.length) {
       this.mailboxTasks.length = 0;
       this.mailboxTaskHead = 0;
@@ -1199,7 +1257,36 @@ export abstract class EntryScene extends Scene {
     task.resolve = undefined;
     task.reject = undefined;
     task.oneWay = undefined;
-    this.recycledMailboxTasks.push(task);
+    if (!this.mailboxClosed && this.recycledMailboxTasks.length < EntryScene.MAX_RECYCLED_MAILBOX_TASKS) {
+      this.recycledMailboxTasks.push(task);
+    }
+  }
+
+  /** 只在实际业务完成时检查拥有者；销毁不伪造 Promise 已取消。 / Checks ownership at real completion; disposal does not pretend to cancel a business promise. */
+  private executeMailboxTask<T>(run: () => MaybePromise<T>): MaybePromise<T> {
+    this.requireMailboxAlive();
+    this.mailboxInFlight += 1;
+    let asynchronous = false;
+    try {
+      const result = run();
+      if (isPromiseLike(result)) {
+        asynchronous = true;
+        return Promise.resolve(result)
+          .then(value => { this.requireMailboxAlive(); return value; })
+          .finally(() => { this.mailboxInFlight -= 1; });
+      }
+      this.requireMailboxAlive();
+      return result;
+    } finally {
+      if (!asynchronous) this.mailboxInFlight -= 1;
+    }
+  }
+
+  /** 已关闭 Scene 不接受新的本地工作，也不能返回迟到的成功结果。 / Closed Scenes reject new local work and late successful results. */
+  private requireMailboxAlive(): void {
+    if (this.mailboxClosed || this.IsDisposed) {
+      throw new RpcError(SystemErrCode.SceneNotFound, `scene disposed: ${this.self.name}`);
+    }
   }
 
   private mailboxTaskLength(): number {
@@ -1259,7 +1346,7 @@ export abstract class EntryScene extends Scene {
     connectionId: number,
     response: Uint8Array | undefined,
   ): void {
-    if (!response) return;
+    if (!response || this.mailboxClosed) return;
     this.onClientSendQueued([connectionId]);
     this.outboundControl.push({
       connectionIdBytes: this.packConnectionId(connectionId),
@@ -1582,6 +1669,7 @@ export abstract class EntryScene extends Scene {
     msgcode: number,
     frame: Uint8Array,
   ): void {
+    this.requireMailboxAlive();
     const byMsgcode = this.latestActorLocationFrames.get(connectionId) ?? new Map();
     const pending = byMsgcode.get(msgcode);
     if (pending) {

@@ -122,24 +122,35 @@ message S2S_WorkResponse // IResponse
   uint32 count = 1;
 }
 `);
-  await writeFile(path.join(module, "src/model/counter/CounterScene.ts"), `import { EntryScene, entryScene, DbProxyEntityRepository } from "#tiangz/core";
+  await writeFile(path.join(module, "src/model/counter/CounterScene.ts"), `import { EntryScene, entryScene, DbProxyEntityRepository, ActorUnit, actor } from "#tiangz/core";
+@actor({ mailbox: "ordered" })
+export class DrainActor extends ActorUnit {}
 @entryScene()
 export class CounterScene extends EntryScene {
   protected override readonly mailbox = "unordered" as const;
   holdResolve: (() => void) | null = null;
   completed = 0;
+  drainActor: DrainActor | undefined;
+  detachedState = 0;
+  detachedValue = 0;
   readonly repository = new DbProxyEntityRepository<number, number>({
     recordNamespace: ${JSON.stringify(`hotfix-fault-${path.basename(directory)}`)}, schema: "hotfix-fault", schemaVersion: 1,
     Capture: value => value, Encode: value => new Uint8Array([value]), Decode: bytes => bytes[0]!
   }, "hotfix-fault");
 }
 `);
+  const modelIndex = path.join(module, "src/model/index.ts");
+  await writeFile(modelIndex, (await readFile(modelIndex, "utf8"))
+    .replace('import { CounterScene }', 'import { CounterScene, DrainActor }')
+    .replace('export { CounterScene,', 'export { CounterScene, DrainActor,')
+    .replace('modelExports: { CounterScene,', 'modelExports: { CounterScene, DrainActor,'));
   await writeFile(handlerPath, `import { rpcHandler, type SceneRpcHandler } from "#tiangz/model";
-import { CounterScene, CounterComponent, StarterProtocol, type C2S_Increment, type S2C_Increment } from "#tiangz/module";
+import { CounterScene, CounterComponent, DrainActor, StarterProtocol, type C2S_Increment, type S2C_Increment } from "#tiangz/module";
 @rpcHandler(CounterScene, StarterProtocol.Increment)
 @rpcHandler(CounterScene, StarterProtocol.Work)
 export class IncrementHandler implements SceneRpcHandler<CounterScene, C2S_Increment, S2C_Increment> {
   async handle(scene: CounterScene, request: C2S_Increment): Promise<S2C_Increment> {
+    const codeVersion = 10;
     if (request.mode === 1) {
       if (scene.holdResolve) throw new Error("fixture already held");
       await new Promise<void>(resolve => { scene.holdResolve = resolve; });
@@ -150,8 +161,31 @@ export class IncrementHandler implements SceneRpcHandler<CounterScene, C2S_Incre
     if (request.mode === 9) return { count: scene.completed };
     if (request.mode === 13) return { count: (await scene.repository.Load("probe"))?.data ?? 0 };
     if (request.mode === 15) return { count: Number((await scene.repository.Load("ack-loss"))?.revision ?? 0n) };
+    if (request.mode === 18) return { count: scene.detachedValue };
+    if (request.mode === 19) return { count: scene.detachedState };
+    // 夹具刻意只观察结果，不用 Tasks.Spawn 代替 mailbox 自己的屏障计数。 / The fixture observes results without masking mailbox activity via Tasks.Spawn.
+    if (request.mode === 16 || request.mode === 17) {
+      if (scene.holdResolve || scene.detachedState === 1) throw new Error("fixture already held");
+      const actor = scene.drainActor ??= scene.SpawnActor(99, DrainActor);
+      scene.detachedState = 1;
+      void Promise.resolve(scene.RunLocalActorMailbox(actor, async current => {
+        await new Promise<void>(resolve => { scene.holdResolve = resolve; });
+        if (current.IsDisposed) return 0;
+        const encoded = scene.GetComponent(CounterComponent).Increment();
+        scene.completed++;
+        return Math.floor(encoded / 32) * 32 + codeVersion + (encoded % 32) % 10;
+      })).then(value => { scene.detachedValue = value; scene.detachedState = 2; }, () => { scene.detachedState = 3; });
+      if (request.mode === 17) { scene.DespawnActor(99); scene.drainActor = undefined; }
+      return { count: 0 };
+    }
+    if (request.mode === 20) {
+      scene.detachedState = 1;
+      void scene.scenes.call(scene.scenes.byName("local-target"), StarterProtocol.Work, { mode: 1 })
+        .then(() => { scene.detachedState = 2; }, () => { scene.detachedState = 3; });
+      return { count: 0 };
+    }
+    if (request.mode === 21 || request.mode === 22) return scene.scenes.call(scene.scenes.byName("local-target"), StarterProtocol.Work, { mode: request.mode === 21 ? 3 : 2 });
     if ((request.mode ?? 0) >= 1000) return scene.scenes.call(scene.scenes.byName("counter"), StarterProtocol.Work, { mode: (request.mode ?? 0) - 1000 }, { timeoutMs: 30000 });
-    const codeVersion = 10;
     if (request.mode === 4) await scene.scenes.call(scene.scenes.byName("worker"), StarterProtocol.Work, { mode: 1 }, { timeoutMs: 30000 });
     if (request.mode === 10 && (await scene.repository.Load("probe"))?.data !== 42) throw new Error("stored fixture value changed");
     if (request.mode === 11) await scene.repository.SaveSnapshot("probe", 42, 0n);

@@ -58,7 +58,7 @@ interface ActorRuntime {
   ref: ActorRef;
   instance: ActorRuntimeEntity<any[]>;
   mailBox: MailBoxComponent;
-  queue: PendingActorCall[];
+  queue: (PendingActorCall | undefined)[];
   queueHead: number;
   recycledQueueItems: PendingActorCall[];
   running: boolean;
@@ -83,9 +83,11 @@ export interface ActorMailboxMetricsSnapshot {
 }
 
 export class ProcessHost {
+  private static readonly MAX_RECYCLED_MAILBOX_ITEMS = 64;
   readonly Root = new EntityRoot();
   private readonly scenes = new Map<SceneId, SceneRuntime>();
   private readonly actorsByInstanceId = new Map<InstanceId, ActorRuntime>();
+  private actorMailboxPendingCount = 0;
   private readonly actorMailboxMetrics = {
     fastPathCalls: 0,
     queuedCalls: 0,
@@ -98,6 +100,9 @@ export class ProcessHost {
   };
 
   constructor(public readonly processId = "process-1") {}
+
+  /** 包括已接受的排队/在途调用；移除 Actor 路由不能提前归还运行中的调用。 / Includes admitted queued/in-flight calls; removing Actor routing never settles a running call. */
+  get ActorMailboxPendingCount(): number { return this.actorMailboxPendingCount; }
 
   /** 聚合本Process全部入口Scene和动态子Scene的Spawn任务，供Hotfix屏障与Runtime Pump使用。 / Aggregates Spawn tasks from every entry and dynamic child Scene for the Hotfix barrier and Runtime Pump. */
   get SceneTaskInFlightCount(): number {
@@ -386,6 +391,7 @@ export class ProcessHost {
       pending.reject?.(error);
       this.recycleActorCall(actor, pending);
     }
+    actor.recycledQueueItems.length = 0;
     try {
       actor.instance.__dispose();
     } catch (disposeError) {
@@ -487,10 +493,11 @@ export class ProcessHost {
     if (!actor || this.Root.Get(instanceId) !== actor.instance) {
       return Promise.reject(new RpcError(SystemErrCode.ActorLocationNotFound, `actor instance not found: ${instanceId}`));
     }
+    this.actorMailboxPendingCount += 1;
 
     if (actor.mailBox.MailboxType === "unordered") {
       this.actorMailboxMetrics.fastPathCalls += 1;
-      const result = this.executeActorCall(actor, run);
+      const result = this.runUnorderedActorCall(actor, run);
       if (isPromiseLike(result)) this.actorMailboxMetrics.asyncCalls += 1;
       return result;
     }
@@ -498,27 +505,7 @@ export class ProcessHost {
     if (!actor.running) {
       this.actorMailboxMetrics.fastPathCalls += 1;
       actor.running = true;
-      try {
-        const result = this.executeActorCall(actor, run);
-        if (isPromiseLike(result)) {
-          this.actorMailboxMetrics.asyncCalls += 1;
-          return Promise.resolve(result).then(
-            (value) => {
-              this.finishActorCall(actor);
-              return value;
-            },
-            (error) => {
-              this.finishActorCall(actor);
-              throw error;
-            },
-          );
-        }
-        this.finishActorCall(actor);
-        return result;
-      } catch (error) {
-        this.finishActorCall(actor);
-        throw error;
-      }
+      return this.runOrderedActorCall(actor, run);
     }
 
     this.actorMailboxMetrics.queuedCalls += 1;
@@ -543,10 +530,11 @@ export class ProcessHost {
     if (!actor || this.Root.Get(instanceId) !== actor.instance) {
       return Promise.reject(new RpcError(SystemErrCode.ActorLocationNotFound, `actor instance not found: ${instanceId}`));
     }
+    this.actorMailboxPendingCount += 1;
 
     if (actor.mailBox.MailboxType === "unordered") {
       this.actorMailboxMetrics.oneWayFastPathCalls += 1;
-      const result = this.executeActorCall(actor, run);
+      const result = this.runUnorderedActorCall(actor, run);
       if (isPromiseLike(result)) this.actorMailboxMetrics.oneWayAsyncCalls += 1;
       return result;
     }
@@ -554,26 +542,7 @@ export class ProcessHost {
     if (!actor.running) {
       this.actorMailboxMetrics.oneWayFastPathCalls += 1;
       actor.running = true;
-      try {
-        const result = this.executeActorCall(actor, run);
-        if (isPromiseLike(result)) {
-          this.actorMailboxMetrics.oneWayAsyncCalls += 1;
-          return Promise.resolve(result).then(
-            () => {
-              this.finishActorCall(actor);
-            },
-            (error) => {
-              this.finishActorCall(actor);
-              throw error;
-            },
-          );
-        }
-        this.finishActorCall(actor);
-        return result;
-      } catch (error) {
-        this.finishActorCall(actor);
-        throw error;
-      }
+      return this.runOrderedActorCall(actor, run, true);
     }
 
     this.actorMailboxMetrics.oneWayQueuedCalls += 1;
@@ -609,6 +578,43 @@ export class ProcessHost {
     return result;
   }
 
+  /** 快速 ordered 调用只完成一次，再排空队列；后续排空异常不能重复归还当前调用。 / Completes a fast ordered call once before draining; a drain failure must not release it twice. */
+  private runOrderedActorCall<T>(
+    actor: ActorRuntime,
+    run: (instance: ActorRuntimeEntity<any[]>) => MaybePromise<T>,
+    oneWay = false,
+  ): MaybePromise<T> {
+    let result: MaybePromise<T>;
+    try { result = this.executeActorCall(actor, run); }
+    catch (error) { this.finishActorCall(actor); throw error; }
+    if (isPromiseLike(result)) {
+      if (oneWay) this.actorMailboxMetrics.oneWayAsyncCalls += 1;
+      else this.actorMailboxMetrics.asyncCalls += 1;
+      return Promise.resolve(result).then(
+        value => { this.finishActorCall(actor); return value; },
+        error => { this.finishActorCall(actor); throw error; },
+      );
+    }
+    this.finishActorCall(actor);
+    return result;
+  }
+
+  /** unordered 调用也持有 Process 在途计数，直到实际结果终结。 / Unordered calls retain Process activity until their actual result settles. */
+  private runUnorderedActorCall<T>(
+    actor: ActorRuntime,
+    run: (instance: ActorRuntimeEntity<any[]>) => MaybePromise<T>,
+  ): MaybePromise<T> {
+    let asynchronous = false;
+    try {
+      const result = this.executeActorCall(actor, run);
+      if (isPromiseLike(result)) {
+        asynchronous = true;
+        return Promise.resolve(result).finally(() => { this.actorMailboxPendingCount -= 1; });
+      }
+      return result;
+    } finally { if (!asynchronous) this.actorMailboxPendingCount -= 1; }
+  }
+
   private requireCurrentActor(actor: ActorRuntime): void {
     if (
       this.actorsByInstanceId.get(actor.ref.instanceId) !== actor ||
@@ -621,6 +627,7 @@ export class ProcessHost {
   }
 
   private finishActorCall(actor: ActorRuntime): void {
+    this.actorMailboxPendingCount -= 1;
     if (this.actorQueueLength(actor) > 0) {
       this.drainOrdered(actor);
     } else {
@@ -694,7 +701,9 @@ export class ProcessHost {
 
   private dequeueActorCall(actor: ActorRuntime): PendingActorCall | undefined {
     if (actor.queueHead >= actor.queue.length) return undefined;
-    const pending = actor.queue[actor.queueHead++];
+    const pending = actor.queue[actor.queueHead];
+    // 出队即断开旧槽引用，在途任务继续由实际执行路径持有。 / Clear the old slot while the real execution path retains in-flight ownership.
+    actor.queue[actor.queueHead++] = undefined;
     if (actor.queueHead === actor.queue.length) {
       actor.queue.length = 0;
       actor.queueHead = 0;
@@ -710,10 +719,14 @@ export class ProcessHost {
   }
 
   private recycleActorCall(actor: ActorRuntime, pending: PendingActorCall): void {
+    this.actorMailboxPendingCount -= 1;
     pending.run = undefined;
     pending.resolve = undefined;
     pending.reject = undefined;
-    actor.recycledQueueItems.push(pending);
+    if (this.actorsByInstanceId.get(actor.ref.instanceId) === actor &&
+      actor.recycledQueueItems.length < ProcessHost.MAX_RECYCLED_MAILBOX_ITEMS) {
+      actor.recycledQueueItems.push(pending);
+    }
   }
 
   private actorQueueLength(actor: ActorRuntime): number {

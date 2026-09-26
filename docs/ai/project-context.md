@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+真实热更夹具需使用当前错误契约：首次新增本地 mailbox 用例已返回 `drain deadline exceeded` 与 `pendingAsync=true`，因测试猜测 timeout 文字而失败。复测应核对拒绝状态、实际错误字段、在途标志及 generation 保持，不改宿主期限或把拒绝记成成功。原报告与命令见[mailbox 生命周期](../design/v0.7-mailbox-lifetime.md)。
+
+0.7 mailbox 生命周期：出队立即清空旧数组槽，Scene/Actor 空闲节点池各最多 64 个；这是复用缓存上限，未执行任务/TS 堆总预算仍未完成。EntryScene 实体销毁先关闭准入、拒绝未执行 RPC、断开帧和闭包引用；在途业务仍等真实完成，迟到结果不能重填出站或节点池。本地 direct Actor 与 unordered Scene 曾漏计热更在途，不能只用网络任务、Timer 或 Spawn 数量证明排空；ProcessActor 计数在路由销毁后仍保留，直到真实完成。首次引用/销毁 5 项失败与新增屏障 4 项失败、修法和复测见[mailbox 生命周期](../design/v0.7-mailbox-lifetime.md)。
+
 矩阵的 Cargo 步骤统一走 run_cargo.mjs：直接启动 Cargo 的冷链接曾留下本步骤的 MSVC vctip 后代，缓存命中重试则不复现。只设置 VSCMD_SKIP_SENDTELEMETRY 在此路径无效；已有 Node 启动器负责工具后代，外层 Job 仍严格检查残留。必须强制重新链接验证，禁止按进程名忽略失败、清理用户工具或把此前 quick 31/33 改写通过。诊断、修正及原报告见[矩阵生命周期](../design/v0.7-matrix-lifecycle.md)。
 
 夜间验证每步现有墙钟期限与进程所有权：Windows 使用暂停创建后分配的 Job，Linux 独立组由轻量 Node/IPC EOF 回收嵌套步骤。不能只 kill 根 PID 或仅靠父矩阵的信号监听；父级可能先退出或同步阻塞。PowerShell 5 的 JSON 参数数组要直接转换，外包 @() 曾把多参数拼成一个；测试须覆盖空串/Unicode/引号与 shell 元字符。Windows 残留夹具须让子进程脱离 Node 自身约束，才能证明外层 Job 的回收。原失败、正确做法及 Windows/Linux 复测入口见[矩阵生命周期](../design/v0.7-matrix-lifecycle.md)，不得把超时/中止/未回收改记通过。

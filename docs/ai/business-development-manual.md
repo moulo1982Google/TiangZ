@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+真实 V8 mailbox 排空夹具的首轮失败是错误文字猜测：宿主返回 `drain deadline exceeded`、`pendingAsync=true` 并保留 generation，测试却匹配 timeout/timed out。正确断言当前结构化拒绝状态、实际 error 字段与 generation，不放宽生产窗口来迁就夹具；原 `temp/hotfix-load-dWu5jg/fault-report.json` 保留，详见[生命周期验收](../design/v0.7-mailbox-lifetime.md)。
+
+mailbox 清理不等于异步业务取消：移出 Actor 路由或销毁 Scene 时，只能立即终结未执行节点；已运行调用仍需计入热更屏障，直到实际结果结束。首次用例发现旧入站槽保留帧、空闲池保持历史峰值、Scene 销毁后仍执行排队调用；随后又发现本地 Actor/ unordered Scene 不经过网络任务计数，pendingAsync 错误为 false。正确做法是在接收/真实完成位置记账，出队清槽，空闲池限 64，关闭后拒绝新准入和迟到成功结果；禁止清零在途数或用 Tasks.Spawn 包装测试来掩盖 mailbox 漏计。失败证据和真实 V8 复测见[mailbox 生命周期](../design/v0.7-mailbox-lifetime.md)。
+
 夜间矩阵的冷链接反例：Rust 223 项用例通过后仍有本步骤 vctip 后代，属于构建工具生命周期，不能用缓存命中的重跑冒充修复。仅设 VSCMD_SKIP_SENDTELEMETRY 未解决，现 Cargo 步骤统一使用既有 run_cargo.mjs，由 Node 启动路径与外层 Job 保持所有权；强制重新链接确认退出，不按名称豁免、不改全局配置、不碰用户既有进程。原 full 8/9 和修正证据见[矩阵生命周期](../design/v0.7-matrix-lifecycle.md)。
 
 夜间验证的超时/中止先回收本步骤进程树，再写 JSON/JUnit；超时计失败，整轮中止之后的步骤计 skipped，回收失败则不继续。Windows 的单 PID 清理不足以覆盖先退出的父进程，使用暂停创建并挂入专属 Job；Linux 嵌套步骤使用 IPC 父级消失通知回收独立组，不能只向外层进程组发信号。PowerShell 5 的 @(...ConvertFrom-Json) 曾令 string[] 变成一个空格拼接参数，应直接转换并验证逐参数原值。Windows 普通 Node 子进程可能已由 Node 自己管理，回收夹具须另测 detached 后代与真实端口，不能用未制造出的残留冒充所有权证明。首轮 4/5 与修正、Linux 隔离复测见[矩阵生命周期](../design/v0.7-matrix-lifecycle.md)。
