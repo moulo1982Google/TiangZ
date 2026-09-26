@@ -60,6 +60,8 @@ MapHost return EnterMap response
 
 本地 EntryScene 的 `call/send` 另有每目标 **4096**、每 Process **16384** 项准入，仍包含排队与实际执行。单向消息返回后，名额跟着目标节点保留；目标销毁只立即终结未执行节点，异步任务实际结束后才归还。公开 `call/send` 超限均保留 1011。网络入站和 Host completion 使用独立路径，不能借这份本地额度完成释放，也不越过 ordered 的业务顺序。一次 Scene 调用再进入 Actor 会持有两类名额，监控不得相加当作唯一业务请求数，详见[本地 Scene 容量](../design/v0.7-local-scene-capacity.md)。
 
+显式设置本地 RPC 的 `timeoutMs` 只限制调用方等待。提前成功或失败会释放自己的宿主期限；期限届满后，已经开始的目标仍按真实完成归还名额，ordered 后续消息和热更都继续等它。不要把超时当作业务取消，也不要使用内部期限桥实现游戏倒计时，详见[调用期限](../design/v0.7-host-deadlines.md)。
+
 ## EntityRoot、Unit 与 Component
 
 `ProcessHost.Root` 是进程级 Entity 索引，对应 ET 的 `Root.Instance`。每个动态 Scene/Actor 都有：

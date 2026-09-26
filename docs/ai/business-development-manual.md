@@ -1,5 +1,15 @@
 # 2026-09-16：先选业务工程，再写模块
 
+本地期限最终复测为相关 **31/31**，含 KCP `npm run verify` **check 8/8、quick 33/33、full 9/9**，434358ms，`temp/v0.7-host-deadlines-verify-final.log`。Rust 239 项、Linux 条件编译、AI 实际归档通过；真实 V8 2000 次快速调用合计 148.95ms，期限届满后原 callee/mailbox/热更仍等实际完成，宿主/两份报告共同 SHA256 `670e83f915b0067d8fe8a979bae688ff77d3855f520f1c3e0740cee3164bf224`。见[最终证据](../design/v0.7-host-deadlines.md)。下方旧夹具缺桥、参数转换、waiter 快速路径反例和首轮 ENOBUFS 逐项保留；未改变网络参数，不能用后续通过覆盖首轮失败或宣称全部队列/内存有界。
+
+跨入口的队列需要共同反例：`node temp/v0.7-host-operation-admission-probe.mjs` 仅在隔离 Node 中记录当前 TS Host 打包，65536 个单向消息加一个 RPC 被全部接受，形成 Rust 不允许的 **65537** 项整批。证据 `temp/v0.7-host-operation-admission-audit.json`，未发网络；下一批需在接受新项前验证共享限制，保留先前已接受项，不能把 TS Mock 打包观测称为真实传输验收或清空旧队列绕过。见[后续盘点](../design/v0.7-ts-mailbox-audit.md)。
+
+快速期限需用确定性行为断言防回归：`temp/v0.7-host-deadlines-fast-path-red.log` 证明 100 次立即完成调用仍启动 100 个原生 waiter（1 failed/10 skipped）。修正为先预留原生绝对期限，宿主刷新时仅启动尚未完成的等待；刷新前完成同步关闭，已启动 waiter 等实际退出。统一停机清理两种状态，延后注册失败不撤销已开始目标。`npx vitest run tests/unit/scene_call_deadline.test.ts tests/unit/scene_call_cleanup.test.ts tests/unit/local_scene_capacity.test.ts tests/legacy/rpc_actor_correctness_self_test.test.ts` **31/31**，`temp/v0.7-host-deadlines-lazy-focused.log`；不得删容量检查、重置起算时间或提前归还原生等待的实际名额来提升速度，最终真实宿主/全矩阵另验。
+
+宿主桥更新也要迁移已有自测：期限首轮完整矩阵的 legacy RPC 自测未安装新桥，仍按旧 packed kind=3 完成计时，报 `hostCreateDeadline is not a function`（`temp/v0.7-host-deadlines-verify.log`，184 passed/1 failed）。修正其显式宿主替身与期限完成驱动，保留 rpcId/超时/停机断言，禁止生产代码回退到旧桥或删测。相同矩阵的真实 admin HTTP 出现 `ENOBUFS`（`temp/hotfix-load-XxB2CZ/fault-report.json`），只能报告观察到的环境错误；事后端口采样不能证明失败瞬间原因。保留 500 连接与失败报告、不改网络配置，继续原命令完整复测。快速本地期限测试 20128ms 也提示等待每次原生取消 pump 的成本；须验证未跨 Update 的工作无需启动 waiter，已启动者仍实际排空，不能只看正确性通过。
+
+期限清理须验证 Rust 真实资源，而不只看 Promise.race 返回：旧本地调用快速成功/拒绝后仍提交计时操作，`temp/v0.7-host-deadlines-red.log` **5 failed/1 passed**；本次用当前 isolate 原生期限并在 finally 关闭、等待取消实际退出。复测 `npx vitest run tests/unit/scene_call_deadline.test.ts tests/unit/scene_call_cleanup.test.ts tests/unit/local_scene_capacity.test.ts`，另跑原生资源/真实生成协议；超时仍须保留目标 ordered 队列、真实名额和热更排空。桥改动初版还漏掉原 DataView 的 uint32 转换，小数/NaN 两个用例失败（`temp/v0.7-host-deadlines-coercion-red.log`，2 failed/9 passed）；须保留原公开转换，不以新桥严格参数检查替代兼容语义。禁止仅延长超时、删任务计数、吞掉测试或将内部期限当游戏 Timer；详见[期限资源](../design/v0.7-host-deadlines.md)。
+
 本地 Scene 容量最终复测：`npx vitest run tests/unit/local_scene_capacity.test.ts tests/unit/mailbox_lifetime.test.ts tests/unit/mailbox_overload_delivery.test.ts tests/unit/actor_mailbox_capacity.test.ts` **49/49**；含 KCP `npm run verify` **check 8/8、quick 33/33、full 9/9**，430647ms，`temp/v0.7-local-scene-capacity-verify.log`。真实 V8 16384 项中一半为已返回发送者的单向工作，仍占原名额；热更暂停期间 Worker RPC 返回后排空并恢复提交。Rust 234 项、Linux 条件编译、AI 实际归档通过，普通 Host/报告共同 SHA256 `604c5e0d2b887b00a836298c5f50cf499745c818fa7931144064df452b86da40`，详见[最终证据](../design/v0.7-local-scene-capacity.md)。下方夹具超时、类型标注、self RPC 误用与公开错误映射按阶段保留，不能混称框架容量失效；网络控制与字节上限仍独立处理。
 
 独立 Process 容量探针也要遵守既有调用契约：`temp/v0.7-local-scene-capacity-v8.log`、`temp/hotfix-load-r9hBNs/fault-report.json` 在 Worker self RPC 处收到 1006 `cannot synchronously call itself`。不能为证明独立额度而绕过 self-call 防护或改 ordered 语义；夹具给 Worker 配置独立 EntryScene，公开 call 指向该目标，重跑完整真实 V8 场景。此轮是夹具误用，不是数量限制失效，热更恢复部分当时尚未完成。

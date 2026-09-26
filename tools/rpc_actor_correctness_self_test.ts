@@ -10,11 +10,16 @@ interface Deferred<T> {
 
 export async function main(): Promise<void> {
   let submitted = new Uint8Array(0);
+  const deadlines = new Map<number, Deferred<void>>();
+  let nextDeadline = 1;
   const host = globalThis as typeof globalThis & {
     __hostRegisterSceneRoute: () => number;
     __hostSubmitSceneOperations: (packed: Uint8Array) => number;
     __hostLogMinLevel: number;
     __hostLog: () => void;
+    __hostCreateDeadline: (ms: number) => number;
+    __hostWaitDeadline: (id: number) => Promise<void>;
+    __hostCancelDeadline: (id: number) => void;
   };
   host.__hostRegisterSceneRoute = () => 1;
   host.__hostSubmitSceneOperations = (packed) => {
@@ -23,10 +28,22 @@ export async function main(): Promise<void> {
   };
   host.__hostLogMinLevel = 4;
   host.__hostLog = () => undefined;
+  host.__hostCreateDeadline = () => {
+    const id = nextDeadline++, wait = deferred<void>();
+    void wait.promise.catch(() => {});
+    deadlines.set(id, wait);
+    return id;
+  };
+  host.__hostWaitDeadline = id => deadlines.get(id)!.promise;
+  host.__hostCancelDeadline = id => { deadlines.get(id)?.reject(new Error("deadline cancelled")); deadlines.delete(id); };
 
   const transport = await import("../app/core/process/HostSceneTransport");
   await testHostCompletionAndShutdown(transport, () => submitted);
-  await testRpcIdReservation(transport, () => submitted);
+  await testRpcIdReservation(transport, () => {
+    assert.equal(deadlines.size, 1);
+    for (const wait of deadlines.values()) wait.resolve();
+  });
+  assert.equal(deadlines.size, 0);
   console.log("rpc/actor correctness self-test passed");
 }
 
@@ -56,7 +73,7 @@ async function testHostCompletionAndShutdown(
 
 async function testRpcIdReservation(
   transport: typeof import("../app/core/process/HostSceneTransport"),
-  submitted: () => Uint8Array,
+  expireDeadline: () => void,
 ): Promise<void> {
   const [{ SceneCallContext }, { ProcessHost }, { packFrame }] = await Promise.all([
     import("../app/core/process/context"),
@@ -113,13 +130,7 @@ async function testRpcIdReservation(
 
   const timedOut = context.call(target, descriptor, {}, { timeoutMs: 5 });
   transport.flushHostSceneOperations();
-  const timeoutBatch = submitted();
-  const timeoutOperationId = new DataView(
-    timeoutBatch.buffer,
-    timeoutBatch.byteOffset,
-    timeoutBatch.byteLength,
-  ).getUint32(4, true);
-  transport.completeHostSceneOperation(timeoutOperationId, true, new Uint8Array(0));
+  expireDeadline();
   await assert.rejects(timedOut, /timed out after 5ms/);
 }
 

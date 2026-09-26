@@ -35,7 +35,7 @@ message S2S_LocalHold // IMessage
   const handlerFile = path.join(module, "src/hotfix/counter/handlers/IncrementHandler.ts");
   await writeFile(handlerFile, 'import { handleLocalQuotaControl } from "./LocalQuotaControl";\n' +
     replace(await readFile(handlerFile, "utf8"), "const codeVersion = 10;", `const codeVersion = 10;
-    if (request.mode !== undefined && request.mode >= 47 && request.mode <= 63) return handleLocalQuotaControl(scene, request.mode);`));
+    if (request.mode !== undefined && request.mode >= 47 && request.mode <= 65) return handleLocalQuotaControl(scene, request.mode);`));
   await writeFile(path.join(module, "src/hotfix/counter/handlers/LocalQuotaControl.ts"), `import { CounterScene, StarterProtocol, StarterMessages } from "#tiangz/module";
 
 export function waitForWorker(scene: CounterScene): Promise<void> {
@@ -87,6 +87,14 @@ export async function handleLocalQuotaControl(scene: CounterScene, mode: number)
   }
   if (mode === 62) return scene.scenes.call(scene.scenes.byName("worker-local-quota"), StarterProtocol.Work, { mode: 63 });
   if (mode === 63) return { count: 1 };
+  if (mode === 64) return scene.scenes.call(scene.scenes.byName("local-quota-0"), StarterProtocol.Work, { mode: 47 }, { timeoutMs: 50 });
+  if (mode === 65) {
+    let count = 0;
+    for (let i = 0; i < 1000; i++) {
+      count += (await scene.scenes.call(scene.scenes.byName("local-quota-0"), StarterProtocol.Work, { mode: 63 }, { timeoutMs: 30000 })).count ?? 0;
+    }
+    return { count };
+  }
   throw new Error("unknown local Scene quota fixture mode");
 }
 `);

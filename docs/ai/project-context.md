@@ -1,5 +1,15 @@
 # 2026-09-16 模块拆分后的当前事实
 
+本地期限资源最终验收通过：相关 **31/31**，含 KCP **check 8/8、quick 33/33、full 9/9**，434358ms，`temp/v0.7-host-deadlines-verify-final.log`；Rust 239 项、Linux 条件编译和 AI 实际 0.2.0 归档通过。实际 V8 期限场景 9972ms，其中 2000 次快速调用合计 148.95ms，超时后 callee 继续占额并阻止热更，真实完成才恢复；普通 Host 与两份报告共同 SHA256 `670e83f915b0067d8fe8a979bae688ff77d3855f520f1c3e0740cee3164bf224`。完整证据、初版 waiter 成本、legacy 夹具缺桥及首轮 ENOBUFS 保留在[期限验收](../design/v0.7-host-deadlines.md)；没有改系统参数，后续通过不证明 ENOBUFS 根因已修复。远程整批准入和停机期限仍有独立边界。
+
+后续远程 Host 队列审查发现混合准入问题：独立 Node 边界探针先接受 65536 个 send，再接受一个 call，打包总数 **65537**，超出 Rust 整批解码上限。`temp/v0.7-host-operation-admission-audit.json` 只证明当前 TS 打包结果，未运行网络；应按[队列盘点](../design/v0.7-ts-mailbox-audit.md)在接受新项之前统一共享容量、帧和打包成本检查。不能只看各入口自己的 pending/queued 上限，也不能丢弃此前已接受项来让整批通过；该远程路径尚未修改。
+
+期限快速路径的确定性反例为 `temp/v0.7-host-deadlines-fast-path-red.log`（1 failed/10 skipped）：100 次立即完成的本地调用仍创建了 100 个原生 waiter。改为创建时预留绝对期限、宿主刷新时再启动剩余 waiter，已有等待仍实际排空；统一停机取消覆盖两种状态，延后注册失败保留已开始目标的真实所有权。旧 RPC 自测迁移新桥后，相关四文件 **31/31**，`temp/v0.7-host-deadlines-lazy-focused.log`。这是减少不必要异步资源，不是放宽容量或重置期限，最终真实宿主与完整矩阵仍须复测。
+
+期限首轮完整矩阵暴露旧 RPC 自测仍手工完成 kind=3 操作、没有安装新增原生期限桥（`temp/v0.7-host-deadlines-verify.log`，`hostCreateDeadline is not a function`，unit 184 passed/1 failed）。需迁移其宿主替身并保留原 rpcId/超时断言，不添加生产回退桥或删除测试。该轮真实故障矩阵另遇 Windows admin HTTP `ENOBUFS`，`temp/hotfix-load-XxB2CZ/fault-report.json`；与历史现象相同但缺少失败瞬间诊断，不能归因于期限实现或宣布已修复。保留现场，不调系统网络参数、不减 500 连接，原命令复测。真实期限用例首轮还显示快速路径持续等待 pump 的额外成本，需要延后 waiter 启动但仍从资源创建时计时；不能用假的提前归还换性能。
+
+本地调用期限存在独立的资源泄漏反例：旧 Promise.race 在调用提前完成后仍提交 sleepHost，`temp/v0.7-host-deadlines-red.log` 为 **5 failed/1 passed**。采用当前 isolate 所有、可取消的原生期限，返回前等待取消实际退出；只删 TS 记录、把期限挪到同一受阻批次或因超时释放 callee 名额均不成立，见[独立契约](../design/v0.7-host-deadlines.md)。新桥接还必须保留旧 packed uint32 转换：`temp/v0.7-host-deadlines-coercion-red.log` **2 failed/9 passed** 定位小数/NaN 直接传严格 u32 接口的兼容缺口，应保持原转换及错误文本，而非静默改变公开参数语义。无期限路径保持；停机控制的准入失败处理独立定义。
+
 本地 Scene 两级准入最终完成：4096/EntryScene、16384/原 ProcessHost，定向 **49/49**，含 KCP **check 8/8、quick 33/33、full 9/9**，430647ms，`temp/v0.7-local-scene-capacity-verify.log`。实际生成协议保留 8192 RPC+8192 单向工作，验证两级 1011、来源关闭、独立 Worker，以及热更暂停期间真实 Worker RPC 完成排空；普通 Host 与两份报告共同 SHA256 `604c5e0d2b887b00a836298c5f50cf499745c818fa7931144064df452b86da40`。Rust 234 项、Linux 条件编译、AI 0.2.0 实际归档通过，完整证据和以下阶段失败见[本地 Scene 验收](../design/v0.7-local-scene-capacity.md)。网络控制积压、二进制保留和期限资源仍独立审查，阶段记录不代替最终结果。
 
 本地 Scene 真实夹具首轮已通过满额/拒绝，但独立 Worker 探针错误地用 scene.scenes.call 调用自己，被既有 self-call 防护拒绝（`temp/v0.7-local-scene-capacity-v8.log`、`temp/hotfix-load-r9hBNs/fault-report.json`，1006）。这是夹具调用设计错误；改为 Worker 中第二个真实 EntryScene 作为本地目标，不关闭防护、不改 mailbox 顺序或吞掉错误，整轮 V8 故障场景重验。

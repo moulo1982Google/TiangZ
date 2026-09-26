@@ -7,7 +7,7 @@ import type { RpcDescriptor } from "../protocol/rpc";
 import { SystemErrCode } from "../protocol/SystemErrCode";
 import { nowMs, type LatencyRecorder } from "../metrics/latency";
 import type { LocalSceneRouter, RuntimeEntrySceneConfig, SceneConfig } from "./types";
-import { callRemoteScene, sendRemoteScene, sleepHost } from "./HostSceneTransport";
+import { callRemoteScene, sendRemoteScene, withHostDeadline } from "./HostSceneTransport";
 import {
   encodeActorLocationEnvelope,
   extractFrameRpcId,
@@ -195,21 +195,18 @@ export class SceneCallContext {
               options.timeoutMs ?? 5000,
             );
           }
-          const localCall = this.localRouter.callLocalScene(
+          const localCall = () => this.localRouter.callLocalScene(
             this.self.name,
             target.name,
             routedFrame,
           );
-          if (options.timeoutMs === undefined) return await localCall;
+          if (options.timeoutMs === undefined) return await localCall();
           const timeoutMs = Math.max(1, Math.min(options.timeoutMs, 0xffff_ffff));
-          return await Promise.race([
+          return await withHostDeadline(
             localCall,
-            sleepHost(timeoutMs).then(() => {
-              throw new Error(
-                `local scene call to ${target.name} timed out after ${timeoutMs}ms`,
-              );
-            }),
-          ]);
+            timeoutMs >>> 0,
+            `local scene call to ${target.name} timed out after ${timeoutMs}ms`,
+          );
         },
       );
     } catch (error) {

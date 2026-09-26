@@ -20,6 +20,8 @@
 
 - **本地 Scene 准入**：0.7 候选每 EntryScene 4096、原 ProcessHost 16384 项本地 call/send，排队与真实运行一起计数；先检查存活，再检查 Scene/Process，公开 call/send 保留 1011。busy void 返回并不代表完成，名额附着实际节点；销毁只立即释放未执行工作，运行任务与旧 Runtime 回调释放原所有者。网络入站、Disconnect 和 Host completion 使用各自路径，不能占用这份本地配额来完成释放，也不能越过 ordered 顺序。嵌套 Actor 调用可同时持有两类名额，指标不能相加冒充唯一请求或堆字节，见[本地容量](../design/v0.7-local-scene-capacity.md)。
 
+- **调用期限资源**：显式本地 RPC 先预留当前 isolate 的原生绝对期限，再启动目标；宿主刷新时仍未完成才启动原生 waiter，此前完成则同步关闭资源，已有 waiter 的调用等真实退出。延后注册失败不能撤销已开始业务。期限届满不取消 callee，不能释放实际 mailbox 名额、破坏 ordered 或提前允许热更；保留桥接前的参数/错误转换。该内部资源不供游戏定时使用；不能将准入失败不执行的包装器直接套到 stop，见[期限契约](../design/v0.7-host-deadlines.md)。
+
 - **Actor 准入**：0.7 候选每 Actor 4096、原 ProcessHost 16384 项排队加实际运行任务，RPC/void 与 ordered/unordered 共用；先检查 Actor 再检查 Process，超限在业务执行前同步 1011。销毁只立即释放未执行队列，运行中的原任务完成后归还原所有者，不能误减新 Actor/Host。单向错误保留类型与失败指标：网络关闭仍有效的原物理来源、本地同步准入返回；异步错误携带原来源状态，不能关闭同号新连接。Trace/Actor 外壳不误报坏包，部分批次继续观察已接受项。send 返回不是最终送达或事务完成，不自动重放；固定 Process 指标区分两级拒绝，本项不界定 Scene mailbox、DTO/backing buffer 或 RSS，见[Actor 容量](../design/v0.7-actor-mailbox-capacity.md)。
 
 - **迟到响应**：来源断开而 Scene 仍存活时，原业务 Promise 仍需真实排空，但完成后不能再排队响应或重新填入连接缓存。异步等待绑定断线状态，不能依赖 30 秒墓碑一直存在；最后释放需核对状态身份，不能删除同号新连接等待或其他来源。业务已执行与网络未回包分别判断，不自动重放事实；指标区分连接来源数与实际任务数，见[迟到响应](../design/v0.7-late-responses.md)。

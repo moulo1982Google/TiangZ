@@ -413,6 +413,45 @@ try {
       for (const client of targets) client.close();
     }
   });
+  await test("local-deadline-release-keeps-timed-out-business-in-hotfix-drain", async () => {
+    const target = await open(quotaScenes[0].port);
+    const inFlight = async () => {
+      const response = await fetch(`http://127.0.0.1:${config.process.observability.health.port}/metrics`, { signal: AbortSignal.timeout(2000) });
+      assert.ok(response.ok);
+      const line = (await response.text()).split(/\r?\n/).find(value => value.startsWith("tiangz_local_scene_mailbox_tasks_in_flight{"));
+      assert.ok(line);
+      return Number(line.split(" ").at(-1));
+    };
+    const completedBefore = (await target.call(58)).count;
+    try {
+      let fastStarted = performance.now();
+      assert.equal((await control.call(65)).count, 1000, "fast explicit-deadline calls remain usable");
+      let fastCallMs = performance.now() - fastStarted;
+      await assert.rejects(control.call(64), error => error.code === 1006 && /timed out after 50ms/.test(error.message));
+      await until(async () => (await workerControl.call(60)).count === 1, "timed-out local caller still has a real Worker result outstanding");
+      await until(async () => (await inFlight()) === 1, "caller timeout does not return target admission");
+      assert.equal((await target.call(58)).count, completedBefore);
+      const before = await admin("status"), failed = begin(undefined, 422);
+      await failed.paused();
+      assert.match((await failed.pending).error, /drain deadline exceeded/);
+      assert.equal((await admin("status")).hotfix.generation, before.hotfix.generation);
+      const recovery = begin(); await recovery.paused();
+      await workerControl.call(55);
+      await commit(recovery);
+      await until(async () => (await inFlight()) === 0, "actual target completion releases admission");
+      assert.equal((await target.call(58)).count, completedBefore + 1);
+      fastStarted = performance.now();
+      assert.equal((await control.call(65)).count, 1000, "explicit-deadline calls recover after real completion");
+      fastCallMs += performance.now() - fastStarted;
+      assert.equal((await admin("status")).hotfix.generation, before.hotfix.generation + 1);
+      return { fastCalls: 2000, fastCallMs, timeoutCode: 1006, retainedCallsAfterTimeout: 1, completionDuringPause: true };
+    } finally {
+      await workerControl.call(55);
+      await until(async () => (await inFlight()) === 0, "deadline fixture target drain");
+      for (const client of [control, target, workerControl]) await client.call(61);
+      target.close();
+    }
+  });
   await test("disconnected-in-flight-rpc-does-not-refill-response-cache", async () => {
     const sourceMetrics = async () => {
       const response = await fetch(`http://127.0.0.1:${config.process.observability.health.port}/metrics`, { signal: AbortSignal.timeout(2000) });

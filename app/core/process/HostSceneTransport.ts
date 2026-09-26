@@ -1,5 +1,6 @@
 import type { SceneConfig } from "./types";
 import { utf8Decode } from "../protocol/binary";
+import type { MaybePromise } from "../async";
 
 const MAX_PENDING_OPERATIONS = 65_536;
 const OPERATION_META_BYTES = 17;
@@ -17,10 +18,49 @@ interface QueuedOperation {
   frame: Uint8Array;
 }
 
+interface PendingDeadline {
+  id: number;
+  resolve: () => void;
+  reject: (reason: unknown) => void;
+  wait?: Promise<void>;
+}
+
 const routeIds = new Map<string, number>();
 const pending = new Map<number, PendingOperation>();
 const queued: QueuedOperation[] = [];
+const deadlines = new Map<number, PendingDeadline>();
+const unstartedDeadlines = new Set<PendingDeadline>();
 let nextOperationId = 1;
+
+/** 先预留绝对期限；未跨 Update 的调用同步释放，已启动的原生等待实际退出后才返回。 / Reserves an absolute deadline; calls finishing before Update release synchronously, while started native waits drain before returning. */
+export async function withHostDeadline<T>(run: () => MaybePromise<T>, ms: number, timeoutMessage: string): Promise<T> {
+  const id = hostCreateDeadline(ms);
+  let resolve!: () => void, reject!: (reason: unknown) => void;
+  const timeout = new Promise<void>((ok, fail) => { resolve = ok; reject = fail; });
+  const deadline: PendingDeadline = { id, resolve, reject };
+  deadlines.set(id, deadline);
+  unstartedDeadlines.add(deadline);
+  try {
+    return await Promise.race([run(), timeout.then(() => { throw new Error(timeoutMessage); })]);
+  } finally {
+    unstartedDeadlines.delete(deadline);
+    if (deadlines.get(id) === deadline) deadlines.delete(id);
+    hostCancelDeadline(id);
+    if (deadline.wait) await deadline.wait.catch(() => {});
+  }
+}
+
+/** 刷新时仅为仍在等待的期限启动原生任务；创建时的绝对期限不重置。 / Starts native waits only for still-pending deadlines at flush, retaining their creation-time expiration.
+ */
+function flushHostDeadlines(): void {
+  for (const deadline of unstartedDeadlines) {
+    unstartedDeadlines.delete(deadline);
+    try {
+      deadline.wait = hostWaitDeadline(deadline.id);
+      void deadline.wait.then(deadline.resolve, deadline.reject);
+    } catch (error) { deadline.reject(error); }
+  }
+}
 
 /** 将远程 Scene RPC 放入 Rust 传输队列，并按 operation id 完成等待。 / Queues one remote Scene RPC for Rust transport and resolves by its operation id. */
 export function callRemoteScene(
@@ -97,6 +137,7 @@ function enqueue(
 
 /** 在本次 Update 末尾把所有待处理 call/send 打包为一次 host op。 / Packs all queued call/send operations into one host op at the end of the update. */
 export function flushHostSceneOperations(): void {
+  flushHostDeadlines();
   if (queued.length === 0) return;
   const operations = queued.splice(0, queued.length);
   try {
@@ -131,6 +172,12 @@ export function cancelHostSceneOperations(
 ): void {
   queued.splice(0, queued.length);
   const error = new Error(reason);
+  for (const deadline of deadlines.values()) {
+    hostCancelDeadline(deadline.id);
+    deadline.reject(error);
+  }
+  deadlines.clear();
+  unstartedDeadlines.clear();
   for (const operation of pending.values()) operation.reject(error);
   pending.clear();
 }
@@ -188,6 +235,12 @@ const hostApi = globalThis as typeof globalThis & {
     targetPort: number,
   ) => number;
   __hostSubmitSceneOperations: (packed: Uint8Array) => number;
+  __hostCreateDeadline: (ms: number) => number;
+  __hostWaitDeadline: (id: number) => Promise<void>;
+  __hostCancelDeadline: (id: number) => void;
 };
 const hostRegisterSceneRoute = hostApi.__hostRegisterSceneRoute;
 const hostSubmitSceneOperations = hostApi.__hostSubmitSceneOperations;
+const hostCreateDeadline = hostApi.__hostCreateDeadline;
+const hostWaitDeadline = hostApi.__hostWaitDeadline;
+const hostCancelDeadline = hostApi.__hostCancelDeadline;

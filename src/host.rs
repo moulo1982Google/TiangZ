@@ -19,6 +19,8 @@ use futures_util::{StreamExt, stream};
 use tiangz_transport::buffer_budget::BufferBudget;
 use tokio::runtime::Handle;
 
+mod deadlines;
+
 const HOST_CALL_MAX_FRAME_LEN: usize = 1024 * 1024;
 const HOST_EVENT_LOOP_PUMP_BUDGET: Duration = Duration::from_millis(1);
 const HOST_OUTBOUND_MAX_TARGETS: usize = 4096;
@@ -511,9 +513,13 @@ deno_core::extension!(
         op_host_close_connection,
         op_host_register_scene_route,
         op_host_submit_scene_operations,
+        deadlines::op_host_create_deadline,
+        deadlines::op_host_wait_deadline,
+        deadlines::op_host_cancel_deadline,
         crate::telemetry::op_host_start_trace_span,
         crate::telemetry::op_host_end_trace_span
     ],
+    state = |state| state.put(deadlines::DeadlineBudget::default()),
 );
 
 /// 创建带 TiangZ host op 的 V8 运行时，但不加载或执行业务代码。 / Creates a V8 runtime with TiangZ host ops; it does not load or execute business code.
@@ -563,6 +569,9 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
           );
         };
         globalThis.__hostSleep = (ms) => core.ops.op_host_sleep(u32(ms, "ms"));
+        globalThis.__hostCreateDeadline = (ms) => core.ops.op_host_create_deadline(u32(ms, "ms"));
+        globalThis.__hostWaitDeadline = (id) => core.ops.op_host_wait_deadline(u32(id, "deadline id"));
+        globalThis.__hostCancelDeadline = (id) => core.ops.op_host_cancel_deadline(u32(id, "deadline id"));
         globalThis.__hostTakeEventBatch = () => core.ops.op_host_take_event_batch();
         globalThis.__hostPushOutbound = (connectionId, frame) =>
           core.ops.op_host_push_outbound(u32(connectionId, "connectionId"), frame);
