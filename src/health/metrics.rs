@@ -1096,6 +1096,38 @@ fn append_process_metrics_prometheus(
                 .expect("formatting buffer metric");
         }
     }
+    for (suffix, kind, value, description) in [
+        (
+            "reserved_slots",
+            "gauge",
+            snapshot.host_scene_batches.reserved_slots,
+            "Retained native scene batch metadata slots",
+        ),
+        (
+            "slot_capacity",
+            "gauge",
+            snapshot.host_scene_batches.capacity,
+            "Shared native scene batch metadata slot limit",
+        ),
+        (
+            "max_reserved_slots",
+            "gauge",
+            snapshot.host_scene_batches.max_reserved_slots,
+            "Peak retained native scene batch metadata slots",
+        ),
+        (
+            "rejections_total",
+            "counter",
+            snapshot.host_scene_batches.rejections,
+            "Native scene batch submissions rejected at the shared slot limit",
+        ),
+    ] {
+        let name = format!("tiangz_host_scene_batch_{suffix}");
+        writeln!(output, "# HELP {name} {description}").expect("formatting batch admission help");
+        writeln!(output, "# TYPE {name} {kind}").expect("formatting batch admission type");
+        writeln!(output, "{name}{{process=\"{process_name}\"}} {value}")
+            .expect("formatting batch admission metric");
+    }
     writeln!(
         output,
         "# HELP tiangz_transport_inner_active_connections Active inner transport connections"

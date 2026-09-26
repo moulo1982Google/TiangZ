@@ -104,6 +104,7 @@ pub(crate) struct ProcessObservabilitySnapshot {
     pub(crate) active_connections: u64,
     pub(crate) admission: crate::transport_backend::admission::AdmissionSnapshot,
     pub(crate) outbound_buffers: tiangz_transport::buffer_budget::BufferBudgetSnapshot,
+    pub(crate) host_scene_batches: crate::host::scene_operations::BatchAdmissionSnapshot,
     pub(crate) ingress_buffers: tiangz_transport::buffer_budget::BufferBudgetSnapshot,
     pub(crate) kcp_buffers: tiangz_transport::buffer_budget::BufferBudgetSnapshot,
     pub(crate) remote_transport_active_connections: u64,
@@ -1436,6 +1437,13 @@ mod tests {
     fn host_scene_operation_metrics_separate_queued_cost_from_reply_waiters() {
         let state = ProcessHealthState::starting(Duration::from_secs(15));
         state.set_observability_snapshot(ProcessObservabilitySnapshot {
+            sample_timestamp_ms: 1,
+            host_scene_batches: crate::host::scene_operations::BatchAdmissionSnapshot {
+                reserved_slots: 256,
+                max_reserved_slots: 512,
+                capacity: 65536,
+                rejections: 7,
+            },
             game: Some(GameObservabilitySnapshot {
                 host_scene_queued_operations: 3,
                 host_scene_queued_bytes: 59,
@@ -1454,6 +1462,20 @@ mod tests {
             ..ProcessObservabilitySnapshot::default()
         });
         let body = format_prometheus_metrics("worker", &state);
+        for (suffix, value, kind) in [
+            ("reserved_slots", 256, "gauge"),
+            ("max_reserved_slots", 512, "gauge"),
+            ("slot_capacity", 65536, "gauge"),
+            ("rejections_total", 7, "counter"),
+        ] {
+            let name = format!("tiangz_host_scene_batch_{suffix}");
+            let lines: Vec<_> = body
+                .lines()
+                .filter(|line| line.starts_with(&format!("{name}{{")))
+                .collect();
+            assert_eq!(lines, [format!("{name}{{process=\"worker\"}} {value}")]);
+            assert!(body.contains(&format!("# TYPE {name} {kind}")));
+        }
         for (suffix, value, kind) in [
             ("queued", 3, "gauge"),
             ("queued_bytes", 59, "gauge"),

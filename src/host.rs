@@ -18,7 +18,7 @@ use tiangz_transport::buffer_budget::BufferBudget;
 use tokio::runtime::Handle;
 
 mod deadlines;
-mod scene_operations;
+pub(crate) mod scene_operations;
 
 #[cfg(test)]
 mod scene_operations_tests;
@@ -40,6 +40,7 @@ thread_local! {
     static HOST_SCENE_RUNTIME: RefCell<Option<Handle>> = const { RefCell::new(None) };
     static HOST_SCENE_COMPLETION_SINK: RefCell<Option<HostSceneCompletionSink>> = const { RefCell::new(None) };
     static HOST_SCENE_BUFFERS: RefCell<Option<Arc<BufferBudget>>> = const { RefCell::new(None) };
+    static HOST_SCENE_BATCHES: RefCell<Option<Arc<scene_operations::BatchAdmission>>> = const { RefCell::new(None) };
 }
 
 #[derive(Debug)]
@@ -94,15 +95,17 @@ struct HostSceneOperation {
 /// This is process-global state for one runtime and must be configured before
 /// any TS Scene call/send op executes. Reconfiguration while a process is live
 /// would route completions to the wrong queue and is unsupported.
-pub fn configure_host_scene_bridge(
+pub(crate) fn configure_host_scene_bridge(
     runtime: Handle,
     completion_sink: HostSceneCompletionSink,
     buffers: Arc<BufferBudget>,
+    batches: Arc<scene_operations::BatchAdmission>,
 ) {
     HOST_SCENE_ROUTES.with(|slot| slot.borrow_mut().clear());
     HOST_SCENE_RUNTIME.with(|slot| *slot.borrow_mut() = Some(runtime));
     HOST_SCENE_COMPLETION_SINK.with(|slot| *slot.borrow_mut() = Some(completion_sink));
     HOST_SCENE_BUFFERS.with(|slot| *slot.borrow_mut() = Some(buffers));
+    HOST_SCENE_BATCHES.with(|slot| *slot.borrow_mut() = Some(batches));
 }
 
 /// 复制前预留整包；所有切片和排队/在途引用释放后才归还。 / Reserves before copying and releases only after every queued or in-flight slice is dropped.
@@ -249,11 +252,18 @@ fn op_host_submit_scene_operations(
     let buffers = HOST_SCENE_BUFFERS
         .with(|slot| slot.borrow().clone())
         .ok_or_else(|| JsErrorBox::generic("host scene buffer budget is not configured"))?;
+    let operation_count = packed_scene_operation_count(&packed)
+        .map_err(|error| JsErrorBox::generic(error.to_string()))?;
+    let batches = HOST_SCENE_BATCHES
+        .with(|slot| slot.borrow().clone())
+        .ok_or_else(|| JsErrorBox::generic("host scene batch admission is not configured"))?;
+    let reservation = batches.try_reserve(operation_count).ok_or_else(|| {
+        JsErrorBox::generic("[scene-overloaded] host scene batch slot capacity reached")
+    })?;
     let packet = reserve_scene_packet(&packed, &buffers)
         .map_err(|error| JsErrorBox::generic(error.to_string()))?;
     let operations = decode_packed_scene_operations(packet)
         .map_err(|error| JsErrorBox::generic(error.to_string()))?;
-    let operation_count = operations.len() as u32;
     let submitted_at = scene_operations::submitted_at(sampled_at_ms)?;
     let runtime = HOST_SCENE_RUNTIME
         .with(|slot| slot.borrow().clone())
@@ -262,12 +272,11 @@ fn op_host_submit_scene_operations(
         .with(|slot| slot.borrow().clone())
         .ok_or_else(|| JsErrorBox::generic("host scene completion sink is not configured"))?;
 
-    runtime.spawn(scene_operations::run(
-        operations,
-        completion_sink,
-        submitted_at,
-    ));
-    Ok(operation_count)
+    runtime.spawn(async move {
+        let _reservation = reservation;
+        scene_operations::run(operations, completion_sink, submitted_at).await;
+    });
+    Ok(operation_count as u32)
 }
 
 /// 只返回传输共享的单调毫秒，不依赖部署墙钟。 / Returns shared transport monotonic milliseconds independently of the deployment wall clock.
@@ -381,15 +390,26 @@ fn read_packed_u32(packet: &[u8], offset: &mut usize) -> Result<u32> {
     Ok(value)
 }
 
-fn decode_packed_scene_operations(packet: Bytes) -> Result<Vec<HostSceneOperation>> {
+/// 复制和元数据分配前校验批头，不能由伪造条数触发大 Vec。 / Validates framing before copying or metadata allocation, preventing forged counts from allocating large vectors.
+fn packed_scene_operation_count(packet: &[u8]) -> Result<usize> {
     if !(4..=HOST_OUTBOUND_MAX_PACKED_LEN).contains(&packet.len()) {
         bail!("invalid packed scene operation length: {}", packet.len());
     }
     let mut offset = 0;
-    let operation_count = read_packed_u32(&packet, &mut offset)? as usize;
+    let operation_count = read_packed_u32(packet, &mut offset)? as usize;
     if operation_count == 0 || operation_count > HOST_SCENE_MAX_OPERATIONS {
         bail!("invalid host scene operation count: {operation_count}");
     }
+    if packet.len() - 4 < operation_count * HOST_SCENE_OPERATION_META_BYTES {
+        bail!("truncated host scene operation metadata");
+    }
+    Ok(operation_count)
+}
+
+/// 解码已经预留的原包，失败释放原数据，不提交部分操作。 / Decodes an admitted packet, releasing its data on failure without submitting partial operations.
+fn decode_packed_scene_operations(packet: Bytes) -> Result<Vec<HostSceneOperation>> {
+    let operation_count = packed_scene_operation_count(&packet)?;
+    let mut offset = 4;
     let routes = HOST_SCENE_ROUTES.with(|slot| slot.borrow().clone());
     let mut operations = Vec::with_capacity(operation_count);
     for _ in 0..operation_count {
@@ -866,13 +886,17 @@ mod tests {
         let mut runtime = create_runtime(false, 0).unwrap();
         let budget = BufferBudget::new(3);
         HOST_SCENE_BUFFERS.with(|slot| *slot.borrow_mut() = Some(Arc::clone(&budget)));
+        let batches = scene_operations::BatchAdmission::new();
+        HOST_SCENE_BATCHES.with(|slot| *slot.borrow_mut() = Some(Arc::clone(&batches)));
         runtime.execute_script("test:scene-budget.js", r#"
             let error;
-            try { globalThis.__hostSubmitSceneOperations(new Uint8Array(4)); } catch (value) { error = value; }
+            const invalid = new Uint8Array(21); invalid[0] = 1; invalid[4] = 1; invalid[12] = 4;
+            try { globalThis.__hostSubmitSceneOperations(invalid); } catch (value) { error = value; }
             if (!String(error).includes('[scene-overloaded] process outbound byte budget is full')) throw new Error('budget was not checked before decode/spawn: ' + error);
         "#).unwrap();
         assert_eq!(budget.snapshot().used_bytes, 0);
         assert_eq!(budget.snapshot().rejections, 1);
+        assert_eq!(batches.snapshot().reserved_slots, 0);
         let admitted = BufferBudget::new(4);
         HOST_SCENE_BUFFERS.with(|slot| *slot.borrow_mut() = Some(Arc::clone(&admitted)));
         runtime.execute_script("test:scene-decode.js", r#"
@@ -882,6 +906,7 @@ mod tests {
         "#).unwrap();
         assert_eq!(admitted.snapshot().used_bytes, 0);
         HOST_SCENE_BUFFERS.with(|slot| *slot.borrow_mut() = None);
+        HOST_SCENE_BATCHES.with(|slot| *slot.borrow_mut() = None);
     }
 
     #[test]

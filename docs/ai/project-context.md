@@ -1,5 +1,13 @@
 # 2026-09-16 模块拆分后的当前事实
 
+Native Scene 批次元数据最终验收：Host 专项 **28/28**、最终调度 **8/8**、指标 **1/1**，含 KCP 完整 **check 8/8、quick 33/33、full 9/9**，484101ms，`temp/v0.7-native-scene-batches-verify.log`。Rust 252 项、Linux 条件编译、AI 实际归档通过；Host/报告 SHA256 `f03b30153f2b6fb75f35fd12dfefbd11f476efe2dbae0a17242cae5534cfb91b`。真实网络 65536 条单向与 64 MiB 批次仍完整送达，Native 保留槽峰值 65536 后归零；258 项批次部分完成后仍保留 258，真正结束才归零，三宿主正常退出。见[完整证据](../design/v0.7-native-scene-batches.md)，下方原反例与夹具/Clippy 失败保留；保留槽不等于活跃 RPC、全部传输或 RSS。
+
+Native 批次指标专项首次失败，`temp/v0.7-native-scene-batches-metrics.log` **1 failed**：扩展的旧 game-only 夹具未设置 `sample_timestamp_ms`，格式化器按既有规则不输出尚未采样的 Native Process 指标，得到空行集合。给夹具提供有效采样时间后复测，不能去掉生产采样门槛或接受缺失指标。命令 `node tools/run_cargo.mjs test --bin TiangZ --features kcp health::tests::host_scene_operation_metrics_separate_queued_cost_from_reply_waiters -- --nocapture`；这是夹具错误，不是确认后的指标丢失。
+
+批头校验提取后 Clippy 首次失败 `temp/v0.7-native-scene-batches-clippy.log`：参数从 Bytes 改为 `&[u8]`，旧 `&packet` 成为多余借用，`-D warnings` 阻断。按真实参数类型去掉一层借用，不能添加 allow 或降低检查级别。复测 `node tools/run_cargo.mjs clippy --all-targets --features kcp -- -D warnings`；调度专项 8/8 已另外通过，不混淆两类结果。
+
+Native 批次总量反例已取得：`temp/v0.7-native-scene-batches-red.log` **1 failed**，子进程 0.04 秒、父进程 0.10 秒。真实 V8 第一批 65536 个 sleep 的完成 sink 仍背压时，第二批合法一项继续被接受；每批执行槽与共享字节上限没有约束跨批次槽/期限堆。测试直接覆盖 Native 桥，不是普通 TS 绕过自己的 pending 限制，也不发网络。按[批次元数据契约](../design/v0.7-native-scene-batches.md)整批预留至容器实际释放；禁止只减活跃计数、降低首批规模或丢掉旧完成。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::scene_operations_tests -- --nocapture`。
+
 期限句柄最终验收：原生 **9/9**、相关 TS **43/43**，含 KCP 完整 **check 8/8、quick 33/33、full 9/9**，468894ms，`temp/v0.7-deadline-handles-verify.log`。Rust 248 项、Linux 条件编译、AI 实际 0.2.0 归档通过；Host/报告 SHA256 `db89ee6f56a1b92f7e8ff82df834b7986344d49579f09a88a6af2676149f1bc6`。真实 V8 保留原 131079 次期限创建/释放后通用编号不再前进，实际大句柄与 Runtime 清理通过；真实 Process 2000 次快速本地调用 150.06ms，超时后的业务仍由原 mailbox 排空，三宿主正常退出。见[证据与边界](../design/v0.7-deadline-handles.md)，下方 RED/编译失败保留，不把有限编号测试冒充生产溢出或长稳。
 
 期限句柄夹具首次编译失败记录在 `temp/v0.7-deadline-handles-compile-failure.log`：`#[op2]` 将原函数入口生成为 `OpDecl`，不能按普通 Rust 函数直接调用（E0061/E0599）；实现 Drop 的表也不能用结构更新语法移动其非 Copy 字段（E0509）。这是测试写法错误；改为经真实 V8 桥创建待销毁资源，并显式初始化测试表。保留原边界/回收断言，不修改 deno_core 宏或去掉 Drop 来绕过；复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::deadlines::tests -- --nocapture`。

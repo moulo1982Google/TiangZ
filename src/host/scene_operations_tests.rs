@@ -36,6 +36,114 @@ fn submission_clock_rejects_invalid_and_future_samples_without_renewing_past_tim
     }
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn v8_native_scene_batch_slots_are_shared_until_the_original_batch_drains() {
+    const CASE_ENV: &str = "TIANGZ_TEST_NATIVE_SCENE_BATCH_CASE";
+    const TEST_NAME: &str = "host::scene_operations_tests::v8_native_scene_batch_slots_are_shared_until_the_original_batch_drains";
+    if std::env::var(CASE_ENV).as_deref() != Ok("v8") {
+        let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .args(["--exact", TEST_NAME, "--nocapture"])
+            .env(CASE_ENV, "v8")
+            .kill_on_drop(true);
+        #[cfg(windows)]
+        command.creation_flags(0x0800_0000);
+        let output = tokio::time::timeout(Duration::from_secs(15), command.output())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .contains("test result: ok. 1 passed; 0 failed;")
+        );
+        return;
+    }
+    let release = Arc::new(AtomicBool::new(false));
+    let completed = Arc::new(AtomicUsize::new(0));
+    let allowed = Arc::clone(&release);
+    let count = Arc::clone(&completed);
+    let (blocked_tx, blocked_rx) = std::sync::mpsc::sync_channel(1);
+    let sink: HostSceneCompletionSink = Arc::new(move |completion| {
+        if !allowed.load(Ordering::SeqCst) {
+            let _ = blocked_tx.try_send(());
+            return Err(completion);
+        }
+        assert!(completion.result.is_ok());
+        count.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    });
+    let host_runtime = Handle::current();
+    tokio::task::spawn_blocking(move || {
+        let mut runtime = create_runtime(false, 0).unwrap();
+        let batches = scene_operations::BatchAdmission::new();
+        let buffers = BufferBudget::new(64 * 1024 * 1024);
+        configure_host_scene_bridge(host_runtime, sink, Arc::clone(&buffers), Arc::clone(&batches));
+        runtime.execute_script("test:native-batch-invalid", r#"
+          const makeSleepBatch = (count) => {
+            const packed = new Uint8Array(4 + count * 17), view = new DataView(packed.buffer);
+            view.setUint32(0, count, true);
+            for (let index = 0; index < count; index++) {
+              view.setUint32(4 + index * 17, index + 1, true);
+              packed[12 + index * 17] = 3;
+            }
+            return packed;
+          };
+          const rejectBatch = (packed, clock, expected) => {
+            let rejected = false;
+            try { __hostSubmitSceneOperations(packed, clock); }
+            catch (error) { rejected = String(error).includes(expected); }
+            if (!rejected) throw new Error('invalid batch accepted: ' + expected);
+          };
+          const forged = new Uint8Array(4); new DataView(forged.buffer).setUint32(0, 65536, true);
+          rejectBatch(forged, __hostSceneNowMs(), 'truncated host scene operation metadata');
+          const badKind = makeSleepBatch(1); badKind[12] = 4;
+          rejectBatch(badKind, __hostSceneNowMs(), 'invalid host scene operation id or kind');
+          const badRoute = new Uint8Array(23), routeView = new DataView(badRoute.buffer);
+          routeView.setUint32(0, 1, true); routeView.setUint32(8, 1, true); badRoute[12] = 2; routeView.setUint32(17, 2, true);
+          rejectBatch(badRoute, __hostSceneNowMs(), 'unknown host scene route');
+          rejectBatch(makeSleepBatch(1), NaN, 'submission clock');
+        "#).unwrap();
+        assert_eq!(batches.snapshot().reserved_slots, 0);
+        assert_eq!(buffers.snapshot().used_bytes, 0);
+        assert_eq!(completed.load(Ordering::SeqCst), 0);
+        runtime.execute_script("test:native-batch-full", "if (__hostSubmitSceneOperations(makeSleepBatch(65536), __hostSceneNowMs()) !== 65536) throw new Error('maximum original batch not accepted');").unwrap();
+        blocked_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(completed.load(Ordering::SeqCst), 0);
+        assert_eq!(batches.snapshot().reserved_slots, 65536);
+        runtime.execute_script("test:native-batch-reject", r#"
+          let rejected = false;
+          try { __hostSubmitSceneOperations(makeSleepBatch(1), __hostSceneNowMs()); }
+          catch (error) { rejected = String(error).includes('[scene-overloaded]') && String(error).includes('batch slot capacity'); }
+          if (!rejected) throw new Error('new Native batch was accepted while 65536 original slots were retained');
+        "#).unwrap();
+        assert_eq!(batches.snapshot().reserved_slots, 65536);
+        assert_eq!(batches.snapshot().rejections, 1);
+        assert_eq!(buffers.snapshot().rejections, 0);
+        release.store(true, Ordering::SeqCst);
+        let until = std::time::Instant::now() + Duration::from_secs(3);
+        while batches.snapshot().reserved_slots > 0 && std::time::Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(batches.snapshot().reserved_slots, 0);
+        assert_eq!(completed.load(Ordering::SeqCst), 65536);
+        runtime.execute_script("test:native-batch-recovery", "if (__hostSubmitSceneOperations(makeSleepBatch(1), __hostSceneNowMs()) !== 1) throw new Error('new batch did not recover');").unwrap();
+        let until = std::time::Instant::now() + Duration::from_secs(2);
+        while batches.snapshot().reserved_slots > 0 && std::time::Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(completed.load(Ordering::SeqCst), 65537);
+        assert_eq!(batches.snapshot().reserved_slots, 0);
+        assert_eq!(batches.snapshot().max_reserved_slots, 65536);
+        assert_eq!(buffers.snapshot().used_bytes, 0);
+    }).await.unwrap();
+}
+
 #[tokio::test]
 async fn unstarted_short_operations_expire_while_all_network_slots_are_held() {
     let mut operations: Vec<_> = (1..=256)
@@ -197,7 +305,7 @@ async fn v8_host_sleeps_do_not_hold_network_execution_slots() {
     let retained = Arc::clone(&budget);
     tokio::task::spawn_blocking(move || {
         let mut runtime = create_runtime(false, 0).unwrap();
-        configure_host_scene_bridge(runtime_handle, sink, retained);
+        configure_host_scene_bridge(runtime_handle, sink, retained, scene_operations::BatchAdmission::new());
         runtime.execute_script("test:queued-sleep", r#"
           const clock = __hostSceneNowMs();
           if (!Number.isSafeInteger(clock) || clock < 0 || __hostSceneNowMs() < clock) throw new Error('invalid monotonic clock');

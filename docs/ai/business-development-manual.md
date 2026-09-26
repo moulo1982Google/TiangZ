@@ -1,5 +1,13 @@
 # 2026-09-16：先选业务工程，再写模块
 
+Native 批次共享元数据验收已完成：Host **28/28**、最终调度 **8/8**、固定标签指标 **1/1**，含 KCP `npm run verify` **8/33/9** 全过，484101ms，`temp/v0.7-native-scene-batches-verify.log`；Rust 252 项、Linux 条件编译和 AI 实际归档通过。实际宿主/报告 SHA256 `f03b30153f2b6fb75f35fd12dfefbd11f476efe2dbae0a17242cae5534cfb91b`。真实最大批次峰值 65536 后归零，258 项批次的已完成部分没有提前减计数，旧消息完整送达、原期限和三宿主正常停机保持。具体命令、失败和范围见[验收](../design/v0.7-native-scene-batches.md)，不能把共享槽数当成整个运行时的内存上限。
+
+`temp/v0.7-native-scene-batches-metrics.log` **1 failed** 的空 Native 指标来自夹具没有有效采样时间：旧 game-only 数据不依赖该门槛，新增 Process 字段必须设置 `sample_timestamp_ms`。补齐夹具后原样检查数值、类型和唯一 Process 标签；不能移除生产采样门槛或忽略缺失行。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp health::tests::host_scene_operation_metrics_separate_queued_cost_from_reply_waiters -- --nocapture`，与真实运行缺陷分开记录。
+
+`temp/v0.7-native-scene-batches-clippy.log` 保留提取批头校验后的 `needless_borrow` 失败：输入已变为 `&[u8]`，仍按原 Bytes 写 `&packet`。去掉多余一层引用并原样复测 `node tools/run_cargo.mjs clippy --all-targets --features kcp -- -D warnings`；禁止加 allow 或降低警告门禁。Rust 调度专项 8/8 与这次静态检查失败分别记账。
+
+实际 Native 批次反例 `temp/v0.7-native-scene-batches-red.log` **1 failed**，0.10 秒：第一批 65536 项因完成背压仍保留元数据，另一合法批次仍被接收。原因是只有单批界限，没有所有批次容器的共享额度；该 V8 测试不经过 TS 准入辅助函数、不发网络。正确修法需复制/分配前预留整批项数，保留到真实容器销毁，异常也归还；不能只随部分完成提前减数、减少旧批规模或丢完成通知。见[冻结契约](../design/v0.7-native-scene-batches.md)，复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::scene_operations_tests -- --nocapture`。
+
 期限句柄修复复测 **原生 9/9、TS 43/43**，含 KCP `npm run verify` **8/33/9** 全过，468894ms，`temp/v0.7-deadline-handles-verify.log`；Rust 248 项、Linux 条件编译与 AI 实际归档通过。Host/报告 SHA256 `db89ee6f56a1b92f7e8ff82df834b7986344d49579f09a88a6af2676149f1bc6`，真实 V8 证明高频期限不消耗通用编号、大句柄无截断、Runtime 清理后原 waiter 才归还。真实 Process 本地期限、超时后业务保留、远程排队期限和停机均通过，三个宿主 exit 0 且无强制终止。完整命令、最初失败与验证范围见[验收](../design/v0.7-deadline-handles.md)；仍须重建重启，不持久化内部句柄或宣称任意业务取消。
 
 期限句柄测试编译的 E0061/E0599 与 E0509 保留在 `temp/v0.7-deadline-handles-compile-failure.log`。原因分别为把 `#[op2]` 生成的 OpDecl 工厂当普通函数调用，以及用结构更新语法搬出 Drop 类型的非 Copy 字段；不是运行时期限缺陷。正确做法是实际 V8 调桥创建资源、测试边界表显式初始化，不能修改依赖宏或去除资源析构绕过。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::deadlines::tests -- --nocapture`，保留原 RED、容量和最终释放断言。

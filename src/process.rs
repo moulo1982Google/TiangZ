@@ -281,6 +281,7 @@ extern "C" fn v8_gc_epilogue(
 }
 
 pub(crate) struct ProcessQueueStats {
+    pub(crate) host_scene_batches: Arc<crate::host::scene_operations::BatchAdmission>,
     pub(crate) admission: Arc<crate::transport_backend::admission::ConnectionAdmission>,
     pub(crate) outbound_buffers: Arc<tiangz_transport::buffer_budget::BufferBudget>,
     pub(crate) ingress_buffers: Arc<tiangz_transport::buffer_budget::BufferBudget>,
@@ -334,6 +335,7 @@ impl ProcessQueueStats {
     /// Process 只创建一次准入所有者，端点通过共享统计句柄使用它。 / Creates one admission owner per process, shared through the endpoint statistics handle.
     fn with_network_limits(capacity: usize, network: &crate::config::ProcessNetworkConfig) -> Self {
         Self {
+            host_scene_batches: crate::host::scene_operations::BatchAdmission::new(),
             outbound_buffers: tiangz_transport::buffer_budget::BufferBudget::new(
                 network.max_outbound_buffered_bytes,
             ),
@@ -1082,6 +1084,7 @@ fn run_process_runtime(
         host_runtime.clone(),
         completion_sink,
         Arc::clone(&queue_stats.outbound_buffers),
+        Arc::clone(&queue_stats.host_scene_batches),
     );
     crate::event_stream::configure(&process, host_runtime.clone())?;
     crate::dbproxy::configure(&process, host_runtime)?;

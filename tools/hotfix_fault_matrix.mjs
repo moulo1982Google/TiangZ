@@ -461,14 +461,21 @@ try {
       const response = await fetch(`http://127.0.0.1:${config.process.observability.health.port}/metrics`, { signal: AbortSignal.timeout(2000) });
       assert.ok(response.ok);
       const lines = (await response.text()).split(/\r?\n/);
-      return Object.fromEntries(["queued", "queued_bytes", "pending_replies", "queue_capacity", "queue_byte_capacity", "pending_capacity",
+      const values = Object.fromEntries(["queued", "queued_bytes", "pending_replies", "queue_capacity", "queue_byte_capacity", "pending_capacity",
         "queue_count_rejected_total", "queue_bytes_rejected_total", "pending_rejected_total", "invalid_frames_total", "submit_failures_total"].map(key => {
         const matching = lines.filter(line => line.startsWith(`tiangz_host_scene_operations_${key}{`));
         assert.equal(matching.length, 1, "Host operation metrics have one Process series");
         return [key, Number(matching[0].split(" ").at(-1))];
       }));
+      for (const key of ["reserved_slots", "max_reserved_slots", "slot_capacity", "rejections_total"]) {
+        const matching = lines.filter(line => line.startsWith(`tiangz_host_scene_batch_${key}{`));
+        assert.equal(matching.length, 1, "Native batch metrics have one Process series");
+        values[`native_${key}`] = Number(matching[0].split(" ").at(-1));
+      }
+      return values;
     };
     await workerControl.call(71);
+    await until(async () => (await metrics()).native_reserved_slots === 0, "previous Native batch containers have drained");
     const before = await metrics();
     assert.equal((await control.call(66)).count, 2, "both public send and call reject the full count queue");
     await until(async () => (await workerControl.call(67)).count === 65536, "all accepted one-way frames reach Worker", 30000);
@@ -486,14 +493,16 @@ try {
     assert.equal((await workerControl.call(75)).count, 1, "byte rejection did not execute the extra RPC");
     await until(async () => (await metrics()).queue_bytes_rejected_total === before.queue_bytes_rejected_total + 2, "shared byte rejection metrics");
     assert.equal((await control.call(76)).count, 1);
-    await until(async () => { const current = await metrics(); return current.queued === 0 && current.queued_bytes === 0 && current.pending_replies === 0; }, "Host operation drain");
+    await until(async () => { const current = await metrics(); return current.queued === 0 && current.queued_bytes === 0 && current.pending_replies === 0 && current.native_reserved_slots === 0; }, "Host operation and Native batch drain");
     const after = await metrics();
     assert.equal(after.queue_capacity, 65536); assert.equal(after.queue_byte_capacity, 67108864); assert.equal(after.pending_capacity, 65536);
+    assert.equal(after.native_slot_capacity, 65536); assert.equal(after.native_max_reserved_slots, 65536);
+    assert.equal(after.native_rejections_total, before.native_rejections_total);
     for (const key of ["pending_rejected_total", "invalid_frames_total", "submit_failures_total"]) assert.equal(after[key], before[key], key);
     const status = await admin("status"); await commit(begin());
     assert.equal((await admin("status")).hotfix.generation, status.hotfix.generation + 1);
     await workerControl.call(71);
-    return { acceptedMessages: 65536, blobMessages: 64, packedBytes: 67108864, payloadBytes, publicOverloads: 4, recovered: true };
+    return { acceptedMessages: 65536, blobMessages: 64, packedBytes: 67108864, payloadBytes, publicOverloads: 4, nativePeakSlots: after.native_max_reserved_slots, nativeSlotsAfter: after.native_reserved_slots, recovered: true };
   });
   await test("remote-queued-deadline-expires-before-network-slots-are-released", async () => {
     const deadlineMetrics = async () => {
@@ -502,10 +511,12 @@ try {
       const lines = (await response.text()).split("\n");
       const queued = lines.filter(line => line.startsWith("tiangz_host_scene_operations_queue_timeouts_total{"));
       assert.equal(queued.length, 1);
+      const reserved = lines.filter(line => line.startsWith("tiangz_host_scene_batch_reserved_slots{"));
+      assert.equal(reserved.length, 1);
       const native = traffic => lines.filter(line => line.startsWith("tiangz_transport_inner_timeouts_by_route_total{") &&
         line.includes(`source="${mainScene.name}",target="worker",traffic="${traffic}",stage="host_queue"`))
         .reduce((sum, line) => sum + Number(line.split(" ").at(-1)), 0);
-      return { queued: Number(queued[0].split(" ").at(-1)), call: native("call"), send: native("send") };
+      return { queued: Number(queued[0].split(" ").at(-1)), call: native("call"), send: native("send"), reserved: Number(reserved[0].split(" ").at(-1)) };
     };
     await control.call(87); await workerControl.call(87); await workerControl.call(71);
     const before = await deadlineMetrics(), started = performance.now(), request = handled(control.call(78));
@@ -522,6 +533,7 @@ try {
         return current.call === before.call + 1 && current.send === before.send + 1;
       }, "both expirations are recorded in the native host_queue stage");
       assert.equal((await deadlineMetrics()).queued, before.queued, "fixture expiry happened after TS submission");
+      assert.equal((await deadlineMetrics()).reserved, 258, "partly completed batch retains its original metadata slots");
       await workerControl.call(81);
       assert.equal((await request).count, 256, "previously started RPCs still finish normally");
       assert.equal((await control.call(83)).count, 0);
@@ -529,7 +541,8 @@ try {
       assert.equal((await control.call(76)).count, 1, "fresh remote RPC recovers");
       assert.equal((await workerControl.call(85)).count, 0);
       assert.equal((await workerControl.call(67)).count, 0);
-      return { heldRpcCalls: 256, shortTimeoutMs: 80, expiredAfterMs, nativeQueuedTimeouts: 2, expiredOneWayDelivered: 0, recovered: true };
+      await until(async () => (await deadlineMetrics()).reserved === 0, "completed Native batch containers release their slots");
+      return { heldRpcCalls: 256, shortTimeoutMs: 80, expiredAfterMs, nativeQueuedTimeouts: 2, nativeRetainedSlots: 258, nativeSlotsAfter: 0, expiredOneWayDelivered: 0, recovered: true };
     } finally {
       await workerControl.call(81).catch(() => {});
       await request.catch(() => {});
