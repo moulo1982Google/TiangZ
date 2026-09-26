@@ -1120,6 +1120,46 @@ fn append_process_metrics_prometheus(
                 .expect("formatting buffer metric");
         }
     }
+    for (suffix, metric_kind, payload, disconnect, description) in [
+        (
+            "reserved_bytes",
+            "gauge",
+            snapshot.host_event_buffers.used_bytes,
+            snapshot.host_disconnect_buffers.reserved
+                * crate::host::event_admission::EVENT_OVERHEAD as u64,
+            "Pre-execution reservations and retained Host event stores including pending GC, not total heap",
+        ),
+        (
+            "limit_bytes",
+            "gauge",
+            snapshot.host_event_buffers.limit_bytes,
+            snapshot.host_disconnect_buffers.capacity
+                * crate::host::event_admission::EVENT_OVERHEAD as u64,
+            "Host event reservation capacity by fixed ownership class",
+        ),
+        (
+            "rejections_total",
+            "counter",
+            snapshot.host_event_buffers.rejections,
+            snapshot.host_disconnect_buffers.rejections,
+            "New Host event reservations rejected before execution",
+        ),
+    ] {
+        let name = format!("tiangz_host_event_buffer_{suffix}");
+        writeln!(
+            output,
+            "# HELP {name} {description}\n# TYPE {name} {metric_kind}"
+        )
+        .expect("formatting event budget help");
+        for (class, value) in [("payload", payload), ("disconnect", disconnect)] {
+            writeln!(
+                output,
+                "{name}{{process=\"{process_name}\",kind=\"{class}\"}} {value}"
+            )
+            .expect("formatting event budget metric");
+        }
+    }
+    writeln!(output, "# HELP tiangz_host_disconnect_buffer_waits_total Disconnect cleanups waiting for original backing capacity\n# TYPE tiangz_host_disconnect_buffer_waits_total counter\ntiangz_host_disconnect_buffer_waits_total{{process=\"{process_name}\"}} {}", snapshot.host_disconnect_buffers.waits).expect("formatting disconnect budget waits");
     for (suffix, kind, value, description) in [
         (
             "reserved_slots",

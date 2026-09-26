@@ -15,6 +15,7 @@ pub(super) struct HostEventBatch {
     count: u32,
     byte_limit: usize,
     reservations: Vec<ControlReservation>,
+    backing_reservations: Vec<crate::host::event_admission::EventReservation>,
 }
 
 impl HostEventBatch {
@@ -30,6 +31,7 @@ impl HostEventBatch {
             count: 0,
             byte_limit,
             reservations: Vec::new(),
+            backing_reservations: Vec::new(),
         }
     }
 
@@ -94,6 +96,19 @@ impl HostEventBatch {
             .count
             .checked_add(1)
             .context("host event count exceeds uint32")?;
+        if matches!(
+            &event,
+            ProcessEvent::Frame {
+                backing_reservation: None,
+                ..
+            } | ProcessEvent::Disconnect {
+                backing_reservation: None,
+                ..
+            }
+        ) || matches!(&event, ProcessEvent::HostSceneCompletion(completion) if completion.backing_reservation.is_none())
+        {
+            bail!("host event is missing its pre-execution backing reservation");
+        }
         let required = self.bytes.len() + event_bytes;
         if required > self.bytes.capacity() {
             // 几何增长请求也封顶；分配器开销和扩容瞬时双份内存不算逻辑批次字节。
@@ -121,6 +136,9 @@ impl HostEventBatch {
         if let Some(reservation) = event.control_reservation_mut().and_then(Option::take) {
             self.reservations.push(reservation);
         }
+        if let Some(reservation) = event.take_backing_reservation() {
+            self.backing_reservations.push(reservation);
+        }
         Ok(None)
     }
 
@@ -131,6 +149,7 @@ impl HostEventBatch {
             .max_host_event_batch_bytes
             .fetch_max(self.bytes.len(), Ordering::Relaxed);
         HostEventPayload {
+            backing_reservations: self.backing_reservations,
             bytes: self.bytes,
             reservations: self.reservations,
             backing_stats: Arc::clone(&stats.host_backing_store),
@@ -150,6 +169,7 @@ mod tests {
         batch
             .try_push(
                 ProcessEvent::Disconnect {
+                    backing_reservation: Some(stats.host_events.try_disconnect().unwrap()),
                     control_reservation: None,
                     scene_index: 0,
                     connection_id: 1,
@@ -161,15 +181,18 @@ mod tests {
         let pointer = batch.bytes.as_ptr();
         for event in [
             ProcessEvent::Disconnect {
+                backing_reservation: None,
                 control_reservation: None,
                 scene_index: 0,
                 connection_id: u64::MAX,
             },
             ProcessEvent::HostSceneCompletion(HostSceneCompletion {
+                backing_reservation: None,
                 operation_id: 7,
                 result: Ok(vec![1; 16]),
             }),
             ProcessEvent::HostSceneCompletion(HostSceneCompletion {
+                backing_reservation: None,
                 operation_id: 7,
                 result: Err("异常".repeat(3)),
             }),
@@ -194,6 +217,7 @@ mod tests {
                 batch
                     .try_push(
                         ProcessEvent::Disconnect {
+                            backing_reservation: Some(stats.host_events.try_disconnect().unwrap()),
                             control_reservation: None,
                             scene_index: 7,
                             connection_id: id
@@ -208,6 +232,7 @@ mod tests {
             batch
                 .try_push(
                     ProcessEvent::HostSceneCompletion(HostSceneCompletion {
+                        backing_reservation: Some(stats.host_events.try_reserve(6).unwrap()),
                         operation_id: 9,
                         result: Err("异常".to_owned()),
                     }),
@@ -226,6 +251,7 @@ mod tests {
         let event = batch
             .try_push(
                 ProcessEvent::HostSceneCompletion(HostSceneCompletion {
+                    backing_reservation: Some(stats.host_events.try_reserve(0).unwrap()),
                     operation_id: 10,
                     result: Ok(vec![]),
                 }),
@@ -238,7 +264,7 @@ mod tests {
         assert_eq!(batch.bytes[30], 4);
         assert_eq!(&batch.bytes[43..], "异常".as_bytes());
         assert!(
-            matches!(event, ProcessEvent::HostSceneCompletion(HostSceneCompletion { operation_id: 10, result: Ok(payload) }) if payload.is_empty())
+            matches!(event, ProcessEvent::HostSceneCompletion(HostSceneCompletion { operation_id: 10, result: Ok(payload), .. }) if payload.is_empty())
         );
     }
 }

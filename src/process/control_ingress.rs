@@ -56,7 +56,7 @@ impl ControlAdmission {
     }
 
     /// RPC 即时拒绝，已关闭与满额分开报告，不创建排队任务。 / Rejects RPC immediately, distinguishing closed admission from full capacity without spawning waiters.
-    pub(super) fn try_reserve(
+    pub(crate) fn try_reserve(
         self: &Arc<Self>,
     ) -> Result<ControlReservation, ProcessIngressTrySendError> {
         match Arc::clone(&self.semaphore).try_acquire_owned() {
@@ -70,7 +70,7 @@ impl ControlAdmission {
     }
 
     /// 断线等待留在原清理任务；取消、原期限或接收端退出均不遗留名额。 / Keeps disconnect admission in its original cleanup task, respecting cancellation, the original deadline and receiver shutdown.
-    pub(super) async fn reserve_disconnect(
+    pub(crate) async fn reserve_disconnect(
         self: &Arc<Self>,
         deadline: Option<tokio::time::Instant>,
     ) -> Result<ControlReservation, String> {

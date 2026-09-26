@@ -17,6 +17,8 @@ mod endpoint_tests;
 #[cfg(test)]
 mod host_batch_tests;
 #[cfg(test)]
+mod host_event_budget_tests;
+#[cfg(test)]
 mod ingress_buffer_tests;
 #[cfg(test)]
 #[path = "process_lifecycle_tests.rs"]
@@ -125,6 +127,7 @@ impl RuntimeScheduling {
 #[derive(Debug)]
 pub(crate) enum ProcessEvent {
     Frame {
+        backing_reservation: Option<crate::host::event_admission::EventReservation>,
         control_reservation: Option<control_ingress::ControlReservation>,
         scene_index: u32,
         connection_id: u64,
@@ -132,6 +135,7 @@ pub(crate) enum ProcessEvent {
         frame: Bytes,
     },
     Disconnect {
+        backing_reservation: Option<crate::host::event_admission::EventReservation>,
         control_reservation: Option<control_ingress::ControlReservation>,
         scene_index: u32,
         connection_id: u64,
@@ -187,6 +191,24 @@ impl ProcessEventKind {
 }
 
 impl ProcessEvent {
+    /// 守卫随整个 backing store 转交，不能按业务完成或控制确认释放。 / Transfers guards with the whole backing store, independently of business completion or control acknowledgement.
+    fn take_backing_reservation(
+        &mut self,
+    ) -> Option<crate::host::event_admission::EventReservation> {
+        match self {
+            Self::Frame {
+                backing_reservation,
+                ..
+            }
+            | Self::Disconnect {
+                backing_reservation,
+                ..
+            } => backing_reservation.take(),
+            Self::HostSceneCompletion(completion) => completion.backing_reservation.take(),
+            Self::Shutdown => None,
+        }
+    }
+
     /// 只对 TS 尚未开始的控制工作计数，完成/停机消息不竞争其名额。 / Counts only unstarted TS controls; completion and shutdown messages never compete for these slots.
     fn control_reservation_mut(
         &mut self,
@@ -308,6 +330,7 @@ extern "C" fn v8_gc_epilogue(
 
 pub(crate) struct ProcessQueueStats {
     pub(crate) host_backing_store: Arc<crate::host::event_buffer::HostBackingStoreStats>,
+    pub(crate) host_events: Arc<crate::host::event_admission::EventAdmission>,
     pub(crate) control_admission: Arc<control_ingress::ControlAdmission>,
     pub(crate) host_scene_batches: Arc<crate::host::scene_operations::BatchAdmission>,
     pub(crate) admission: Arc<crate::transport_backend::admission::ConnectionAdmission>,
@@ -366,6 +389,7 @@ impl ProcessQueueStats {
             host_scene_batches: crate::host::scene_operations::BatchAdmission::new(),
             control_admission: control_ingress::ControlAdmission::new(),
             host_backing_store: Arc::default(),
+            host_events: crate::host::event_admission::EventAdmission::new(),
             outbound_buffers: tiangz_transport::buffer_budget::BufferBudget::new(
                 network.max_outbound_buffered_bytes,
             ),
@@ -538,6 +562,7 @@ pub(crate) enum ProcessIngressTrySendError {
 }
 
 struct ProcessEventReceiver {
+    host_events: Arc<crate::host::event_admission::EventAdmission>,
     control_admission: Arc<control_ingress::ControlAdmission>,
     control_receiver: mpsc::Receiver<ProcessEvent>,
     data_receiver: mpsc::Receiver<ProcessEvent>,
@@ -554,9 +579,11 @@ impl ProcessEventReceiver {
         data_receiver: mpsc::Receiver<ProcessEvent>,
         wake_receiver: mpsc::Receiver<()>,
         control_admission: Arc<control_ingress::ControlAdmission>,
+        host_events: Arc<crate::host::event_admission::EventAdmission>,
     ) -> Self {
         Self {
             control_receiver,
+            host_events,
             control_admission,
             data_receiver,
             wake_receiver,
@@ -662,6 +689,7 @@ impl Drop for ProcessEventReceiver {
     /// 接收器退出时唤醒尚未入队的断线，不能只依赖 channel 发送失败。 / Wakes disconnects waiting before the channel when its receiver exits.
     fn drop(&mut self) {
         self.control_admission.close();
+        self.host_events.close();
     }
 }
 
@@ -671,7 +699,19 @@ impl ProcessEventSender {
         &self,
         mut event: ProcessEvent,
     ) -> std::result::Result<ProcessEvent, ProcessIngressTrySendError> {
-        if let ProcessEvent::Frame { frame, .. } = &mut event {
+        if let ProcessEvent::Frame {
+            frame,
+            backing_reservation,
+            ..
+        } = &mut event
+        {
+            debug_assert!(backing_reservation.is_none());
+            *backing_reservation = Some(
+                self.stats
+                    .host_events
+                    .try_reserve(frame.len())
+                    .ok_or(ProcessIngressTrySendError::Overloaded)?,
+            );
             *frame = self
                 .stats
                 .ingress_buffers
@@ -690,6 +730,13 @@ impl ProcessEventSender {
     ) -> std::result::Result<(), ProcessIngressTrySendError> {
         debug_assert_eq!(event.ingress_class(), ProcessIngressClass::Control);
         let mut event = self.reserve_frame(event)?;
+        if let ProcessEvent::Disconnect {
+            backing_reservation,
+            ..
+        } = &mut event
+        {
+            *backing_reservation = Some(self.stats.host_events.try_disconnect()?);
+        }
         if let Some(reservation) = event.control_reservation_mut() {
             debug_assert!(reservation.is_none());
             *reservation = Some(self.stats.control_admission.try_reserve()?);
@@ -721,8 +768,15 @@ impl ProcessEventSender {
     ) -> Result<(), String> {
         let mut event = self
             .reserve_frame(event)
-            .map_err(|_| "process ingress byte budget is full".to_string())?;
+            .map_err(|_| "process ingress or host event byte budget is full".to_string())?;
         let disconnect = matches!(event, ProcessEvent::Disconnect { .. });
+        if let ProcessEvent::Disconnect {
+            backing_reservation,
+            ..
+        } = &mut event
+        {
+            *backing_reservation = Some(self.stats.host_events.reserve_disconnect(deadline).await?);
+        }
         if let Some(reservation) = event.control_reservation_mut() {
             debug_assert!(reservation.is_none());
             *reservation = Some(if disconnect {
@@ -895,6 +949,7 @@ async fn run_runtime_config_with_backend(
         data_rx,
         wake_rx,
         Arc::clone(&queue_stats.control_admission),
+        Arc::clone(&queue_stats.host_events),
     );
     let runtime_stale_after = config
         .process
@@ -1151,6 +1206,7 @@ fn run_process_runtime(
         completion_sink,
         Arc::clone(&queue_stats.outbound_buffers),
         Arc::clone(&queue_stats.host_scene_batches),
+        Arc::clone(&queue_stats.host_events),
     );
     crate::event_stream::configure(&process, host_runtime.clone())?;
     crate::dbproxy::configure(&process, host_runtime)?;
@@ -1961,11 +2017,13 @@ mod tests {
             data_receiver,
             wake_receiver,
             Arc::clone(&stats.control_admission),
+            Arc::clone(&stats.host_events),
         );
 
         sender
             .send(
                 ProcessEvent::Disconnect {
+                    backing_reservation: None,
                     control_reservation: None,
                     scene_index: 0,
                     connection_id: 1,
@@ -1979,6 +2037,7 @@ mod tests {
             second_sender
                 .send(
                     ProcessEvent::Disconnect {
+                        backing_reservation: None,
                         control_reservation: None,
                         scene_index: 0,
                         connection_id: 2,
@@ -2026,12 +2085,14 @@ mod tests {
             data_receiver,
             wake_receiver,
             Arc::clone(&stats.control_admission),
+            Arc::clone(&stats.host_events),
         );
 
         for connection_id in 1..=(MAX_CONSECUTIVE_CONTROL_EVENTS as u64 + 1) {
             sender
                 .send(
                     ProcessEvent::Disconnect {
+                        backing_reservation: None,
                         control_reservation: None,
                         scene_index: 0,
                         connection_id,
@@ -2044,6 +2105,7 @@ mod tests {
         sender
             .send(
                 ProcessEvent::Frame {
+                    backing_reservation: None,
                     control_reservation: None,
                     internal: true,
                     scene_index: 0,
@@ -2071,6 +2133,7 @@ mod tests {
         let frame = Bytes::from_static(&[0x9c, 0x40, 0xd0, 0x05, 0x01]);
         assert_eq!(crate::transport::inner_frame_rpc_id(&frame), Some(1));
         let outer = ProcessEvent::Frame {
+            backing_reservation: None,
             control_reservation: None,
             scene_index: 0,
             connection_id: 1,
@@ -2078,6 +2141,7 @@ mod tests {
             frame: frame.clone(),
         };
         let inner = ProcessEvent::Frame {
+            backing_reservation: None,
             control_reservation: None,
             scene_index: 0,
             connection_id: 2,
@@ -2102,6 +2166,7 @@ mod tests {
         };
         sender
             .try_send_control(ProcessEvent::Disconnect {
+                backing_reservation: None,
                 control_reservation: None,
                 scene_index: 0,
                 connection_id: 1,
@@ -2109,6 +2174,7 @@ mod tests {
             .unwrap();
 
         let result = sender.try_send_control(ProcessEvent::Disconnect {
+            backing_reservation: None,
             control_reservation: None,
             scene_index: 0,
             connection_id: 2,
@@ -2368,6 +2434,7 @@ mod tests {
             batch
                 .try_push(
                     ProcessEvent::Frame {
+                        backing_reservation: Some(stats.host_events.try_reserve(2).unwrap()),
                         control_reservation: None,
                         connection_id: 7,
                         scene_index: 3,

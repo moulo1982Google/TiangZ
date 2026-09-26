@@ -341,6 +341,7 @@ async fn handle_datagram(
                         .event_tx
                         .send(
                             ProcessEvent::Frame {
+                                backing_reservation: None,
                                 control_reservation: None,
                                 internal: false,
                                 scene_index: context.scene_index,
@@ -492,6 +493,7 @@ async fn remove_session(
         .event_tx
         .send(
             ProcessEvent::Disconnect {
+                backing_reservation: None,
                 control_reservation: None,
                 scene_index: context.scene_index,
                 connection_id: session.connection_id,

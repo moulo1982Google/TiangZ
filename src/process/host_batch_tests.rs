@@ -97,6 +97,7 @@ async fn host_batches_bound_real_v8_delivery_during_running_and_shutdown() {
     }
     for id in 1..=80 {
         queue(ProcessEvent::HostSceneCompletion(HostSceneCompletion {
+            backing_reservation: Some(stats.host_events.try_reserve(1024 * 1024).unwrap()),
             operation_id: id,
             result: Ok(vec![id as u8; 1024 * 1024]),
         }));
@@ -109,6 +110,7 @@ async fn host_batches_bound_real_v8_delivery_during_running_and_shutdown() {
         data_receiver,
         wake_receiver,
         Arc::clone(&stats.control_admission),
+        Arc::clone(&stats.host_events),
     );
     let (_runtime_control, runtime_control_rx) = mpsc::channel();
     let process: ProcessConfig = serde_json::from_value(json!({
@@ -160,6 +162,7 @@ async fn host_batches_bound_real_v8_delivery_during_running_and_shutdown() {
 
 fn data_frame(id: u64) -> ProcessEvent {
     ProcessEvent::Frame {
+        backing_reservation: None,
         control_reservation: None,
         scene_index: 2,
         connection_id: id,
@@ -170,6 +173,7 @@ fn data_frame(id: u64) -> ProcessEvent {
 
 fn disconnect(id: u64) -> ProcessEvent {
     ProcessEvent::Disconnect {
+        backing_reservation: None,
         control_reservation: None,
         scene_index: 2,
         connection_id: id,

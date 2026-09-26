@@ -2,6 +2,8 @@
 
 ## 边界
 
+0.7 Host 事件另设跨批次驻留准入：帧和远程 call/sleep 完成共用 512 MiB，每项 payload + 128 字节；call 在执行前按既有最大回复 1 MiB 预留，完成后只缩减，无法预留的整批在执行前 1011。小视图保留整块时守卫继续跟随，包含 Native 完成与待 GC 存储。Disconnect 单独 65536 项（保守成本 8 MiB），不与回复竞争；Shutdown 不占额度。`tiangz_host_event_buffer_{reserved_bytes,limit_bytes,rejections_total}` 使用固定 kind=payload/disconnect，另有 Disconnect 等待计数。打包复制峰值、其他 op 与任意业务堆另计；Rust/Model 版本必须一起构建重启。详细范围与验证见[Host 事件预算](../design/v0.7-host-event-budget.md)。
+
 0.7 新增 `tiangz_process_host_backing_store_{bytes,max_bytes,buffers,created_total}`，按固定 Process 标签观测已经交给 V8、最后 Native/V8 所有者尚未释放的原 Host 整块存储。小视图仍持有整批，GC 尚未回收也计入；包含帧/completion，但不含显式业务复制、其他 op、转换前 Vec、分配器或总堆。计数不在请求结束时提前清零，不因观测增加强制 GC 或容量拒绝；高水位不是限额，当前值也不是泄漏证明。实现/实际 V8 证据与后续硬额度边界见[Host backing store](../design/v0.7-host-backing-store.md)。
 
 0.7 控制入站在 Process 全部 listener、Native 队列、Host 批次与 TS 之间共用 **65536** 个未开始名额。Inner RPC 满额返回既有 1011；Disconnect 等待留在原连接/Session 清理中并保留连接名额，实际开始或丢弃未执行节点才确认归还。搬入忙碌 Scene mailbox、Rust 出队或 V8 拷贝都不代表开始；Host completion/Shutdown 不占此额度，避免妨碍完成与释放。指标 `tiangz_control_ingress_{reserved,capacity,max_reserved,rejections_total,waits_total}` 只带固定 Process 标签。新增必需 Model 确认入口，部署须完整重建并重启；无新增配置或插件版本变更。该数量不包含已开始 Handler、普通数据与任意 TS 对象/字节，详见[所有权和验收](../design/v0.7-control-ingress.md)。

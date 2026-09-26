@@ -92,6 +92,8 @@ pub(crate) struct ProcessObservabilitySnapshot {
     pub(crate) max_host_event_batch_bytes: u64,
     pub(crate) host_event_batch_splits: u64,
     pub(crate) host_backing_store: crate::host::event_buffer::HostBackingStoreSnapshot,
+    pub(crate) host_event_buffers: tiangz_transport::buffer_budget::BufferBudgetSnapshot,
+    pub(crate) host_disconnect_buffers: crate::process::control_ingress::ControlAdmissionSnapshot,
     pub(crate) outbound_batches: u64,
     pub(crate) outbound_recipients: u64,
     pub(crate) outbound_bridge_bytes: u64,

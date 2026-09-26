@@ -1,5 +1,19 @@
 # 2026-09-16 模块拆分后的当前事实
 
+Host 数据/完成驻留预算完成本轮验收：每 Process 512 MiB 数据/回复预留，Disconnect 独立 65536 backing 项；call 执行前整批预留，缩减后沿最后 V8/Native 所有者归还，已接受完成不再重新竞争容量。真实 V8 保留小视图/Native 引用、满额新调用同步过载和已接受完成交付通过。最终 Windows **8/33/9、268 Rust**，Linux io-uring/kcp **8/33/9、272 Rust**；两边实际 Host 与各自两份热更报告哈希一致。139 个实际 npm 候选文件与工具版本已核对，完整日志和失败/修复证据见[驻留预算](../design/v0.7-host-event-budget.md)。本轮仍用原声明配合已核对的三个本地 npm 候选，不把它冒充下一阶段正式 RC 依赖冻结。
+
+2026-09-27 实际编辑器与环境验收：Native 旧 VSIX 在双 worktree 合并 Entity/typeId，已用安装产物复现并修复为按工作区根隔离全部符号查询；同工程冲突仍拒绝，动态增删根顺序重建一个服务器。Native 545bb2f，Core 22/Server 9、21 份正式生成对照/11 份 TS 通过；真正 VS Code 1.139.1 中两插件六组用例通过，包括 Problems 两轮恢复、所属任务 cwd、跨根 Hover/定义与实时 Model 时间规则。原始失败及 `result-model-contract.json`/包哈希保存在 `temp/v0.7-editor-acceptance/`；详见相邻 Native 仓库 `docs/v0.7-workspace-isolation.md`。初始测试启动使用内存存储未加载信任，改独立普通 Extension Host 与限定目录信任，不关闭信任保护；未定义 sleep 的 TS2304 和 Hotfix 直引 Core 的边界错误不能当作时间规则证据，须先构造类型/依赖合法的 Model 反例。重复测试用 WorkspaceEdit 修改已开文档，避免缓存与直接磁盘写不同步。
+
+Docker 4.90 启动因残留 AF_UNIX socket 重命名失败，daemon 未就绪；CLI 优雅停止超时后只停止本轮启动且路径/时间已核实的 Docker 进程。确认 socket 目录仅含零字节端点、最终绝对路径在指定本地应用目录内，保留目录备份后重新创建运行目录，Docker 29.7.2 恢复；原有三个容器按原配置自动启动，未重置数据或卷。证据 `temp/v0.7-docker-socket-recovery.json` 及前后日志。随后 Linux 验证容器断网 npm 安装重试公共 registry 元数据、尚未进入矩阵，已停止该自有容器，保留失败日志并在允许联网的依赖准备环境重试；Rust 仍使用已核实的专用离线缓存。环境失败不能记作产品测试通过，不清空用户服务绕过故障。
+
+Host 错误文本截断还必须释放原 String 容量：首版 truncate 把 30000 字节文本缩短，但 Native 完成仍保留旧 allocation，缩减预算过早。新增容量断言已得到 RED（`temp/v0.7-host-event-budget-error-capacity-red.log`）；改为先创建最多 4096 字节的新字符串并替换旧所有者，再缩减预留，不截断成功业务 payload。完整 Windows 矩阵因该实际所有权修复重新重建/执行，见[字节验收](../design/v0.7-host-event-budget.md)，不能只拿修复前通过的 225 项替代。
+
+本轮完整矩阵的本机痕迹门禁发现上一批确认契约文档残留本机绝对路径；这是文档可迁移性缺陷。修正命令为相邻 worktree 相对路径，保留原检查，不扩大白名单、不隐藏文件。首轮矩阵仍保留失败，单独复测 `npm run verify:no-local-traces`，后续正式候选再跑完整门禁；记录见[Host 预算验收](../design/v0.7-host-event-budget.md)。
+
+Host 驻留预算首轮定向测试 2/5：新增真实 V8 的满额完成交付通过；三个旧打包单测直接伪造未准入事件，被新增“必须带预留”的入口拒绝。它是旧夹具遗漏新契约，不是应放宽的生产限制。正确做法是在夹具的调用/入队前取得原 Process 守卫，保留原字节/顺序/失败原子性断言；不能在生产打包阶段临时预留、绕过检查或用 cfg(test) 关闭保护。首轮日志 `temp/v0.7-host-event-budget-initial.log`，后续主测试/完整矩阵命令及结果见[预算记录](../design/v0.7-host-event-budget.md)。
+
+Host 事件驻留预算正在按 [0.7 契约](../design/v0.7-host-event-budget.md)收口：数据/回复在执行前预留，完成通知沿原守卫交付，混合 batch 的小切片直到最后 Native/V8 引用释放才归还，GC 未回收也计费；Disconnect 使用独立所有权额度。不可在 Host 打包时拒绝已执行回复、在 Promise finally 提前释放、保留原 Bytes 冒充零复制守卫，或用强制 GC 隐藏压力。512 MiB 是数据/回复的保守驻留成本，不是 RSS；Rust 原帧、单批复制峰值与任意业务堆另计。当前修改尚在验证，精确命令/失败与证据写入该设计稿，不能复用旧 Host 的通过结论。
+
 `@queued` 的耐久性说明已核对 DBProxy 实现：生产 postgresRedis 的 `backlog.enqueueAck` 默认 aof 等本地落盘，memory 仅确认 Redis 内存，两档都不是 PG 提交，响应也不带档位；测试 memory backend 另为易失存储。Native 补全/Hover/生成注释、宿主和技能指引同步修正，不能以清库切换生产写法。实际包检查与 LSP 复测、临时夹具漏 instanceId 导致诊断被过滤为超时的教训见[确认契约](../design/v0.7-queued-ack-contract.md)；不得延长超时或关闭诊断掩盖非法夹具。本地 npm tgz 也须显式 `./` 或绝对/file 路径，二段路径曾被误解为 GitHub 简写而 SSH 失败；不改凭据绕过，纠正参数后重新核对实际安装。
 
 当前 DBProxy Rust SDK 联验须区别正式 `v0.6.2` 与 `f25b296` 候选：Windows 独立源码的 242 项 Rust/Clippy 已通过，主锁与普通 Host 未改。Linux 初次 metadata 缺缓存，指定实际 `--filter-platform` 后通过；完整矩阵 **8/33/8**、Rust 268 项，仅新建脚手架因离线缓存缺发布 tag 引用失败。导入本机已有且 peeled commit 与正式锁一致的真实 tag 后，全新脚手架独立复测通过，不改写原 full 8/9。恢复时核对已有 patch/私有锁，不换依赖、不手写锁或伪造 tag。完整/失败/复测及实际二进制身份见[SDK 联验](../design/v0.7-dbproxy-sdk-candidate-integration.md)。

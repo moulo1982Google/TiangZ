@@ -192,14 +192,22 @@ pub(super) async fn run_with_executor<F, Fut>(
             {
                 continue;
             }
-            let job = slots[index].take().unwrap();
+            let mut job = slots[index].take().unwrap();
             queued -= 1;
             if job.deadline <= Instant::now() {
                 if let Some(completion) = expire(job) {
                     deliver(&sink, completion).await;
                 }
             } else {
-                running.push(execute(job));
+                let reservation = job.operation.backing_reservation.take();
+                let work = execute(job);
+                running.push(async move {
+                    let mut completion = work.await;
+                    if let Some(completion) = &mut completion {
+                        completion.backing_reservation = reservation;
+                    }
+                    completion
+                });
             }
         }
         if queued == 0 && running.is_empty() {
@@ -217,6 +225,29 @@ pub(super) async fn run_with_executor<F, Fut>(
 
 /// 完成通知保留现有控制背压；不以无界队列或丢失回复绕过。 / Preserves completion-channel backpressure without unbounded buffering or dropped replies.
 async fn deliver(sink: &HostSceneCompletionSink, mut completion: HostSceneCompletion) {
+    // 错误是诊断文本，不允许挤占成功回复已预留的空间。 / Errors are diagnostic text and cannot exceed the reserved reply space.
+    if let Err(error) = &mut completion.result {
+        const LIMIT: usize = 4096;
+        const SUFFIX: &str = " [truncated]";
+        if error.len() > LIMIT {
+            let mut end = LIMIT - SUFFIX.len();
+            while !error.is_char_boundary(end) {
+                end -= 1;
+            }
+            // truncate 会保留原大容量；替换所有者后才能缩减驻留预留。 / Truncate retains the old capacity; replace its owner before shrinking the reservation.
+            let mut bounded = String::with_capacity(LIMIT);
+            bounded.push_str(&error[..end]);
+            bounded.push_str(SUFFIX);
+            *error = bounded;
+        }
+    }
+    if let Some(reservation) = &mut completion.backing_reservation {
+        let size = match &completion.result {
+            Ok(bytes) => bytes.len(),
+            Err(error) => error.len(),
+        };
+        reservation.shrink(size);
+    }
     loop {
         match sink(completion) {
             Ok(()) => return,
@@ -246,6 +277,7 @@ fn expire(job: ScheduledOperation) -> Option<HostSceneCompletion> {
         }
     }
     Some(HostSceneCompletion {
+        backing_reservation: operation.backing_reservation,
         operation_id: operation.operation_id,
         result: if operation.kind == 3 {
             Ok(Vec::new())
@@ -280,6 +312,7 @@ async fn execute(job: ScheduledOperation) -> Option<HostSceneCompletion> {
             .await
             .unwrap_or_else(|_| Err("host scene call timed out awaiting transport".into()));
             Some(HostSceneCompletion {
+                backing_reservation: None,
                 operation_id: operation.operation_id,
                 result,
             })
@@ -310,6 +343,7 @@ async fn execute(job: ScheduledOperation) -> Option<HostSceneCompletion> {
             None
         }
         _ => Some(HostSceneCompletion {
+            backing_reservation: None,
             operation_id: operation.operation_id,
             result: Err("invalid host scene operation route".into()),
         }),
@@ -378,6 +412,7 @@ mod admission_tests {
             let _held = held;
             let operations = (1..=4)
                 .map(|id| super::super::HostSceneOperation {
+                    backing_reservation: None,
                     operation_id: id,
                     route: None,
                     kind: 3,

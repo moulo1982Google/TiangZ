@@ -259,6 +259,7 @@ async fn handle_raw_connection(
     event_tx
         .send(
             ProcessEvent::Disconnect {
+                backing_reservation: None,
                 control_reservation: None,
                 scene_index,
                 connection_id,
@@ -303,6 +304,7 @@ async fn run_reader(
                 .then(|| inner_frame_rpc_id(&frame))
                 .flatten();
             let event = ProcessEvent::Frame {
+                backing_reservation: None,
                 control_reservation: None,
                 internal: connection_kind == ConnectionKind::Internal,
                 scene_index,

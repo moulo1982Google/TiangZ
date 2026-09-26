@@ -18,6 +18,8 @@
 
 ## 相关能力被修改时再核对
 
+- **Host 驻留准入**：数据/回复在执行前预留，批次任一失败必须在执行前回滚；已执行回复不能在打包时重新竞争容量。成功结果确定实际长度后缩减，守卫随混合批次移动至 V8，最后 Native/V8 引用释放才归还，GC 待回收继续计费；不以保留原 Bytes 代替守卫转移。Disconnect backing 使用独立额度并沿用原清理期限，开始执行的数量确认不是 backing 释放。新调用满额返回 1011，既有完成与停机继续进展；不强制 GC、不重放事实，不将固定驻留成本称作任意业务堆或 RSS。新增入口检查要求测试夹具也显式取得守卫，不能在测试构建关闭保护。见[字节契约](../design/v0.7-host-event-budget.md)。
+
 - **排队确认档位**：`@queued` 不选择持久性。DBProxy postgresRedis 后端的 `backlog.enqueueAck` 默认 aof 等本地 AOF 落盘，memory 仅确认 Redis 内存，均非 PG 提交；成功响应不携带档位，须核对部署契约。测试 memory 后端另为易失存储。同一记录保持一种写法，变更需停写/积压/数据迁移方案，不能以清库或只排空积压替代生产迁移。编辑器、生成注释与业务指引不得无条件承诺 AOF，见[确认契约](../design/v0.7-queued-ack-contract.md)。
 
 - **V8 构造上下文**：创建 JsRuntime 前进入由调用者持有、启用 timer 的 Tokio runtime，并让 runtime 活过 isolate 销毁。当前 deno_core 的延迟前台任务需要构造时登记的 handle，缺失可在偶发 GC 时主动 abort；Host 入口应在构造前明确报错，测试/临时 Rust 验收同样遵守。当前 handle 检查不证明 timer 能力或未来寿命；不能禁用 GC、丢延迟任务、另起隐藏全局 runtime 或用全局串行掩盖。原生崩溃须保留实际 ELF/core 与失败，不以重跑通过判断修复，也不将无共同栈的历史异常认定同源。见[构造契约](../design/v0.7-v8-runtime-context.md)。

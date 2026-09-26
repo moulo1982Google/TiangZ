@@ -8,6 +8,7 @@ use std::sync::{
 use deno_core::{ToV8, convert::Uint8Array, v8};
 use deno_error::JsErrorBox;
 
+use super::event_admission::EventReservation;
 use crate::process::control_ingress::ControlReservation;
 
 #[derive(Default)]
@@ -41,17 +42,20 @@ impl HostBackingStoreStats {
 /// 编码字节、原 Process 账本及控制名额一起跨过 take-batch。 / Carries encoded bytes, their original Process ledger and control reservations through take-batch.
 #[derive(Default)]
 pub(crate) struct HostEventPayload {
+    pub(crate) backing_reservations: Vec<EventReservation>,
     pub(crate) bytes: Vec<u8>,
     pub(crate) reservations: Vec<ControlReservation>,
     pub(crate) backing_stats: Arc<HostBackingStoreStats>,
 }
 
 pub(super) struct HostEventBuffer {
+    pub(super) reservations: Vec<EventReservation>,
     pub(super) bytes: Vec<u8>,
     pub(super) stats: Arc<HostBackingStoreStats>,
 }
 
 struct OwnedEventBytes {
+    _reservations: Vec<EventReservation>,
     bytes: Box<[u8]>,
     stats: Arc<HostBackingStoreStats>,
 }
@@ -90,6 +94,7 @@ impl<'a> ToV8<'a> for HostEventBuffer {
         self.stats.buffers.fetch_add(1, Ordering::Relaxed);
         self.stats.created_total.fetch_add(1, Ordering::Relaxed);
         let backing = v8::ArrayBuffer::new_backing_store_from_bytes(Box::new(OwnedEventBytes {
+            _reservations: self.reservations,
             bytes,
             stats: self.stats,
         }))

@@ -23,7 +23,7 @@ assert.equal(rules.count, rules.rules.length);
 assert.equal(new Set(rules.rules.map(x => x.id)).size, rules.count);
 for (const id of ['execution.timer', 'protocol.inner-identity', 'persistence.no-fallback', 'persistence.unknown-result', 'hotfix.atomic-config', 'validation.evidence',
   'persistence.operation-budget', 'lifecycle.in-flight-owner', 'routing.optional-directory', 'compatibility.package-identity',
-  'validation.program-contracts', 'deployment.module-owned', 'transport.budget-scope', 'transport.host-event-batch', 'persistence.readonly-capacity']) {
+  'validation.program-contracts', 'deployment.module-owned', 'transport.budget-scope', 'transport.host-event-batch', 'runtime.host-event-admission', 'persistence.readonly-capacity']) {
   assert.ok(rules.rules.some(x => x.id === id), `Missing rule ${id}`);
 }
 const environment = await call('get_environment_requirements');

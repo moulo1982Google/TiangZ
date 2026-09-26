@@ -19,6 +19,7 @@ use tiangz_transport::buffer_budget::BufferBudget;
 use tokio::runtime::Handle;
 
 mod deadlines;
+pub(crate) mod event_admission;
 pub(crate) mod event_buffer;
 pub(crate) mod scene_operations;
 
@@ -43,6 +44,7 @@ thread_local! {
     static HOST_SCENE_COMPLETION_SINK: RefCell<Option<HostSceneCompletionSink>> = const { RefCell::new(None) };
     static HOST_SCENE_BUFFERS: RefCell<Option<Arc<BufferBudget>>> = const { RefCell::new(None) };
     static HOST_SCENE_BATCHES: RefCell<Option<Arc<scene_operations::BatchAdmission>>> = const { RefCell::new(None) };
+    static HOST_EVENT_ADMISSION: RefCell<Option<Arc<event_admission::EventAdmission>>> = const { RefCell::new(None) };
 }
 
 #[derive(Debug)]
@@ -53,6 +55,7 @@ pub struct BinaryOutboundBatch {
 
 #[derive(Debug)]
 pub struct HostSceneCompletion {
+    pub(crate) backing_reservation: Option<event_admission::EventReservation>,
     pub operation_id: u32,
     pub result: std::result::Result<Vec<u8>, String>,
 }
@@ -81,6 +84,7 @@ struct HostSceneRoute {
 
 #[derive(Debug)]
 struct HostSceneOperation {
+    backing_reservation: Option<event_admission::EventReservation>,
     operation_id: u32,
     route: Option<HostSceneRoute>,
     kind: u8,
@@ -103,12 +107,14 @@ pub(crate) fn configure_host_scene_bridge(
     completion_sink: HostSceneCompletionSink,
     buffers: Arc<BufferBudget>,
     batches: Arc<scene_operations::BatchAdmission>,
+    events: Arc<event_admission::EventAdmission>,
 ) {
     HOST_SCENE_ROUTES.with(|slot| slot.borrow_mut().clear());
     HOST_SCENE_RUNTIME.with(|slot| *slot.borrow_mut() = Some(runtime));
     HOST_SCENE_COMPLETION_SINK.with(|slot| *slot.borrow_mut() = Some(completion_sink));
     HOST_SCENE_BUFFERS.with(|slot| *slot.borrow_mut() = Some(buffers));
     HOST_SCENE_BATCHES.with(|slot| *slot.borrow_mut() = Some(batches));
+    HOST_EVENT_ADMISSION.with(|slot| *slot.borrow_mut() = Some(events));
 }
 
 /// 复制前预留整包；所有切片和排队/在途引用释放后才归还。 / Reserves before copying and releases only after every queued or in-flight slice is dropped.
@@ -185,6 +191,7 @@ fn op_host_take_event_batch(state: &mut OpState) -> Result<HostEventBuffer, JsEr
     Ok(HostEventBuffer {
         bytes: payload.bytes,
         stats: payload.backing_stats,
+        reservations: payload.backing_reservations,
     })
 }
 
@@ -276,8 +283,12 @@ fn op_host_submit_scene_operations(
     })?;
     let packet = reserve_scene_packet(&packed, &buffers)
         .map_err(|error| JsErrorBox::generic(error.to_string()))?;
-    let operations = decode_packed_scene_operations(packet)
+    let mut operations = decode_packed_scene_operations(packet)
         .map_err(|error| JsErrorBox::generic(error.to_string()))?;
+    let events = HOST_EVENT_ADMISSION
+        .with(|slot| slot.borrow().clone())
+        .ok_or_else(|| JsErrorBox::generic("host event admission is not configured"))?;
+    reserve_scene_completions(&mut operations, &events)?;
     let submitted_at = scene_operations::submitted_at(sampled_at_ms)?;
     let runtime = HOST_SCENE_RUNTIME
         .with(|slot| slot.borrow().clone())
@@ -291,6 +302,32 @@ fn op_host_submit_scene_operations(
         scene_operations::run(operations, completion_sink, submitted_at).await;
     });
     Ok(operation_count as u32)
+}
+
+/// 全批预留成功才允许执行，失败丢弃本批所有守卫。 / Allows execution only after whole-batch reservation; rejection drops every guard in this batch.
+fn reserve_scene_completions(
+    operations: &mut [HostSceneOperation],
+    events: &event_admission::EventAdmission,
+) -> Result<(), JsErrorBox> {
+    for operation in operations.iter_mut() {
+        if operation.kind != 2 {
+            let payload = if operation.kind == 3 {
+                0
+            } else {
+                HOST_CALL_MAX_FRAME_LEN
+            };
+            let Some(reservation) = events.try_reserve(payload) else {
+                for operation in operations.iter_mut() {
+                    operation.backing_reservation = None;
+                }
+                return Err(JsErrorBox::generic(
+                    "[scene-overloaded] host event byte budget is full",
+                ));
+            };
+            operation.backing_reservation = Some(reservation);
+        }
+    }
+    Ok(())
 }
 
 /// 只返回传输共享的单调毫秒，不依赖部署墙钟。 / Returns shared transport monotonic milliseconds independently of the deployment wall clock.
@@ -461,6 +498,7 @@ fn decode_packed_scene_operations(packet: Bytes) -> Result<Vec<HostSceneOperatio
             .filter(|end| *end <= packet.len())
             .context("truncated host scene frame")?;
         operations.push(HostSceneOperation {
+            backing_reservation: None,
             operation_id,
             route,
             kind,

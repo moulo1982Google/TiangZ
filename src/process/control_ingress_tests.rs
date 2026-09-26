@@ -17,6 +17,7 @@ fn channel(capacity: usize) -> (ProcessEventSender, ProcessEventReceiver) {
         data_receiver,
         wake_receiver,
         Arc::clone(&stats.control_admission),
+        Arc::clone(&stats.host_events),
     );
     (
         ProcessEventSender {
@@ -31,6 +32,7 @@ fn channel(capacity: usize) -> (ProcessEventSender, ProcessEventReceiver) {
 
 fn disconnect(id: u64) -> ProcessEvent {
     ProcessEvent::Disconnect {
+        backing_reservation: None,
         control_reservation: None,
         scene_index: 0,
         connection_id: id,
@@ -124,7 +126,7 @@ async fn control_ingress_real_v8_retains_slots_until_ack_and_completion_bypasses
         assert_eq!(sender.try_send_control(disconnect(3)), Err(ProcessIngressTrySendError::Overloaded));
         let mut waiting = Box::pin(sender.send(disconnect(4), None));
         event_loop.block_on(async { assert!(futures_util::poll!(&mut waiting).is_pending()); });
-        sender.try_send_completion(HostSceneCompletion { operation_id: 5, result: Ok(vec![1, 2]) }).unwrap();
+        sender.try_send_completion(HostSceneCompletion { backing_reservation: Some(sender.stats.host_events.try_reserve(2).unwrap()), operation_id: 5, result: Ok(vec![1, 2]) }).unwrap();
         call_js_push_host_events(&mut runtime, &entrypoints, pack(&mut receiver, &sender.stats)).unwrap();
         runtime.execute_script("test:completion.js", "if (receivedCompletions !== 1) throw new Error('completion was blocked'); globalThis.ack = 3;").unwrap();
         assert!(call_js_update_binary(&event_loop, &mut runtime, &entrypoints, false, false).is_err());

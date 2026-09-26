@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 fn operation(id: u32, kind: u8, ms: u32, frame: Bytes) -> HostSceneOperation {
     HostSceneOperation {
+        backing_reservation: None,
         operation_id: id,
         kind,
         timeout_ms: ms,
@@ -34,6 +35,128 @@ fn submission_clock_rejects_invalid_and_future_samples_without_renewing_past_tim
     ] {
         assert!(scene_operations::submitted_at(invalid).is_err());
     }
+}
+
+#[test]
+fn completion_reservation_failure_rolls_back_the_whole_unexecuted_batch() {
+    use event_admission::{EVENT_OVERHEAD, EventAdmission};
+    let capacity = HOST_CALL_MAX_FRAME_LEN + EVENT_OVERHEAD;
+    let budget = EventAdmission::with_capacity(capacity);
+    let mut operations = vec![
+        operation(1, 3, 0, Bytes::new()),
+        operation(2, 1, 1000, Bytes::new()),
+    ];
+    assert!(
+        reserve_scene_completions(&mut operations, &budget)
+            .unwrap_err()
+            .to_string()
+            .contains("[scene-overloaded]")
+    );
+    assert!(
+        operations
+            .iter()
+            .all(|item| item.backing_reservation.is_none())
+    );
+    assert_eq!(budget.snapshot().used_bytes, 0);
+    let mut operations = vec![
+        operation(0, 2, 1000, Bytes::new()),
+        operation(3, 1, 1000, Bytes::new()),
+    ];
+    reserve_scene_completions(&mut operations, &budget).unwrap();
+    assert!(
+        operations[0].backing_reservation.is_none(),
+        "one-way send has no completion"
+    );
+    assert_eq!(budget.snapshot().used_bytes, capacity as u64);
+    drop(operations);
+    assert_eq!(budget.snapshot().used_bytes, 0);
+}
+
+#[tokio::test]
+async fn completion_byte_guards_cover_execution_backpressure_expiry_and_cancellation() {
+    use event_admission::{EVENT_OVERHEAD, EventAdmission};
+    let budget = EventAdmission::new();
+    let mut operations = vec![
+        operation(1, 1, 1000, Bytes::new()),
+        operation(2, 1, 1, Bytes::new()),
+        operation(3, 3, 0, Bytes::new()),
+    ];
+    reserve_scene_completions(&mut operations, &budget).unwrap();
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(4);
+    let sink: HostSceneCompletionSink = Arc::new(move |completion| {
+        sender
+            .try_send(completion)
+            .map_err(|error| error.into_inner())
+    });
+    let submitted = tokio::time::Instant::now() - Duration::from_millis(10);
+    scene_operations::run_with_executor(operations, sink, submitted, |job| async move {
+        assert_eq!(
+            job.operation.operation_id, 1,
+            "expired call must never execute"
+        );
+        Some(HostSceneCompletion {
+            backing_reservation: None,
+            operation_id: 1,
+            result: Ok(vec![7; 23]),
+        })
+    })
+    .await;
+    let mut held = Vec::new();
+    let mut actual = 0;
+    for _ in 0..3 {
+        let completion = receiver.recv().await.unwrap();
+        let bytes = match &completion.result {
+            Ok(bytes) => bytes.len(),
+            Err(error) => error.len(),
+        };
+        actual += bytes + EVENT_OVERHEAD;
+        held.push(completion);
+    }
+    assert_eq!(
+        budget.snapshot().used_bytes,
+        actual as u64,
+        "Native completion channel still owns the shrunken reservations"
+    );
+    drop(held);
+    assert_eq!(budget.snapshot().used_bytes, 0);
+
+    let mut operations = vec![operation(4, 1, 1000, Bytes::new())];
+    reserve_scene_completions(&mut operations, &budget).unwrap();
+    let observed = Arc::clone(&budget);
+    let sink: HostSceneCompletionSink = Arc::new(move |completion| {
+        assert_eq!(
+            observed.snapshot().used_bytes,
+            (completion.result.as_ref().unwrap_err().len() + EVENT_OVERHEAD) as u64
+        );
+        let error = completion.result.as_ref().unwrap_err();
+        assert!(
+            error.capacity() <= 4096,
+            "truncating text must release its original oversized Native allocation"
+        );
+        assert!(error.ends_with(" [truncated]"));
+        assert!(error.len() <= 4096);
+        Err(completion)
+    });
+    let mut task = Box::pin(scene_operations::run_with_executor(
+        operations,
+        sink,
+        tokio::time::Instant::now(),
+        |_| async {
+            Some(HostSceneCompletion {
+                backing_reservation: None,
+                operation_id: 4,
+                result: Err("错".repeat(10000)),
+            })
+        },
+    ));
+    assert!(futures_util::poll!(&mut task).is_pending());
+    assert!(budget.snapshot().used_bytes > 0);
+    drop(task);
+    assert_eq!(
+        budget.snapshot().used_bytes,
+        0,
+        "cancelled blocked delivery releases its original completion"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -83,7 +206,7 @@ async fn v8_native_scene_batch_slots_are_shared_until_the_original_batch_drains(
         let mut runtime = create_runtime(false, 0).unwrap();
         let batches = scene_operations::BatchAdmission::new();
         let buffers = BufferBudget::new(64 * 1024 * 1024);
-        configure_host_scene_bridge(host_runtime, sink, Arc::clone(&buffers), Arc::clone(&batches));
+        configure_host_scene_bridge(host_runtime, sink, Arc::clone(&buffers), Arc::clone(&batches), event_admission::EventAdmission::new());
         runtime.execute_script("test:native-batch-invalid", r#"
           const makeSleepBatch = (count) => {
             const packed = new Uint8Array(4 + count * 17), view = new DataView(packed.buffer);
@@ -180,6 +303,7 @@ async fn unstarted_short_operations_expire_while_all_network_slots_are_held() {
                 started_tx.try_send(()).unwrap();
                 let _permit = gate.acquire_owned().await.unwrap();
                 Some(HostSceneCompletion {
+                    backing_reservation: None,
                     operation_id: job.operation.operation_id,
                     result: Ok(Vec::new()),
                 })
@@ -305,7 +429,7 @@ async fn v8_host_sleeps_do_not_hold_network_execution_slots() {
     let retained = Arc::clone(&budget);
     tokio::task::spawn_blocking(move || {
         let mut runtime = create_runtime(false, 0).unwrap();
-        configure_host_scene_bridge(runtime_handle, sink, retained, scene_operations::BatchAdmission::new());
+        configure_host_scene_bridge(runtime_handle, sink, retained, scene_operations::BatchAdmission::new(), event_admission::EventAdmission::new());
         runtime.execute_script("test:queued-sleep", r#"
           const clock = __hostSceneNowMs();
           if (!Number.isSafeInteger(clock) || clock < 0 || __hostSceneNowMs() < clock) throw new Error('invalid monotonic clock');

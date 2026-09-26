@@ -25,12 +25,14 @@ pub(super) fn channel(bytes: usize, capacity: usize) -> (ProcessEventSender, Pro
             data_receiver,
             wake_receiver,
             Arc::clone(&stats.control_admission),
+            Arc::clone(&stats.host_events),
         ),
     )
 }
 
 fn frame(internal: bool) -> ProcessEvent {
     ProcessEvent::Frame {
+        backing_reservation: None,
         control_reservation: None,
         scene_index: 0,
         connection_id: 1,
@@ -67,6 +69,7 @@ async fn ingress_bytes_are_shared_by_control_and_data_but_leave_control_notifica
     sender
         .send(
             ProcessEvent::Disconnect {
+                backing_reservation: None,
                 control_reservation: None,
                 scene_index: 0,
                 connection_id: 1,
@@ -77,6 +80,7 @@ async fn ingress_bytes_are_shared_by_control_and_data_but_leave_control_notifica
         .unwrap();
     sender
         .try_send_completion(HostSceneCompletion {
+            backing_reservation: Some(sender.stats.host_events.try_reserve(64).unwrap()),
             operation_id: 7,
             result: Ok(vec![1; 64]),
         })
