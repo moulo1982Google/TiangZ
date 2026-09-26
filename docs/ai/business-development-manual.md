@@ -1,5 +1,15 @@
 # 2026-09-16：先选业务工程，再写模块
 
+io-uring 的 Socket 与 accept 所有权修复已通过真实专项 **4/4**，同一 listener 保持存活时验证关闭、恢复、阻塞控制通知及末条写入排空。最终 Linux **260 项**与全目标 Clippy 通过，`temp/v0.7-linux-native-final.log`；Windows 含 KCP 完整 **8/33/9**、524857ms，`temp/v0.7-linux-native-verify.log`，Host/两报告 SHA256 `4370b245a006fd8f3d642962446f49e5cd08674da4f92082291687c0fad6b500`。Linux 普通 Host SHA256 `2338a1ba0b463851372c65eb5255587dc15d1de3137238aedf9d6cc149e0f8c4`，AI 实际归档通过，三个 Windows 宿主正常退出。完整命令、原始失败与限制见[Linux 验收](../design/v0.7-linux-native-validation.md)；不将 Linux 原生验证说成完整 Linux 游戏热更矩阵。
+
+Linux listener 关闭块的 E0505 编译失败保留在 `temp/v0.7-linux-uring-handshake-final.log`。先 shutdown，再在原总预算消费借用 listener 的 accept Future、排空连接，外层最后 drop listener；不要把 listener 和它的借用一起移进 async 块，更不能用 unsafe 或删除等待规避。这是编译期所有权修正，不能与真实 Socket/恢复失败混成同一种证据；见[完整记录](../design/v0.7-linux-native-validation.md)。
+
+原真实 io-uring 用例必须同时验证超时关闭与后续恢复：首修仅解决前半，`temp/v0.7-linux-uring-handshake-green.log` **1 failed**、6.06 秒。listener 的 select 在连接结束时丢弃 pending accept，会留下无人消费的新 Socket。正确做法是循环保留原 accept，停止时用同一 stop 总预算 shutdown/消费其结果并排空连接；不能只断言名额归零、改用默认后端或删除恢复断言。新直接依赖采用已有锁内 socket2 0.6.5，正规 Cargo 解析并核对锁差异；详细复测见[Linux 验收](../design/v0.7-linux-native-validation.md)。
+
+io-uring 实际握手期限测试发现框架缺陷：5 秒握手超时已归还连接/握手名额，但原 Socket 在 6 秒测试保护内不关闭，`temp/v0.7-linux-uring-handshake-red.log` **1 failed**、6.05 秒。Future drop 只留下 Ignored 内核操作时，FD 仍被持有。关闭守卫从握手转交 writer，异常/取消触发 shutdown，正常路径排空后关闭；不能把守卫留给可能阻塞于 Disconnect 入队的 reader。见[原因与契约](../design/v0.7-linux-native-validation.md)，复测原 `io_uring_handshake_timeout_closes_socket_while_listener_remains_alive` 用例；禁止加长期限或关闭 listener 让客户端 EOF 来绕过。
+
+Linux 离线探针的首个失败发生在 Rustup 组件同步而非 TiangZ：先核对已安装版本，使用明确的同版 RUSTUP_TOOLCHAIN，不能去掉仓库 toolchain/锁来绕过。默认 Docker syscall 策略实际拒绝 io_uring_setup（EPERM）；仅在专用容器调整策略后创建/关闭 ring 成功，宿主内核设置未改。三份原日志为 `temp/v0.7-linux-native-capability-default.log`、`-default-final.log`、`-uring.log`，复测配置与层次见[Linux 验收](../design/v0.7-linux-native-validation.md)。条件编译、ring 能力、V8 链接、生产 backend 收发必须分别验证，任何一层成功都不代替后续层。
+
 连接编号修复完成：相关 **5/5** 覆盖最后合法编号的真实 TCP/Auto/WebSocket/KCP 与耗尽后的资源回收，分配模块 **3/3** 包括八线程竞争最后两号。`TIANGZ_VERIFY_CARGO_FEATURES=kcp npm run verify` **8/33/9**、477578ms、Rust 256 项，`temp/v0.7-connection-id-admission-verify.log`；Host/两报告 SHA256 `3363972a027fc4d31e052c799caf27b2500420b18045e88ee2821a10daadf68c`。Linux 条件编译和实际 AI 归档通过，三个宿主正常退出。见[完整验收](../design/v0.7-connection-id-admission.md)，协议/Native/Stable 锁未手改，插件保持独立版本。
 
 `temp/v0.7-connection-id-admission-red.log` **1 failed**、0.01 秒证明实际 TCP endpoint 会在 uint32 耗尽后发布编号 **4294967296** 的 Frame；最后合法编号的 Frame 已先通过真实 Host 事件头。backend 的 u64 fetch_add 没有协议宽度约束，不能等到下游桥才失败。正确做法是统一原子分配、耗尽不修改计数、不登记/发布新连接，由原监督路径处理；禁止取低 32 位、复用旧号或放宽断言。见[冻结契约](../design/v0.7-connection-id-admission.md)，复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp connection_id_exhaustion_fails_before_publishing_an_invalid_host_event -- --nocapture`；不冒充真实海量连接或生产事故复现。

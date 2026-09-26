@@ -52,6 +52,16 @@ fn endpoint_with_stats(
     protocol: EndpointProtocol,
     stats: Arc<ProcessQueueStats>,
 ) -> EndpointFixture {
+    endpoint_with_network(audience, protocol, stats, &ProcessNetworkConfig::default())
+}
+
+/// 显式选择实际后端，不能将启用 feature 当作运行 io-uring 的证据。 / Selects the actual backend explicitly; enabling a feature does not prove io-uring execution.
+fn endpoint_with_network(
+    audience: EndpointAudience,
+    protocol: EndpointProtocol,
+    stats: Arc<ProcessQueueStats>,
+    network: &ProcessNetworkConfig,
+) -> EndpointFixture {
     let address = if protocol == EndpointProtocol::Kcp {
         std::net::UdpSocket::bind("127.0.0.1:0")
             .unwrap()
@@ -82,7 +92,7 @@ fn endpoint_with_stats(
         static_map_ids: None,
         accept_dynamic_maps: None,
     };
-    let task = create_io_backend(&ProcessNetworkConfig::default())
+    let task = create_io_backend(network)
         .unwrap()
         .start_endpoint(EndpointContext {
             shutdown_timeout: Duration::from_millis(500),
@@ -112,6 +122,66 @@ fn endpoint_with_stats(
     }
 }
 
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+#[tokio::test]
+async fn io_uring_handshake_timeout_closes_socket_while_listener_remains_alive() {
+    let fixture = endpoint_with_network(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        Arc::new(ProcessQueueStats::new(16)),
+        &ProcessNetworkConfig {
+            io_backend: crate::config::IoBackendKind::IoUring,
+            ..ProcessNetworkConfig::default()
+        },
+    );
+    let mut client = TcpStream::connect(fixture.address).await.unwrap();
+    client.write_all(b"G").await.unwrap();
+    wait_admission(&fixture.admission, 1, 1).await;
+    let closed = timeout(Duration::from_secs(6), client.read(&mut [0u8])).await;
+    wait_admission(&fixture.admission, 0, 0).await;
+    assert!(fixture.writers.lock().unwrap().is_empty());
+    assert!(
+        matches!(closed, Ok(Ok(0)))
+            || matches!(closed, Ok(Err(ref error)) if error.kind() == std::io::ErrorKind::ConnectionReset),
+        "expired handshake returned its slots but retained the real socket: {closed:?}"
+    );
+    assert!(fixture._control.try_recv().is_err());
+    assert!(fixture._data.try_recv().is_err());
+    let mut recovered = preamble(&fixture, false).await;
+    wait_registered(&fixture).await;
+    let writer = fixture
+        .writers
+        .lock()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    try_queue_connection_frame(&writer, Bytes::from_static(&[0, 1])).unwrap();
+    assert_eq!(
+        timeout(Duration::from_secs(1), recovered.read_u32())
+            .await
+            .unwrap()
+            .unwrap(),
+        2
+    );
+    let mut payload = [0; 2];
+    timeout(Duration::from_secs(1), recovered.read_exact(&mut payload))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(payload, [0, 1]);
+    fixture.task.request_stop();
+    timeout(Duration::from_secs(1), fixture.task)
+        .await
+        .unwrap()
+        .unwrap();
+    wait_admission(&fixture.admission, 0, 0).await;
+    assert!(fixture.writers.lock().unwrap().is_empty());
+    assert_capacity_rejected(recovered).await;
+    let _rebound = std::net::TcpListener::bind(fixture.address).unwrap();
+}
+
 #[tokio::test]
 async fn connection_id_exhaustion_fails_before_publishing_an_invalid_host_event() {
     for protocol in [
@@ -119,13 +189,19 @@ async fn connection_id_exhaustion_fails_before_publishing_an_invalid_host_event(
         EndpointProtocol::Auto,
         EndpointProtocol::WebSocket,
     ] {
-        verify_stream_connection_id_exhaustion(protocol).await;
+        verify_stream_connection_id_exhaustion(
+            protocol,
+            endpoint(EndpointAudience::Outer, protocol),
+        )
+        .await;
     }
 }
 
 /// 验证共享编号在各流握手前耗尽，不把最后合法连接误判为超宽。 / Checks exhaustion before each stream handshake without rejecting the final legal connection.
-async fn verify_stream_connection_id_exhaustion(protocol: EndpointProtocol) {
-    let mut fixture = endpoint(EndpointAudience::Outer, protocol);
+async fn verify_stream_connection_id_exhaustion(
+    protocol: EndpointProtocol,
+    mut fixture: EndpointFixture,
+) {
     fixture
         .next_connection_id
         .store(u64::from(u32::MAX), Ordering::Relaxed);
@@ -179,6 +255,208 @@ async fn verify_stream_connection_id_exhaustion(protocol: EndpointProtocol) {
     assert!(fixture.writers.lock().unwrap().is_empty());
     assert_capacity_rejected(rejected).await;
     assert_capacity_rejected(first).await;
+}
+
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+#[tokio::test]
+async fn io_uring_audiences_and_final_connection_id_keep_the_shared_contract() {
+    let network = ProcessNetworkConfig {
+        io_backend: crate::config::IoBackendKind::IoUring,
+        ..ProcessNetworkConfig::default()
+    };
+    for (audience, internal) in [
+        (EndpointAudience::Inner, false),
+        (EndpointAudience::Outer, true),
+    ] {
+        let fixture = endpoint_with_network(
+            audience,
+            EndpointProtocol::Tcp,
+            Arc::new(ProcessQueueStats::new(16)),
+            &network,
+        );
+        let client = preamble(&fixture, internal).await;
+        assert_rejected(client, &fixture).await;
+        fixture.task.request_stop();
+        timeout(Duration::from_secs(1), fixture.task)
+            .await
+            .unwrap()
+            .unwrap();
+        let _rebound = std::net::TcpListener::bind(fixture.address).unwrap();
+    }
+    let fixture = endpoint_with_network(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        Arc::new(ProcessQueueStats::new(16)),
+        &network,
+    );
+    verify_stream_connection_id_exhaustion(EndpointProtocol::Tcp, fixture).await;
+}
+
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+#[tokio::test]
+async fn io_uring_shared_admission_recovers_and_stop_preserves_the_final_notice() {
+    let network = ProcessNetworkConfig {
+        io_backend: crate::config::IoBackendKind::IoUring,
+        ..ProcessNetworkConfig::default()
+    };
+    let stats = Arc::new(ProcessQueueStats {
+        admission: Arc::new(ConnectionAdmission::new(2, 1)),
+        ..ProcessQueueStats::new(16)
+    });
+    let first = endpoint_with_network(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        stats.clone(),
+        &network,
+    );
+    let second = endpoint_with_network(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        stats.clone(),
+        &network,
+    );
+    let mut active = TcpStream::connect(first.address).await.unwrap();
+    active.write_all(&[0]).await.unwrap();
+    wait_admission(&stats.admission, 1, 1).await;
+    assert_capacity_rejected(TcpStream::connect(second.address).await.unwrap()).await;
+    active.write_all(&[0, 0, 2]).await.unwrap();
+    wait_registered(&first).await;
+    wait_admission(&stats.admission, 1, 0).await;
+    let partial = TcpStream::connect(second.address).await.unwrap();
+    wait_admission(&stats.admission, 2, 1).await;
+    assert_capacity_rejected(TcpStream::connect(first.address).await.unwrap()).await;
+    drop(partial);
+    wait_admission(&stats.admission, 1, 0).await;
+    let mut recovered = TcpStream::connect(second.address).await.unwrap();
+    recovered.write_all(b"G").await.unwrap();
+    wait_admission(&stats.admission, 2, 1).await;
+    let writer = first
+        .writers
+        .lock()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    try_queue_connection_frame(&writer, Bytes::from_static(&[0, 1])).unwrap();
+    first.task.request_stop();
+    second.task.request_stop();
+    let mut received = Vec::new();
+    timeout(Duration::from_secs(1), active.read_to_end(&mut received))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(received, [0, 0, 0, 2, 0, 1]);
+    assert_capacity_rejected(recovered).await;
+    for task in [first.task, second.task] {
+        timeout(Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+    wait_admission(&stats.admission, 0, 0).await;
+    assert!(first.writers.lock().unwrap().is_empty());
+    assert!(second.writers.lock().unwrap().is_empty());
+    assert_eq!(stats.outbound_buffers.snapshot().used_bytes, 0);
+    for address in [first.address, second.address] {
+        let _rebound = std::net::TcpListener::bind(address).unwrap();
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+#[tokio::test]
+async fn io_uring_writer_timeout_closes_socket_before_blocked_disconnect_can_finish() {
+    let stats = Arc::new(ProcessQueueStats::new(16));
+    let fixture = endpoint_with_network(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        stats.clone(),
+        &ProcessNetworkConfig {
+            io_backend: crate::config::IoBackendKind::IoUring,
+            ..ProcessNetworkConfig::default()
+        },
+    );
+    // 八条真实连接填满夹具控制通道，也验证回收连接不会遗弃 pending accept。 / Eight real disconnects fill the control lane and exercise accept retention across task reaping.
+    for _ in 0..8 {
+        let client = preamble(&fixture, false).await;
+        wait_registered(&fixture).await;
+        drop(client);
+        wait_admission(&stats.admission, 0, 0).await;
+    }
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.set_recv_buffer_size(1024).unwrap();
+    let mut client = socket.connect(fixture.address).await.unwrap();
+    client.write_u32(2).await.unwrap();
+    wait_registered(&fixture).await;
+    let local = format!("0100007F:{:04X}", fixture.address.port());
+    let remote = format!("0100007F:{:04X}", client.local_addr().unwrap().port());
+    // 只检查本测试的四元组及非零 inode，不用全进程 FD 数，也不把 TIME_WAIT 当作活跃 Socket。 / Checks this socket tuple and live inode, not total FDs or TIME_WAIT.
+    let socket_retained = || {
+        std::fs::read_to_string("/proc/net/tcp")
+            .unwrap()
+            .lines()
+            .skip(1)
+            .any(|line| {
+                let columns: Vec<_> = line.split_whitespace().collect();
+                columns.len() > 9
+                    && columns[1] == local
+                    && columns[2] == remote
+                    && columns[9] != "0"
+            })
+    };
+    assert!(socket_retained());
+    let writer = fixture
+        .writers
+        .lock()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    let frame = Bytes::from(vec![0; crate::transport_backend::MAX_FRAME_LEN]);
+    try_queue_connection_frame(&writer, frame.clone()).unwrap();
+    assert_eq!(
+        timeout(Duration::from_secs(1), client.read_u32())
+            .await
+            .unwrap()
+            .unwrap(),
+        frame.len() as u32
+    );
+    let mut admitted = 1;
+    timeout(Duration::from_secs(2), async {
+        while !writer.sender.is_closed() {
+            match try_queue_connection_frame(&writer, frame.clone()) {
+                Ok(()) => {
+                    admitted += 1;
+                    assert!(admitted <= 64);
+                }
+                Err(crate::transport_backend::ConnectionQueueError::ByteLimit) => {}
+                Err(crate::transport_backend::ConnectionQueueError::Closed) => break,
+                Err(error) => panic!("unexpected queue result: {error}"),
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        while socket_retained() || stats.outbound_buffers.snapshot().used_bytes != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("writer timeout must close the actual socket while disconnect is blocked");
+    assert!(admitted > 1);
+    wait_admission(&stats.admission, 1, 0).await;
+    assert_eq!(writer.queued_bytes.load(Ordering::Relaxed), 0);
+    assert_eq!(writer.queued_frames.load(Ordering::Relaxed), 0);
+    assert!(matches!(
+        fixture._control.try_recv(),
+        Ok(ProcessEvent::Disconnect { .. })
+    ));
+    wait_admission(&stats.admission, 0, 0).await;
+    fixture.task.request_stop();
+    timeout(Duration::from_secs(1), fixture.task)
+        .await
+        .unwrap()
+        .unwrap();
+    let _rebound = std::net::TcpListener::bind(fixture.address).unwrap();
 }
 
 async fn wait_ingress(stats: &ProcessQueueStats, bytes: u64, rejected: u64) {

@@ -18,6 +18,8 @@
 
 ## 相关能力被修改时再核对
 
+- **io-uring 实际所有权**：Future drop 不代表内核 I/O/FD 已释放；握手关闭守卫成功后转交 writer，错误/取消 shutdown，正常写入先排空。listener 保留 pending accept，收割连接不得丢弃它；停止在原总预算内 shutdown/消费 accept 结果并排空连接，不能遗弃成功返回的 Socket。验收要在 listener/测试 Runtime 仍存活时检查超时 Socket、恢复连接及控制通知堵塞，计数归零、条件编译或仅创建 ring 均不能代替实际后端验证。见[Linux 原生验收](../design/v0.7-linux-native-validation.md)。
+
 - **连接编号宽度**：TCP/Auto/WebSocket、io-uring 与 KCP 在共享原子入口只分配 1..u32::MAX，不复用 Process 生命周期内旧号。最后合法号仍可传输；耗尽在握手/登记/发布前明确失败并走既有 endpoint 监督，不能取低位、回绕或放宽 Host/TS 的 uint32 桥。KCP local_conn 另有线上避碰，不能替代 Host 编号检查。有限边界注入与真实海量连接、完整 Process 故障转移分别报告，见[连接编号](../design/v0.7-connection-id-admission.md)。
 
 - **Native 批次元数据**：每 Process 的 Scene 批次共用 65536 个保留槽，复制/分配前整批准入，直到整批调度 Future 与容器销毁才归还；部分完成不能提前减去仍保留的容器容量，取消/失败释放原所有者。满额明确拒绝新增批次，完成通道仍保持背压，不能丢旧完成或自动重放单向事实。固定指标区分保留槽、峰值、容量与拒绝批次；此上限不等于活跃 RPC、物理传输总量或 RSS，本地/停机期限与入站控制通路独立。见[批次元数据](../design/v0.7-native-scene-batches.md)。

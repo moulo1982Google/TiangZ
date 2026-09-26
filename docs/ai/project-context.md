@@ -1,5 +1,15 @@
 # 2026-09-16 模块拆分后的当前事实
 
+Linux 原生验收现已从条件编译推进到实际运行：发现并修复 io-uring 握手/写失败后遗留 Socket、收割连接时遗弃 pending accept 两项问题，四项专项 **4/4**。最终 Linux V8/全目标 **260 项**与 Clippy `-D warnings` 通过，`temp/v0.7-linux-native-final.log`；Linux Host SHA256 `2338a1ba0b463851372c65eb5255587dc15d1de3137238aedf9d6cc149e0f8c4`。Windows 含 KCP 完整 **8/33/9**、524857ms、Rust 256 项，`temp/v0.7-linux-native-verify.log`，Host/两报告 SHA256 `4370b245a006fd8f3d642962446f49e5cd08674da4f92082291687c0fad6b500`，三个宿主正常退出。真实反例、编译错误、容器策略与平台验收边界均见[Linux 完整验收](../design/v0.7-linux-native-validation.md)。
+
+保留 accept 的首版产生 E0505，`temp/v0.7-linux-uring-handshake-final.log`：被 Future 借用的 listener 不能一起移入同一 async 关闭块。修法是 shutdown 先停止接入，在原总预算中消费 Future/排空连接，然后外层释放 listener；不能 unsafe 绕过借用或丢掉等待。与握手 Socket 泄漏、接入恢复两个运行时反例分开记录，见[Linux 验收](../design/v0.7-linux-native-validation.md)。
+
+io-uring 首次守卫修复后原测试仍 **1 failed**、6.06 秒：旧 Socket 已关闭，新连接恢复失败，日志 `temp/v0.7-linux-uring-handshake-green.log`。原因是收割任务的 select 分支丢弃 pending accept，内核可把新 Socket 交给无人消费的结果。循环必须保留原 accept；停止时显式 shutdown listener 并在原总预算内消费其结果，不能改用 epoll 或容忍下一条连接丢失。使用已锁定 socket2 0.6.5 的安全 Socket API，Cargo 只更新直接关系；见[Linux 反例与修复](../design/v0.7-linux-native-validation.md)。
+
+实际 io-uring 握手超时反例 **1 failed**、6.05 秒：名额归零、writer 为空后 Socket 仍未 EOF，listener 尚未停止；`temp/v0.7-linux-uring-handshake-red.log`。tokio-uring 0.5.0 的被丢弃读操作会保留 FD，不能用计数归零代替物理关闭。按[Linux 关闭所有权](../design/v0.7-linux-native-validation.md)由握手持有 Socket 关闭守卫，成功后转交 writer，错误/取消 shutdown、正常写入先排空；禁止扩大超时、关 listener 或删除统计冒充修复。复测 `node tools/run_cargo.mjs test --bin TiangZ --features io-uring,kcp --locked io_uring_handshake_timeout_closes_socket_while_listener_remains_alive -- --nocapture`，须在允许 io-uring 的 Linux 环境运行。
+
+Linux 实际验收已开始，见[Linux 原生验证](../design/v0.7-linux-native-validation.md)。首次离线 rustc 检查被项目 toolchain 组件同步触发下载而失败，尚未运行 syscall；显式选用镜像中已安装的同版 `1.97.1-x86_64-unknown-linux-gnu` 后离线版本检查通过。Docker 默认策略的 io_uring_setup 实测 EPERM，同内核在专用容器调整 syscall 策略后创建/关闭成功。日志 `temp/v0.7-linux-native-capability-{default,default-final,uring}.log` 分别保留；禁止将环境失败算作框架失败，或把 ring 创建成功冒充实际 V8/后端验收。宿主 sysctl/用户容器未改。
+
 连接编号分配已统一到 Process 共享 uint32 边界，最后合法号正常使用、耗尽在发布前失败且不复用。真实 TCP/Auto/WebSocket/KCP 相关 **5/5**、分配模块 **3/3**，含 KCP 完整 **8/33/9**、Rust 256 项、Linux 条件编译与 AI 实际归档通过；`temp/v0.7-connection-id-admission-verify.log`，477578ms，Host/两报告 SHA256 `3363972a027fc4d31e052c799caf27b2500420b18045e88ee2821a10daadf68c`。三个宿主正常退出，原失败与验证层次见[连接编号验收](../design/v0.7-connection-id-admission.md)。本项不增加编号容量，也不将 Windows 结果当作 Linux 实际运行。
 
 连接编号边界的真实 TCP RED 已取得，`temp/v0.7-connection-id-admission-red.log` **1 failed**，0.01 秒：从最后合法编号起步，下一条实际业务帧被发布为 `connection_id=4294967296`，超过 Host uint32 事件头。真实原因为三个 backend 直接对 u64 计数 fetch_add，直到下游才检查宽度。按[连接编号契约](../design/v0.7-connection-id-admission.md)在共享分配入口原子拒绝，走既有 endpoint 监督；禁止截断、回绕复用或放宽 Host 检查。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp connection_id_exhaustion_fails_before_publishing_an_invalid_host_event -- --nocapture`，此为有限边界注入，不是 2^32 次连接压测。

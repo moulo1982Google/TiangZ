@@ -32,6 +32,24 @@ pub(crate) struct UringIoBackend {
     read_buffer_bytes: usize,
 }
 
+struct SocketShutdown(Rc<TcpStream>);
+
+impl Drop for SocketShutdown {
+    /// 结束握手或 writer 的所有路径都唤醒遗留内核 I/O，不能只丢弃 Future。 / Wakes retained kernel I/O on every handshake or writer exit, not merely by dropping its Future.
+    fn drop(&mut self) {
+        let _ = self.0.shutdown(Shutdown::Both);
+    }
+}
+
+struct ListenerShutdown(socket2::Socket);
+
+impl Drop for ListenerShutdown {
+    /// 关闭监听的所有路径都唤醒未完成 accept，原 Future 仍需消费实际结果。 / Wakes a pending accept on every listener exit; its original Future still consumes the actual result.
+    fn drop(&mut self) {
+        let _ = self.0.shutdown(Shutdown::Both);
+    }
+}
+
 impl UringIoBackend {
     pub(crate) fn new(entries: u32, read_buffer_bytes: usize) -> Self {
         Self {
@@ -51,6 +69,12 @@ impl IoBackend for UringIoBackend {
         let bind_addr = format!("{}:{}", context.scene.bind_ip(), context.scene.port);
         let listener = std::net::TcpListener::bind(&bind_addr)
             .with_context(|| format!("scene {} failed to bind {bind_addr}", context.scene.name))?;
+        let listener_shutdown = ListenerShutdown(
+            listener
+                .try_clone()
+                .context("failed to clone io-uring listener control")?
+                .into(),
+        );
         let entries = self.entries;
         let read_buffer_bytes = self.read_buffer_bytes;
         let scene_name = context.scene.name.clone();
@@ -70,6 +94,7 @@ impl IoBackend for UringIoBackend {
                     );
                     run_scene_listener(
                         TcpListener::from_std(listener),
+                        listener_shutdown,
                         context,
                         read_buffer_bytes,
                         shutdown_rx,
@@ -91,12 +116,16 @@ impl IoBackend for UringIoBackend {
 /// LocalSet 上持有所有连接，停止后有界等待并取消剩余连接。 / Owns local connections and bounds their drain before cancelling remaining work.
 async fn run_scene_listener(
     listener: TcpListener,
+    listener_shutdown: ListenerShutdown,
     context: EndpointContext,
     read_buffer_bytes: usize,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<()> {
     let context = Arc::new(context);
     let mut connections = JoinSet::new();
+    // 收割连接不能丢弃仍在内核等待的 accept，否则下一连接会落入无人消费的结果。
+    // Reaping a connection must retain the pending accept and consume its eventual socket.
+    let mut accepting = Box::pin(listener.accept());
     loop {
         let (stream, peer) = tokio::select! {
             biased;
@@ -107,8 +136,9 @@ async fn run_scene_listener(
                 }
                 continue;
             }
-            accepted = listener.accept() => accepted?,
+            accepted = accepting.as_mut() => accepted?,
         };
+        accepting.set(listener.accept());
         let Some(permit) = context.stats.admission.accept_stream() else {
             continue;
         };
@@ -134,12 +164,16 @@ async fn run_scene_listener(
             }
         });
     }
-    drop(listener);
+    let _ = listener_shutdown.0.shutdown(Shutdown::Both);
     tokio::time::timeout(context.shutdown_timeout, async {
+        // shutdown 唤醒 accept；若同时已接入，消费并关闭该连接，不遗弃成功的 FD。
+        // Shutdown wakes accept; consume and close any connection that won the race.
+        let _ = accepting.await;
         while connections.join_next().await.is_some() {}
     })
     .await
-    .context("io-uring connections exceeded process stop budget")?;
+    .context("io-uring accept/connections exceeded process stop budget")?;
+    drop(listener);
     Ok(())
 }
 
@@ -159,6 +193,7 @@ async fn handle_raw_connection(
         .set_nodelay(true)
         .context("failed to enable TCP_NODELAY")?;
     let stream = Rc::new(stream);
+    let socket_shutdown = SocketShutdown(Rc::clone(&stream));
     let preamble = tokio::select! {
         biased;
         _ = stopped(&mut shutdown) => return Ok(()),
@@ -187,11 +222,10 @@ async fn handle_raw_connection(
     let _registration =
         ConnectionRegistration::new(writers.clone(), connection_id, connection_writer.clone());
 
-    let writer_stream = Rc::clone(&stream);
     let writer_context = context.clone();
     let mut reader_shutdown = shutdown_rx.clone();
     let writer_task = OwnedTask::new(tokio_uring::spawn(drain_writer(
-        run_writer(writer_stream, write_rx, shutdown_rx, writer_context),
+        run_writer(socket_shutdown, write_rx, shutdown_rx, writer_context),
         shutdown_tx.clone(),
         context.shutdown_timeout,
     )));
@@ -305,11 +339,12 @@ async fn run_reader(
 }
 
 async fn run_writer(
-    stream: Rc<TcpStream>,
+    socket_shutdown: SocketShutdown,
     mut write_rx: mpsc::Receiver<ConnectionWriteBatch>,
     mut shutdown_rx: watch::Receiver<bool>,
     context: Arc<EndpointContext>,
 ) -> Result<()> {
+    let stream = &socket_shutdown.0;
     let mut packet = Vec::<u8>::with_capacity(WRITE_BATCH_BYTE_CAPACITY);
     while let Some(batch) = next_write_batch(&mut write_rx, &mut shutdown_rx).await {
         let frame_count = batch.frames.len();
@@ -332,10 +367,8 @@ async fn run_writer(
             .stats
             .transport_write_completed(frame_count, packet_bytes);
     }
-    // 只有写队列完成后才关闭连接；否则最后一条业务通知可能还在内核队列之外。
-    // Close only after the write queue is drained; otherwise the final business
-    // notice may still be outside the kernel queue.
-    let _ = stream.shutdown(Shutdown::Both);
+    // 正常路径排空后才归还关闭守卫；错误/取消也由同一所有者关闭 Socket。
+    // Normal exit drains first; the same owner also closes the socket on errors/cancellation.
     Ok(())
 }
 
