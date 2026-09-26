@@ -18,6 +18,8 @@
 
 ## 相关能力被修改时再核对
 
+- **排队确认档位**：`@queued` 不选择持久性。DBProxy postgresRedis 后端的 `backlog.enqueueAck` 默认 aof 等本地 AOF 落盘，memory 仅确认 Redis 内存，均非 PG 提交；成功响应不携带档位，须核对部署契约。测试 memory 后端另为易失存储。同一记录保持一种写法，变更需停写/积压/数据迁移方案，不能以清库或只排空积压替代生产迁移。编辑器、生成注释与业务指引不得无条件承诺 AOF，见[确认契约](../design/v0.7-queued-ack-contract.md)。
+
 - **V8 构造上下文**：创建 JsRuntime 前进入由调用者持有、启用 timer 的 Tokio runtime，并让 runtime 活过 isolate 销毁。当前 deno_core 的延迟前台任务需要构造时登记的 handle，缺失可在偶发 GC 时主动 abort；Host 入口应在构造前明确报错，测试/临时 Rust 验收同样遵守。当前 handle 检查不证明 timer 能力或未来寿命；不能禁用 GC、丢延迟任务、另起隐藏全局 runtime 或用全局串行掩盖。原生崩溃须保留实际 ELF/core 与失败，不以重跑通过判断修复，也不将无共同栈的历史异常认定同源。见[构造契约](../design/v0.7-v8-runtime-context.md)。
 
 - **Host backing store 观测**：packed 字节通过原 Process 的 Arc 账本随 Box 安全转交 V8；小子视图仍保留整块存储，计数至最后 Native/V8 所有者释放，GC 尚未回收也继续计。指标不是子视图长度之和、总堆、泄漏判定或硬额度，不含显式业务复制/其他 op；不按请求完成、控制确认或入站出队提前减计数。满额策略必须另行保证完成通路进展，不能伪装已执行请求为准入拒绝。实际 V8/API、原 Process 正常/停机交付与自然 GC 分层验证，不为指标强制 GC；当前安全 API 不适用于 V8 sandbox 构建。见[backing store](../design/v0.7-host-backing-store.md)。

@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+`@queued` 生成器不决定持久性，须核对 DBProxy 部署的 `backlog.enqueueAck`：默认 aof 等 Redis 本地落盘，memory 只确认 Redis 内存，两者都不是 PG 提交；测试 memory backend 不提供持久性。不要从成功响应推断配置，也不以清库替代生产写法迁移。本轮实际 VSIX 的初版 LSP 夹具漏 Entity.instanceId，又只等待零诊断通知，将真实语义错误藏成超时；应接收该 URI 的诊断并明确断言，补合法根字段后原诊断和 Hover 均通过，不关闭校验或加大超时。本地 `temp/包.tgz` 还曾被 npm 当作 GitHub 简写并 SSH 失败；应使用 `./temp/包.tgz`，不改 SSH 配置或发布锁，随后核对实际安装，不能假定失败等于未安装。输入、失败日志、打包与安装复测见[确认契约](../design/v0.7-queued-ack-contract.md)。
+
 离线 Cargo 身份查询要明确实际目标：未过滤的 Linux `metadata --offline` 因缺 `bumpalo 3.20.3` 缓存在测试前失败，指定 `--filter-platform x86_64-unknown-linux-gnu` 后通过。SDK 候选完整矩阵随后 check 8/8、quick 33/33、full 8/9；全新脚手架还暴露缺发布 tag 引用，单有旧锁 commit 缓存不足。核对本机已有 annotated tag 的 peeled commit 与正式锁相同后才导入专用缓存，全新脚手架独立复测通过。保留原始失败，只接受三个候选 crate 来源变化，不手写锁、换依赖、伪造 tag 或禁用 V8。Windows 242 项/Clippy、Linux 268 项及独立复测分别见[SDK 联验](../design/v0.7-dbproxy-sdk-candidate-integration.md)，不把多次结果拼成一轮完整通过。
 
 包身份校验必须使用消费者实际的模块条件：Native 0.17.0 仅导出 types/import，校验夹具用 `createRequire.resolve` 会选择 require 条件并报 `ERR_PACKAGE_PATH_NOT_EXPORTED`。应在实际项目 cwd 启动 ESM import 分别验证 Core/codegen，不能新增 require/default 导出迁就错误夹具。此次三个本地候选一起安装、正式 package/lock 保持不变；0.17 候选在 Windows/Linux 新矩阵均 **8/33/9**、Rust 264/268 项，独立保留实际包/Host 身份，不能与此前 0.16 阶段混称。原始失败、139 文件检查、正式生成/Native 运行和命令见[Native 候选联验](../design/v0.7-native-candidate-integration.md)。
@@ -1750,7 +1752,7 @@ Handler
 
 - `LoadSnapshot`：登录、恢复或接管时读取权威记录；`None`表示记录不存在。
 - `SaveSnapshot`：调用方需要等待PostgreSQL提交的普通快照；只有`StorageUnavailable`允许有限重试，并保留原`request_id`。Repository使用25ms起步、200ms封顶的墙钟指数full jitter，Revision冲突和业务错误立即返回；不得在业务、SDK和Transport外层叠加另一套重试。`SaveMultiSnapshot`只批量独立记录，不提供跨记录业务原子性；DBProxy可以在同一连接分片内合并一次数据库commit和缓存往返，Revision/幂等冲突仍逐条返回。关键背包、货币和交易不能为了批量性能改走这个入口。
-- `EnqueueSnapshot`：只用于位置、普通任务进度等允许小范围回退的数据；成功只表示Redis AOF backlog接收，不代表PostgreSQL已落库。
+- `EnqueueSnapshot`：只用于位置、普通任务进度等允许小范围回退的数据；成功按部署的`backlog.enqueueAck`确认，默认`aof`等待Redis本地落盘，`memory`仅确认Redis内存，都不代表PostgreSQL已提交。测试`memory`存储后端不提供持久性。
 - `ApplyTransaction`：用于Wallet、Inventory、Reward、Trade等关键单记录事务；必须携带原`operation_id`、期望Revision、提交后的完整Payload和可重试业务结果。
 
 同一个`DbProxyClient`连接只允许一个在途RPC；高并发服务使用Rust`DbProxyClientPool`按RecordKey稳定分片。DBProxy网络工作运行在多线程Rust Host Runtime，业务V8只等待Promise；不得在TS中自行打开Socket或实现第二套连接池。业务不能为了躲开PlayerUnit ordered mailbox而改用`Spawn`异步确认关键经济操作：关键事务必须在可靠提交成功后才向客户端确认。普通快照可以合并并进入backlog，但不得把关键事务降级成“稍后保存”。
@@ -2232,7 +2234,7 @@ SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools
 | `@transactional` | `DbProxyTransactionalEntityRepository` | `TransactionWrite`/`TransactionWriteSnapshot`，交给`HostDbProxyRecords.CommitRecords` |
 
 - 一条记录只允许一种写法。排队写不带revision校验、按记录合并，落库是无条件覆盖；同一记录若还被CAS保存或事务写入，迟到的排队值会覆盖已确认的新数据。校验器拒绝两个标记同用，生成仓库在类型和运行时上都没有被禁止的方法；业务绕过生成仓库、直接拼namespace写入时不受保护。
-- Enqueue成功只表示Redis AOF已接收，不表示PG已落库；崩溃或换服后可能回退到最近落库状态，不能用于经济或需要立即恢复的数据。仓库只发送一次、不在内部重试：下一次排队写会取代它，重试只会在过载时放大负载。
+- Enqueue按DBProxy部署的`backlog.enqueueAck`确认：默认`aof`等Redis本地AOF落盘，`memory`仅确认Redis内存，崩溃可能丢失尚未落盘的已确认入队；两档都不表示PG已提交。成功响应不携带档位，业务必须核对部署契约；测试`memory`后端另为进程内易失存储。崩溃或换服后可能回退到最近落库状态，不能用于经济或需要立即恢复的数据。仓库只发送一次、不在内部重试：下一次排队写会取代它，重试只会在过载时放大负载。
 - 受限仓库读到旧schema只在内存迁移、不回写：排队记录回写会与待落库值竞争，事务记录由下一次事务以读到的revision写入新版本。普通仓库保持原有CAS回写。
 - 未加标记的实体，生成文本与0.16.0逐字节一致（已用Examples已提交的`NativeItemPersistence.ts`实测）。
 - 开发期更换写法直接清库；从`@queued`改为其他写法前，至少停写并等DBProxy排队积压清零。运营中更换写法造成的数据问题不由DBProxy兜底。

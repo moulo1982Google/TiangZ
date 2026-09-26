@@ -1,5 +1,7 @@
 # 2026-09-16 模块拆分后的当前事实
 
+`@queued` 的耐久性说明已核对 DBProxy 实现：生产 postgresRedis 的 `backlog.enqueueAck` 默认 aof 等本地落盘，memory 仅确认 Redis 内存，两档都不是 PG 提交，响应也不带档位；测试 memory backend 另为易失存储。Native 补全/Hover/生成注释、宿主和技能指引同步修正，不能以清库切换生产写法。实际包检查与 LSP 复测、临时夹具漏 instanceId 导致诊断被过滤为超时的教训见[确认契约](../design/v0.7-queued-ack-contract.md)；不得延长超时或关闭诊断掩盖非法夹具。本地 npm tgz 也须显式 `./` 或绝对/file 路径，二段路径曾被误解为 GitHub 简写而 SSH 失败；不改凭据绕过，纠正参数后重新核对实际安装。
+
 当前 DBProxy Rust SDK 联验须区别正式 `v0.6.2` 与 `f25b296` 候选：Windows 独立源码的 242 项 Rust/Clippy 已通过，主锁与普通 Host 未改。Linux 初次 metadata 缺缓存，指定实际 `--filter-platform` 后通过；完整矩阵 **8/33/8**、Rust 268 项，仅新建脚手架因离线缓存缺发布 tag 引用失败。导入本机已有且 peeled commit 与正式锁一致的真实 tag 后，全新脚手架独立复测通过，不改写原 full 8/9。恢复时核对已有 patch/私有锁，不换依赖、不手写锁或伪造 tag。完整/失败/复测及实际二进制身份见[SDK 联验](../design/v0.7-dbproxy-sdk-candidate-integration.md)。
 
 Native 0.17.0 候选联合验收已通过：三个 npm 候选 139 文件与实际 ESM 入口匹配，Windows/Linux 完整矩阵均 **8/33/9**、Rust 分别 264/268 项，正式生成无跟踪变化，实际 Native 模块与 Rust 脚手架 RPC/停机通过。保留 Core 0.17/VSIX 0.16 与上一阶段实际 Native 0.16 的区别，默认发布锁不变。初版安装校验误用 `createRequire.resolve` 解析只有 import 条件的 ESM 包，得到 `ERR_PACKAGE_PATH_NOT_EXPORTED`，不是入口文件缺失；须在消费项目 cwd 用真正 ESM import 验证两入口，不修改生产 exports 绕过。原日志、包/Host 哈希、完整报告和未覆盖边界见[联合验收](../design/v0.7-native-candidate-integration.md)。
@@ -1401,7 +1403,7 @@ SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools
 | `@transactional` | `DbProxyTransactionalEntityRepository` | `TransactionWrite`/`TransactionWriteSnapshot`，交给`HostDbProxyRecords.CommitRecords` |
 
 - 一条记录只允许一种写法。排队写不带revision校验、按记录合并，落库是无条件覆盖；同一记录若还被CAS保存或事务写入，迟到的排队值会覆盖已确认的新数据。校验器拒绝两个标记同用，生成仓库在类型和运行时上都没有被禁止的方法；业务绕过生成仓库、直接拼namespace写入时不受保护。
-- Enqueue成功只表示Redis AOF已接收，不表示PG已落库；崩溃或换服后可能回退到最近落库状态，不能用于经济或需要立即恢复的数据。仓库只发送一次、不在内部重试：下一次排队写会取代它，重试只会在过载时放大负载。
+- Enqueue按DBProxy部署的`backlog.enqueueAck`确认：默认`aof`等Redis本地AOF落盘，`memory`仅确认Redis内存，崩溃可能丢失尚未落盘的已确认入队；两档都不表示PG已提交。成功响应不携带档位，业务必须核对部署契约；测试`memory`后端另为进程内易失存储。崩溃或换服后可能回退到最近落库状态，不能用于经济或需要立即恢复的数据。仓库只发送一次、不在内部重试：下一次排队写会取代它，重试只会在过载时放大负载。
 - 受限仓库读到旧schema只在内存迁移、不回写：排队记录回写会与待落库值竞争，事务记录由下一次事务以读到的revision写入新版本。普通仓库保持原有CAS回写。
 - 未加标记的实体，生成文本与0.16.0逐字节一致（已用Examples已提交的`NativeItemPersistence.ts`实测）。
 - 开发期更换写法直接清库；从`@queued`改为其他写法前，至少停写并等DBProxy排队积压清零。运营中更换写法造成的数据问题不由DBProxy兜底。

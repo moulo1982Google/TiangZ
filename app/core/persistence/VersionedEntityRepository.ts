@@ -81,11 +81,13 @@ export interface VersionedEntityRepository<TSnapshot, TEntity> {
 }
 
 /**
- * `.native`的`@queued`记录契约：只能排队写入。Enqueue成功只表示Redis AOF已接收，不表示PG已落库；
+ * `.native`的`@queued`记录契约：只能排队写入。成功按DBProxy部署的backlog.enqueueAck确认；
+ * 默认aof等Redis本地落盘，memory只确认Redis内存，两者都不表示PG已落库。
  * 写入不带版本校验并按记录合并，崩溃或换服后可能回退到最近落库状态。
  *
- * Contract for `.native` `@queued` records: queued writes only. Success means Redis AOF accepted
- * the write, not that PostgreSQL committed it; writes carry no revision check and coalesce per
+ * Contract for `.native` `@queued` records: queued writes only. DBProxy backlog.enqueueAck selects
+ * acknowledgement: default aof waits for Redis local fsync, memory only confirms Redis memory.
+ * Neither confirms a PostgreSQL commit; writes carry no revision check and coalesce per
  * record, so a crash or ownership move may roll back to the last persisted state.
  */
 export interface QueuedEntityRepository<TSnapshot, TEntity> {
