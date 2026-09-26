@@ -12,6 +12,7 @@ struct EndpointFixture {
     address: std::net::SocketAddr,
     writers: ConnectionWriters,
     admission: Arc<ConnectionAdmission>,
+    next_connection_id: Arc<AtomicU64>,
     _control: mpsc::Receiver<ProcessEvent>,
     _data: mpsc::Receiver<ProcessEvent>,
     _wake: mpsc::Receiver<()>,
@@ -63,6 +64,7 @@ fn endpoint_with_stats(
             .unwrap()
     };
     let admission = stats.admission.clone();
+    let next_connection_id = Arc::new(AtomicU64::new(1));
     let writers = Arc::new(Mutex::new(HashMap::new()));
     let (control_sender, control) = mpsc::sync_channel(8);
     let (data_sender, data) = mpsc::sync_channel(8);
@@ -94,7 +96,7 @@ fn endpoint_with_stats(
                 stats: stats.clone(),
             },
             writers: writers.clone(),
-            next_connection_id: Arc::new(AtomicU64::new(1)),
+            next_connection_id: Arc::clone(&next_connection_id),
             stats,
         })
         .unwrap();
@@ -103,10 +105,80 @@ fn endpoint_with_stats(
         address,
         writers,
         admission,
+        next_connection_id,
         _control: control,
         _data: data,
         _wake: wake,
     }
+}
+
+#[tokio::test]
+async fn connection_id_exhaustion_fails_before_publishing_an_invalid_host_event() {
+    for protocol in [
+        EndpointProtocol::Tcp,
+        EndpointProtocol::Auto,
+        EndpointProtocol::WebSocket,
+    ] {
+        verify_stream_connection_id_exhaustion(protocol).await;
+    }
+}
+
+/// 验证共享编号在各流握手前耗尽，不把最后合法连接误判为超宽。 / Checks exhaustion before each stream handshake without rejecting the final legal connection.
+async fn verify_stream_connection_id_exhaustion(protocol: EndpointProtocol) {
+    let mut fixture = endpoint(EndpointAudience::Outer, protocol);
+    fixture
+        .next_connection_id
+        .store(u64::from(u32::MAX), Ordering::Relaxed);
+    let first = if protocol == EndpointProtocol::WebSocket {
+        let mut first = websocket_client(&fixture).await;
+        first
+            .write_all(&[0x82, 0x82, 1, 2, 3, 4, 1, 3])
+            .await
+            .unwrap();
+        first
+    } else {
+        let mut first = preamble(&fixture, false).await;
+        first.write_all(&[0, 1]).await.unwrap();
+        first
+    };
+    let event = timeout(Duration::from_secs(2), async {
+        loop {
+            if let Ok(event) = fixture._data.try_recv() {
+                break event;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        matches!(&event, ProcessEvent::Frame { connection_id, .. } if *connection_id == u64::from(u32::MAX))
+    );
+    let stats = ProcessQueueStats::default();
+    let mut batch = HostEventBatch::new();
+    assert!(batch.try_push(event, &stats).unwrap().is_none());
+    let mut rejected = TcpStream::connect(fixture.address).await.unwrap();
+    // 新实现应在任何流握手前关闭；TCP/Auto 旧路径会接受这一合法外部帧。 / The new path closes before any stream handshake; the old TCP/Auto path accepts this valid external frame.
+    let _ = rejected.write_all(&[0, 0, 0, 2, 0, 1]).await;
+    timeout(Duration::from_secs(2), async {
+        tokio::select! {
+            outcome = &mut fixture.task => assert!(format!("{:#}", outcome.unwrap_err()).contains("connection id space exhausted")),
+            event = async {
+                loop {
+                    if let Ok(event) = fixture._data.try_recv() { break event; }
+                    tokio::task::yield_now().await;
+                }
+            } => panic!("endpoint published an event after exhausting uint32 ids: {event:?}"),
+        }
+    }).await.unwrap();
+    assert_eq!(
+        fixture.next_connection_id.load(Ordering::Relaxed),
+        u64::from(u32::MAX) + 1
+    );
+    wait_admission(&fixture.admission, 0, 0).await;
+    assert!(fixture.writers.lock().unwrap().is_empty());
+    assert_capacity_rejected(rejected).await;
+    assert_capacity_rejected(first).await;
 }
 
 async fn wait_ingress(stats: &ProcessQueueStats, bytes: u64, rejected: u64) {
@@ -728,6 +800,106 @@ async fn process_admission_counts_kcp_only_after_cookie_and_shares_tcp_capacity(
         .unwrap()
         .unwrap();
     wait_admission(&admission, 0, 0).await;
+}
+
+#[cfg(feature = "kcp")]
+#[tokio::test]
+async fn kcp_connection_id_exhaustion_releases_sessions_after_the_last_legal_echo() {
+    use tiangz_transport::kcp_wire::*;
+    let stats = Arc::new(ProcessQueueStats::new(16));
+    let fixture = endpoint_with_stats(
+        EndpointAudience::Outer,
+        EndpointProtocol::Kcp,
+        stats.clone(),
+    );
+    fixture
+        .next_connection_id
+        .store(u64::from(u32::MAX), Ordering::Relaxed);
+    let mut first = timeout(
+        Duration::from_secs(2),
+        tiangz_transport::KcpClient::connect(fixture.address),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let (response, ()) = tokio::join!(first.request(&[0, 1], Duration::from_secs(2)), async {
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if let Ok(event) = fixture._data.try_recv() {
+                    let ProcessEvent::Frame {
+                        connection_id,
+                        frame,
+                        ..
+                    } = &event
+                    else {
+                        panic!("expected the last legal KCP frame")
+                    };
+                    assert_eq!(*connection_id, u64::from(u32::MAX));
+                    let reply = frame.clone();
+                    let id = *connection_id;
+                    let mut batch = HostEventBatch::new();
+                    assert!(batch.try_push(event, &stats).unwrap().is_none());
+                    try_queue_connection_frame(
+                        fixture.writers.lock().unwrap().get(&id).unwrap(),
+                        reply,
+                    )
+                    .unwrap();
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    });
+    assert_eq!(response.unwrap(), [0, 1]);
+    wait_admission(&fixture.admission, 1, 0).await;
+    let peer = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    peer.connect(fixture.address).await.unwrap();
+    let mut hello = [0; HELLO_BYTES];
+    hello[0] = HELLO;
+    hello[1] = PROTOCOL_VERSION;
+    write_u32(&mut hello, 2, 77);
+    write_u64(&mut hello, 6, 123);
+    peer.send(&hello).await.unwrap();
+    let mut connect = [0; CHALLENGE_BYTES];
+    assert_eq!(
+        timeout(Duration::from_secs(1), peer.recv(&mut connect))
+            .await
+            .unwrap()
+            .unwrap(),
+        CHALLENGE_BYTES
+    );
+    assert_eq!(connect[0], CHALLENGE);
+    assert_eq!(
+        fixture.next_connection_id.load(Ordering::Relaxed),
+        u64::from(u32::MAX) + 1
+    );
+    connect[0] = CONNECT;
+    peer.send(&connect).await.unwrap();
+    let error = timeout(Duration::from_secs(2), fixture.task)
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("connection id space exhausted"));
+    assert_eq!(
+        fixture.next_connection_id.load(Ordering::Relaxed),
+        u64::from(u32::MAX) + 1
+    );
+    wait_admission(&fixture.admission, 0, 0).await;
+    assert!(fixture.writers.lock().unwrap().is_empty());
+    assert!(fixture._data.try_recv().is_err());
+    timeout(Duration::from_secs(1), async {
+        while stats.kcp_buffers.snapshot().used_bytes != 0
+            || stats.outbound_buffers.snapshot().used_bytes != 0
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let rebound = tokio::net::UdpSocket::bind(fixture.address).await.unwrap();
+    drop((first, peer, rebound));
 }
 
 #[cfg(feature = "kcp")]

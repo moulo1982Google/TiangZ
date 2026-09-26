@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+连接编号修复完成：相关 **5/5** 覆盖最后合法编号的真实 TCP/Auto/WebSocket/KCP 与耗尽后的资源回收，分配模块 **3/3** 包括八线程竞争最后两号。`TIANGZ_VERIFY_CARGO_FEATURES=kcp npm run verify` **8/33/9**、477578ms、Rust 256 项，`temp/v0.7-connection-id-admission-verify.log`；Host/两报告 SHA256 `3363972a027fc4d31e052c799caf27b2500420b18045e88ee2821a10daadf68c`。Linux 条件编译和实际 AI 归档通过，三个宿主正常退出。见[完整验收](../design/v0.7-connection-id-admission.md)，协议/Native/Stable 锁未手改，插件保持独立版本。
+
+`temp/v0.7-connection-id-admission-red.log` **1 failed**、0.01 秒证明实际 TCP endpoint 会在 uint32 耗尽后发布编号 **4294967296** 的 Frame；最后合法编号的 Frame 已先通过真实 Host 事件头。backend 的 u64 fetch_add 没有协议宽度约束，不能等到下游桥才失败。正确做法是统一原子分配、耗尽不修改计数、不登记/发布新连接，由原监督路径处理；禁止取低 32 位、复用旧号或放宽断言。见[冻结契约](../design/v0.7-connection-id-admission.md)，复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp connection_id_exhaustion_fails_before_publishing_an_invalid_host_event -- --nocapture`；不冒充真实海量连接或生产事故复现。
+
 Native 批次共享元数据验收已完成：Host **28/28**、最终调度 **8/8**、固定标签指标 **1/1**，含 KCP `npm run verify` **8/33/9** 全过，484101ms，`temp/v0.7-native-scene-batches-verify.log`；Rust 252 项、Linux 条件编译和 AI 实际归档通过。实际宿主/报告 SHA256 `f03b30153f2b6fb75f35fd12dfefbd11f476efe2dbae0a17242cae5534cfb91b`。真实最大批次峰值 65536 后归零，258 项批次的已完成部分没有提前减计数，旧消息完整送达、原期限和三宿主正常停机保持。具体命令、失败和范围见[验收](../design/v0.7-native-scene-batches.md)，不能把共享槽数当成整个运行时的内存上限。
 
 `temp/v0.7-native-scene-batches-metrics.log` **1 failed** 的空 Native 指标来自夹具没有有效采样时间：旧 game-only 数据不依赖该门槛，新增 Process 字段必须设置 `sample_timestamp_ms`。补齐夹具后原样检查数值、类型和唯一 Process 标签；不能移除生产采样门槛或忽略缺失行。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp health::tests::host_scene_operation_metrics_separate_queued_cost_from_reply_waiters -- --nocapture`，与真实运行缺陷分开记录。

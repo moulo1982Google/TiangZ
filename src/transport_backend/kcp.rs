@@ -6,10 +6,10 @@ use std::hash::{BuildHasher, Hash, Hasher};
 use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 use std::time::{Duration, Instant};
 
-use super::admission::ConnectionPermit;
+use super::admission::{ConnectionPermit, allocate_connection_id};
 use super::lifecycle::{
     ConnectionRegistration, OwnedTask, drain_writer, next_write_batch, stopped,
 };
@@ -263,7 +263,7 @@ async fn handle_datagram(
             let Some(admission) = context.stats.admission.accept_session() else {
                 return Ok(());
             };
-            let connection_id = context.next_connection_id.fetch_add(1, Ordering::Relaxed);
+            let connection_id = allocate_connection_id(&context.next_connection_id)?;
             let local_conn = allocate_local_conn(connection_id, sessions)?;
             let profile = KcpProfile::Outer;
             let kcp = match KcpSession::new_with_budget(

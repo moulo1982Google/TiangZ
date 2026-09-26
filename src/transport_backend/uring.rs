@@ -4,9 +4,9 @@ use std::io;
 use std::net::Shutdown;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 
-use super::admission::ConnectionPermit;
+use super::admission::{ConnectionPermit, allocate_connection_id};
 use super::lifecycle::{
     ConnectionRegistration, OwnedTask, drain_writer, next_write_batch, stopped,
 };
@@ -112,7 +112,7 @@ async fn run_scene_listener(
         let Some(permit) = context.stats.admission.accept_stream() else {
             continue;
         };
-        let connection_id = context.next_connection_id.fetch_add(1, Ordering::Relaxed);
+        let connection_id = allocate_connection_id(&context.next_connection_id)?;
         tracing::debug!(target: "tiangz::transport",
             "{} accepted {} as conn {} backend=io-uring",
             context.scene.name, peer, connection_id

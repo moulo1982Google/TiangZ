@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+连接编号分配已统一到 Process 共享 uint32 边界，最后合法号正常使用、耗尽在发布前失败且不复用。真实 TCP/Auto/WebSocket/KCP 相关 **5/5**、分配模块 **3/3**，含 KCP 完整 **8/33/9**、Rust 256 项、Linux 条件编译与 AI 实际归档通过；`temp/v0.7-connection-id-admission-verify.log`，477578ms，Host/两报告 SHA256 `3363972a027fc4d31e052c799caf27b2500420b18045e88ee2821a10daadf68c`。三个宿主正常退出，原失败与验证层次见[连接编号验收](../design/v0.7-connection-id-admission.md)。本项不增加编号容量，也不将 Windows 结果当作 Linux 实际运行。
+
+连接编号边界的真实 TCP RED 已取得，`temp/v0.7-connection-id-admission-red.log` **1 failed**，0.01 秒：从最后合法编号起步，下一条实际业务帧被发布为 `connection_id=4294967296`，超过 Host uint32 事件头。真实原因为三个 backend 直接对 u64 计数 fetch_add，直到下游才检查宽度。按[连接编号契约](../design/v0.7-connection-id-admission.md)在共享分配入口原子拒绝，走既有 endpoint 监督；禁止截断、回绕复用或放宽 Host 检查。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp connection_id_exhaustion_fails_before_publishing_an_invalid_host_event -- --nocapture`，此为有限边界注入，不是 2^32 次连接压测。
+
 Native Scene 批次元数据最终验收：Host 专项 **28/28**、最终调度 **8/8**、指标 **1/1**，含 KCP 完整 **check 8/8、quick 33/33、full 9/9**，484101ms，`temp/v0.7-native-scene-batches-verify.log`。Rust 252 项、Linux 条件编译、AI 实际归档通过；Host/报告 SHA256 `f03b30153f2b6fb75f35fd12dfefbd11f476efe2dbae0a17242cae5534cfb91b`。真实网络 65536 条单向与 64 MiB 批次仍完整送达，Native 保留槽峰值 65536 后归零；258 项批次部分完成后仍保留 258，真正结束才归零，三宿主正常退出。见[完整证据](../design/v0.7-native-scene-batches.md)，下方原反例与夹具/Clippy 失败保留；保留槽不等于活跃 RPC、全部传输或 RSS。
 
 Native 批次指标专项首次失败，`temp/v0.7-native-scene-batches-metrics.log` **1 failed**：扩展的旧 game-only 夹具未设置 `sample_timestamp_ms`，格式化器按既有规则不输出尚未采样的 Native Process 指标，得到空行集合。给夹具提供有效采样时间后复测，不能去掉生产采样门槛或接受缺失指标。命令 `node tools/run_cargo.mjs test --bin TiangZ --features kcp health::tests::host_scene_operation_metrics_separate_queued_cost_from_reply_waiters -- --nocapture`；这是夹具错误，不是确认后的指标丢失。

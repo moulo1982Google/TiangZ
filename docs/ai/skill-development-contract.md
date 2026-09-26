@@ -18,6 +18,8 @@
 
 ## 相关能力被修改时再核对
 
+- **连接编号宽度**：TCP/Auto/WebSocket、io-uring 与 KCP 在共享原子入口只分配 1..u32::MAX，不复用 Process 生命周期内旧号。最后合法号仍可传输；耗尽在握手/登记/发布前明确失败并走既有 endpoint 监督，不能取低位、回绕或放宽 Host/TS 的 uint32 桥。KCP local_conn 另有线上避碰，不能替代 Host 编号检查。有限边界注入与真实海量连接、完整 Process 故障转移分别报告，见[连接编号](../design/v0.7-connection-id-admission.md)。
+
 - **Native 批次元数据**：每 Process 的 Scene 批次共用 65536 个保留槽，复制/分配前整批准入，直到整批调度 Future 与容器销毁才归还；部分完成不能提前减去仍保留的容器容量，取消/失败释放原所有者。满额明确拒绝新增批次，完成通道仍保持背压，不能丢旧完成或自动重放单向事实。固定指标区分保留槽、峰值、容量与拒绝批次；此上限不等于活跃 RPC、物理传输总量或 RSS，本地/停机期限与入站控制通路独立。见[批次元数据](../design/v0.7-native-scene-batches.md)。
 
 - **内部期限句柄**：由原 isolate 专属表持有，不消耗 Deno 通用资源编号；桥接使用不复用的安全整数 Number，不能截断成 uint32、持久化或跨 isolate 传递。普通与停机的编号空间及存活额度独立；编号耗尽明确拒绝并归还本次预留，不能回绕覆盖旧句柄。关闭/OpState 清理只请求取消，原 waiter 最后引用才归还预算。分别验证真实 V8、超 uint32/最后安全整数、旧句柄、非法 Native 参数与实际 Runtime 清理，不能仅凭 live=0 推断编号可长期使用。见[句柄契约](../design/v0.7-deadline-handles.md)。

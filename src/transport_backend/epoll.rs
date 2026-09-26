@@ -2,7 +2,7 @@
 
 use std::io::IoSlice;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
@@ -13,7 +13,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
 use tokio_tungstenite::tungstenite::Message;
 
-use super::admission::ConnectionPermit;
+use super::admission::{ConnectionPermit, allocate_connection_id};
 use super::handshake::{AcceptedConnection, AcceptedTcp, AcceptedWebSocket, accept_connection};
 use super::lifecycle::{
     ConnectionRegistration, OwnedTask, drain_writer, next_write_batch, stopped,
@@ -87,7 +87,7 @@ async fn run_scene_listener(
         let Some(permit) = context.stats.admission.accept_stream() else {
             continue;
         };
-        let connection_id = context.next_connection_id.fetch_add(1, Ordering::Relaxed);
+        let connection_id = allocate_connection_id(&context.next_connection_id)?;
         tracing::debug!(target: "tiangz::transport",
             "{} accepted {} as conn {} backend=epoll",
             context.scene.name, peer, connection_id
