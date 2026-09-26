@@ -1,5 +1,7 @@
 # 2026-09-16 模块拆分后的当前事实
 
+Native 0.17.0 候选联合验收已通过：三个 npm 候选 139 文件与实际 ESM 入口匹配，Windows/Linux 完整矩阵均 **8/33/9**、Rust 分别 264/268 项，正式生成无跟踪变化，实际 Native 模块与 Rust 脚手架 RPC/停机通过。保留 Core 0.17/VSIX 0.16 与上一阶段实际 Native 0.16 的区别，默认发布锁不变。初版安装校验误用 `createRequire.resolve` 解析只有 import 条件的 ESM 包，得到 `ERR_PACKAGE_PATH_NOT_EXPORTED`，不是入口文件缺失；须在消费项目 cwd 用真正 ESM import 验证两入口，不修改生产 exports 绕过。原日志、包/Host 哈希、完整报告和未覆盖边界见[联合验收](../design/v0.7-native-candidate-integration.md)。
+
 V8 构造上下文修复已完成两平台完整验收：Windows 含 KCP **8/33/9**、617253ms、Rust 264 项；Linux 实际 io-uring/kcp **8/33/9**、561158ms、Rust 268 项，Clippy 均通过。修复后 Linux 原默认并发主测试再连续 **10 × 226** 项通过，保留修复前第 4 次 SIGABRT/core 和确定性 RED。实际 Host/报告身份、日志、GC/业务边界见[修复验收](../design/v0.7-v8-runtime-context.md)及[完整 Linux 验收](../design/v0.7-linux-game-validation.md)。临时容器已退出，原三个用户容器保持；AI 约束已同步。两边此轮实际 Native Core 仍为 0.16.0，0.17.0 候选联合验证另行执行，不改写版本身份。
 
 Linux SIGABRT 后续已取得精确原因：原 ELF 默认并发复跑第 4 轮再次退出，core 栈位于 deno_core 0.411.0 的 `spawn_delayed_task`，isolate 构造时没有 Tokio handle，V8 GC 延迟任务触发主动 abort。生产启动/热更预检已有 enter，遗漏位于部分同步/独立线程测试、backing store 探针及双 Native 的临时 Rust 验收入口。修法是各入口使用原有或明确持有的启用 timer 的 Tokio runtime，并让 Host 构造入口缺少上下文时立即返回错误；不禁用 GC、不强制全局串行或静默丢延迟任务。原复现、core 与回归命令见[上下文契约](../design/v0.7-v8-runtime-context.md)；此前无栈的 Windows 异常仍不认定同源。

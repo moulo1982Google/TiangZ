@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+包身份校验必须使用消费者实际的模块条件：Native 0.17.0 仅导出 types/import，校验夹具用 `createRequire.resolve` 会选择 require 条件并报 `ERR_PACKAGE_PATH_NOT_EXPORTED`。应在实际项目 cwd 启动 ESM import 分别验证 Core/codegen，不能新增 require/default 导出迁就错误夹具。此次三个本地候选一起安装、正式 package/lock 保持不变；0.17 候选在 Windows/Linux 新矩阵均 **8/33/9**、Rust 264/268 项，独立保留实际包/Host 身份，不能与此前 0.16 阶段混称。原始失败、139 文件检查、正式生成/Native 运行和命令见[Native 候选联验](../design/v0.7-native-candidate-integration.md)。
+
 上述 V8 上下文修复最终验证：Windows 含 KCP **check 8/8、quick 33/33、full 9/9**、Rust 264 项；Linux 实际 io-uring/kcp 同为 **8/33/9**、Rust 268 项，原默认并发主测试连续 10 轮各 226 项通过。没有放宽并发、GC 或原断言，生产路径本就使用正确 enter；原 RED、Linux 三轮失败及 core 单独保留。实际命令、宿主 SHA256 和验收范围见[构造上下文](../design/v0.7-v8-runtime-context.md)与[Linux 完整矩阵](../design/v0.7-linux-game-validation.md)。本轮 Native Core 0.16.0 与已打包的 0.17.0 候选不能混称，默认发布依赖尚未冻结。
 
 V8 构造必须先进入由调用者持有、启用 timer 的 Tokio runtime。Linux 第三轮 SIGABRT 通过原 ELF 第 4 次默认并发复现及 core 定位到 deno_core 0.411.0 `spawn_delayed_task`：未登记 handle 时，偶发 GC 延迟任务会主动 abort，普通捕获输出可能看不到诊断。生产入口已有 enter，部分测试/双 Native 临时验收入口遗漏；修复当前入口并在 Host 构造前明确拒绝缺上下文，不靠关 GC、串行化或重试掩盖。runtime 应活过 V8 销毁并由原拥有者驱动；检查当前 handle 不证明 timer 能力或未来寿命。原日志、回归与复测见[上下文契约](../design/v0.7-v8-runtime-context.md)，不把本栈外推为历史无栈 Windows 异常的原因。
@@ -2232,7 +2234,7 @@ SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools
 - 受限仓库读到旧schema只在内存迁移、不回写：排队记录回写会与待落库值竞争，事务记录由下一次事务以读到的revision写入新版本。普通仓库保持原有CAS回写。
 - 未加标记的实体，生成文本与0.16.0逐字节一致（已用Examples已提交的`NativeItemPersistence.ts`实测）。
 - 开发期更换写法直接清库；从`@queued`改为其他写法前，至少停写并等DBProxy排队积压清零。运营中更换写法造成的数据问题不由DBProxy兜底。
-- 发布顺序：先给tiangz-native-language打`v0.17.0`，再升级TiangZ依赖；在此之前主工程codegen仍使用0.16.0，新标记不生效。公共API锁的处理见[API稳定性迁移记录](../reference/api-stability.md#开发中)。
+- 发布顺序：先给tiangz-native-language打`v0.17.0`，再升级TiangZ依赖；默认发布依赖仍为0.16.0，新标记不生效。0.7 独立工作树已用明确本地 tgz 联验 0.17 候选，不代表已更新正式依赖；见[候选联验](../design/v0.7-native-candidate-integration.md)。公共API锁的处理见[API稳定性迁移记录](../reference/api-stability.md#开发中)。
 
 长稳入口：`npm run soak:write-modes -- plan|check|smoke|run`（控制器`tools/persistence_write_modes_soak.mjs`），Examples可用`npm run reliability -- plan --suite write-modes`编排。探针在真实TiangZ进程里经Host op同时运行三种写法，账本先记意图再执行写入，进程在任意时刻被杀都能判定可能已提交的最大值。
 
