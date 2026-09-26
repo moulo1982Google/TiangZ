@@ -89,6 +89,7 @@ async fn control_ingress_real_v8_retains_slots_until_ack_and_completion_bypasses
     // 独立 V8 线程拥有 current-thread 驱动，网络生产者仍由测试 Tokio 驱动。 / The dedicated V8 thread owns its current-thread loop while Tokio drives producers.
     std::thread::spawn(|| {
         let event_loop = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let _entered = event_loop.enter();
         let (sender, mut receiver) = channel(2);
         let admission = Arc::clone(&sender.stats.control_admission);
         let mut runtime = create_runtime(false, 0).unwrap();

@@ -167,6 +167,8 @@ if (process.argv.includes("--rust")) {
   await writeFile(path.join(output, "acceptance.js"), assertions.join("\n"));
   await writeFile(path.join(output, "acceptance.rs"), `
     fn main() {
+      let event_loop = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+      let _entered = event_loop.enter();
       let mut runtime = deno_core::JsRuntime::new(deno_core::RuntimeOptions {
         extensions: vec![tiangz_module_0::extension(), tiangz_module_1::extension()],
         ..Default::default()

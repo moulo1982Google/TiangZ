@@ -1,5 +1,17 @@
 # 2026-09-16：先选业务工程，再写模块
 
+上述 V8 上下文修复最终验证：Windows 含 KCP **check 8/8、quick 33/33、full 9/9**、Rust 264 项；Linux 实际 io-uring/kcp 同为 **8/33/9**、Rust 268 项，原默认并发主测试连续 10 轮各 226 项通过。没有放宽并发、GC 或原断言，生产路径本就使用正确 enter；原 RED、Linux 三轮失败及 core 单独保留。实际命令、宿主 SHA256 和验收范围见[构造上下文](../design/v0.7-v8-runtime-context.md)与[Linux 完整矩阵](../design/v0.7-linux-game-validation.md)。本轮 Native Core 0.16.0 与已打包的 0.17.0 候选不能混称，默认发布依赖尚未冻结。
+
+V8 构造必须先进入由调用者持有、启用 timer 的 Tokio runtime。Linux 第三轮 SIGABRT 通过原 ELF 第 4 次默认并发复现及 core 定位到 deno_core 0.411.0 `spawn_delayed_task`：未登记 handle 时，偶发 GC 延迟任务会主动 abort，普通捕获输出可能看不到诊断。生产入口已有 enter，部分测试/双 Native 临时验收入口遗漏；修复当前入口并在 Host 构造前明确拒绝缺上下文，不靠关 GC、串行化或重试掩盖。runtime 应活过 V8 销毁并由原拥有者驱动；检查当前 handle 不证明 timer 能力或未来寿命。原日志、回归与复测见[上下文契约](../design/v0.7-v8-runtime-context.md)，不把本栈外推为历史无栈 Windows 异常的原因。
+
+Linux 第三轮须与缓存路径故障区分：双路径挂载下原 Inspector 专项 1/1 通过，但完整 quick **32/33** 的失败变为 main Rust 测试进程 **SIGABRT**，尚无原生栈；后代回收仍执行。事后 cgroup pids.events/max、memory.events/oom/oom_kill 为 0，不足以确认根因。保留原二进制、并发和失败日志，在隔离容器取得未捕获输出/调试器堆栈，再决定修法；不能重跑至绿、全局强制串行、删用例或把此前 Windows 异常直接认定为同一问题。证据与复测命令见[Linux 游戏验收](../design/v0.7-linux-game-validation.md)。
+
+复用原生构建缓存要保持绝对位置：Linux 第二轮 quick **32/33**，Inspector 在启动宿主前因旧 `/target/debug/TiangZ` 不存在而 ENOENT；当前真实宿主位于 `/work/target`，旧路径已编译进 `env!(CARGO_BIN_EXE_TiangZ)` 的测试产物。不能把此项当作断点/源码映射运行时失败，或修改断言吞掉启动错误。修正方式是保留缓存原挂载并将同一实际目录提供给宿主发现工具，或重新构建被搬移的缓存；完整复测保持原断言与限额，证据见[Linux 游戏验收](../design/v0.7-linux-game-validation.md)。
+
+Linux 安装不能假设所有 Git 依赖都已含构建物：Native Language 0.16.0 用 prepare 生成 dist，首轮禁用 scripts 后缺入口，生成失败又导致 Hotfix 门禁找不到 generated/model。另一个独立错误来自夹具把 target 目录做成人工软链接，Git 候选扫描仍包含它，读取报 EISDIR。首轮 **6/25/2**、full 7 failed、200840ms，证据 `temp/v0.7-linux-game-initial/`。在全新专用 volume 使用正式 npm 安装脚本，实际目录挂载对齐 Cargo/Host 路径；不伪造 dist/空目录、不关闭门禁或放宽 ignore/期限。保留同一源码和候选依赖，完整复测命令和范围见[Linux 游戏验收](../design/v0.7-linux-game-validation.md)；不要把前置失败当成多项运行时缺陷。
+
+完整 Linux 游戏验收采用干净 `0210279` 源码归档和专用 Linux volume，保留大小写语义；Core/SDK 候选逐项核对 96 个已安装文件，Rust SDK 仍按原发布锁，不混称候选联调。工具镜像补齐 Luban 的 .NET 8.0.31，正式 io-uring/kcp 矩阵离线运行，不更改主机/用户服务。范围、V8 正规离线缓存与证据见[Linux 游戏验收](../design/v0.7-linux-game-validation.md)；执行中不能凭镜像或原生专项通过宣布完整游戏验证成功。
+
 Host 原缓冲区必须按整块 backing store 的最后所有者观测，不能按小子视图长度或请求完成时刻释放。真实 V8/Process 已分别验证子视图持有、最后 Native 引用、正常/停机批次与退出回收；Windows 含 KCP 完整 **8/33/9**、543205ms、Rust 263 项，`temp/v0.7-host-backing-verify.log`。Host/两报告 SHA256 `ba921afd32e5f0fa3d3b9f85824756e8fc6c283cf79dceac3a094b241ea58e90`，Linux 实际原生 **267 项**、Clippy 和 AI 实际归档通过，三宿主正常退出。真实控制请求排空后仍记录 129414 字节，此非零不能直接归因为泄漏，也未强制 GC；见[完整证据](../design/v0.7-host-backing-store.md)。观测排除显式业务复制/其他 op/总堆，未来硬额度须独立保证完成通路。
 
 原生 API 探针要先沿用当前 Host 的真实导入路径：首轮 backing store 集成测试 E0432，`Uint8Array` 实际位于 `deno_core::convert`，`temp/v0.7-host-backing-probe-initial.log`。此时未运行任何 GC/寿命断言，是夹具编译错误；不能改依赖、跳过 V8 或把失败当成框架泄漏。修正路径后复测 `node tools/run_cargo.mjs test --test host_backing_store_ownership --features kcp --locked -- --nocapture`，见[探针边界](../design/v0.7-host-backing-store.md)。

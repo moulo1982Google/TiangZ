@@ -87,6 +87,11 @@ fn collect_until_released(runtime: &mut JsRuntime, ledger: &Ledger) {
 
 #[test]
 fn real_v8_backing_store_follows_last_view_and_native_owner() {
+    let event_loop = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let _entered = event_loop.enter();
     let mut runtime = JsRuntime::new(Default::default());
     // 核对当前 Host 使用的 deno_core 转换没有再复制 Box 内容。 / Checks the current Host conversion transfers the boxed bytes without another payload copy.
     {

@@ -502,8 +502,9 @@ deno_core::extension!(
     },
 );
 
-/// 创建带 TiangZ host op 的 V8 运行时，但不加载或执行业务代码。 / Creates a V8 runtime with TiangZ host ops; it does not load or execute business code.
+/// 在调用者的 Tokio 上下文中创建 V8；其定时器驱动须活过 isolate，不加载业务代码。 / Creates V8 in the caller's Tokio context, whose timer driver must outlive the isolate; no business code is loaded.
 pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRuntime, AnyError> {
+    Handle::try_current().context("V8 creation requires an entered Tokio runtime context")?;
     let mut extensions = vec![
         ets_runtime_host::init(),
         crate::dbproxy::init(),
@@ -932,7 +933,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn v8_scene_submit_rejects_over_budget_before_decoding_or_spawning() {
+    fn v8_creation_without_tokio_context_returns_error_before_isolate_initialization() {
+        assert!(Handle::try_current().is_err());
+        let error = create_runtime(false, 0)
+            .err()
+            .expect("missing Tokio context must fail before creating the V8 isolate");
+        assert!(error.to_string().contains("Tokio runtime context"));
+    }
+
+    #[tokio::test]
+    async fn v8_scene_submit_rejects_over_budget_before_decoding_or_spawning() {
         let mut runtime = create_runtime(false, 0).unwrap();
         let budget = BufferBudget::new(3);
         HOST_SCENE_BUFFERS.with(|slot| *slot.borrow_mut() = Some(Arc::clone(&budget)));
@@ -1008,8 +1018,8 @@ mod tests {
         HOST_SCENE_ROUTES.with(|slot| slot.borrow_mut().clear());
     }
 
-    #[test]
-    fn business_v8_gets_frozen_secure_random_bridge() {
+    #[tokio::test]
+    async fn business_v8_gets_frozen_secure_random_bridge() {
         let mut runtime = create_runtime(false, 0).unwrap();
         runtime
             .execute_script(
@@ -1040,6 +1050,7 @@ mod tests {
             .enable_all()
             .build()
             .unwrap();
+        let _entered = event_loop.enter();
         let mut runtime = create_runtime(false, 0).unwrap();
         runtime.execute_script("test:shutdown.js", r#"
           for (const name of ['__etsStartProcess','__etsUpdateBinary','__etsDispatchHostEvents',
@@ -1076,8 +1087,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn dbproxy_global_ids_refuse_legacy_model_bootstrap() {
+    #[tokio::test]
+    async fn dbproxy_global_ids_refuse_legacy_model_bootstrap() {
         let mut runtime = create_runtime(false, 0).unwrap();
         let config = r#"{"process":{"identity":{"allocation":"dbproxy"}}}"#;
         validate_global_id_bootstrap(&mut runtime, "{}").unwrap();

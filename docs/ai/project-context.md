@@ -1,5 +1,17 @@
 # 2026-09-16 模块拆分后的当前事实
 
+V8 构造上下文修复已完成两平台完整验收：Windows 含 KCP **8/33/9**、617253ms、Rust 264 项；Linux 实际 io-uring/kcp **8/33/9**、561158ms、Rust 268 项，Clippy 均通过。修复后 Linux 原默认并发主测试再连续 **10 × 226** 项通过，保留修复前第 4 次 SIGABRT/core 和确定性 RED。实际 Host/报告身份、日志、GC/业务边界见[修复验收](../design/v0.7-v8-runtime-context.md)及[完整 Linux 验收](../design/v0.7-linux-game-validation.md)。临时容器已退出，原三个用户容器保持；AI 约束已同步。两边此轮实际 Native Core 仍为 0.16.0，0.17.0 候选联合验证另行执行，不改写版本身份。
+
+Linux SIGABRT 后续已取得精确原因：原 ELF 默认并发复跑第 4 轮再次退出，core 栈位于 deno_core 0.411.0 的 `spawn_delayed_task`，isolate 构造时没有 Tokio handle，V8 GC 延迟任务触发主动 abort。生产启动/热更预检已有 enter，遗漏位于部分同步/独立线程测试、backing store 探针及双 Native 的临时 Rust 验收入口。修法是各入口使用原有或明确持有的启用 timer 的 Tokio runtime，并让 Host 构造入口缺少上下文时立即返回错误；不禁用 GC、不强制全局串行或静默丢延迟任务。原复现、core 与回归命令见[上下文契约](../design/v0.7-v8-runtime-context.md)；此前无栈的 Windows 异常仍不认定同源。
+
+Linux 第三轮恢复缓存双路径后，原 Inspector 专项 1/1 通过；完整 quick 仍为 **32/33**，此次是 main Rust 测试二进制原生 **SIGABRT**，并非上一轮的 ENOENT。原日志 `temp/v0.7-linux-game-run-final.log` 对应 volume 内 `temp/v0.7-linux-game-verify-final.log`；矩阵已回收报告中的两个残留后代。事后 cgroup pids.events/max、memory.events/oom/oom_kill 均为 0，只能排除这些计数所覆盖的限制，不能据此确认根因或认定与此前 Windows 原生退出同源。保持原并发和断言，先用未捕获输出/调试器取得堆栈；禁止以重跑通过、改成全局串行或忽略 cargo test 代替修复。完整结果与调查见[Linux 游戏验收](../design/v0.7-linux-game-validation.md)。
+
+Linux 第二轮已通过 check 8/8、真实热更/故障，但 quick **32/33** 的 Inspector 集成测试在 spawn 时 ENOENT；测试尚未启动宿主。复用的二进制包含 `env!(CARGO_BIN_EXE_TiangZ)` 旧绝对路径 `/target/debug/TiangZ`，缓存改挂 `/work/target` 后旧路径不存在，实际新路径存在，两个字符串已直接核对。保持缓存原绝对位置，同时将同一缓存真实目录挂到工具发现路径，或完整重建被搬移的缓存；不能改测试去跳过调试器或忽略 spawn 失败。第二轮完整日志在专用 volume，结束后独立导出；复测仍使用完整 `npm run verify`，见[Linux 环境证据](../design/v0.7-linux-game-validation.md)。
+
+Linux 首轮完整矩阵 **check 6/8、quick 25/33、full 2/9**、200840ms，原报告已导出 `temp/v0.7-linux-game-initial/`。两项环境准备错误分别处理：`npm ci --ignore-scripts` 跳过 Git 依赖 Native Language 0.16.0 的 prepare，发行包缺 dist，后续生成/运行失败及 generated/model 缺失均为前置失败级联；`/work/target` 人工软链接不匹配 `target/` 目录忽略规则，被源码痕迹门禁读作目录而 EISDIR。正确复测在新专用 volume 正常执行依赖的正式安装脚本，并把缓存直接挂为 `/work/target` 目录；不能手写 dist、建立空生成目录、跳过源码检查或扩大忽略范围。沿用同一 `0210279` archive/锁/候选包/负载，重跑完整 `TIANGZ_VERIFY_CARGO_FEATURES=io-uring,kcp npm run verify`，见[证据](../design/v0.7-linux-game-validation.md)。
+
+Linux 完整 TS 游戏矩阵已开始：从干净 `0210279` 归档到专用 Linux volume，使用实际 Node 24.20/npm 11.19/Rust 1.97.1/.NET 8.0.31 镜像，候选 Core/SDK 96 个安装文件哈希与 Windows 包一致。正式 `npm run verify` 含 io-uring/kcp、离线、专用容器允许 io-uring，用户容器/数据库未改；详细输入与命令边界见[Linux 游戏验收](../design/v0.7-linux-game-validation.md)。当前仍在执行，不用已有原生 267 项、镜像构建成功或部分 quick 结果替代完整矩阵。
+
 Host 原缓冲区观测按[backing store 契约](../design/v0.7-host-backing-store.md)完成：4 字节闭包视图仍持有整块 65536 字节，真实 Process 的两个一字节视图使 80×1 MiB 跨批存储全部保留，isolate 退出归零。固定指标计整块逻辑字节至最后 Native/V8 所有者释放，未取 TLS 与空 take 不计。最终含 KCP **8/33/9**、543205ms、Rust 263 项，`temp/v0.7-host-backing-verify.log`；Host/两报告 SHA256 `ba921afd32e5f0fa3d3b9f85824756e8fc6c283cf79dceac3a094b241ea58e90`。Linux 实际原生 **267 项**与 Clippy、AI 实际归档通过，三个宿主正常退出；真实控制满额后排空仍观测到 129414 字节，不把请求完成等同于自然 GC 释放。该观测不是泄漏判定、业务堆或新硬额度；Linux 完整 TS 游戏矩阵和字节满额策略继续独立验证。
 
 Host backing store 探针首次仅编译失败：`temp/v0.7-host-backing-probe-initial.log` E0432，`Uint8Array` 位于当前依赖的 `deno_core::convert`，没有从根模块重导出。按现有 Host 的实际 import 修正，不更换依赖或绕过真实 V8；尚未执行寿命/GC 断言，不归因为框架内存问题。复测 `node tools/run_cargo.mjs test --test host_backing_store_ownership --features kcp --locked -- --nocapture`，范围见[backing store 审查](../design/v0.7-host-backing-store.md)。
