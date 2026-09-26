@@ -1,5 +1,17 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-09-27 同机 Release 性能比较已完成：六场景各四轮 AB/BA，共 48 个测量单元全过，吞吐变化为 −3.9% 至 +1.2%，无场景触发固定调查门槛；详见[候选性能记录](../design/v0.7-release-candidate.md)。DBProxy 项使用 memory backend，不能称真实存储吞吐或长稳通过。
+
+递增长稳首次三分钟预检被控制器错误的事务吞吐断言拒绝：冻结 dbproxy_fault_soak::run_player 每十周期执行一次事务，控制器误按每周期计算。原报告 120 次事务、120 次交易、1400 次排队写、零错误且客户端最终校验通过；失败保留在 temp/v0.7-soak/smoke-SqT0fh/ 和原控制器。修正计数下限为实际十周期频率并为交易保留独立下限；不修改产品、负载频率或一致性断言，必须整轮重跑并检查积压排空、SQL 和 Stream。失败时提前正常停服，留下的 27 条尚未发布 Outbox 在只读核对中正确被拒绝，不能据客户端零错误登记该轮通过。
+
+最终 Linux 清洁 RC2 完整 **8/33/9、272 Rust** 通过，141 份 npm 文件及 Host/两份热更报告身份一致；Windows/Linux Release 短验证与 DBProxy 最终 Release 配置下 7 项真实恢复契约也通过，详见[候选冻结](../design/v0.7-release-candidate.md)。这些不是 24 小时长稳证据；性能对比和 30→60→120→240→480→960→1440 分钟长稳另行记录。
+
+新增长稳准备的两个失败属于控制器时序：宿主 /ready 成功早于首个五秒资源快照，不能立刻把缺少指标判为版本不兼容；应在负载前限时等待首份完整快照，后续仍严格拒绝缺失指标。首轮性能 smoke 保留 temp/v0.7-performance/runtime-smoke-Hz5lJn/，修正后新旧 Release smoke 均通过。PostgreSQL 官方容器初始化期间的临时实例也会响应 pg_isready，但目标库可能尚未创建；准备必须同时验证正式 TCP 监听与目标数据库 SELECT 成功。首轮失败 temp/v0.7-soak/setup-initialization-readiness-failed.log、ID/所有者验证后的恢复 setup-resume.log，7 个真实恢复用例原断言未变。
+
+最终 Windows RC2 清洁发行矩阵 **8/33/9、268 Rust** 通过，实际 Host/两份热更报告 SHA 一致，见[候选证据](../design/v0.7-release-candidate.md)。三个示例联机通过、MMORPG 193 TS 与 51 Native 通过（另 2 忽略）；SLG 最后发现生成 tsconfig 仍指向作者工作树，必须用标准并列目录的正式构建刷新、检查完整 Git diff，不能只看 build 返回码。差异保留为 `temp/v0.7-rc2-final-examples-generated-drift.patch`，修复冻结在 Examples `31617b7/v0.7.0-rc.2`，重新 npm ci/build/check/smoke 后受控文件无差异。
+
+性能 Release 首次编译再次遇到 Windows V8 跨盘 symlink 权限 1314。核实锁定 V8 源与尚不存在的 `target/release/gn_root` 后创建本工作区目录联接，再用原源码/锁/Release 参数重试；没有修改第三方 build.rs 或启用不受控系统权限。失败保留 `temp/v0.7-performance/baseline-release-build-failed-v8-junction.log`。候选依赖助手调用 npm 时需要当前已安装 npm CLI 身份：从 npm script 启动，或显式传入已验证的 npm_execpath；直接 node 调用被断言拒绝，`npm exec node` 会下载另一个 Node，不能用它代替本机已选定的 Node 24。此次误调用只产生缓存下载，后续安装使用已验证 npm CLI 与原 Node 24，未改全局工具。
+
 最终 VSIX（两端均 0.16.2）在 VS Code 1.139.1 中连续三次通过六组实际编辑器用例。第一次 RC1 测试把重复 typeId 的诊断强制限定在 Collision 文件而超时；同字节重跑通过，两种索引顺序证明诊断属于后发现的声明。修正测试为本工程的任一冲突文件，仍严格检查跨根隔离和两文件修复，不延长超时、不改语言规则。Native Core 0.17.1-rc.2 的 npm tarball 仅 README/package.json 与 RC1 不同，语言/生成器字节一致。证据在 `temp/v0.7-editor-acceptance/result-rc2-{1,2,3}.json`，原失败保留。
 
 AI 0.3.0-rc.1 已做实际客户端验收：Codex 0.158.0-alpha.2 安装技能并调用两种只读 MCP 场景，Claude Code 2.1.275 新控制会话连接 MCP 0.16.1-rc.2 并发现三种只读工具，Cindy 0.1.93 的真实归档安装/重载后沙箱 running、两文件逐字节匹配。Cindy 首次在登录页启动失败是尚无数据所有者，改用其正式本地模式后通过；没有打开被发行客户端禁用的主进程调试器或改其沙箱。Cindy 四工具/六建议来自归档测试，不冒充客户端模型对话，未发起模型推理。候选分发的 MCP 字节以 Git 属性保留原样，防止换行转换破坏哈希；详见 [候选冻结](../design/v0.7-release-candidate.md)。
@@ -254,7 +266,13 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 
 ## 失败教训与复测流程
 
+### 容器 PID 1 必须回收构建工具子进程
+
+2026-09-27 Linux 清洁候选用 Node 控制器直接作为 PID 1，首次 check/quick 的多项命令正文通过，但外层报 exit 125 `command left descendant processes`。`/proc` 证明 53 个 git/esbuild 等进程为 Z、PPID=1，是控制器不回收被收养子进程造成的环境错误，不是把失败的进程回收门禁改成通过的理由。保存 `temp/v0.7-rc2-linux-clean-evidence/process-reaping.json` 与完整矩阵后，向自有 full runner 发 SIGINT，让在途用例清理、未执行项记 skipped。正确复测以 Docker `--init` 启动新专用空卷，开始前核对 PID 1，重新从相同 bundle 检出、npm ci 和 `verify:release`；保留原卷及失败日志，不按进程名杀用户程序、不禁用后代检查、不用缓存目录冒充清洁检出。新轮证据 `temp/v0.7-rc2-linux-clean-init-evidence/`，结果单独登记。
+
 ### 清洁目录的 System 声明必须重新生成
+
+Examples 候选首次联机又发现 `registration mismatch`：模块清单改为 0.7.0-rc.1，而 MMORPG/Bench 的 Model `defineGameModule` 仍为 0.6.0-alpha.0。这是候选升版漏项，宿主拒绝行为正确。必须同步两份源码身份、完整构建并重启，再用 `npm run smoke -- --package mmorpg` 验证；不能关注册检查，也不能仅修改清单后把编译通过算作升级通过。原失败 `temp/v0.7-clean-mmorpg-smoke.log` 保留；修正后 `temp/v0.7-clean-mmorpg-registration-smoke.log` 记录真实登录/进图/退出、即时切换角色与正常停机通过。此轮还是准备目录；最终冻结 RC2 宿主的 Native 与三类消费方结果独立记录。
 
 跨平台重建还要区分原始归档、解包载荷与文本换行：三个 npm 候选从 bundle 清洁重建后整个 tgz 哈希一致；VSIX ZIP 时间字段不同，Native 的 sourcemap 内嵌 `server.ts` 另有 CRLF/LF 差异，规范化该项后相同，运行 bundle 本身逐字节一致。不得把它写成两份 VSIX 原始哈希相同。Examples 的协议/配置清单含输入字节哈希，新增 `.gitattributes` 固定文本 LF，并在标准同级目录用正式生成器刷新声明和清单；不手改锁/哈希或拿原 worktree 名作为发行路径。证据 `temp/v0.7-clean-artifact-reproduction.json`，重新检出后应再生成并检查 Git 差异。
 
