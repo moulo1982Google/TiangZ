@@ -39,6 +39,8 @@
 
 ## 配置
 
+0.7 的 `process.network.maxIngressBufferedBytes` 独立限制 Rust Process 已解码帧，默认 67108864，整数 1..1073741824。TCP/WS/io-uring/KCP 共用，包含 Inner RPC 控制帧；首次入队前无等待预留，原 Bytes 移交不复制，等待帧数空位/出队/热更延后仍占额度，直到最后引用释放。额度满时 Inner RPC 保持原 rpcId 返回既有目标入口过载，外部/单向来源按接收错误关闭连接或 Session；Disconnect、Shutdown、Host completion 不占本项帧额度。指标复用 `tiangz_transport_buffer_bytes/limit_bytes/rejections_total`，固定 `kind="ingress"`，不算慢客户端。此处是逻辑帧字节，未包括解码器、Host 打包副本、V8/TS mailbox、completion 响应、KCP 内部或系统缓冲；契约与测试范围见[入站预算](../design/v0.7-ingress-buffers.md)。
+
 默认配置无需修改，仍然使用 epoll 和协议自动探测：
 
 ```json

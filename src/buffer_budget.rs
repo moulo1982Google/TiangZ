@@ -24,18 +24,27 @@ pub struct BufferReservation {
     bytes: usize,
 }
 
-struct ReservedBytes {
-    bytes: Vec<u8>,
+struct ReservedBytes<T> {
+    bytes: T,
     _reservation: BufferReservation,
 }
 
-impl AsRef<[u8]> for ReservedBytes {
+impl<T: AsRef<[u8]>> AsRef<[u8]> for ReservedBytes<T> {
     fn as_ref(&self) -> &[u8] {
-        &self.bytes
+        self.bytes.as_ref()
     }
 }
 
 impl BufferBudget {
+    /// 接管已存在的字节而不复制，最后引用归还预留；超限销毁输入。 / Takes existing bytes without copying; the final reference releases the reservation, and rejection drops the input.
+    pub fn try_hold_bytes(self: &Arc<Self>, bytes: Bytes) -> Option<Bytes> {
+        let reservation = self.try_reserve(bytes.len())?;
+        Some(Bytes::from_owner(ReservedBytes {
+            bytes,
+            _reservation: reservation,
+        }))
+    }
+
     /// 预留成功才复制；切片与克隆共享最后所有者的预算。 / Copies only after admission; slices and clones retain the reservation until the final owner drops.
     pub fn try_copy_bytes(self: &Arc<Self>, bytes: &[u8]) -> Option<Bytes> {
         let reservation = self.try_reserve(bytes.len())?;
@@ -93,6 +102,30 @@ impl Drop for BufferReservation {
 mod tests {
     use super::*;
     use std::sync::Barrier;
+
+    #[test]
+    fn held_bytes_keep_the_payload_allocation_and_reservation_until_last_clone() {
+        let budget = BufferBudget::new(8);
+        let bytes = Bytes::from(vec![3; 8]);
+        let pointer = bytes.as_ptr();
+        let held = budget.try_hold_bytes(bytes).unwrap();
+        assert_eq!(
+            held.as_ptr(),
+            pointer,
+            "admission must not copy the payload"
+        );
+        let slice = held.slice(2..4);
+        drop(held);
+        assert_eq!(budget.snapshot().used_bytes, 8);
+        assert!(budget.try_hold_bytes(Bytes::from_static(b"x")).is_none());
+        drop(slice);
+        assert_eq!(budget.snapshot().used_bytes, 0);
+        assert!(
+            budget
+                .try_hold_bytes(Bytes::from_static(b"restored"))
+                .is_some()
+        );
+    }
 
     #[test]
     fn copied_bytes_retain_the_whole_reservation_until_the_last_slice_drops() {

@@ -101,6 +101,7 @@ pub(crate) struct ProcessObservabilitySnapshot {
     pub(crate) active_connections: u64,
     pub(crate) admission: crate::transport_backend::admission::AdmissionSnapshot,
     pub(crate) outbound_buffers: tiangz_transport::buffer_budget::BufferBudgetSnapshot,
+    pub(crate) ingress_buffers: tiangz_transport::buffer_budget::BufferBudgetSnapshot,
     pub(crate) remote_transport_active_connections: u64,
     pub(crate) remote_transport_opened_connections: u64,
     pub(crate) remote_transport_pending_calls: u64,
@@ -1209,6 +1210,11 @@ mod tests {
                 limit_bytes: 64,
                 rejections: 3,
             },
+            ingress_buffers: tiangz_transport::buffer_budget::BufferBudgetSnapshot {
+                used_bytes: 17,
+                limit_bytes: 32,
+                rejections: 5,
+            },
             ..ProcessObservabilitySnapshot::default()
         });
         let body = format_prometheus_metrics("worker", &state);
@@ -1231,11 +1237,23 @@ mod tests {
         for (metric, expected) in [("bytes", 12), ("limit_bytes", 64), ("rejections_total", 3)] {
             assert!(body.contains(&format!("tiangz_transport_buffer_{metric}{{process=\"worker\",kind=\"outbound\"}} {expected}")));
         }
+        for (metric, expected) in [("bytes", 17), ("limit_bytes", 32), ("rejections_total", 5)] {
+            assert!(body.contains(&format!(
+                "tiangz_transport_buffer_{metric}{{process=\"worker\",kind=\"ingress\"}} {expected}"
+            )));
+            assert_eq!(
+                body.lines()
+                    .filter(|line| line
+                        .starts_with(&format!("# HELP tiangz_transport_buffer_{metric} ")))
+                    .count(),
+                1
+            );
+        }
         assert_eq!(
             body.lines()
                 .filter(|line| line.starts_with("tiangz_transport_buffer_"))
                 .count(),
-            3
+            6
         );
     }
 

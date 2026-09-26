@@ -188,6 +188,10 @@ Demo 部署配置、示例运维资产和游戏测试在 Examples；旧固定拓
 
 # TiangZ AI 项目上下文
 
+0.7 已解码 Rust 入站帧独立使用 `maxIngressBufferedBytes`（默认 64 MiB、1..1 GiB）。所有业务 listener 的控制 RPC 与数据帧共享，首次入队前接管 Bytes、不复制 payload，排队重试/取消/热更延后均保持同一预留，最后引用释放才归还；超限 Inner RPC 返回既有入口过载，外部/单向来源关闭，控制通知不占本项帧额度。固定 kind=ingress 指标不混作慢客户端。解码器、Host 打包副本、V8/TS mailbox、RPC completion 与 KCP 可靠缓存另算，不称为全进程内存上限。契约与证据见[入站预算](../design/v0.7-ingress-buffers.md)。
+
+入站实测首轮的两个夹具问题已保留：误用不存在的 EndpointTask.stop/wait 导致编译失败；随后给真实 Inner Socket 发了外部 msgcode，访问校验正确拒绝，预算尚未入队。应先读真实生命周期 API（request_stop + await），传输专用夹具使用 Inner 保留范围并单独检查 RPC 标识；禁止新增空转接口、关闭协议检查或仅延长等待。原记录 temp/v0.7-ingress-first.log、v0.7-ingress-focused.log；修正后定向和全目标验证见入站预算文档。
+
 2026-09-16 示例拆分已扩展为服务端、客户端与消费者的模块边界迁移；当前目录和命令见文首说明。
 
 2026-09-16 桥接提前检查收窄到唯一、直接的顶层 Core defineGameModule 登记；不遍历未调用函数猜执行结果。宽泛字典、联合导出形状及动态/多处登记保留运行时校验，不能把静态预检通过当作完整装配已验证。

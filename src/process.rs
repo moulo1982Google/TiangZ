@@ -10,6 +10,8 @@ use observability::{
 #[path = "process_endpoint_tests.rs"]
 mod endpoint_tests;
 #[cfg(test)]
+mod ingress_buffer_tests;
+#[cfg(test)]
 #[path = "process_lifecycle_tests.rs"]
 mod lifecycle_tests;
 
@@ -277,6 +279,7 @@ extern "C" fn v8_gc_epilogue(
 pub(crate) struct ProcessQueueStats {
     pub(crate) admission: Arc<crate::transport_backend::admission::ConnectionAdmission>,
     pub(crate) outbound_buffers: Arc<tiangz_transport::buffer_budget::BufferBudget>,
+    pub(crate) ingress_buffers: Arc<tiangz_transport::buffer_budget::BufferBudget>,
     capacity: usize,
     depth: AtomicUsize,
     max_depth: AtomicUsize,
@@ -326,6 +329,9 @@ impl ProcessQueueStats {
         Self {
             outbound_buffers: tiangz_transport::buffer_budget::BufferBudget::new(
                 network.max_outbound_buffered_bytes,
+            ),
+            ingress_buffers: tiangz_transport::buffer_budget::BufferBudget::new(
+                network.max_ingress_buffered_bytes,
             ),
             admission: Arc::new(
                 crate::transport_backend::admission::ConnectionAdmission::new(
@@ -567,14 +573,30 @@ impl ProcessEventReceiver {
 }
 
 impl ProcessEventSender {
-    /// 内部RPC使用控制流保留队列并在队满时立即失败，调用方必须把明确错误回复给来源进程。
-    /// Inner RPC uses the reserved control queue and fails immediately when full. The caller must
+    /// 首次入队前接管帧预算；重试和延后队列保留同一 Bytes 所有权。 / Admits once before enqueue; retries and deferred queues retain the same Bytes owner.
+    fn reserve_frame(
+        &self,
+        mut event: ProcessEvent,
+    ) -> std::result::Result<ProcessEvent, ProcessIngressTrySendError> {
+        if let ProcessEvent::Frame { frame, .. } = &mut event {
+            *frame = self
+                .stats
+                .ingress_buffers
+                .try_hold_bytes(std::mem::take(frame))
+                .ok_or(ProcessIngressTrySendError::Overloaded)?;
+        }
+        Ok(event)
+    }
+
+    /// 内部RPC使用控制流保留队列，在帧数或共享字节额度满时立即失败，调用方必须把明确错误回复给来源进程。
+    /// Inner RPC uses the reserved control queue and fails immediately at count or byte capacity. The caller must
     /// return an explicit error to the source process instead of occupying a pending RPC waiter.
     pub(crate) fn try_send_control(
         &self,
         event: ProcessEvent,
     ) -> std::result::Result<(), ProcessIngressTrySendError> {
         debug_assert_eq!(event.ingress_class(), ProcessIngressClass::Control);
+        let event = self.reserve_frame(event)?;
         let kind = event.kind();
         let class = ProcessIngressClass::Control;
         self.stats.queued(kind, class);
@@ -597,9 +619,12 @@ impl ProcessEventSender {
 
     pub(crate) async fn send(
         &self,
-        mut event: ProcessEvent,
+        event: ProcessEvent,
         deadline: Option<tokio::time::Instant>,
     ) -> Result<(), String> {
+        let mut event = self
+            .reserve_frame(event)
+            .map_err(|_| "process ingress byte budget is full".to_string())?;
         let kind = event.kind();
         let class = event.ingress_class();
         let mut counted_backpressure = false;

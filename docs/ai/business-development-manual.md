@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+0.7 已解码 Rust 入站帧独立使用 `maxIngressBufferedBytes`（默认 64 MiB、1..1 GiB）。所有业务 listener 的控制 RPC 与数据帧共享，首次入队前接管 Bytes、不复制 payload，排队重试/取消/热更延后均保持同一预留，最后引用释放才归还；超限 Inner RPC 返回既有入口过载，外部/单向来源关闭，控制通知不占本项帧额度。固定 kind=ingress 指标不混作慢客户端。解码器、Host 打包副本、V8/TS mailbox、RPC completion 与 KCP 可靠缓存另算，不称为全进程内存上限。契约与证据见[入站预算](../design/v0.7-ingress-buffers.md)。
+
+入站实测首轮的两个夹具问题已保留：误用不存在的 EndpointTask.stop/wait 导致编译失败；随后给真实 Inner Socket 发了外部 msgcode，访问校验正确拒绝，预算尚未入队。应先读真实生命周期 API（request_stop + await），传输专用夹具使用 Inner 保留范围并单独检查 RPC 标识；禁止新增空转接口、关闭协议检查或仅延长等待。原记录 temp/v0.7-ingress-first.log、v0.7-ingress-focused.log；修正后定向和全目标验证见入站预算文档。
+
 0.7 地图部署走 MMORPG 自有 `map-deployment.json` → 官方生成器 → `map-deployment/runtime.pack.json`，复用通用数据信封，地图策略不进入 Core。过渡期旧字段仍接受，显式双写必须一致；声明包漏当前 MapHost 时失败。不可把部署拓扑写成玩法表，也不能用任意 Scene 字典绕过类型边界。操作、重启要求与证据见[迁移记录](../design/v0.7-map-deployment.md)。
 
 房间类业务可先看 Examples `tools/fixtures/room`：使用现有模块脚手架和生成协议，一个 Scene 的 ordered mailbox 加 Component 即可实现有界房间集合与重连快照。`npm run test:room` 在独立工程运行真实 SDK/Socket 并检查正常退出，无需 Location/MapHost。演示密钥不等于账号鉴权/会话 fencing，内存快照不等于数据库恢复，不能把示例限制转写为 Core 特例。

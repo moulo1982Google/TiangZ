@@ -286,7 +286,7 @@ async fn run_reader(
                             target: "tiangz::transport",
                             connection_id,
                             rpc_id,
-                            "rejected inner RPC because target control ingress queue is full"
+                            "rejected inner RPC because target ingress capacity is exhausted"
                         );
                         continue;
                     }

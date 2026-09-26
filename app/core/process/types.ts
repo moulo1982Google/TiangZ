@@ -89,6 +89,8 @@ export interface ProcessNetworkConfig {
   maxPendingHandshakes?: number;
   /** 0.7：ConnectionWriter payload 与主动 Inner Host 整包共享预算，1..1073741824，默认64MiB；不含响应、入站及 KCP 内部缓存。 / Since 0.7: shared writer payload and active Inner host-packet budget, 1..1073741824, default 64MiB; excludes responses, ingress and KCP internals. */
   maxOutboundBufferedBytes?: number;
+  /** 0.7：Rust 已解码入站帧共享逻辑字节额度，1..1073741824，默认64MiB；不含解码器、Host 打包副本和 V8/TS mailbox。 / Since 0.7: shared decoded Rust ingress frame budget, 1..1073741824, default 64MiB; excludes decoders, host batch copies and V8/TS mailboxes. */
+  maxIngressBufferedBytes?: number;
   /** 0.7：出站批次从准入起的总写出预算，1..300000ms，默认10000。 / Since 0.7: total outbound budget from admission, 1..300000ms, default 10000. */
   writeTimeoutMs?: number;
   ioBackend?: "epoll" | "io-uring";

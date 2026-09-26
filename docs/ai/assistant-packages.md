@@ -1,5 +1,7 @@
 # Codex、Claude 与 Cindy 技能交付
 
+2026-09-26 入站预算轮：分发提交 `d83df86`，清单仍 0.2.0，Cindy 仍为 40 条规则、四工具/六类建议。已从唯一源同步独立入站与出站所有权及明确排除范围；Cindy SHA256 为 `02a7b9750505768bbbd0975b7b85b6cad1fcfd47dde4e2cf7786bba43b5726d0`。`temp/v0.7-ai-ingress-{build,check,distribute,distribution-check,artifact-check}.log` 和 artifact-identity.json 保存 CRC、7 文件哈希、提取后工具及两份技能校验通过的证据。无 Forge/客户端安装或工作区已装技能覆盖。下方旧哈希仅对应各自阶段。
+
 ## 唯一维护入口
 
 2026-09-17 起，版本化源码放在本仓库 `tools/ai-assistants/`：

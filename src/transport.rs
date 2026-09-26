@@ -1013,7 +1013,7 @@ fn handle_socket_event(
                     metrics.rejected(RemoteTransportOverloadStage::TargetIngress, &call.context);
                     *last_activity = Instant::now();
                     let _ = call.response_tx.send(Err(format!(
-                        "[scene-overloaded] scene {target_name} control ingress queue is full"
+                        "[scene-overloaded] scene {target_name} ingress capacity is exhausted"
                     )));
                 } else {
                     metrics.late_responses.fetch_add(1, Ordering::Relaxed);
@@ -1711,7 +1711,7 @@ mod tests {
         assert!(
             result
                 .unwrap_err()
-                .contains("control ingress queue is full")
+                .contains("[scene-overloaded] scene map-1 ingress capacity is exhausted")
         );
         assert!(pending.is_empty());
         assert_eq!(metrics.pending_calls.load(Ordering::Relaxed), 0);

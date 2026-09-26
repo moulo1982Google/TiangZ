@@ -36,6 +36,21 @@ fn endpoint_with_admission(
     protocol: EndpointProtocol,
     admission: Arc<ConnectionAdmission>,
 ) -> EndpointFixture {
+    endpoint_with_stats(
+        audience,
+        protocol,
+        Arc::new(ProcessQueueStats {
+            admission,
+            ..ProcessQueueStats::new(16)
+        }),
+    )
+}
+
+fn endpoint_with_stats(
+    audience: EndpointAudience,
+    protocol: EndpointProtocol,
+    stats: Arc<ProcessQueueStats>,
+) -> EndpointFixture {
     let address = if protocol == EndpointProtocol::Kcp {
         std::net::UdpSocket::bind("127.0.0.1:0")
             .unwrap()
@@ -47,10 +62,7 @@ fn endpoint_with_admission(
             .local_addr()
             .unwrap()
     };
-    let stats = Arc::new(ProcessQueueStats {
-        admission: admission.clone(),
-        ..ProcessQueueStats::new(16)
-    });
+    let admission = stats.admission.clone();
     let writers = Arc::new(Mutex::new(HashMap::new()));
     let (control_sender, control) = mpsc::sync_channel(8);
     let (data_sender, data) = mpsc::sync_channel(8);
@@ -95,6 +107,137 @@ fn endpoint_with_admission(
         _data: data,
         _wake: wake,
     }
+}
+
+async fn wait_ingress(stats: &ProcessQueueStats, bytes: u64, rejected: u64) {
+    timeout(Duration::from_secs(2), async {
+        loop {
+            let snapshot = stats.ingress_buffers.snapshot();
+            if snapshot.used_bytes == bytes && snapshot.rejections == rejected {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "unexpected ingress budget: {:?}",
+            stats.ingress_buffers.snapshot()
+        )
+    });
+}
+
+#[tokio::test]
+async fn ingress_byte_budget_is_shared_across_real_tcp_websocket_listeners_and_recovers() {
+    let stats = Arc::new(ProcessQueueStats::with_network_limits(
+        16,
+        &ProcessNetworkConfig {
+            max_ingress_buffered_bytes: 2,
+            ..Default::default()
+        },
+    ));
+    let tcp = endpoint_with_stats(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        stats.clone(),
+    );
+    let websocket = endpoint_with_stats(
+        EndpointAudience::Outer,
+        EndpointProtocol::WebSocket,
+        stats.clone(),
+    );
+    let mut accepted = preamble(&tcp, false).await;
+    accepted.write_all(&[0, 1]).await.unwrap();
+    wait_ingress(&stats, 2, 0).await;
+    let mut rejected = websocket_client(&websocket).await;
+    // Masked payload [0, 1], valid at the decoder; rejected only by the shared byte pool.
+    rejected
+        .write_all(&[0x82, 0x82, 1, 2, 3, 4, 1, 3])
+        .await
+        .unwrap();
+    wait_ingress(&stats, 2, 1).await;
+    assert_capacity_rejected(rejected).await;
+    assert!(matches!(
+        websocket._control.try_recv().unwrap(),
+        ProcessEvent::Disconnect { .. }
+    ));
+    assert!(websocket._data.try_recv().is_err());
+    assert_eq!(tcp.writers.lock().unwrap().len(), 1);
+    assert_eq!(stats.slow_client_disconnects.load(Ordering::Relaxed), 0);
+    drop(tcp._data.try_recv().unwrap());
+    wait_ingress(&stats, 0, 1).await;
+    let mut recovered = websocket_client(&websocket).await;
+    recovered
+        .write_all(&[0x82, 0x82, 1, 2, 3, 4, 1, 3])
+        .await
+        .unwrap();
+    wait_ingress(&stats, 2, 1).await;
+    drop(websocket._data.try_recv().unwrap());
+    drop((accepted, recovered));
+    tcp.task.request_stop();
+    websocket.task.request_stop();
+    timeout(Duration::from_secs(2), tcp.task)
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(Duration::from_secs(2), websocket.task)
+        .await
+        .unwrap()
+        .unwrap();
+    wait_ingress(&stats, 0, 1).await;
+    wait_admission(&stats.admission, 0, 0).await;
+}
+
+#[tokio::test]
+async fn ingress_full_inner_rpc_returns_wire_overload_and_same_connection_recovers() {
+    let stats = Arc::new(ProcessQueueStats::with_network_limits(
+        16,
+        &ProcessNetworkConfig {
+            max_ingress_buffered_bytes: 5,
+            ..Default::default()
+        },
+    ));
+    let fixture = endpoint_with_stats(
+        EndpointAudience::Inner,
+        EndpointProtocol::Tcp,
+        stats.clone(),
+    );
+    let mut client = preamble(&fixture, true).await;
+    // Transport-only fixture: use the reserved Inner range, not a client message code.
+    let mut request = [0, 0, 0xd0, 0x05, 0x01];
+    request[..2].copy_from_slice(&crate::transport_backend::INNER_MSGCODE_START.to_be_bytes());
+    client.write_u32(request.len() as u32).await.unwrap();
+    client.write_all(&request).await.unwrap();
+    wait_ingress(&stats, 5, 0).await;
+    client.write_u32(request.len() as u32).await.unwrap();
+    client.write_all(&request).await.unwrap();
+    let response = timeout(Duration::from_secs(2), async {
+        let length = client.read_u32().await.unwrap();
+        assert_eq!(length, 6);
+        let mut response = vec![0; length as usize];
+        client.read_exact(&mut response).await.unwrap();
+        response
+    })
+    .await
+    .unwrap();
+    assert_eq!(response, crate::transport::build_target_ingress_overload(1));
+    wait_ingress(&stats, 5, 1).await;
+    drop(fixture._control.try_recv().unwrap());
+    assert_eq!(stats.ingress_buffers.snapshot().used_bytes, 0);
+    client.write_u32(request.len() as u32).await.unwrap();
+    client.write_all(&request).await.unwrap();
+    wait_ingress(&stats, 5, 1).await;
+    assert_eq!(fixture.writers.lock().unwrap().len(), 1);
+    drop(fixture._control.try_recv().unwrap());
+    drop(client);
+    fixture.task.request_stop();
+    timeout(Duration::from_secs(2), fixture.task)
+        .await
+        .unwrap()
+        .unwrap();
+    wait_ingress(&stats, 0, 1).await;
+    wait_admission(&stats.admission, 0, 0).await;
 }
 
 /// 只发准入前导，不向业务队列投递消息。 / Sends only the admission preamble, without business frames.
@@ -585,6 +728,90 @@ async fn process_admission_counts_kcp_only_after_cookie_and_shares_tcp_capacity(
         .unwrap()
         .unwrap();
     wait_admission(&admission, 0, 0).await;
+}
+
+#[cfg(feature = "kcp")]
+#[tokio::test]
+async fn ingress_byte_budget_closes_only_rejected_kcp_session_and_listener_recovers() {
+    let stats = Arc::new(ProcessQueueStats::with_network_limits(
+        16,
+        &ProcessNetworkConfig {
+            max_ingress_buffered_bytes: 2,
+            ..Default::default()
+        },
+    ));
+    let tcp = endpoint_with_stats(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        stats.clone(),
+    );
+    let kcp = endpoint_with_stats(
+        EndpointAudience::Outer,
+        EndpointProtocol::Kcp,
+        stats.clone(),
+    );
+    let mut held = preamble(&tcp, false).await;
+    held.write_all(&[0, 1]).await.unwrap();
+    wait_ingress(&stats, 2, 0).await;
+    let mut rejected = tiangz_transport::KcpClient::connect(kcp.address)
+        .await
+        .unwrap();
+    assert!(
+        rejected
+            .request(&[0, 1], Duration::from_millis(100))
+            .await
+            .is_err()
+    );
+    wait_ingress(&stats, 2, 1).await;
+    wait_admission(&stats.admission, 1, 0).await;
+    assert!(kcp.writers.lock().unwrap().is_empty());
+    assert!(matches!(
+        kcp._control.try_recv().unwrap(),
+        ProcessEvent::Disconnect { .. }
+    ));
+    assert!(kcp._data.try_recv().is_err());
+    assert_eq!(tcp.writers.lock().unwrap().len(), 1);
+    drop(tcp._data.try_recv().unwrap());
+    let mut recovered = tiangz_transport::KcpClient::connect(kcp.address)
+        .await
+        .unwrap();
+    let (response, ()) = tokio::join!(recovered.request(&[0, 1], Duration::from_secs(1)), async {
+        timeout(Duration::from_secs(1), async {
+            loop {
+                if let Ok(ProcessEvent::Frame {
+                    connection_id,
+                    frame,
+                    ..
+                }) = kcp._data.try_recv()
+                {
+                    // Last ingress owner follows the echoed Bytes until the forwarder releases it.
+                    assert_eq!(stats.ingress_buffers.snapshot().used_bytes, 2);
+                    let writers = kcp.writers.lock().unwrap();
+                    try_queue_connection_frame(writers.get(&connection_id).unwrap(), frame)
+                        .unwrap();
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    });
+    assert_eq!(response.unwrap(), [0, 1]);
+    recovered.close().await.unwrap();
+    drop(held);
+    tcp.task.request_stop();
+    kcp.task.request_stop();
+    timeout(Duration::from_secs(2), tcp.task)
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(Duration::from_secs(2), kcp.task)
+        .await
+        .unwrap()
+        .unwrap();
+    wait_ingress(&stats, 0, 1).await;
+    wait_admission(&stats.admission, 0, 0).await;
 }
 
 #[cfg(feature = "kcp")]
