@@ -1,5 +1,13 @@
 # 2026-09-16：先选业务工程，再写模块
 
+最终 VSIX（两端均 0.16.2）在 VS Code 1.139.1 中连续三次通过六组实际编辑器用例。第一次 RC1 测试把重复 typeId 的诊断强制限定在 Collision 文件而超时；同字节重跑通过，两种索引顺序证明诊断属于后发现的声明。修正测试为本工程的任一冲突文件，仍严格检查跨根隔离和两文件修复，不延长超时、不改语言规则。Native Core 0.17.1-rc.2 的 npm tarball 仅 README/package.json 与 RC1 不同，语言/生成器字节一致。证据在 `temp/v0.7-editor-acceptance/result-rc2-{1,2,3}.json`，原失败保留。
+
+AI 0.3.0-rc.1 已做实际客户端验收：Codex 0.158.0-alpha.2 安装技能并调用两种只读 MCP 场景，Claude Code 2.1.275 新控制会话连接 MCP 0.16.1-rc.2 并发现三种只读工具，Cindy 0.1.93 的真实归档安装/重载后沙箱 running、两文件逐字节匹配。Cindy 首次在登录页启动失败是尚无数据所有者，改用其正式本地模式后通过；没有打开被发行客户端禁用的主进程调试器或改其沙箱。Cindy 四工具/六建议来自归档测试，不冒充客户端模型对话，未发起模型推理。候选分发的 MCP 字节以 Git 属性保留原样，防止换行转换破坏哈希；详见 [候选冻结](../design/v0.7-release-candidate.md)。
+
+2026-09-27 候选依赖冻结与 MCP 身份：尚未 push 的 tag 通过带 SHA256/提交校验的 Git bundle 重现，正式 npm/Cargo 锁仍保存上游地址与真实提交。首轮 npm 的 GitHub fetcher 转用 SSH，只有 HTTPS 重写时挂起；补齐同仓库三种 URL 后，又因 tag-only mirror 没有 HEAD 触发 undefined.sha。正确做法是在独立镜像创建指向已验证提交的默认分支，只对子进程设置重写，不改全局 Git、不伪造锁、不靠提前 push 绕过。最终 npm install 与 Cargo update --workspace 已成功，日志为 `temp/v0.7-rc1-dependency-install-head-retry.log`、`temp/v0.7-rc1-cargo-lock.log`，前两份失败日志保留。继续用清洁目录 npm ci/Cargo --locked 确认，不把开发树安装等同清洁重建。
+
+AI MCP 原来依赖全局 Windows .cmd，且实际服务握手仍报旧 0.13.0，不能仅凭插件清单判断已加载版本。Developer 的实际协议 RED 存于 `dist/v0.7-mcp-version-red.log`；改为构建注入包版本，随包提供实际依赖许可证、bundle/锁哈希，AI 只复制校验后的产物。Developer `npm run check` 为 153 通过、3 项宿主条件跳过；指定 `TIANGZ_TEST_MODULE_HOST` 后单独补跑跨 TS5/TS6 和实际模块 Host 的三项检查通过，日志 `dist/v0.7-rc2-host-contract.log`。Core 改用 0.16.1-rc.2 / VSIX 0.16.2，保留原 RC1 tag。Codex 根 `.mcp.json` 用相对 cwd，Claude 通过清单覆盖同名服务为自己的插件根变量；验证器拒绝 Codex 清单指向任意另名 MCP 文件时应修复包结构，不放宽验证器。实际客户端加载仍须另存证据，不以 vm/直接 stdio 冒充客户端验收。
+
 Host 数据/完成驻留预算完成本轮验收：每 Process 512 MiB 数据/回复预留，Disconnect 独立 65536 backing 项；call 执行前整批预留，缩减后沿最后 V8/Native 所有者归还，已接受完成不再重新竞争容量。真实 V8 保留小视图/Native 引用、满额新调用同步过载和已接受完成交付通过。最终 Windows **8/33/9、268 Rust**，Linux io-uring/kcp **8/33/9、272 Rust**；两边实际 Host 与各自两份热更报告哈希一致。139 个实际 npm 候选文件与工具版本已核对，完整日志和失败/修复证据见[驻留预算](../design/v0.7-host-event-budget.md)。本轮仍用原声明配合已核对的三个本地 npm 候选，不把它冒充下一阶段正式 RC 依赖冻结。
 
 2026-09-27 实际编辑器与环境验收：Native 旧 VSIX 在双 worktree 合并 Entity/typeId，已用安装产物复现并修复为按工作区根隔离全部符号查询；同工程冲突仍拒绝，动态增删根顺序重建一个服务器。Native 545bb2f，Core 22/Server 9、21 份正式生成对照/11 份 TS 通过；真正 VS Code 1.139.1 中两插件六组用例通过，包括 Problems 两轮恢复、所属任务 cwd、跨根 Hover/定义与实时 Model 时间规则。原始失败及 `result-model-contract.json`/包哈希保存在 `temp/v0.7-editor-acceptance/`；详见相邻 Native 仓库 `docs/v0.7-workspace-isolation.md`。初始测试启动使用内存存储未加载信任，改独立普通 Extension Host 与限定目录信任，不关闭信任保护；未定义 sleep 的 TS2304 和 Hotfix 直引 Core 的边界错误不能当作时间规则证据，须先构造类型/依赖合法的 Model 反例。重复测试用 WorkspaceEdit 修改已开文档，避免缓存与直接磁盘写不同步。

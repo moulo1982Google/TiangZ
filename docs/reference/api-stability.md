@@ -4,6 +4,12 @@ TiangZ从`0.3.10-alpha.0`开始建立可执行的公共API边界。目标不是�
 
 ## 版本身份
 
+### 2026-09-27：0.7 候选冻结
+
+正式生成锁仍有 204 个 Stable 导出，未删除导出。`HostDbProxyTransport` 增加请求期限能力查询、单调时钟及可选 `DbProxyRequestOptions`；`ProcessNetworkConfig` 增加连接、握手、收发/KCP 字节和写超时的可选上限；`TimerSystem` 增加只读 `InFlightCount`。可达声明图同时记录了连接状态拆分、mailbox/Host 期限及持久化预算相关内部形状。`npm run core-api:update-lock` 生成签名 `6eaf9bd13d5a2ef488225bc213ea3234d1ad66857a25f6b9a65e0c87dd502e4f`；不得继续用 0.6 旧锁宣称冻结。
+
+升级须重建 Rust、Model 和模块组合宿主并重启 Process，重新生成客户端/Native/模块输出并核对模块版本范围。旧可选参数调用保持类型兼容；过载、排队期限、停机与请求结果未知的行为必须按 0.7 的有界契约处理，超时不能当作“服务端一定未执行”或释放实际仍在运行的所有者。新旧 Model/协议/Native 指纹的包不能混做行为热更。
+
 ### 2026-09-17：Hotfix 与配置联合加载迁移
 
 首次升级须重新构建 Rust 宿主、Model 与完整启动包，并重启 Process。旧的未配对 Hotfix/配置制品不可直接交给新 Runtime。
