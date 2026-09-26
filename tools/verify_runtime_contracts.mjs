@@ -12,8 +12,8 @@ const config = ts.readConfigFile(configPath, ts.sys.readFile);
 if (config.error) throw new Error(formatDiagnostic(config.error));
 const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, path.dirname(configPath), undefined, configPath);
 if (parsed.errors.length) throw new Error(parsed.errors.map(formatDiagnostic).join("\n"));
-if (typeof developerTools.runtimeContractDiagnostics !== "function") {
-  throw new Error("Developer Tools 缺少共享 Program 契约检查；请安装当前联合验证的 @tiangz/developer-tools-core。");
+if (typeof developerTools.runtimeContractDiagnostics !== "function" || !(developerTools.RUNTIME_CONTRACT_RULESET_VERSION >= 2)) {
+  throw new Error("Developer Tools 缺少共享 Program/Hotfix 契约检查；请安装当前联合验证的 @tiangz/developer-tools-core（ruleset >= 2）。");
 }
 const program = ts.createProgram(parsed.fileNames, parsed.options);
 const diagnostics = developerTools.runtimeContractDiagnostics(program, {

@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+0.7 Hotfix 成员检查使用 Developer Tools 共享 ruleset 2，CLI 和编辑器同源。确定属于当前 Core 的 System/Handler 禁字段、构造和 static 成员；同名业务函数或其他宿主装饰器不能据名称拒绝。没有 Program 的显式稳定入口候选只能给 `tiangz.hotfix.unverifiable` warning，不能宣称验证成功；真正违规保持 `tiangz.hotfix.instance-state` error。共享代码须调用创建节点的 TS API，ClassElement 用 canHaveModifiers/getModifiers 读取修饰符，不能凭 JS 可用属性绕过 TS 5/6 差异。模块范围由 Host 声明选择，见[Hotfix 契约](../design/v0.7-hotfix-contracts.md)。
+
 验证时不能用预构建哈希替代实际运行身份：原矩阵 quick 的无 features Cargo 步骤会覆盖预构建的 KCP 宿主，之后 full 测到的是默认 feature。显式 Rust/KCP/UDP 通过与默认 full 通过分别报告，原热更 JSON 已记录真实 SHA。现用 `TIANGZ_VERIFY_CARGO_FEATURES=kcp` 贯穿嵌套矩阵，full 先构建，并在 quick 之后记录实际 Host 哈希；不靠额外手动构建或修改旧报告伪装原轮包含 KCP。原证据、哈希更正与复测见[进度](../design/v0.7-progress.md)。
 
 0.7 KCP 使用独立 `maxKcpBufferedBytes`（默认 64 MiB、1..1 GiB），全部 KCP listener 共享，各 Session 另限 4 MiB。预留 C 控制块/工作区、段上界、保留 ACK 容量及输出 Bytes，扩容前保守准入，纯 ACK 在满额度时仍可归还，最后输出引用释放才退额度。额度不足/输出 callback 失败只终结该 Session，不能只记日志或依赖 C 忽略的 callback 返回值。一个 datagram 可让 ACK 数组连续扩容，须计最后中间数组与新数组同时存活的峰值，不只是调用前容量。接收/UDP 封包副本、Rust 容器、系统和 V8 另有边界；配置、Rust 包装器接口变化与验收见[KCP 预算](../design/v0.7-kcp-buffers.md)。

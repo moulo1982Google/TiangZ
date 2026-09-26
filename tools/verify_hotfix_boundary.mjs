@@ -33,21 +33,18 @@ for (const module of moduleCatalog.modules) {
     moduleFiles.push(...await collect(directory));
   }
 }
+const hotfixFiles = await collect(hotfixRoot);
 const program = ts.createProgram(
-  [...new Set([...parsed.fileNames, decoratorFixture, ...moduleFiles])],
+  [...new Set([...parsed.fileNames, decoratorFixture, ...moduleFiles, ...hotfixFiles])],
   parsed.options,
 );
 const checker = program.getTypeChecker();
 
 verifyDecoratorAliasFixture(program, checker);
 
-for (const file of await collect(hotfixRoot)) {
-  const tree = program.getSourceFile(file) ?? ts.createSourceFile(
-    file,
-    await readFile(file, "utf8"),
-    ts.ScriptTarget.Latest,
-    true,
-  );
+for (const file of hotfixFiles) {
+  const tree = program.getSourceFile(file);
+  if (!tree) throw new Error(`Hotfix source is missing from the selected Program: ${file}`);
   inspectImports(file, tree, true);
   inspectHotfixClasses(file, tree, checker);
 }
@@ -65,12 +62,8 @@ for (const modelRoot of modelRoots) {
 for (const module of moduleCatalog.modules) {
   for (const directory of module.entries.hotfixRoots) {
     for (const file of await collect(directory)) {
-      const tree = program.getSourceFile(file) ?? ts.createSourceFile(
-        file,
-        await readFile(file, "utf8"),
-        ts.ScriptTarget.Latest,
-        true,
-      );
+      const tree = program.getSourceFile(file);
+      if (!tree) throw new Error(`Hotfix source is missing from the selected Program: ${file}`);
       inspectModuleImports(module, file, tree, true);
       inspectHotfixClasses(file, tree, checker);
     }
@@ -159,7 +152,11 @@ function inspectModuleImports(module, file, tree, hotfix) {
 }
 
 function inspectHotfixClasses(file, tree, typeChecker) {
-  for (const item of hotfixClassDiagnostics(tree, typeChecker)) errors.push(`${relative(file)}:${item.line}:${item.column}: ${item.message}`);
+  for (const item of hotfixClassDiagnostics(tree, typeChecker)) {
+    const text = `${relative(file)}:${item.line}:${item.column}: [${item.code}] ${item.message}`;
+    if (item.severity === "error") errors.push(text);
+    else console.warn(`warning ${text}`);
+  }
 }
 
 function verifyDecoratorAliasFixture(typeProgram, typeChecker) {
@@ -173,12 +170,16 @@ function verifyDecoratorAliasFixture(typeProgram, typeChecker) {
     ts.forEachChild(node, visit);
   };
   visit(source);
-  for (const className of ["AliasHandler", "NamespaceHandler"]) {
+  for (const className of ["AliasHandler", "NamespaceHandler", "ExtensionHandler"]) {
     if (recognized.get(className) !== "Handler") {
       throw new Error(`Hotfix decorator alias self-test failed: ${className}`);
     }
   }
   if (recognized.get("UnrelatedDecoratorClass") !== undefined) throw new Error("Hotfix decorator self-test failed: unrelated same-name decorator must not be treated as Core");
+  const diagnostics = hotfixClassDiagnostics(source, typeChecker);
+  if (diagnostics.length !== 7 || diagnostics.some(item => item.code !== "tiangz.hotfix.instance-state" || item.severity !== "error")) {
+    throw new Error(`Hotfix member fixture failed: ${JSON.stringify(diagnostics)}`);
+  }
 }
 
 async function collect(directory) {

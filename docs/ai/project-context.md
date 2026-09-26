@@ -1,5 +1,7 @@
 # 2026-09-16 模块拆分后的当前事实
 
+0.7 Hotfix 成员禁令已迁到 Developer Tools 共享 ruleset 2。必须用当前 Core 的装饰器声明身份，不能从同名字符串或旧宿主推断；缺 Program 的显式稳定入口候选只报 `tiangz.hotfix.unverifiable` warning，真实违反保持 `tiangz.hotfix.instance-state` error。TypeScript 5 的 ClassElement 不能直接读取 modifiers，跨版本共享实现使用调用者 API 的 canHaveModifiers/getModifiers；首轮编译错误修正后保留字段/构造/static/无关装饰器负例，不能降低确定错误级别来迁就测试。成员规则、独立模块范围和 CLI/LSP 证据见[Hotfix 契约](../design/v0.7-hotfix-contracts.md)。
+
 0.7 G2 将地图部署迁到 MMORPG 的 `org.tiangz.mmorpg.map-deployment` 数据包；Core 只保留信封和旧字段兼容投影。缺失旧字段不得补成显式 `[]/false`，双写冲突或声明包缺当前实例必须拒绝。文件名严格为 `runtime.pack.json`，独立目录表达用途。模块使用 Stable `RuntimeDataPackRegistry.Instance`，不向 public 添加内部 SingletonRegistry。见[地图部署契约](../design/v0.7-map-deployment.md)。
 
 无目录服务的最小房间已作为 Examples `tools/fixtures/room` 的真实消费者：一个 Room Scene、Model Component 状态、Hotfix 行为、生成 SDK，直接地址连接和 roomId 查找，创建/加入/离开/新 Socket 重连快照及容量拒绝均通过。它证明简单游戏无需部署 Location/MapHost，不证明跨进程迁移、生产鉴权或持久恢复。复跑与证据见[房间消费方](../design/v0.7-room-consumer.md)。

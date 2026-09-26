@@ -18,7 +18,7 @@
 
 ## 相关能力被修改时再核对
 
-- **类型规则**：生命周期/方法名 Timer 复用 Developer Tools 的 Program 规则，调用者传与该 Program 配套的 TS API、当前 Core 和生成声明。普通 tsc 不自动接入。默认参数允许 undefined；动态名称/any 等未证明情况保留 warning。模块实时 LSP 仅在受信任工作区使用已保存声明指定的 Host worker；既有 TS 可内存覆盖，配置未保存/环境缺失/超限须显示不可用。检查复用 CLI 入口，不代替生成锁或完整构建。详见 [Program 契约](../design/v0.7-program-contracts.md)。
+- **类型规则**：生命周期/方法名 Timer/Hotfix 成员禁令复用 Developer Tools 的 Program ruleset 2，调用者传配套 TS API、当前 Core 和生成声明。Hotfix 装饰器须有当前 Core 声明证据，同名业务函数和旧宿主不能冒充；缺环境的稳定入口候选只给未证明 warning，确定违反仍为 error。模块 Host 按声明指定 Hotfix 范围。普通 tsc 不自动接入。默认参数允许 undefined；动态名称/any 等未证明情况保留 warning。模块实时 LSP 仅在受信任工作区使用已保存声明指定的 Host worker；既有 TS 可内存覆盖，配置未保存/环境缺失/超限须显示不可用。检查复用 CLI 入口，不代替生成锁或完整构建。详见 [Program 契约](../design/v0.7-program-contracts.md)。
 - **跨 worktree 身份**：TS Core、SDK 和 Native Cargo 依赖均须来自选定版本；同版本号不代表同一源码。模块 Cargo 路径显式对齐并重新生成，Native 与 Model 指纹不匹配时完整重建，不篡改哈希。无需为了读取单例暴露内部 SingletonRegistry；使用已有 Stable API。详见 [消费方迁移](../design/v0.7-map-deployment.md)。
 - **部署归属**：地图实例部署属于 MMORPG 模块，复用 dataPacks 通用信封和模块自己的强类型校验，文件名为 runtime.pack.json。部署不是玩法表或任意 Scene 字典；声明包漏实例、显式新旧值冲突必须失败，修改后重建重启。简单房间可采用一个直接连接的 Scene 与 Component，无需目录服务；演示重连快照不代表生产鉴权或持久恢复。详见 [房间消费方](../design/v0.7-room-consumer.md)。
 - **资源边界**：ConnectionWriter payload 与主动 Inner Host 整包共享出站预算；复制前准入，最后引用释放，writer 排队不能重置操作/写出期限。独立入站预算只接管已解码 Rust 帧，等待空位/热更延后仍持有；控制通知不占帧额度，超限 Inner RPC 明确过载、外部/单向来源关闭。两者都不等同于整个进程内存、RPC 响应、解码器、Host/V8 副本、TS mailbox 或 KCP 未确认队列上限。每项新增额度均需保留在途占用和失败释放证据，标签不带用户/连接 ID。详见 [传输契约](../reference/transport-backend.md)。
