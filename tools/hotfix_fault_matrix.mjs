@@ -495,6 +495,47 @@ try {
     await workerControl.call(71);
     return { acceptedMessages: 65536, blobMessages: 64, packedBytes: 67108864, payloadBytes, publicOverloads: 4, recovered: true };
   });
+  await test("remote-queued-deadline-expires-before-network-slots-are-released", async () => {
+    const deadlineMetrics = async () => {
+      const response = await fetch(`http://127.0.0.1:${config.process.observability.health.port}/metrics`, { signal: AbortSignal.timeout(2000) });
+      assert.equal(response.status, 200);
+      const lines = (await response.text()).split("\n");
+      const queued = lines.filter(line => line.startsWith("tiangz_host_scene_operations_queue_timeouts_total{"));
+      assert.equal(queued.length, 1);
+      const native = traffic => lines.filter(line => line.startsWith("tiangz_transport_inner_timeouts_by_route_total{") &&
+        line.includes(`source="${mainScene.name}",target="worker",traffic="${traffic}",stage="host_queue"`))
+        .reduce((sum, line) => sum + Number(line.split(" ").at(-1)), 0);
+      return { queued: Number(queued[0].split(" ").at(-1)), call: native("call"), send: native("send") };
+    };
+    await control.call(87); await workerControl.call(87); await workerControl.call(71);
+    const before = await deadlineMetrics(), started = performance.now(), request = handled(control.call(78));
+    try {
+      await until(async () => (await control.call(84)).count === 1, "short RPC expires in the native queue", 1500);
+      const expiredAfterMs = performance.now() - started;
+      assert.ok(expiredAfterMs < 1500, "short deadline must finish before held 30-second RPCs");
+      await until(async () => (await workerControl.call(86)).count === 256, "all long RPCs wait on real Worker results");
+      assert.equal((await control.call(83)).count, 256);
+      assert.equal((await workerControl.call(85)).count, 0, "expired RPC did not execute");
+      assert.equal((await workerControl.call(67)).count, 0, "expired one-way frame did not execute");
+      await until(async () => {
+        const current = await deadlineMetrics();
+        return current.call === before.call + 1 && current.send === before.send + 1;
+      }, "both expirations are recorded in the native host_queue stage");
+      assert.equal((await deadlineMetrics()).queued, before.queued, "fixture expiry happened after TS submission");
+      await workerControl.call(81);
+      assert.equal((await request).count, 256, "previously started RPCs still finish normally");
+      assert.equal((await control.call(83)).count, 0);
+      assert.equal((await workerControl.call(86)).count, 0);
+      assert.equal((await control.call(76)).count, 1, "fresh remote RPC recovers");
+      assert.equal((await workerControl.call(85)).count, 0);
+      assert.equal((await workerControl.call(67)).count, 0);
+      return { heldRpcCalls: 256, shortTimeoutMs: 80, expiredAfterMs, nativeQueuedTimeouts: 2, expiredOneWayDelivered: 0, recovered: true };
+    } finally {
+      await workerControl.call(81).catch(() => {});
+      await request.catch(() => {});
+      await control.call(87); await workerControl.call(87);
+    }
+  });
   await test("disconnected-in-flight-rpc-does-not-refill-response-cache", async () => {
     const sourceMetrics = async () => {
       const response = await fetch(`http://127.0.0.1:${config.process.observability.health.port}/metrics`, { signal: AbortSignal.timeout(2000) });

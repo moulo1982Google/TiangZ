@@ -401,29 +401,49 @@ pub(crate) fn snapshot_remote_transport() -> Option<RemoteTransportMetricsSnapsh
     REMOTE_TRANSPORT.get().map(|transport| transport.snapshot())
 }
 
+/// 将 Host 未开始或等待超时归入固定阶段，不逐条输出过期单向消息。 / Records Host queue/wait expiry in fixed stages without per-message logging of expired one-way work.
+pub(crate) fn record_host_scene_timeout(
+    source: &str,
+    target: &str,
+    frame: &[u8],
+    one_way: bool,
+    stage: &'static str,
+) {
+    if let Some(transport) = REMOTE_TRANSPORT.get() {
+        let traffic = if one_way {
+            TransportTrafficClass::Send
+        } else {
+            TransportTrafficClass::Call
+        };
+        transport.metrics.timed_out(
+            &TransportContext::new(source.into(), target.into(), frame, traffic),
+            stage,
+        );
+    }
+}
+
 /// 发送一个多路复用内部 RPC，并且只等待其 rpcId 对应的完成事件。
 ///
 /// 本 Future 等待时，同一 TCP 连接上的其他调用仍可继续。
-/// 取消会移除等待者，但无法撤回已经写给对端的数据帧。
+/// 停止等待不能撤回已经入队或写给对端的数据；传输仍按原期限回收实际所有权。
 ///
 /// Sends one multiplexed inner RPC and waits only for its rpcId completion.
 ///
 /// Other calls on the same TCP connection continue while this future is
-/// pending. Cancellation removes the pending waiter but cannot recall a frame
-/// already written to the peer.
+/// pending. Stopping this wait cannot recall queued or peer-received data;
+/// transport retains actual ownership until settlement under the original deadline.
 pub async fn call_remote_scene(
     source_name: String,
     target_name: String,
     target_ip: String,
     target_port: u16,
     frame: Bytes,
-    call_timeout: Duration,
+    deadline: Instant,
 ) -> CallResult {
     let Some(transport) = REMOTE_TRANSPORT.get().cloned() else {
         return Err("remote scene transport is not initialized".to_string());
     };
     let address = format!("{target_ip}:{target_port}");
-    let deadline = Instant::now() + call_timeout;
     let (response_tx, response_rx) = oneshot::channel();
 
     let command = TransportCommand {
@@ -466,13 +486,12 @@ pub async fn send_remote_scene(
     target_ip: String,
     target_port: u16,
     frame: Bytes,
-    send_timeout: Duration,
+    deadline: Instant,
 ) -> SendResult {
     let Some(transport) = REMOTE_TRANSPORT.get().cloned() else {
         return Err("remote scene transport is not initialized".to_string());
     };
     let address = format!("{target_ip}:{target_port}");
-    let deadline = Instant::now() + send_timeout;
     let (result_tx, result_rx) = oneshot::channel();
     let command = TransportCommand {
         context: TransportContext::new(

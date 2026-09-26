@@ -22,6 +22,7 @@ export async function main(): Promise<void> {
     __hostCancelDeadline: (id: number) => void;
   };
   host.__hostRegisterSceneRoute = () => 1;
+  (globalThis as typeof globalThis & { __hostSceneNowMs: () => number }).__hostSceneNowMs = () => 0;
   host.__hostSubmitSceneOperations = (packed) => {
     submitted = packed.slice();
     return 0;

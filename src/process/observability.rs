@@ -145,6 +145,8 @@ pub(super) struct GameMetricsSnapshot {
     host_scene_invalid_frames: u64,
     #[serde(default)]
     host_scene_submit_failures: u64,
+    #[serde(default)]
+    host_scene_queue_timeouts: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -552,6 +554,7 @@ pub(super) fn maybe_log_metrics(
         host_scene_pending_rejections: game.host_scene_pending_rejections,
         host_scene_invalid_frames: game.host_scene_invalid_frames,
         host_scene_submit_failures: game.host_scene_submit_failures,
+        host_scene_queue_timeouts: game.host_scene_queue_timeouts,
     });
     let native_snapshot = native_data_metrics.map(|native| NativeDataObservabilitySnapshot {
         scalar_gets: native.scalar_gets,
@@ -796,7 +799,8 @@ mod tests {
                     "hostSceneByteRejections": 20,
                     "hostScenePendingRejections": 30,
                     "hostSceneInvalidFrames": 40,
-                    "hostSceneSubmitFailures": 50
+                    "hostSceneSubmitFailures": 50,
+                    "hostSceneQueueTimeouts": 60
                 },
                 "actorMailbox": {
                     "queuedCalls": 8,
@@ -847,6 +851,7 @@ mod tests {
         assert_eq!(game.host_scene_pending_rejections, 30);
         assert_eq!(game.host_scene_invalid_frames, 40);
         assert_eq!(game.host_scene_submit_failures, 50);
+        assert_eq!(game.host_scene_queue_timeouts, 60);
         assert_eq!(result.actor_mailbox.queued_calls, 8);
         assert_eq!(result.actor_mailbox.one_way_queued_calls, 9);
         assert_eq!(result.actor_mailbox.queued_depth, 2);

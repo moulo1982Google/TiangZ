@@ -18,7 +18,7 @@ interface QueuedOperation {
   id: number;
   routeId: number;
   kind: 1 | 2 | 3;
-  timeoutMs: number;
+  deadlineMs: number;
   frame: Uint8Array;
   frameLength: number;
 }
@@ -37,7 +37,7 @@ const deadlines = new Map<number, PendingDeadline>();
 const unstartedDeadlines = new Set<PendingDeadline>();
 let nextOperationId = 1;
 let queuedPackedBytes = 4;
-const operationCounters = { queueRejected: 0, bytesRejected: 0, pendingRejected: 0, invalidFrames: 0, submitFailures: 0 };
+const operationCounters = { queueRejected: 0, bytesRejected: 0, pendingRejected: 0, invalidFrames: 0, submitFailures: 0, queueTimeouts: 0 };
 
 /** 仅记录未提交打包成本与等待回复数，不能当作全部远程在途或堆内存。 / Reports unsubmitted packed cost and reply waiters, not all remote in-flight work or heap memory. */
 export function hostSceneOperationMetrics() {
@@ -53,6 +53,7 @@ export function hostSceneOperationMetrics() {
     hostScenePendingRejections: operationCounters.pendingRejected,
     hostSceneInvalidFrames: operationCounters.invalidFrames,
     hostSceneSubmitFailures: operationCounters.submitFailures,
+    hostSceneQueueTimeouts: operationCounters.queueTimeouts,
   };
 }
 
@@ -88,6 +89,19 @@ function requireQueueCapacity(frameLength: number): void {
 function queueOperation(operation: QueuedOperation): void {
   queued.push(operation);
   queuedPackedBytes += OPERATION_META_BYTES + operation.frameLength;
+}
+
+/** 使用宿主共享单调毫秒，不用墙钟或重置的相对计时补救时钟异常。 / Uses shared host monotonic milliseconds without wall-clock or renewed-duration fallbacks. */
+function readHostClock(): number {
+  const now = hostSceneNowMs();
+  if (!Number.isSafeInteger(now) || now < 0) throw new Error("invalid host scene monotonic clock");
+  return now;
+}
+
+/** 保留原 uint32 线格式及原生最小值，期限从路由建立之前起算。 / Retains uint32 wire conversion and native minima, starting before route registration. */
+function operationDeadline(ms: number, minimum: 0 | 1): number {
+  const duration = Math.max(minimum, Math.min(ms, 0xffff_ffff)) >>> 0;
+  return readHostClock() + Math.max(minimum, duration);
 }
 
 /** 先预留绝对期限；未跨 Update 的调用同步释放，已启动的原生等待实际退出后才返回。 / Reserves an absolute deadline; calls finishing before Update release synchronously, while started native waits drain before returning. */
@@ -155,11 +169,12 @@ export function sendRemoteScene(
 ): void {
   requireSceneFrame(frame);
   requireQueueCapacity(frame.length);
+  const deadlineMs = operationDeadline(timeoutMs, 1);
   queueOperation({
     id: 0,
     routeId: resolveRoute(source, target),
     kind: 2,
-    timeoutMs: Math.max(1, Math.min(timeoutMs, 0xffff_ffff)),
+    deadlineMs,
     frame,
     frameLength: frame.length,
   });
@@ -167,9 +182,11 @@ export function sendRemoteScene(
 
 /** 传输超时使用 Rust 宿主定时器；游戏逻辑定时必须使用 TimerSystem。 / Uses the Rust host timer for transport deadlines; gameplay timers belong to TimerSystem. */
 export function sleepHost(ms: number): Promise<void> {
+  let deadlineMs: number;
   try {
     requireReplyCapacity();
     requireQueueCapacity(0);
+    deadlineMs = operationDeadline(ms, 0);
   } catch (error) {
     return Promise.reject(error);
   }
@@ -181,7 +198,7 @@ export function sleepHost(ms: number): Promise<void> {
     id,
     routeId: 0,
     kind: 3,
-    timeoutMs: Math.max(0, Math.min(ms, 0xffff_ffff)),
+    deadlineMs,
     frame: new Uint8Array(0),
     frameLength: 0,
   });
@@ -199,12 +216,13 @@ function enqueue(
     requireSceneFrame(frame);
     requireReplyCapacity();
     requireQueueCapacity(frame.length);
+    const deadlineMs = operationDeadline(timeoutMs, 1);
     const routeId = resolveRoute(source, target);
     const id = allocateOperationId();
     const promise = new Promise<Uint8Array>((resolve, reject) => {
       pending.set(id, { resolve, reject });
     });
-    queueOperation({ id, routeId, kind, timeoutMs: Math.max(1, Math.min(timeoutMs, 0xffff_ffff)), frame, frameLength: frame.length });
+    queueOperation({ id, routeId, kind, deadlineMs, frame, frameLength: frame.length });
     return promise;
   } catch (error) { return Promise.reject(error); }
 }
@@ -234,7 +252,17 @@ export function flushHostSceneOperations(): void {
   }
   if (valid.length === 0) return;
   try {
-    hostSubmitSceneOperations(packOperations(valid));
+    const sampledAtMs = readHostClock(), active: QueuedOperation[] = [];
+    for (const operation of valid) {
+      if (operation.deadlineMs > sampledAtMs) { active.push(operation); continue; }
+      if (operation.kind === 3) completeHostSceneOperation(operation.id, true, new Uint8Array(0));
+      else {
+        operationCounters.queueTimeouts += 1;
+        rejectOperation(operation, new Error("host scene operation timed out before submission"));
+      }
+    }
+    if (active.length === 0) return;
+    hostSubmitSceneOperations(packOperations(active, sampledAtMs), sampledAtMs);
   } catch (error) {
     operationCounters.submitFailures += 1;
     const reason = error instanceof Error ? error : new Error(String(error));
@@ -295,7 +323,7 @@ function resolveRoute(source: SceneConfig, target: SceneConfig): number {
   return routeId;
 }
 
-function packOperations(operations: readonly QueuedOperation[]): Uint8Array {
+function packOperations(operations: readonly QueuedOperation[], sampledAtMs: number): Uint8Array {
   let byteLength = 4;
   for (const operation of operations) {
     byteLength += OPERATION_META_BYTES + operation.frameLength;
@@ -308,7 +336,7 @@ function packOperations(operations: readonly QueuedOperation[]): Uint8Array {
     view.setUint32(offset, operation.id, true);
     view.setUint32(offset + 4, operation.routeId, true);
     packed[offset + 8] = operation.kind;
-    view.setUint32(offset + 9, operation.timeoutMs, true);
+    view.setUint32(offset + 9, operation.deadlineMs - sampledAtMs, true);
     view.setUint32(offset + 13, operation.frameLength, true);
     offset += OPERATION_META_BYTES;
     packed.set(operation.frame, offset);
@@ -324,7 +352,8 @@ const hostApi = globalThis as typeof globalThis & {
     targetIp: string,
     targetPort: number,
   ) => number;
-  __hostSubmitSceneOperations: (packed: Uint8Array) => number;
+  __hostSubmitSceneOperations: (packed: Uint8Array, sampledAtMs: number) => number;
+  __hostSceneNowMs: () => number;
   __hostCreateDeadline: (ms: number) => number;
   __hostCreateShutdownDeadline: (ms: number) => number;
   __hostWaitDeadline: (id: number) => Promise<void>;
@@ -332,6 +361,7 @@ const hostApi = globalThis as typeof globalThis & {
 };
 const hostRegisterSceneRoute = hostApi.__hostRegisterSceneRoute;
 const hostSubmitSceneOperations = hostApi.__hostSubmitSceneOperations;
+const hostSceneNowMs = hostApi.__hostSceneNowMs;
 const hostCreateDeadline = hostApi.__hostCreateDeadline;
 const hostCreateShutdownDeadline = hostApi.__hostCreateShutdownDeadline;
 const hostWaitDeadline = hostApi.__hostWaitDeadline;

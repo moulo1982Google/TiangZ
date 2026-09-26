@@ -1,5 +1,11 @@
 # 2026-09-16：先选业务工程，再写模块
 
+远程排队期限已以原绝对时间贯穿 TS/Native/传输：相关 **43/43**、Rust 专项 **4/4**，设置 `TIANGZ_VERIFY_CARGO_FEATURES=kcp` 后 `npm run verify` **8/33/9** 全过，462086ms，`temp/v0.7-remote-operation-deadlines-verify.log`。245 项 Rust、Linux 条件编译、实际 AI 归档通过，Host/报告 SHA256 `be70e7d8b72465ab72370721866ed46701cdaffeacd1dc5ab3f5b048f0b741f1`。真实 256 个长 RPC 占槽时，短 call/send 在原生队列各记一次到期、单向没有迟到执行，释放后恢复，三宿主正常退出；80ms 短调用在 168.99ms 被观察到，不能把控制通知背压忽略成严格实时保证。定向复测与完整身份见[验收记录](../design/v0.7-remote-operation-deadlines.md)，下方原失败记录保留，不用延长反例阈值或减少并发来绕过。
+
+原生调度反例 `temp/v0.7-remote-operation-deadlines-native-red.log`：隔离真实 V8 先提交 256 个 1000ms sleep，再提交短 RPC；400ms 上限内 RPC 仍没有完成，子进程失败。测试未初始化网络管理器，检验的是普通计时占执行槽导致错误/超时也被阻塞，并非真实网络送达。修复需独立处理 sleep 与排队项绝对到期，不能延长上限、减少 256 项或宣称已取消对端。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::scene_operations_tests -- --nocapture`，与真实网络证据分开。
+
+远程期限的 8 项确定性反例全部失败，255ms，`temp/v0.7-remote-operation-deadlines-red.log`：旧实现未扣除 TS 排队，过期项仍进入 Rust，sleep 重新计时；新桥还须保留参数转换、路由耗时和单调时钟边界。正确修法是在原批次格式中传递剩余时间并附共享采样时刻，原生未开始项按绝对期限处理，不能只等轮到它时重新计时、损坏其他项或声称已取消对端。复测 `npx vitest run tests/unit/remote_operation_deadline.test.ts tests/unit/host_operation_admission.test.ts tests/unit/process_shutdown_deadline.test.ts tests/unit/scene_call_deadline.test.ts tests/legacy/rpc_actor_correctness_self_test.test.ts`，实际 Native/V8/网络证据另验，见[独立契约](../design/v0.7-remote-operation-deadlines.md)。
+
 停机改动最终复测 **35/35**，Rust 专项 6/6，含 KCP `npm run verify` **check 8/8、quick 33/33、full 9/9**，461927ms，`temp/v0.7-shutdown-deadline-verify.log`；Rust 共 241 项、Linux 条件编译、AI 实际归档通过。真实 Native/V8 证明普通期限满额仍有独立停机资源，完整 Process 故障矩阵的停机场景 187.94ms，三个宿主 exit 0 且无强制终止。宿主/报告 SHA256 `b69e8de9e89542e1ace6b881bd0f20001c6b7ec41343530c4957fa9acc4b7260`，证据和范围见[停机验收](../design/v0.7-shutdown-deadline.md)；保留下方 8 项 RED，不把替身失败注入当作真实满载停机演练。
 
 排队时间要实测纳入预算：`node temp/v0.7-remote-deadline-probe.mjs` 将 20ms 的 call/send/sleep 暂留 TS 队列 **77.32ms**，实际打包仍写入完整 20ms，证据 `temp/v0.7-remote-deadline-audit.json`。探针未发网络，不能据此声称对端执行。后续需统一单调绝对期限，未获得原生执行槽的过期操作也须处理，而非等轮到自己后重新计时；不以 Promise.race 冒充业务取消、不删旧项或降低并发来掩盖。真实 Rust/V8 路径另验，本批停机修改不修此项，见[后续盘点](../design/v0.7-ts-mailbox-audit.md)。

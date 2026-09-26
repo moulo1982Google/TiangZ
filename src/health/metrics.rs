@@ -2052,6 +2052,12 @@ fn append_game_metrics_prometheus(
             "Packed Host operation submissions that failed",
             snapshot.host_scene_submit_failures,
         ),
+        (
+            "tiangz_host_scene_operations_queue_timeouts_total",
+            "counter",
+            "Calls and sends that expired in the TS queue before submission",
+            snapshot.host_scene_queue_timeouts,
+        ),
     ] {
         writeln!(output, "# HELP {name} {help}").expect("formatting metric help");
         writeln!(output, "# TYPE {name} {kind}").expect("formatting metric type");

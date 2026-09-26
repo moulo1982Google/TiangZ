@@ -73,6 +73,7 @@ export interface GameMetricsSnapshot {
   hostScenePendingRejections: number;
   hostSceneInvalidFrames: number;
   hostSceneSubmitFailures: number;
+  hostSceneQueueTimeouts: number;
 }
 
 export class ProcessRuntime implements LocalSceneRouter {

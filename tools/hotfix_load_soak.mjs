@@ -11,6 +11,7 @@ import { resolveModuleRuntimeBinary } from "./module_runtime_binary.mjs";
 import { installActorQuotaFixture } from "./hotfix_actor_quota_fixture.mjs";
 import { installLocalSceneQuotaFixture } from "./hotfix_local_scene_quota_fixture.mjs";
 import { installHostOperationFixture } from "./hotfix_host_operation_fixture.mjs";
+import { installRemoteDeadlineFixture } from "./hotfix_remote_deadline_fixture.mjs";
 
 // 独立本机夹具；所有写入都在本轮临时工程，保留报告和失败现场。
 // Isolated local fixture; writes stay in this run's temporary project, retaining evidence.
@@ -271,6 +272,7 @@ export class IncrementHandler implements SceneRpcHandler<CounterScene, C2S_Incre
   await installActorQuotaFixture(module);
   await installLocalSceneQuotaFixture(module);
   await installHostOperationFixture(module);
+  await installRemoteDeadlineFixture(module);
   await run(["tools/game_project.mjs", "protocol-update", "--project", project]);
   await run(["tools/game_project.mjs", "build", "--project", project]);
   const candidates = [path.join(directory, "pair-1"), path.join(directory, "pair-2")];

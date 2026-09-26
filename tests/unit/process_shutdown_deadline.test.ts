@@ -39,6 +39,7 @@ const native = vi.hoisted(() => {
   vi.stubGlobal("__hostCancelDeadline", cancel);
   vi.stubGlobal("__hostSubmitSceneOperations", submit);
   vi.stubGlobal("__hostRegisterSceneRoute", vi.fn(() => 1));
+  vi.stubGlobal("__hostSceneNowMs", () => 0);
   return { resources, running, delayedCancellations, state, createCall, createStop, createResource,
     wait, cancel, submit, packets, start, stop };
 });

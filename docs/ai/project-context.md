@@ -1,5 +1,11 @@
 # 2026-09-16 模块拆分后的当前事实
 
+远程排队期限最终通过：TS 相关 **43/43**、原生专项 **4/4**，含 KCP **check 8/8、quick 33/33、full 9/9**，462086ms，`temp/v0.7-remote-operation-deadlines-verify.log`；Rust 共 245 项、Linux 条件编译、AI 实际归档通过。Host/报告 SHA256 `be70e7d8b72465ab72370721866ed46701cdaffeacd1dc5ab3f5b048f0b741f1`。真实跨 Process 保持 256 个长 RPC 时，80ms 短调用在 168.99ms 被观察到超时；Rust `host_queue` 的 call/send 各增加一次，过期单向送达 0，释放后全部恢复，三个宿主正常退出。见[完整证据](../design/v0.7-remote-operation-deadlines.md)，原 RED 保留。新的内部桥接必须重建重启；控制通知仍有背压，超时不代表撤回已发帧或取消业务。
+
+原生队列 RED 也已取得：`temp/v0.7-remote-operation-deadlines-native-red.log` 中真实 V8 提交 256 个 1000ms 普通 sleep 后的短 RPC，在 400ms 内仍未完成，子进程明确失败；它未初始化网络管理器，本应立即失败或按短期限过期，而不是等普通 sleep 腾槽。正确修法需在有界调度器中独立处理 sleep/未开始项期限；不能只延長测试超时、降低并发或把此项当作真实对端网络测试。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::scene_operations_tests -- --nocapture`。
+
+远程期限确定性 RED 为 **8 failed**，255ms，`temp/v0.7-remote-operation-deadlines-red.log`，覆盖排队不扣时、过期项继续提交、sleep 重新等待、墙钟隔离、路由耗时和旧参数转换。按[排队期限契约](../design/v0.7-remote-operation-deadlines.md)保持原二进制容量，使用 Host 共享单调绝对期限及原生未开始项到期调度。禁止出队后重新计时、丢弃其他接受项或将停止等待解释为取消对端。复测 `npx vitest run tests/unit/remote_operation_deadline.test.ts tests/unit/host_operation_admission.test.ts tests/unit/process_shutdown_deadline.test.ts tests/unit/scene_call_deadline.test.ts tests/legacy/rpc_actor_correctness_self_test.test.ts`；Native 和真实跨 Process 路径另验。
+
 停机专用期限最终验收：相关 **35/35**、Rust 专项 6/6，含 KCP **check 8/8、quick 33/33、full 9/9**，461927ms，`temp/v0.7-shutdown-deadline-verify.log`；Rust 总计 241 项、Linux 条件编译和 AI 实际归档通过。真实 Native/V8 在普通期限满 65536 且 256 项正等待时仍可创建/到期/归还独立停机资源；完整 Process 故障矩阵的停机场景 187.94ms，三个宿主均 exit 0、无强制退出。共同 Host/报告 SHA256 `b69e8de9e89542e1ace6b881bd0f20001c6b7ec41343530c4957fa9acc4b7260`，见[最终证据](../design/v0.7-shutdown-deadline.md)。下方 RED 保留为修复前记录，满 TS 队列的确定性 Bootstrap 测试与真实宿主证据分层。
 
 普通远程期限另有反例：`node temp/v0.7-remote-deadline-probe.mjs` 用隔离 Node 记录实际 TS 打包，20ms 的 call/send/sleep 等待 **77.32ms** 后仍提交完整 20ms，`temp/v0.7-remote-deadline-audit.json`。它未发网络，不能宣称对端执行；正确方向是单调绝对期限覆盖 TS 与原生排队，且未轮询的过期工作也要能完成通知。不能只在出队时重新启动相对计时、以普通 Promise.race 冒充取消或减少并发夹具绕过。后续需 Rust 调度及真实 V8/网络反例，见[盘点](../design/v0.7-ts-mailbox-audit.md)。

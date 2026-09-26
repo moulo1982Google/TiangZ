@@ -5,7 +5,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::transport::{call_remote_scene, send_remote_scene};
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
 use deno_core::convert::Uint8Array;
@@ -15,11 +14,14 @@ use deno_core::{
     op2, v8,
 };
 use deno_error::JsErrorBox;
-use futures_util::{StreamExt, stream};
 use tiangz_transport::buffer_budget::BufferBudget;
 use tokio::runtime::Handle;
 
 mod deadlines;
+mod scene_operations;
+
+#[cfg(test)]
+mod scene_operations_tests;
 
 const HOST_CALL_MAX_FRAME_LEN: usize = 1024 * 1024;
 const HOST_EVENT_LOOP_PUMP_BUDGET: Duration = Duration::from_millis(1);
@@ -29,8 +31,6 @@ const HOST_OUTBOUND_MAX_PACKED_LEN: usize = 64 * 1024 * 1024;
 const HOST_SCENE_MAX_ROUTES: usize = 4096;
 const HOST_SCENE_MAX_OPERATIONS: usize = 65_536;
 const HOST_SCENE_OPERATION_META_BYTES: usize = 17;
-const HOST_SCENE_MAX_IN_FLIGHT: usize = 256;
-const BACKPRESSURE_RETRY_MS: u64 = 1;
 
 thread_local! {
     static NEXT_HOST_EVENT_BATCH: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
@@ -242,7 +242,10 @@ fn op_host_register_scene_route(
 }
 
 #[op2]
-fn op_host_submit_scene_operations(#[buffer] packed: JsBuffer) -> Result<u32, JsErrorBox> {
+fn op_host_submit_scene_operations(
+    #[buffer] packed: JsBuffer,
+    sampled_at_ms: f64,
+) -> Result<u32, JsErrorBox> {
     let buffers = HOST_SCENE_BUFFERS
         .with(|slot| slot.borrow().clone())
         .ok_or_else(|| JsErrorBox::generic("host scene buffer budget is not configured"))?;
@@ -251,6 +254,7 @@ fn op_host_submit_scene_operations(#[buffer] packed: JsBuffer) -> Result<u32, Js
     let operations = decode_packed_scene_operations(packet)
         .map_err(|error| JsErrorBox::generic(error.to_string()))?;
     let operation_count = operations.len() as u32;
+    let submitted_at = scene_operations::submitted_at(sampled_at_ms)?;
     let runtime = HOST_SCENE_RUNTIME
         .with(|slot| slot.borrow().clone())
         .ok_or_else(|| JsErrorBox::generic("host scene runtime is not configured"))?;
@@ -258,82 +262,18 @@ fn op_host_submit_scene_operations(#[buffer] packed: JsBuffer) -> Result<u32, Js
         .with(|slot| slot.borrow().clone())
         .ok_or_else(|| JsErrorBox::generic("host scene completion sink is not configured"))?;
 
-    runtime.spawn(async move {
-        let mut pending = stream::iter(operations)
-            .map(|operation| async move {
-                let timeout = Duration::from_millis(operation.timeout_ms.max(1) as u64);
-                match (operation.kind, operation.route) {
-                    (1, Some(route)) => Some(HostSceneCompletion {
-                        operation_id: operation.operation_id,
-                        result: call_remote_scene(
-                            route.source_name,
-                            route.target_name,
-                            route.target_ip,
-                            route.target_port,
-                            operation.frame,
-                            timeout,
-                        )
-                        .await,
-                    }),
-                    (2, Some(route)) => {
-                        let source_name = route.source_name.clone();
-                        let target_name = route.target_name.clone();
-                        if let Err(error) = send_remote_scene(
-                            route.source_name,
-                            route.target_name,
-                            route.target_ip,
-                            route.target_port,
-                            operation.frame,
-                            timeout,
-                        )
-                        .await
-                        {
-                            // 队列过载已有分阶段Counter，逐帧ERROR会在故障时放大CPU与磁盘压力。
-                            // Queue overloads already have stage counters; one ERROR per frame would
-                            // amplify CPU and disk pressure during the incident itself.
-                            if !error.starts_with("[scene-overloaded]") {
-                                tracing::error!(
-                                    target: "tiangz::scene",
-                                    source = %source_name,
-                                    target_scene = %target_name,
-                                    error = %error,
-                                    "one-way scene send failed"
-                                );
-                            }
-                        }
-                        None
-                    }
-                    (3, None) => {
-                        tokio::time::sleep(Duration::from_millis(operation.timeout_ms as u64))
-                            .await;
-                        Some(HostSceneCompletion {
-                            operation_id: operation.operation_id,
-                            result: Ok(Vec::new()),
-                        })
-                    }
-                    _ => Some(HostSceneCompletion {
-                        operation_id: operation.operation_id,
-                        result: Err("invalid host scene operation route".to_string()),
-                    }),
-                }
-            })
-            .buffer_unordered(HOST_SCENE_MAX_IN_FLIGHT);
-        while let Some(completion) = pending.next().await {
-            let Some(mut completion) = completion else {
-                continue;
-            };
-            loop {
-                match completion_sink(completion) {
-                    Ok(()) => break,
-                    Err(returned) => {
-                        completion = returned;
-                        tokio::time::sleep(Duration::from_millis(BACKPRESSURE_RETRY_MS)).await;
-                    }
-                }
-            }
-        }
-    });
+    runtime.spawn(scene_operations::run(
+        operations,
+        completion_sink,
+        submitted_at,
+    ));
     Ok(operation_count)
+}
+
+/// 只返回传输共享的单调毫秒，不依赖部署墙钟。 / Returns shared transport monotonic milliseconds independently of the deployment wall clock.
+#[op2(fast)]
+fn op_host_scene_now_ms() -> f64 {
+    scene_operations::now_ms()
 }
 
 fn push_outbound_batch(connection_ids: Vec<u64>, frame: JsBuffer) -> Result<(), JsErrorBox> {
@@ -513,6 +453,7 @@ deno_core::extension!(
         op_host_close_connection,
         op_host_register_scene_route,
         op_host_submit_scene_operations,
+        op_host_scene_now_ms,
         deadlines::op_host_create_deadline,
         deadlines::op_host_create_shutdown_deadline,
         deadlines::op_host_wait_deadline,
@@ -590,8 +531,9 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
           core.ops.op_host_register_scene_route(
             String(sourceName), String(targetName), String(targetIp), u32(targetPort, "targetPort"),
           );
-        globalThis.__hostSubmitSceneOperations = (packed) =>
-          core.ops.op_host_submit_scene_operations(packed);
+        globalThis.__hostSceneNowMs = () => core.ops.op_host_scene_now_ms();
+        globalThis.__hostSubmitSceneOperations = (packed, sampledAtMs) =>
+          core.ops.op_host_submit_scene_operations(packed, Number(sampledAtMs));
         globalThis.__hostSetPromiseHooks = (init, before, after, resolve) =>
           core.setPromiseHooks(init, before, after, resolve);
         globalThis.__hostStartTraceSpan = (name, kind, parentTraceId, parentSpanId, attributes) =>

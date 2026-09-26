@@ -23,6 +23,7 @@ const native = vi.hoisted(() => {
   });
   const route = vi.fn(() => 1), createDeadline = vi.fn(() => 1), waitDeadline = vi.fn(async () => {}), cancelDeadline = vi.fn(() => {});
   vi.stubGlobal("__hostRegisterSceneRoute", route);
+  vi.stubGlobal("__hostSceneNowMs", () => 0);
   vi.stubGlobal("__hostSubmitSceneOperations", submit);
   vi.stubGlobal("__hostCreateDeadline", createDeadline);
   vi.stubGlobal("__hostWaitDeadline", waitDeadline);

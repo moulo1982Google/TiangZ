@@ -284,6 +284,7 @@ pub(crate) struct GameObservabilitySnapshot {
     pub(crate) host_scene_pending_rejections: u64,
     pub(crate) host_scene_invalid_frames: u64,
     pub(crate) host_scene_submit_failures: u64,
+    pub(crate) host_scene_queue_timeouts: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1447,6 +1448,7 @@ mod tests {
                 host_scene_pending_rejections: 30,
                 host_scene_invalid_frames: 40,
                 host_scene_submit_failures: 50,
+                host_scene_queue_timeouts: 60,
                 ..GameObservabilitySnapshot::default()
             }),
             ..ProcessObservabilitySnapshot::default()
@@ -1464,6 +1466,7 @@ mod tests {
             ("pending_rejected_total", 30, "counter"),
             ("invalid_frames_total", 40, "counter"),
             ("submit_failures_total", 50, "counter"),
+            ("queue_timeouts_total", 60, "counter"),
         ] {
             let name = format!("tiangz_host_scene_operations_{suffix}");
             let lines: Vec<_> = body
