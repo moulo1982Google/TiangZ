@@ -99,6 +99,11 @@ interface MailboxTask<T = unknown> {
   oneWay?: boolean;
 }
 
+interface AsyncIngressSource {
+  pending: number;
+  disconnected: boolean;
+}
+
 interface QueuedActorFrame {
   readonly frame: Uint8Array;
   readonly context: ProtocolContext;
@@ -172,6 +177,8 @@ export abstract class EntryScene extends Scene {
     maxQueuedDepth: 0,
   };
   private readonly connectionIdBytes = new Map<number, Uint8Array>();
+  private readonly asyncIngressSources = new Map<number, AsyncIngressSource>();
+  private droppedResponsesAfterDisconnect = 0;
   private readonly disconnectedFrameTombstones = new Map<number, number>();
   private droppedFramesAfterDisconnect = 0;
   private readonly actorTransferBuffers = new Map<number, ActorTransferBuffer>();
@@ -605,6 +612,7 @@ export abstract class EntryScene extends Scene {
     this.controlIngressHead = this.dataIngressHead = 0;
     this.outboundControl.length = this.outboundReliable.length = this.outboundLatest.length = 0;
     this.connectionIdBytes.clear();
+    this.asyncIngressSources.clear();
     this.disconnectedFrameTombstones.clear();
     this.dropLatestActorLocationFrames();
     // 整个 Scene 退出时无需为失效连接编码回复；唤醒框架等待后由关闭身份拒绝迟到结果。 / On Scene disposal, wake framework waits without encoding replies for dead connections.
@@ -650,6 +658,11 @@ export abstract class EntryScene extends Scene {
 
   pushHostDisconnect(connectionId: number): void {
     if (this.mailboxClosed) return;
+    // 原等待保留失效状态，不依赖短期墓碑；同号新连接会取得另一份状态。
+    // Existing waits retain invalidation beyond tombstone expiry; a reused ID gets separate state.
+    const source = this.asyncIngressSources.get(connectionId);
+    if (source) source.disconnected = true;
+    this.asyncIngressSources.delete(connectionId);
     this.markDisconnectedFrame(connectionId);
     this.enqueueIngress({
       kind: "disconnect",
@@ -897,10 +910,16 @@ export abstract class EntryScene extends Scene {
           name: "connection_ingress",
           values: {
             dropped_frames_after_disconnect_total: this.droppedFramesAfterDisconnect,
+            dropped_responses_after_disconnect_total: this.droppedResponsesAfterDisconnect,
+            connected_async_sources: this.asyncIngressSources.size,
+            connection_id_cache_entries: this.connectionIdBytes.size,
             disconnect_tombstones: this.disconnectedFrameTombstones.size,
           },
           kinds: {
             dropped_frames_after_disconnect_total: "counter",
+            dropped_responses_after_disconnect_total: "counter",
+            connected_async_sources: "gauge",
+            connection_id_cache_entries: "gauge",
             disconnect_tombstones: "gauge",
           },
         },
@@ -1335,9 +1354,15 @@ export abstract class EntryScene extends Scene {
       connectionId: item.connectionId,
     });
     if (isPromiseLike(response)) {
-      return Promise.resolve(response).then((value) => {
-        this.enqueueResponse(item.connectionId, value);
-      });
+      const source = this.retainAsyncIngressSource(item.connectionId);
+      return Promise.resolve(response)
+        .then(value => { this.enqueueResponse(item.connectionId, value, source); })
+        .finally(() => {
+          source.pending -= 1;
+          if (source.pending === 0 && this.asyncIngressSources.get(item.connectionId) === source) {
+            this.asyncIngressSources.delete(item.connectionId);
+          }
+        });
     }
     this.enqueueResponse(item.connectionId, response);
   }
@@ -1345,13 +1370,27 @@ export abstract class EntryScene extends Scene {
   private enqueueResponse(
     connectionId: number,
     response: Uint8Array | undefined,
+    source?: AsyncIngressSource,
   ): void {
     if (!response || this.mailboxClosed) return;
+    if (source?.disconnected || (!source && this.isDisconnectedFrame(connectionId))) {
+      this.droppedResponsesAfterDisconnect += 1;
+      return;
+    }
     this.onClientSendQueued([connectionId]);
     this.outboundControl.push({
       connectionIdBytes: this.packConnectionId(connectionId),
       frame: response,
     });
+  }
+
+  /** 只为实际异步入站等待保留来源，最后结束释放索引；断线不提前结束业务。 / Retains a source only for actual async ingress waits; disconnect invalidates replies without settling business work. */
+  private retainAsyncIngressSource(connectionId: number): AsyncIngressSource {
+    const current = this.asyncIngressSources.get(connectionId);
+    if (current) { current.pending += 1; return current; }
+    const source = { pending: 1, disconnected: this.isDisconnectedFrame(connectionId) };
+    if (!source.disconnected) this.asyncIngressSources.set(connectionId, source);
+    return source;
   }
 
   private packConnectionId(connectionId: number): Uint8Array {

@@ -137,6 +137,8 @@ export class CounterScene extends EntryScene {
   detachedValue = 0;
   spawnQuotaOwners: DrainScene[] = [];
   spawnQuotaRelease: (() => void) | undefined;
+  disconnectedClients = 0;
+  protected override onDisconnect(_connectionId: number): void { this.disconnectedClients += 1; }
   readonly repository = new DbProxyEntityRepository<number, number>({
     recordNamespace: ${JSON.stringify(`hotfix-fault-${path.basename(directory)}`)}, schema: "hotfix-fault", schemaVersion: 1,
     Capture: value => value, Encode: value => new Uint8Array([value]), Decode: bytes => bytes[0]!
@@ -167,6 +169,7 @@ export class IncrementHandler implements SceneRpcHandler<CounterScene, C2S_Incre
     if (request.mode === 15) return { count: Number((await scene.repository.Load("ack-loss"))?.revision ?? 0n) };
     if (request.mode === 18) return { count: scene.detachedValue };
     if (request.mode === 19) return { count: scene.detachedState };
+    if (request.mode === 33) return { count: scene.disconnectedClients };
     // 夹具刻意只观察结果，不用 Tasks.Spawn 代替 mailbox 自己的屏障计数。 / The fixture observes results without masking mailbox activity via Tasks.Spawn.
     if (request.mode === 16 || request.mode === 17) {
       if (scene.holdResolve || scene.detachedState === 1) throw new Error("fixture already held");

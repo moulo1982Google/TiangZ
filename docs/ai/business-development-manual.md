@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+迟到响应最终复测 20/20、含 KCP 完整 check 8/8、quick 33/33、full 9/9，日志 `temp/v0.7-late-responses-verify.log`；实际 WebSocket 关闭与 HTTP 指标验证没有回填连接缓存，原任务仍阻挡热更至真正结束，随后恢复。单测另覆盖 30 秒后、同号重用和同来源多个等待，不能把可控时钟反例描述为真实网络长稳。失败记录、实际宿主哈希与 AI 0.2.0 归档见[迟到响应](../design/v0.7-late-responses.md)。
+
+来源连接断开不等于 Scene 销毁：旧 enqueueResponse 只检查 mailboxClosed，异步业务结束仍排队迟到响应，并在 unordered Disconnect 已处理后重新插入 connectionIdBytes。`temp/v0.7-late-responses-first.log` 为 6 新用例失败/13 原用例通过，`temp/v0.7-late-responses-cache-red.log` 同时保留两处缓存断言失败。修法是等待绑定来源状态、断线立即失效、最后实际结束按对象身份清理；不提前取消业务计数，不靠短期墓碑判断长任务，不删除同号新来源状态或其他连接队列。复测 `npx vitest run tests/unit/mailbox_lifetime.test.ts`，并验证实际 V8/断线及完整矩阵，见[迟到响应](../design/v0.7-late-responses.md)。
+
 Spawn 总量最终复测：相关 17/17、Rust 232 项、含 KCP check 8/8、quick 33/33、full 9/9 通过，`temp/v0.7-scene-task-capacity-verify.log`。实际 HTTP 指标与 V8 验证 4096 项、销毁 16 个 owner 仍占额度、过载 RPC 码/关联号、独立 Worker、释放后只执行一次及热更恢复。Linux 仅条件编译，AI 仍 0.2.0；二进制/归档身份和首轮失败见[容量验收](../design/v0.7-scene-task-capacity.md)，不把这一范围当作全部 TS 工作有界。
 
 Spawn 总量反例：16 个各 256 项的 Scope 满额后，第 17 个 Scope 仍能接受任务；旧局部容量错误也不是 SceneOverloaded。`temp/v0.7-scene-task-capacity-first.log` 2/2 失败。按[总量契约](../design/v0.7-scene-task-capacity.md)在任务微任务前增加 Process 准入，失败只退回当次预留，真实完成归还原 Host；禁止销毁即清零、把旧任务释放到新 Runtime、自动重试或增大上限迁就测试。复测 `npx vitest run tests/unit/scene_task_capacity.test.ts tests/unit/scene_task_admission.test.ts tests/unit/scene_task_disposal.test.ts tests/unit/hotfix_drain.test.ts`，随后验证实际 V8 和完整矩阵。

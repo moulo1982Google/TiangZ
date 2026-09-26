@@ -288,6 +288,42 @@ try {
       return { admittedTasks: 4096, disposedOwners: 16, overloadResponses: 2, recovered: true };
     } finally { await control.call(28); await control.call(32); }
   });
+  await test("disconnected-in-flight-rpc-does-not-refill-response-cache", async () => {
+    const sourceMetrics = async () => {
+      const response = await fetch(`http://127.0.0.1:${config.process.observability.health.port}/metrics`, { signal: AbortSignal.timeout(2000) });
+      assert.ok(response.ok);
+      const lines = (await response.text()).split(/\r?\n/);
+      return Object.fromEntries(["dropped_responses_after_disconnect_total", "connected_async_sources", "connection_id_cache_entries"].map(key => {
+        const line = lines.find(line => line.startsWith("tiangz_scene_custom_metric_") && line.includes('name="connection_ingress"') && line.includes(`scene="${mainScene.name}"`) && line.includes(`key="${key}"`));
+        assert.ok(line, `actual V8 source metric missing: ${key}`);
+        return [key, Number(line.split(" ").at(-1))];
+      }));
+    };
+    const baseline = await sourceMetrics(), disconnects = (await control.call(33)).count;
+    const victim = await open(mainScene.port), waiting = handled(victim.call(1));
+    try {
+      await until(async () => (await control.call(3)).count === 1, "RPC body is waiting before disconnect");
+      victim.close();
+      await assert.rejects(waiting, error => error.name === "ClientConnectionClosedError");
+      await until(async () => (await control.call(33)).count > disconnects, "TS receives the real connection close");
+      assert.equal((await control.call(3)).count, 1, "disconnect must not fake business completion");
+      const before = await admin("status"), op = begin(undefined, 422);
+      await op.paused();
+      const rejected = await op.pending;
+      assert.equal(rejected.status, "rejected");
+      assert.match(rejected.error, /drain deadline exceeded/);
+      assert.equal((await admin("status")).hotfix.generation, before.hotfix.generation);
+      await control.call(2);
+      await until(async () => {
+        const current = await sourceMetrics();
+        return current.dropped_responses_after_disconnect_total === baseline.dropped_responses_after_disconnect_total + 1 &&
+          current.connection_id_cache_entries === baseline.connection_id_cache_entries && current.connected_async_sources === 0;
+      }, "late response suppressed and cache stays at connected baseline");
+      const recovery = begin(); await recovery.paused(); await commit(recovery);
+      assert.equal((await admin("status")).hotfix.generation, before.hotfix.generation + 1);
+      return { suppressedResponses: 1, cacheReturnedToBaseline: true, realTaskDrainPreserved: true };
+    } finally { victim.close(); await control.call(2); await waiting.catch(() => {}); }
+  });
   for (let round = 0; round < rounds; round++) {
     await test(`remote-completion-and-500-queued-${round}`, async () => {
       const held = await holdRemote(), op = begin(); await op.paused();

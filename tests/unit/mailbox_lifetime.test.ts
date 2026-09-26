@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import type { MaybePromise } from "../../app/core/async";
 import { EntryScene } from "../../app/core/process/EntryScene";
 import { ProcessRuntime } from "../../app/core/process/ProcessRuntime";
@@ -248,6 +248,7 @@ test.each([false, true])("Scene disposal prevents late network output and termin
     runtime.pushHostDisconnect(0, 1);
     expect(array(scene, "dataIngress")).toHaveLength(0);
     expect(array(scene, "controlIngress")).toHaveLength(0);
+    expect((Reflect.get(scene, "asyncIngressSources") as Map<number, unknown>).size).toBe(0);
     expect((Reflect.get(scene, "actorTransferBuffers") as Map<number, unknown>).size).toBe(0);
     if (!transfer) expect(scene.__canCommitHotfix()).toBe(false);
     gate.resolve(); await running;
@@ -283,4 +284,99 @@ test("Actor disposal rejects waiting calls and late completion cannot refill its
     await Promise.allSettled([firstCall, secondResult, queued]);
     await runtime.stop();
   }
+});
+
+test.each([
+  [false, false], [true, false], [false, true], [true, true],
+])("disconnect suppresses late RPC output and cache refill (unordered=%s, expiredTombstone=%s)", async (unordered, expiredTombstone) => {
+  const { runtime, scene } = await fixture(unordered);
+  const gate = deferred();
+  scene.waits.set(0, gate.promise);
+  runtime.pushHostFrame(0, 77, rpcFrame(0));
+  scene.__pumpMailbox(1);
+  const running = unordered
+    ? [...(Reflect.get(scene, "unorderedTasks") as Set<Promise<void>>)][0]!
+    : Reflect.get(scene, "orderedTask") as Promise<void>;
+  let now: ReturnType<typeof vi.spyOn> | undefined;
+  try {
+    expect(scene.seen).toEqual([0]);
+    runtime.pushHostDisconnect(0, 77);
+    scene.__pumpMailbox(1);
+    expect(scene.__canCommitHotfix()).toBe(false);
+    if (expiredTombstone) now = vi.spyOn(performance, "now").mockReturnValue(performance.now() + 30_001);
+    gate.resolve(); await running;
+    scene.__pumpMailbox(10);
+    expect.soft(scene.__completeUpdate(0, false).outbound).toHaveLength(0);
+    expect.soft((Reflect.get(scene, "connectionIdBytes") as Map<number, unknown>).has(77)).toBe(false);
+    expect(scene.__canCommitHotfix()).toBe(true);
+  } finally { now?.mockRestore(); gate.resolve(); await running; await runtime.stop(); }
+});
+
+test("a disconnected request cannot remove the pending response state of a reused connection ID", async () => {
+  const { runtime, scene } = await fixture(true);
+  const first = deferred(), next = deferred();
+  scene.waits.set(0, first.promise); scene.waits.set(1, next.promise);
+  runtime.pushHostFrame(0, 77, rpcFrame(0)); scene.__pumpMailbox(1);
+  const pending = Reflect.get(scene, "unorderedTasks") as Set<Promise<void>>;
+  const old = [...pending][0]!;
+  runtime.pushHostDisconnect(0, 77); scene.__pumpMailbox(1);
+  const baseline = performance.now();
+  const now = vi.spyOn(performance, "now").mockReturnValue(baseline + 30_001);
+  let current: Promise<void> | undefined;
+  try {
+    runtime.pushHostFrame(0, 77, rpcFrame(1)); scene.__pumpMailbox(1);
+    current = [...pending].find(value => value !== old)!;
+    expect(current).toBeInstanceOf(Promise);
+    expect(scene.seen).toEqual([0, 1]);
+    first.resolve(); await old;
+    expect(scene.__completeUpdate(0, false).outbound).toHaveLength(0);
+    runtime.pushHostDisconnect(0, 77); scene.__pumpMailbox(1);
+    now.mockReturnValue(baseline + 60_002);
+    next.resolve(); await current;
+    expect(scene.__completeUpdate(0, false).outbound).toHaveLength(0);
+    expect((Reflect.get(scene, "connectionIdBytes") as Map<number, unknown>).has(77)).toBe(false);
+  } finally { now.mockRestore(); first.resolve(); next.resolve(); await Promise.all([old, current]); await runtime.stop(); }
+});
+
+test("disconnecting one source preserves another source's actual response", async () => {
+  const { runtime, scene } = await fixture(true);
+  const first = deferred(), other = deferred();
+  scene.waits.set(0, first.promise); scene.waits.set(1, other.promise);
+  runtime.pushHostFrame(0, 77, rpcFrame(0)); runtime.pushHostFrame(0, 78, rpcFrame(1));
+  scene.__pumpMailbox(2);
+  const running = [...(Reflect.get(scene, "unorderedTasks") as Set<Promise<void>>)];
+  try {
+    runtime.pushHostDisconnect(0, 77); scene.__pumpMailbox(1);
+    first.resolve(); other.resolve(); await Promise.all(running);
+    const output = scene.__completeUpdate(0, false).outbound;
+    expect(output).toHaveLength(1);
+    expect(Work.responseCodec.decode(output[0]!.frame.subarray(2))).toMatchObject({ value: 1, rpcId: 2 });
+    const cached = Reflect.get(scene, "connectionIdBytes") as Map<number, unknown>;
+    expect(cached.has(77)).toBe(false);
+    expect(cached.has(78)).toBe(true);
+    expect(scene.__canCommitHotfix()).toBe(true);
+  } finally { first.resolve(); other.resolve(); await Promise.all(running); await runtime.stop(); }
+});
+
+test("one completed request cannot release another active request's shared source state", async () => {
+  const { runtime, scene } = await fixture(true);
+  const first = deferred(), second = deferred();
+  scene.waits.set(0, first.promise); scene.waits.set(1, second.promise);
+  runtime.pushHostFrame(0, 77, rpcFrame(0)); runtime.pushHostFrame(0, 77, rpcFrame(1));
+  scene.__pumpMailbox(2);
+  const [firstCall, secondCall] = [...(Reflect.get(scene, "unorderedTasks") as Set<Promise<void>>)];
+  let now: ReturnType<typeof vi.spyOn> | undefined;
+  try {
+    first.resolve(); await firstCall;
+    const accepted = scene.__completeUpdate(0, false).outbound;
+    expect(accepted).toHaveLength(1);
+    expect(Work.responseCodec.decode(accepted[0]!.frame.subarray(2))).toMatchObject({ value: 0 });
+    runtime.pushHostDisconnect(0, 77); scene.__pumpMailbox(1);
+    expect(scene.__canCommitHotfix()).toBe(false);
+    now = vi.spyOn(performance, "now").mockReturnValue(performance.now() + 30_001);
+    second.resolve(); await secondCall;
+    expect(scene.__completeUpdate(0, false).outbound).toHaveLength(0);
+    expect((Reflect.get(scene, "connectionIdBytes") as Map<number, unknown>).size).toBe(0);
+    expect(scene.__canCommitHotfix()).toBe(true);
+  } finally { now?.mockRestore(); first.resolve(); second.resolve(); await Promise.all([firstCall, secondCall]); await runtime.stop(); }
 });

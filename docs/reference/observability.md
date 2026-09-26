@@ -333,6 +333,7 @@ MapHost 每 5 秒随 Scene 快照输出每张地图的广播状态：
 - `tiangz_native_numeric_recipient_deliveries_total{numeric_type}`：记录乘以最终收件人数后的逻辑投递次数，用于直接定位某个NumericType的AOI扇出。
 - `tiangz_native_numeric_logical_bytes_total{numeric_type}`：不含Gate外壳的Numeric条目逻辑投递字节；与唯一编码字节不是同一口径。
 - `connection_ingress.dropped_frames_after_disconnect_total`：控制队列中的Disconnect越过旧数据帧后，被EntryScene短期墓碑丢弃的残留客户端帧。少量值可出现在批量断线或压测清理阶段；持续增长则要检查客户端断线风暴和数据入口积压。
+- 0.7 候选的 `connection_ingress.dropped_responses_after_disconnect_total` 是来源断开后未再排入出站队列的迟到响应计数；它不代表业务操作未执行或事务回滚。`connected_async_sources` 为仍连接且有异步入站等待的来源索引数，包含异步单向 Handler，不是全部在途任务数；断线移除索引，真实任务仍参与热更排空。`connection_id_cache_entries` 为连接 ID 编码缓存条目数。三者沿用 Scene 固定标签，不引入连接 ID 标签，见[迟到响应契约](../design/v0.7-late-responses.md)。
 - `tiangz_aoi_candidate_relations/tiangz_aoi_visible_relations`：空间候选关系与业务过滤后的最终可见关系，均为当前值 Gauge。
 - `tiangz_aoi_lingering_relations`：仅因为已经 Enter、尚未越过 Detach 而继续保留的迟滞关系。它持续接近 `visible_relations` 时，表示地图正在承受密集人群跨 Grid 的迟滞维护压力。
 - `tiangz_aoi_rejected_relations`：被阵营、隐身、位面等业务过滤器拒绝的空间关系。它是当前拒绝数量，不是累计过滤次数。
