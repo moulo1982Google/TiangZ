@@ -48,6 +48,7 @@ const profiles = Object.freeze({
     commandStep("persistence write-mode soak logic", process.execPath, ["--test", "tools/persistence_write_modes_soak.test.mjs"]),
     commandStep("local replica controller", process.execPath, ["--test", "tools/local_replica_controller.test.mjs"]),
     commandStep("module typecheck host selection", process.execPath, ["tools/module_typecheck_host_self_test.mjs"]),
+    commandStep("module live checker", process.execPath, ["--test", "tools/module_type_cache.test.mjs", "tools/module_live_worker.test.mjs"]),
     commandStep("cargo fmt", "cargo", ["fmt", "--all", "--", "--check"]),
     commandStep("cargo clippy", "cargo", ["clippy", "--all-targets", "--", "-D", "warnings"]),
     commandStep("cargo test", "cargo", ["test", "--all-targets"]),

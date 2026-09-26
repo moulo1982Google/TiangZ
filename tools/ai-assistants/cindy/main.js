@@ -32,7 +32,7 @@
     rule("lifecycle.in-flight-owner", "在途所有权", "Timer取消不代表已触发异步回调结束；热更等待真实收敛。移除句柄不代表Socket/任务释放，验收检查资源归位。", "docs/ai/skill-development-contract.md"),
     rule("routing.optional-directory", "按需逻辑目录", "已持有Actor地址时直接路由；LocationDirectory是可选逻辑所有者目录，不是地图坐标或MMORPG必装服务。MapHost/AOI留在领域模块。", "docs/design/capability-ownership.md"),
     rule("compatibility.package-identity", "独立版本身份", "框架0.7不改变各插件的版本序列；分别核对Core、VSIX、AI清单和宿主实际依赖，同名类型不能替代当前Host声明身份。", "docs/ai/skill-development-contract.md"),
-    rule("validation.program-contracts", "共享类型契约", "生命周期/Timer使用共享Program规则与当前Host的TS API/Core/生成声明；默认参数接受undefined，动态warning只是未证明。普通tsc不自动接入；主工程实时LSP不代表模块未保存源码已检查。", "docs/design/v0.7-program-contracts.md"),
+    rule("validation.program-contracts", "共享类型契约", "生命周期/Timer使用共享Program规则与当前Host的TS API/Core/生成声明；默认参数接受undefined，动态warning只是未证明。普通tsc不自动接入；模块实时检查仅由受信任工作区的已保存声明选择Host worker，配置未保存或环境不可用须明确提示，不能替代生成锁和完整构建。", "docs/design/v0.7-program-contracts.md"),
     rule("deployment.module-owned", "模块部署配置", "地图实例部署归MMORPG模块，经runtime.pack.json信封与模块校验；声明包漏实例或新旧显式值冲突必须失败，修改后重建重启。简单房间可直接连接Scene，无需Location/MapHost。", "docs/design/v0.7-map-deployment.md"),
     rule("transport.budget-scope", "字节预算范围", "Writer进程payload额度持续覆盖排队、发送和最后转发引用；不能等同于整个进程内存、入站/主动Inner或KCP未确认缓存上限。超限原因和资源释放按实际所有者验证。", "docs/reference/transport-backend.md"),
     rule("persistence.readonly-capacity", "只读容量观测", "dbproxy_capacity只读catalog/分区字节，可选服务器时间扫描有期限；未知估算、缺表与超时不报零，业务时间不授权TTL删除。Outbox消费inbox与投影同事务后ACK，短测不等于长稳。", "docs/ai/skill-development-contract.md"),

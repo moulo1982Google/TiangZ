@@ -6,7 +6,7 @@ import { hotfixClassDiagnostics } from "./hotfix_class_rules.mjs";
 import * as developerTools from "@tiangz/developer-tools-core";
 
 /** CLI 与编辑器共享宿主检查入口；当前提取保持原检查顺序。 / Shared host checker with the original diagnostic ordering. */
-export function runModuleCompiler({ project, moduleId, root, catalog, modulesOnly, json = false, contractWarnings = [] }) {
+export function runModuleCompiler({ project, moduleId, root, catalog, modulesOnly, json = false, contractWarnings = [], createProgram = ts.createProgram }) {
   const config = ts.readConfigFile(project, ts.sys.readFile);
   if (config.error) throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, "\n"));
   const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, path.dirname(project));
@@ -35,7 +35,7 @@ export function runModuleCompiler({ project, moduleId, root, catalog, modulesOnl
     !file.replaceAll("\\", "/").includes("/app/generated/bootstrap/systems/"));
   const moduleDeclarations = catalog.modules.flatMap(module => module.entries.modelRoots.flatMap(directory =>
     ts.sys.readDirectory(path.join(directory, "generated/bootstrap/systems"), [".d.ts"])));
-  const program = ts.createProgram({ rootNames: [...moduleFiles, ...declarations, ...moduleDeclarations, ...(publicFile ? [publicFile] : [])], options, host });
+  const program = createProgram({ rootNames: [...moduleFiles, ...declarations, ...moduleDeclarations, ...(publicFile ? [publicFile] : [])], options, host });
   const diagnostics = [...parsed.errors, ...ts.getPreEmitDiagnostics(program)];
   if (diagnostics.length) {
     throw Object.assign(new Error(`game module ${moduleId} typecheck failed:\n${ts.formatDiagnostics(diagnostics, {

@@ -12,7 +12,10 @@ Timer 默认参数 `Tick(now = Date.now())` 的声明内类型是 number，但�
 
 0.7 增加 ConnectionWriter 共享 `maxOutboundBufferedBytes`（64 MiB 默认、1..1 GiB）：资源守卫从批次入队持续到写出/最后转发引用释放，满队列、关闭、取消/panic 均回收。广播按接收者保守累计；总预算拒绝与每连接慢消费分开统计。该额度只覆盖已登记 Writer payload，不含独立主动 Inner 链路、入站/V8/系统缓冲及 KCP 内部重传，不能宣称整个 Process 内存有界。Rust/TS/Schema/固定 kind 指标同步，详见[传输说明](../reference/transport-backend.md)。
 
-0.7 生命周期/Timer 类型规则由 Developer Tools 唯一维护；Host/外置模块传自己的 TypeScript API 和当前 Program，不能跨 TS 版本复用 SyntaxKind 或按同名类猜 Core 身份。主工程 CLI/LSP 已共用类型规则，实际 receiver、当前取消上下文与生成 System 声明参与判断；明确违例 error，动态未证明 warning。普通 tsc 不自动加载规则。模块实时 LSP 仍待接线，现有宿主检查任务已复用规则，详见[Program 记录](../design/v0.7-program-contracts.md)。LSP 必须随 VSIX 携带匹配标准库并释放工程缓存；测试通信使用生产的对象参数协议，不以超时或“0 条错误”冒充成功。
+0.7 生命周期/Timer 类型规则由 Developer Tools 唯一维护；Host/外置模块传自己的 TypeScript API 和当前 Program，不能跨 TS 版本复用 SyntaxKind 或按同名类猜 Core 身份。主工程 CLI/LSP 已共用类型规则，实际 receiver、当前取消上下文与生成 System 声明参与判断；明确违例 error，动态未证明 warning。普通 tsc 不自动加载规则。受信任工作区的模块实时 LSP 已通过只读 Host worker 接入同一检查入口，已保存声明选择宿主、既有 TS 未保存内容只作内存覆盖；配置未保存或环境失败须明确不可用，详见[Program 记录](../design/v0.7-program-contracts.md)。LSP 必须随 VSIX 携带匹配标准库并释放工程缓存；测试通信使用生产的对象参数协议，不以超时或“0 条错误”冒充成功。
+
+模块实时检查须以宿主返回的源码/声明范围筛选 overlay，不能仅按工程根过滤联接模块；跨盘 path.relative 可返回绝对路径，Problems 定位使用 path.resolve 并断言实际 URI。首次测试选错进程、side-effect 导入和已有脚手架目录的夹具错误已修正且保留日志；不改生产规则来迁就夹具。操作与复测见[模块实时检查](../design/v0.7-module-live-checks.md)。
+
 
 Program 接线完整矩阵曾有一次热更故障夹具 ENOBUFS（500 业务连接后的 admin HTTP connect），full 为 7/8；同命令三轮复测通过，不等于已查明资源失败。保留原报告与候选身份，不能通过缩减并发、修改系统 TCP 参数或把单项复测写成原整轮全绿。详见[实施进度](../design/v0.7-progress.md)。
 
@@ -187,7 +190,7 @@ Demo 部署配置、示例运维资产和游戏测试在 Examples；旧固定拓
 
 2026-09-16 持续诊断契约：dev_runtime 在初始构建与 Hotfix 类型/Bundle 检查前后输出 [tiangz-dev-check] begin/end，finally 保证失败也结束轮次；仅配置更新不清除未重检的 TS 诊断。插件持续匹配器复用原错误模式，检查结束不是 Runtime 就绪或自动调试附加信号。
 
-2026-09-16 插件工程类型边界：根目录 tiangz.project.json 存在时，旧 app/ 索引不检查独立模块；工程树明确转向宿主模块导航和 check，避免配置误报及错误启动入口。旧检查 CLI、生成任务和 Component 脚手架拒绝该工程类型。模块实时语义诊断未接入旧 LSP；宿主任务的 Problems 定位不能说成实时编辑器验收。
+2026-09-16 插件工程类型边界：根目录 tiangz.project.json 存在时，旧 app/ 索引不检查独立模块；工程树明确转向宿主模块导航和 check，避免配置误报及错误启动入口。旧检查 CLI、生成任务和 Component 脚手架拒绝该工程类型。0.7 配套候选另通过 Host worker 接入模块实时 Program 检查；联接真实路径、跨盘诊断、过期回复与进程回收见[实时检查](../design/v0.7-module-live-checks.md)。不能以旧任务 Problems 定位代替该验收。
 
 2026-09-16 诊断身份补充：Hotfix 类边界与模块桥接检查使用当前宿主 Core 声明来源，不仅按 systemFor/rpcHandler/defineGameModule 等名字判断；同名业务函数不能触发框架诊断。别名与命名空间导入仍通过 TypeScript 符号解析识别，反例已加入回归。
 

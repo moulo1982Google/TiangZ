@@ -10,7 +10,10 @@
 
 0.7 部署可用 `maxOutboundBufferedBytes` 限制已登记 ConnectionWriter 的总 payload（默认 64 MiB，1..1 GiB）。排队/正在发送/转发引用都持有资源预留，最后释放才归还；满额度的发送会被拒绝并关闭其连接，不给失败批次额外排队。Process 级压力有独立原因和指标，不能直接归咎慢客户端。额度不覆盖独立主动 Inner 链路、入站/V8/Socket 及 KCP 内部重传，不能以此推导整机内存或可靠发送已全部有界；见[传输说明](../reference/transport-backend.md)。
 
-生命周期/Timer 契约现在复用 Developer Tools 的 Program 规则，业务工程须运行声明宿主的 check/modules:typecheck，普通 tsc 不会自动执行它。只有当前 Core 的实体/组件钩子和方法名 Timer 被识别；Timer 实际接收者、生成 System 方法、参数和当前 TimerCancelledContext 共同检查。可忽略回调参数并使用可选参数，动态字符串/any/未实例化泛型只表示未证明，不等于运行安全。主工程 CLI/实时 LSP 使用同源诊断；模块仍通过宿主任务获得完整类型错误，不能宣称其未保存修改已完成实时类型检查。实现、边界与夹具教训见[Program 记录](../design/v0.7-program-contracts.md)。
+生命周期/Timer 契约现在复用 Developer Tools 的 Program 规则，业务工程须运行声明宿主的 check/modules:typecheck，普通 tsc 不会自动执行它。只有当前 Core 的实体/组件钩子和方法名 Timer 被识别；Timer 实际接收者、生成 System 方法、参数和当前 TimerCancelledContext 共同检查。可忽略回调参数并使用可选参数，动态字符串/any/未实例化泛型只表示未证明，不等于运行安全。主工程 CLI/实时 LSP 使用同源诊断；受信任工作区的模块实时 worker 与宿主 CLI 共用 Program，支持既有 TS 的未保存文本及联接真实路径；项目/模块声明与 tsconfig 须保存后刷新，环境失败不能写成零错误。实现、边界与夹具教训见[Program 记录](../design/v0.7-program-contracts.md)。
+
+模块实时检查须以宿主返回的源码/声明范围筛选 overlay，不能仅按工程根过滤联接模块；跨盘 path.relative 可返回绝对路径，Problems 定位使用 path.resolve 并断言实际 URI。首次测试选错进程、side-effect 导入和已有脚手架目录的夹具错误已修正且保留日志；不改生产规则来迁就夹具。操作与复测见[模块实时检查](../design/v0.7-module-live-checks.md)。
+
 
 故障演练出现系统级连接失败时保留整轮失败，不把单项复跑改写成已确认根因。此次热更矩阵在 500 连接后的 admin HTTP connect 出现一次 ENOBUFS，原三轮复测通过；没有降低负载或调整系统 TCP 参数。记录见[实施进度](../design/v0.7-progress.md)，此项不改变业务生命周期契约。
 
@@ -282,7 +285,7 @@ SLG 首次玩法 smoke（临时目录 tiangz-slg-smoke-Lipipu）报 `DBProxy is 
 
 2026-09-16 开发模式的 [tiangz-dev-check] begin/end 只划分 Problems 检查轮次，失败也成对结束；不代表游戏就绪。确认服务可用应看 Runtime 就绪与真实请求，不能把该匹配器当作已实现自动附加调试器。
 
-2026-09-16 独立模块在 Developer Tools 中使用模块导航、模块工程操作和新建模块 Component；不要使用主工程 verify:fast 或旧三件套脚手架。插件发现 tiangz.project.json 后会隔离旧 app/ 索引，避免入口 Scene 误报；源码检查仍运行宿主 check/build，通过任务 Problems 查看位置。旧索引未执行模块检查不是“检查通过”，实时 LSP 模块诊断仍未接入。
+2026-09-16 独立模块在 Developer Tools 中使用模块导航、模块工程操作和新建模块 Component；不要使用主工程 verify:fast 或旧三件套脚手架。插件发现 tiangz.project.json 后会隔离旧 app/ 索引，避免入口 Scene 误报；源码检查仍运行宿主 check/build，通过任务 Problems 查看位置。旧索引未执行模块检查不是“检查通过”。0.7 配套候选已通过 Host worker 接入实时 Program；容量、信任与诊断定位边界见[实时检查](../design/v0.7-module-live-checks.md)，不能冒充完整生成/build 验收。
 
 2026-09-16 边界检查只针对真实 Core 装饰器/模块登记函数；同名业务函数不应触发 Hotfix 字段或 modelExports 误报。诊断修复应保留符号来源和别名解析，不能以简单字符串匹配替代。
 
