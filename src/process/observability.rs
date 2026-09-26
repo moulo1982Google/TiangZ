@@ -531,6 +531,11 @@ pub(super) fn maybe_log_metrics(
         runtime_updates: queue_stats.runtime_updates.load(Ordering::Relaxed),
         runtime_events: queue_stats.runtime_events.load(Ordering::Relaxed),
         max_runtime_batch: queue_stats.max_runtime_batch.load(Ordering::Relaxed) as u64,
+        host_event_batch_limit_bytes: super::host_events::HOST_EVENT_BATCH_MAX_BYTES as u64,
+        max_host_event_batch_bytes: queue_stats
+            .max_host_event_batch_bytes
+            .load(Ordering::Relaxed) as u64,
+        host_event_batch_splits: queue_stats.host_event_batch_splits.load(Ordering::Relaxed),
         outbound_batches: queue_stats.outbound_batches.load(Ordering::Relaxed),
         outbound_recipients: queue_stats.outbound_recipients.load(Ordering::Relaxed),
         outbound_bridge_bytes: queue_stats.outbound_bridge_bytes.load(Ordering::Relaxed),

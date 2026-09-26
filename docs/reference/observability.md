@@ -430,6 +430,8 @@ npm run profile:ts -- --port 9231 --duration 30 --out perf/results/map_150.cpupr
 
 Process bridge 的累计计数包括 `inbound_frames`、`host_completions`、`disconnects`、`runtime_updates`、`runtime_events` 和 `max_runtime_batch`。当 Rust queue 有流量而 TS `processed` 不增长时，用这些值判断问题位于网络接收、completion 洪峰、V8 注入还是 TS mailbox；单向 Message 正常情况下不会增加 `host_completions`。
 
+Host 入站字节批次指标为 `tiangz_process_host_event_batch_limit_bytes`（固定 64 MiB）、`tiangz_process_host_event_batch_max_bytes`（含头部的实际交付高水位，含停机 completion）和 `tiangz_process_host_event_batch_splits_total`（因字节不足提前结束批次的次数）。只有 Process 固定标签，不附加 connection/operation ID。拆批数不是拒绝数；增长表示字节上限先于事件数上限生效。它们不表示仍被 TS 视图引用的所有批次数量或 RSS。
+
 `runtime_events / runtime_updates` 可近似观察实际批量度。该值过低且 CPU 偏高，通常表示 V8 update 调用太频繁；该值很高且 `ingress.queue`、客户端 p95/p99 上升，则说明批次或聚合窗口过大。调度模式和覆盖字段见“配置与协议参考”。
 
 `[process-metrics]` 中的 `dropped_logs` 是当前进程控制台与文件非阻塞队列累计丢弃的日志行数。正常运行应保持为 0；持续增长说明日志生产速度超过输出能力，应降低日志级别、限制重复错误或提高采集端吞吐，不能改为阻塞游戏线程来掩盖问题。

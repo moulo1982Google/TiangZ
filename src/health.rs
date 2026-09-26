@@ -88,6 +88,9 @@ pub(crate) struct ProcessObservabilitySnapshot {
     pub(crate) runtime_updates: u64,
     pub(crate) runtime_events: u64,
     pub(crate) max_runtime_batch: u64,
+    pub(crate) host_event_batch_limit_bytes: u64,
+    pub(crate) max_host_event_batch_bytes: u64,
+    pub(crate) host_event_batch_splits: u64,
     pub(crate) outbound_batches: u64,
     pub(crate) outbound_recipients: u64,
     pub(crate) outbound_bridge_bytes: u64,
@@ -1170,6 +1173,9 @@ mod tests {
         let state = ProcessHealthState::starting(Duration::from_secs(15));
         state.set_observability_snapshot(ProcessObservabilitySnapshot {
             sample_timestamp_ms: 1,
+            host_event_batch_limit_bytes: 67108864,
+            max_host_event_batch_bytes: 12345,
+            host_event_batch_splits: 4,
             queue_stages: vec![ProcessQueueStageObservabilitySnapshot {
                 stage: "frame".to_string(),
                 depth: 7,
@@ -1182,6 +1188,11 @@ mod tests {
         });
 
         let body = format_prometheus_metrics("map1", &state);
+        assert!(
+            body.contains("tiangz_process_host_event_batch_limit_bytes{process=\"map1\"} 67108864")
+        );
+        assert!(body.contains("tiangz_process_host_event_batch_max_bytes{process=\"map1\"} 12345"));
+        assert!(body.contains("tiangz_process_host_event_batch_splits_total{process=\"map1\"} 4"));
         assert!(
             body.contains("tiangz_process_queue_stage_depth{process=\"map1\",stage=\"frame\"} 7")
         );

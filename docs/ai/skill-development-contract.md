@@ -27,6 +27,8 @@
 - **KCP 可靠缓存**：另有进程共享额度与每 Session 上限，C 缓存/ACK 扩容峰值在分配前预留，纯 ACK 满额度仍可回收，输出 Bytes 最后引用归还。callback 返回负值并不让 C 自动终止，包装器须返回错误并关闭对应 Session，不能丢可靠数据后只记日志。接收/UDP 封包副本与 Rust 容器等仍在范围之外；见 [KCP 预算](../design/v0.7-kcp-buffers.md)。
 - **存储观测与恢复**：dbproxy_capacity 默认只读固定表的 catalog/分区字节，可选服务器时间扫描有独立期限；未知估算、缺表、RLS 和超时不能报告为零，业务时间不能作为回执 TTL。Outbox 重投允许重复投递，消费 inbox 与投影在同一事务后再 ACK；短时隔离恢复验证不等于断电、备份恢复或长稳。容量诊断不自动迁移、删除回执/事实或清理未确认事件。实际范围见 [实施进度](../design/v0.7-progress.md)。
 
+- **Host 批次**：入站另有含头部的 64 MiB 单批上限，普通/停机路径均在复制前检查；满批先 Update，控制/数据各保留最多一条原事件，同通道 FIFO、原 ingress 守卫和公平计数保持。拆批不截断结果或伪造业务拒绝；非法单事件复制前明确失败。不要将单批界限宣称为 V8/TS 存活 backing buffer、completion 总量或 RSS 上限，真实 Process/V8 与纯编码验证分开，见 [Host 批次](../design/v0.7-host-event-batches.md)。
+
 ## 哪些放技能，哪些交给工具
 
 | 位置 | 内容 |

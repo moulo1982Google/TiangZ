@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+Host 批次首轮完整矩阵为 quick 32/33、full 8/9，唯一失败是 Rust 测试模块放在 impl 前触发 Clippy `items_after_test_module`；不是运行用例失败。移动测试块并保留检查，不加 allow 或把单测通过当整轮通过。两条跨批次队首仍计入深度与高水位，不能沿用 mpsc capacity 截掉实际暂存量；复测和最终宿主身份见[批次验收](../design/v0.7-host-event-batches.md)。
+
+0.7 Host 入站批次在复制前按含头部的 64 MiB 上限拆分，普通运行与停机 completion 共用。满批保留原事件，先 Update，再续同通道 FIFO；控制/数据各最多暂存一条，守卫和队列深度不提前归还，退回恢复公平计数。单个合法网络/Inner 响应帧仍限 1 MiB；异常内部事件放不入空批则复制前明确失败，不截断成功结果或伪造业务过载。首次真实 V8 两路径均出现 83887124 字节单批，证明 ingress 准入不能覆盖打包副本。禁止通过调大阈值、减小反例或只测编码器掩盖问题；重建宿主与复测证据见[Host 批次](../design/v0.7-host-event-batches.md)。这不是 V8/TS 存活缓冲、completion 总量或 RSS 的上限。
+
 安装工具返回 session_id 仅表示仍在运行，不能据此启动依赖它的测试。本轮候选重装曾与 quick/LSP 重叠，相关结果不作最终证据；须 wait 到退出码 0 后重验，并比较实际 npm/VSIX 字节。具体日志见[依赖方向](../design/v0.7-dependency-rules.md)。
 
 Program 已检查不能替代“每个文件已检查”：首轮新增排除文件反例证明，全局关闭语法回退会漏掉 tsconfig 排除但索引器仍发现的 Model 文件。现记录实际检查文件集合，仅该集合禁用重复语法诊断，其他文件保留确定性检查；见[依赖方向](../design/v0.7-dependency-rules.md)。

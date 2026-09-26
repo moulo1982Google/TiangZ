@@ -54,6 +54,8 @@ Read only the additional source material relevant to the request:
 - KCP has separate process and session cache limits. Reserve before C growth, including intermediate ACK-array allocation peaks; pure ACKs must still release memory at full capacity. Output Bytes retain quota until the last reference. A negative callback return does not stop C flush, so the wrapper must report terminal failure and close only that session. Receive/UDP packet copies and Rust containers remain outside this bound.
 - Capacity observation must remain separate from retention policy. DBProxy's capacity command is read-only; unknown estimates, missing tables and timed-out age scans are not zero. Business timestamps do not authorize deleting receipts or unacknowledged outbox events.
 
+- Host ingress copies have a separate 64 MiB per-batch cap including headers. Check before copying, update before the next batch, and retain returned events with their original ingress ownership and lane order. Restore control fairness on return and keep completions flowing during data backlog and shutdown. Splitting must not truncate results or fabricate overload errors. A single-batch cap does not bound all V8/TS backing buffers, completion memory or process RSS; verify the actual Process/V8 path.
+
 ## Change routing
 
 - New player, item, buff, quest, numeric, combat, or map behavior: first inspect `docs/patterns`, the capability ownership table, and the closest existing Model/Hotfix example.

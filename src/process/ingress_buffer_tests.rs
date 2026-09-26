@@ -1,7 +1,7 @@
 use super::*;
 use tokio::time::{Instant as TokioInstant, timeout};
 
-fn channel(bytes: usize, capacity: usize) -> (ProcessEventSender, ProcessEventReceiver) {
+pub(super) fn channel(bytes: usize, capacity: usize) -> (ProcessEventSender, ProcessEventReceiver) {
     let (control_sender, control_receiver) = mpsc::sync_channel(capacity);
     let (data_sender, data_receiver) = mpsc::sync_channel(capacity);
     let (wake_sender, wake_receiver) = mpsc::sync_channel(1);
@@ -19,12 +19,7 @@ fn channel(bytes: usize, capacity: usize) -> (ProcessEventSender, ProcessEventRe
                 &network,
             )),
         },
-        ProcessEventReceiver {
-            control_receiver,
-            data_receiver,
-            wake_receiver,
-            consecutive_control: 0,
-        },
+        ProcessEventReceiver::new(control_receiver, data_receiver, wake_receiver),
     )
 }
 
@@ -90,17 +85,15 @@ async fn ingress_bytes_are_shared_by_control_and_data_but_leave_control_notifica
         10,
         "dequeued/deferred frames still own bytes"
     );
-    let mut packed = vec![];
-    let mut count = 0;
-    push_event(
-        &mut packed,
-        &mut count,
-        deferred.pop_front().unwrap(),
-        &sender.stats,
-    )
-    .unwrap();
+    let mut packed = HostEventBatch::new();
+    assert!(
+        packed
+            .try_push(deferred.pop_front().unwrap(), &sender.stats)
+            .unwrap()
+            .is_none()
+    );
     assert_eq!(sender.stats.ingress_buffers.snapshot().used_bytes, 5);
-    assert_eq!(count, 1);
+    assert_eq!(packed.len(), 1);
     sender.try_send_control(frame(true)).unwrap();
     assert_eq!(sender.stats.ingress_buffers.snapshot().used_bytes, 10);
     drop(receiver);
@@ -186,7 +179,8 @@ async fn ingress_packing_failure_releases_its_original_frame_bytes() {
     let event = receive(&mut receiver, &sender.stats);
     assert_eq!(sender.stats.ingress_buffers.snapshot().used_bytes, 5);
     assert!(
-        push_event(&mut vec![], &mut 0, event, &sender.stats)
+        HostEventBatch::new()
+            .try_push(event, &sender.stats)
             .unwrap_err()
             .to_string()
             .contains("connection id")

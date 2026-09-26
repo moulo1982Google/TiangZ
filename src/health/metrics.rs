@@ -660,6 +660,29 @@ fn append_process_metrics_prometheus(
         process_name, snapshot.max_runtime_batch
     )
     .expect("formatting metric");
+    for (name, help, kind, value) in [
+        (
+            "tiangz_process_host_event_batch_limit_bytes",
+            "Hard logical byte limit for each Rust to V8 event batch including headers",
+            "gauge",
+            snapshot.host_event_batch_limit_bytes,
+        ),
+        (
+            "tiangz_process_host_event_batch_max_bytes",
+            "Largest logical event batch handed to V8 including shutdown completions",
+            "gauge",
+            snapshot.max_host_event_batch_bytes,
+        ),
+        (
+            "tiangz_process_host_event_batch_splits_total",
+            "Batches ended early to preserve the event byte limit",
+            "counter",
+            snapshot.host_event_batch_splits,
+        ),
+    ] {
+        writeln!(output, "# HELP {name} {help}\n# TYPE {name} {kind}\n{name}{{process=\"{process_name}\"}} {value}")
+            .expect("formatting host event batch metric");
+    }
     writeln!(
         output,
         "# HELP tiangz_process_rust_queue_depth Current Rust event queue depth"

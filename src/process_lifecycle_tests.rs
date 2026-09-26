@@ -56,10 +56,6 @@ impl IoBackend for ControlledBackend {
 
 /// 构造隔离 V8 入口夹具及其有效哈希，不依赖仓库 dist 或 Node/codegen。 / Creates isolated V8 entrypoints and valid fixture hashes without repository dist or Node/codegen.
 fn runtime_fixture(pending_stop: bool) -> tempfile::TempDir {
-    let fixture = tempfile::tempdir().unwrap();
-    let dist = fixture.path().join("dist");
-    let data = dist.join("game-config");
-    std::fs::create_dir_all(&data).unwrap();
     let mut model = String::from(
         r#"
         for (const name of ['__etsStartProcess', '__etsUpdateBinary', '__etsDispatchHostEvents',
@@ -73,6 +69,15 @@ fn runtime_fixture(pending_stop: bool) -> tempfile::TempDir {
     } else {
         "globalThis.__etsStopProcess = () => 'stopped';"
     });
+    runtime_fixture_with_model(model)
+}
+
+/// 复用真实指纹夹具，只由用例指定 JS 边界断言。 / Reuses validated fixture fingerprints with test-specific JS boundary assertions.
+pub(super) fn runtime_fixture_with_model(model: String) -> tempfile::TempDir {
+    let fixture = tempfile::tempdir().unwrap();
+    let dist = fixture.path().join("dist");
+    let data = dist.join("game-config");
+    std::fs::create_dir_all(&data).unwrap();
     let hash = |bytes: &[u8]| format!("{:x}", Sha256::digest(bytes));
     let identity = hash(b"process-lifecycle-fixture");
     let pair = hash(b"{}\0{}");

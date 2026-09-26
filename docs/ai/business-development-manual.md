@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+Host 批次首轮完整矩阵的 quick 32/33、full 8/9 不能标为通过：Clippy 正确拒绝放在 impl 前的测试模块。应把测试移至实现之后并重新执行完整矩阵，不关闭 `items_after_test_module`，也不用已通过的运行测试替代静态门禁；原 `temp/v0.7-host-batches-verify.log` 保留。新增接收器暂存队首时，还要同步深度高水位的范围，物理队列 capacity 与包含暂存的观测值不是同一数字。最终复测见[Host 批次](../design/v0.7-host-event-batches.md)。
+
+Host 批次的入站额度反例：旧代码复制一帧就释放原守卫，生产者可补入；真实 Process/V8 的普通运行与停机 completion 都产生了 83887124 字节单批。正确做法是复制前核对完整批次成本，64 MiB 满批先 Update、保留原事件与 FIFO，控制/数据各一条暂存且退回恢复公平计数；不截断完成结果、不伪造业务拒绝、不把 TS backing buffer 当作已受 ingress 保护。非法单事件须在修改批次前明确失败。禁止提高阈值、缩减反例或将旧二进制通过算作修复；失败日志、`node tools/run_cargo.mjs test --bin TiangZ --features kcp host_batch` 与完整矩阵见[Host 批次](../design/v0.7-host-event-batches.md)。原诊断缺口属于框架缺陷；命令误写大小写 bin 名和漏迁移旧私有编码测试属于测试接线问题，均单独留档。
+
 真实 V8 mailbox 排空夹具的首轮失败是错误文字猜测：宿主返回 `drain deadline exceeded`、`pendingAsync=true` 并保留 generation，测试却匹配 timeout/timed out。正确断言当前结构化拒绝状态、实际 error 字段与 generation，不放宽生产窗口来迁就夹具；原 `temp/hotfix-load-dWu5jg/fault-report.json` 保留，详见[生命周期验收](../design/v0.7-mailbox-lifetime.md)。
 
 mailbox 清理不等于异步业务取消：移出 Actor 路由或销毁 Scene 时，只能立即终结未执行节点；已运行调用仍需计入热更屏障，直到实际结果结束。首次用例发现旧入站槽保留帧、空闲池保持历史峰值、Scene 销毁后仍执行排队调用；随后又发现本地 Actor/ unordered Scene 不经过网络任务计数，pendingAsync 错误为 false。正确做法是在接收/真实完成位置记账，出队清槽，空闲池限 64，关闭后拒绝新准入和迟到成功结果；禁止清零在途数或用 Tasks.Spawn 包装测试来掩盖 mailbox 漏计。失败证据和真实 V8 复测见[mailbox 生命周期](../design/v0.7-mailbox-lifetime.md)。

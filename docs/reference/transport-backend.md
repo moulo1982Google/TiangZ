@@ -2,6 +2,8 @@
 
 ## 边界
 
+0.7 Rust→V8 packed event 单批另限 64 MiB（含 4 字节数量与每条 13 字节头），普通 Update 和停机 completion 路径共用。满批执行 Update 后再继续，无新增配置字段。两条接收通道各可保留一个队首事件，保持原字节守卫与 FIFO；物理 mpsc 槽位外最多另有两条，控制通知不被暂存数据挡住。拆批不截断 payload、不产生业务过载；无法放入空批的异常内部事件复制前明确失败。其指标为 `tiangz_process_host_event_batch_{limit_bytes,max_bytes,splits_total}`，不能当作 V8/TS 存活副本或进程内存总量，见[批次契约](../design/v0.7-host-event-batches.md)。
+
 0.7 准入修正：`inner` 只接受通过凭据认证的内部 TCP，`outer` 只接受外部连接，`mixed` 允许两者。TCP/Auto 在 writer 注册前执行该规则；WebSocket 在 HTTP Upgrade 前检查外部准入。内部身份和内部 msgcode 校验继续生效。WebSocket 解码器的单帧、分片消息均限制为既有 1 MiB，避免接收超大载荷后才检查逻辑帧。
 
 网络层分成两个正交维度：

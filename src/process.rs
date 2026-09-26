@@ -1,6 +1,8 @@
 //! 协调有界宿主队列、单 V8 业务线程、端点、Update 与停机。 / Coordinates bounded host queues, one V8 business thread, endpoints, updates, and shutdown.
 
+mod host_events;
 mod observability;
+use host_events::HostEventBatch;
 use observability::{
     GameMetricsSnapshot, MailboxMetricsSnapshot, NativeDataMetricsSnapshot, SceneMetricsSnapshot,
     maybe_log_metrics,
@@ -9,6 +11,8 @@ use observability::{
 #[cfg(test)]
 #[path = "process_endpoint_tests.rs"]
 mod endpoint_tests;
+#[cfg(test)]
+mod host_batch_tests;
 #[cfg(test)]
 mod ingress_buffer_tests;
 #[cfg(test)]
@@ -60,7 +64,7 @@ const DEFAULT_PROCESS_EVENT_QUEUE_CAPACITY: usize = 4096;
 const PROCESS_CONTROL_QUEUE_DIVISOR: usize = 4;
 const MAX_CONSECUTIVE_CONTROL_EVENTS: usize = 32;
 const MAX_PENDING_INGRESS_CONTROL_EVENTS: usize = 128;
-const EVENT_HEADER_BYTES: usize = 13;
+const MAX_RETURNED_PROCESS_EVENTS: usize = 2;
 const BACKPRESSURE_RETRY_MS: u64 = 1;
 
 #[derive(Clone, Copy)]
@@ -296,6 +300,8 @@ pub(crate) struct ProcessQueueStats {
     runtime_updates: AtomicU64,
     runtime_events: AtomicU64,
     max_runtime_batch: AtomicUsize,
+    max_host_event_batch_bytes: AtomicUsize,
+    host_event_batch_splits: AtomicU64,
     transport_read_ops: AtomicU64,
     transport_read_frames: AtomicU64,
     transport_read_bytes: AtomicU64,
@@ -358,6 +364,8 @@ impl ProcessQueueStats {
             runtime_updates: AtomicU64::default(),
             runtime_events: AtomicU64::default(),
             max_runtime_batch: AtomicUsize::default(),
+            max_host_event_batch_bytes: AtomicUsize::default(),
+            host_event_batch_splits: AtomicU64::default(),
             transport_read_ops: AtomicU64::default(),
             transport_read_frames: AtomicU64::default(),
             transport_read_bytes: AtomicU64::default(),
@@ -406,19 +414,22 @@ impl ProcessQueueStats {
     }
 
     fn queued(&self, kind: ProcessEventKind, class: ProcessIngressClass) {
+        // 包含两条通道各自的暂存队首；仍滤掉并发 try_send 失败前的瞬时计数。
+        // Include both retained lane heads, still capping transient failed try_send attempts.
+        let observed_capacity = self.capacity.saturating_add(MAX_RETURNED_PROCESS_EVENTS);
         let depth = self.depth.fetch_add(1, Ordering::Relaxed) + 1;
         self.max_depth
-            .fetch_max(depth.min(self.capacity), Ordering::Relaxed);
+            .fetch_max(depth.min(observed_capacity), Ordering::Relaxed);
         let stage = self.stage(kind);
         let stage_depth = stage.depth.fetch_add(1, Ordering::Relaxed) + 1;
         stage
             .max_depth
-            .fetch_max(stage_depth.min(self.capacity), Ordering::Relaxed);
+            .fetch_max(stage_depth.min(observed_capacity), Ordering::Relaxed);
         let ingress_stage = self.ingress_stage(class);
         let ingress_depth = ingress_stage.depth.fetch_add(1, Ordering::Relaxed) + 1;
         ingress_stage
             .max_depth
-            .fetch_max(ingress_depth.min(self.capacity), Ordering::Relaxed);
+            .fetch_max(ingress_depth.min(observed_capacity), Ordering::Relaxed);
     }
 
     fn dequeue(&self, kind: ProcessEventKind, class: ProcessIngressClass) {
@@ -499,51 +510,87 @@ struct ProcessEventReceiver {
     data_receiver: mpsc::Receiver<ProcessEvent>,
     wake_receiver: mpsc::Receiver<()>,
     consecutive_control: usize,
+    previous_consecutive_control: usize,
+    pending_control: Option<ProcessEvent>,
+    pending_data: Option<ProcessEvent>,
 }
 
 impl ProcessEventReceiver {
-    fn try_recv_control(&mut self) -> std::result::Result<ProcessEvent, mpsc::TryRecvError> {
-        match self.control_receiver.try_recv() {
-            Ok(event) => {
-                self.consecutive_control = self.consecutive_control.saturating_add(1);
-                Ok(event)
-            }
-            Err(error) => Err(error),
+    fn new(
+        control_receiver: mpsc::Receiver<ProcessEvent>,
+        data_receiver: mpsc::Receiver<ProcessEvent>,
+        wake_receiver: mpsc::Receiver<()>,
+    ) -> Self {
+        Self {
+            control_receiver,
+            data_receiver,
+            wake_receiver,
+            consecutive_control: 0,
+            previous_consecutive_control: 0,
+            pending_control: None,
+            pending_data: None,
         }
+    }
+
+    fn received(&mut self, event: ProcessEvent) -> ProcessEvent {
+        self.previous_consecutive_control = self.consecutive_control;
+        self.consecutive_control = match event.ingress_class() {
+            ProcessIngressClass::Control => self.consecutive_control.saturating_add(1),
+            ProcessIngressClass::Data => 0,
+        };
+        event
+    }
+
+    /// 只退回最近取出的事件；深度和 ingress 守卫保留，公平计数恢复。 / Returns only the last received event, retaining depth/ingress ownership and restoring fairness.
+    fn return_front(&mut self, event: ProcessEvent) {
+        let pending = match event.ingress_class() {
+            ProcessIngressClass::Control => &mut self.pending_control,
+            ProcessIngressClass::Data => &mut self.pending_data,
+        };
+        assert!(
+            pending.is_none(),
+            "process ingress already has a returned event"
+        );
+        *pending = Some(event);
+        self.consecutive_control = self.previous_consecutive_control;
+    }
+
+    fn take_data(&mut self) -> std::result::Result<ProcessEvent, mpsc::TryRecvError> {
+        self.pending_data
+            .take()
+            .map(Ok)
+            .unwrap_or_else(|| self.data_receiver.try_recv())
+    }
+
+    fn try_recv_control(&mut self) -> std::result::Result<ProcessEvent, mpsc::TryRecvError> {
+        let event = self
+            .pending_control
+            .take()
+            .map(Ok)
+            .unwrap_or_else(|| self.control_receiver.try_recv())?;
+        Ok(self.received(event))
     }
 
     fn try_recv(&mut self) -> std::result::Result<ProcessEvent, mpsc::TryRecvError> {
         let force_data = self.consecutive_control >= MAX_CONSECUTIVE_CONTROL_EVENTS;
         if force_data {
-            match self.data_receiver.try_recv() {
+            match self.take_data() {
                 Ok(event) => {
-                    self.consecutive_control = 0;
-                    return Ok(event);
+                    return Ok(self.received(event));
                 }
                 Err(mpsc::TryRecvError::Disconnected) | Err(mpsc::TryRecvError::Empty) => {}
             }
         }
-        match self.control_receiver.try_recv() {
+        match self.try_recv_control() {
             Ok(event) => {
-                self.consecutive_control = self.consecutive_control.saturating_add(1);
                 return Ok(event);
             }
             Err(mpsc::TryRecvError::Disconnected) | Err(mpsc::TryRecvError::Empty) => {}
         }
-        match self.data_receiver.try_recv() {
-            Ok(event) => {
-                self.consecutive_control = 0;
-                Ok(event)
-            }
+        match self.take_data() {
+            Ok(event) => Ok(self.received(event)),
             Err(mpsc::TryRecvError::Empty) => Err(mpsc::TryRecvError::Empty),
-            Err(mpsc::TryRecvError::Disconnected) => match self.control_receiver.try_recv() {
-                Ok(event) => {
-                    self.consecutive_control = self.consecutive_control.saturating_add(1);
-                    Ok(event)
-                }
-                Err(mpsc::TryRecvError::Empty) => Err(mpsc::TryRecvError::Empty),
-                Err(mpsc::TryRecvError::Disconnected) => Err(mpsc::TryRecvError::Disconnected),
-            },
+            Err(mpsc::TryRecvError::Disconnected) => self.try_recv_control(),
         }
     }
 
@@ -780,12 +827,7 @@ async fn run_runtime_config_with_backend(
         wake_sender: wake_tx,
         stats: Arc::clone(&queue_stats),
     };
-    let event_rx = ProcessEventReceiver {
-        control_receiver: control_rx,
-        data_receiver: data_rx,
-        wake_receiver: wake_rx,
-        consecutive_control: 0,
-    };
+    let event_rx = ProcessEventReceiver::new(control_rx, data_rx, wake_rx);
     let runtime_stale_after = config
         .process
         .observability
@@ -1279,19 +1321,23 @@ fn run_process_runtime(
             continue;
         }
 
-        let mut packed_events = vec![0; 4];
-        let mut event_count = 0_u32;
+        let mut events = HostEventBatch::new();
+        let mut batch_full = false;
         let mut shutdown_requested = false;
         let wait_ms = scheduling.idle_tick_ms;
         let batch_capacity = scheduling.batch_capacity(queue_stats.depth.load(Ordering::Relaxed));
         // 内部RPC请求也可能是新业务；暂存有界请求，完成通知仍走控制通道。
         // Inner RPC requests can start new business too; defer them boundedly while completions flow.
         if drain_started.is_none() {
-            while event_count < batch_capacity as u32 {
+            while events.len() < batch_capacity as u32 {
                 let Some(event) = deferred_control.pop_front() else {
                     break;
                 };
-                push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
+                if let Some(event) = events.try_push(event, &queue_stats)? {
+                    deferred_control.push_front(event);
+                    batch_full = true;
+                    break;
+                }
             }
         }
         if pending_ingress || drain_started.is_some() {
@@ -1299,11 +1345,11 @@ fn run_process_runtime(
             // disconnect, and completion responses cannot be rejected behind a data backlog.
             // Bound reinjection so the TS pump retains capacity to drain its existing queue.
             let control_capacity = batch_capacity.min(MAX_PENDING_INGRESS_CONTROL_EVENTS);
-            while event_count < control_capacity as u32 {
+            while !batch_full && events.len() < control_capacity as u32 {
                 match event_rx.try_recv_control() {
                     Ok(event) => {
-                        queue_stats.dequeue(event.kind(), event.ingress_class());
                         if drain_started.is_some() && matches!(&event, ProcessEvent::Frame { .. }) {
+                            queue_stats.dequeue(event.kind(), event.ingress_class());
                             deferred_control.push_back(event);
                             if deferred_control.len() >= MAX_PENDING_INGRESS_CONTROL_EVENTS {
                                 pause_overflow = true;
@@ -1312,22 +1358,26 @@ fn run_process_runtime(
                             continue;
                         }
                         if matches!(&event, ProcessEvent::Shutdown) {
+                            queue_stats.dequeue(event.kind(), event.ingress_class());
                             shutdown_requested = true;
                             break;
                         }
-                        push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
+                        if !push_received_event(&mut events, &mut event_rx, event, &queue_stats)? {
+                            break;
+                        }
                     }
                     Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
                 }
             }
-        } else if event_count == 0 {
+        } else if events.len() == 0 {
             match event_rx.recv_timeout(Duration::from_millis(wait_ms)) {
                 Ok(event) => {
-                    queue_stats.dequeue(event.kind(), event.ingress_class());
                     if matches!(&event, ProcessEvent::Shutdown) {
+                        queue_stats.dequeue(event.kind(), event.ingress_class());
                         shutdown_requested = true;
                     } else {
-                        push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
+                        batch_full =
+                            !push_received_event(&mut events, &mut event_rx, event, &queue_stats)?;
                     }
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -1336,20 +1386,23 @@ fn run_process_runtime(
         }
 
         let coalesce_deadline = scheduling
-            .coalesce_deadline(queue_stats.depth.load(Ordering::Relaxed) + event_count as usize);
-        while !pending_ingress
+            .coalesce_deadline(queue_stats.depth.load(Ordering::Relaxed) + events.len() as usize);
+        while !batch_full
+            && !pending_ingress
             && drain_started.is_none()
             && !shutdown_requested
-            && event_count < batch_capacity as u32
+            && events.len() < batch_capacity as u32
         {
             match event_rx.try_recv() {
                 Ok(event) => {
-                    queue_stats.dequeue(event.kind(), event.ingress_class());
                     if matches!(&event, ProcessEvent::Shutdown) {
+                        queue_stats.dequeue(event.kind(), event.ingress_class());
                         shutdown_requested = true;
                         break;
                     }
-                    push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
+                    if !push_received_event(&mut events, &mut event_rx, event, &queue_stats)? {
+                        break;
+                    }
                 }
                 Err(mpsc::TryRecvError::Empty) => {
                     if Instant::now() >= coalesce_deadline {
@@ -1365,8 +1418,7 @@ fn run_process_runtime(
             &mut runtime,
             &entrypoints,
             &writers,
-            &mut packed_events,
-            event_count,
+            events,
             &process_name,
             &mut last_metrics_log,
             &queue_stats,
@@ -1393,21 +1445,26 @@ fn run_process_runtime(
     let stop_deadline =
         Instant::now() + Duration::from_millis(process.lifecycle.stop_timeout_ms + 1000);
     let stop_result = loop {
-        let mut completions = vec![0; 4];
-        let mut count = 0;
+        let mut completions = HostEventBatch::new();
         // 关闭监听后只接收已有RPC的完成事件；新业务帧不进入停机中的Scene。 / After listeners close, drain existing RPC completions without admitting business frames.
         for _ in 0..MAX_PENDING_INGRESS_CONTROL_EVENTS {
             let Ok(event) = event_rx.try_recv_control() else {
                 break;
             };
-            queue_stats.dequeue(event.kind(), event.ingress_class());
             if matches!(&event, ProcessEvent::HostSceneCompletion(_)) {
-                push_event(&mut completions, &mut count, event, &queue_stats)?;
+                if !push_received_event(&mut completions, &mut event_rx, event, &queue_stats)? {
+                    break;
+                }
+            } else {
+                queue_stats.dequeue(event.kind(), event.ingress_class());
             }
         }
-        if count > 0 {
-            completions[0..4].copy_from_slice(&count.to_le_bytes());
-            call_js_push_host_events(&mut runtime, &entrypoints, completions)?;
+        if completions.len() > 0 {
+            call_js_push_host_events(
+                &mut runtime,
+                &entrypoints,
+                completions.into_bytes(&queue_stats),
+            )?;
         }
         pump_js_event_loop_once(&js_event_loop, &mut runtime)?;
         // 停机模式的Update只提交RPC队列，不运行游戏Tick。 / Shutdown updates submit RPC queues without running gameplay ticks.
@@ -1526,8 +1583,7 @@ fn flush_runtime_batch(
     runtime: &mut deno_core::JsRuntime,
     entrypoints: &crate::host::JsEntrypoints,
     writers: &ConnectionWriters,
-    packed_events: &mut Vec<u8>,
-    event_count: u32,
+    events: HostEventBatch,
     process_name: &str,
     last_metrics_log: &mut Instant,
     queue_stats: &ProcessQueueStats,
@@ -1539,6 +1595,7 @@ fn flush_runtime_batch(
     health_state: &ProcessHealthState,
     hotfix_draining: bool,
 ) -> Result<(bool, bool)> {
+    let event_count = events.len();
     queue_stats.runtime_updates.fetch_add(1, Ordering::Relaxed);
     queue_stats
         .runtime_events
@@ -1547,9 +1604,7 @@ fn flush_runtime_batch(
         .max_runtime_batch
         .fetch_max(event_count as usize, Ordering::Relaxed);
     if event_count > 0 {
-        packed_events[0..4].copy_from_slice(&event_count.to_le_bytes());
-        let batch = std::mem::replace(packed_events, vec![0; 4]);
-        call_js_push_host_events(runtime, entrypoints, batch)?;
+        call_js_push_host_events(runtime, entrypoints, events.into_bytes(queue_stats))?;
     }
     pump_js_event_loop_once(js_event_loop, runtime)?;
 
@@ -1641,76 +1696,28 @@ fn shutdown_all_connections(writers: &ConnectionWriters) {
     }
 }
 
-fn push_event(
-    packed_events: &mut Vec<u8>,
-    event_count: &mut u32,
+/// 满批退回接收通道队首，只有实际接受后才扣队列深度。 / Returns a full-batch event to its lane head, decrementing depth only after acceptance.
+fn push_received_event(
+    events: &mut HostEventBatch,
+    receiver: &mut ProcessEventReceiver,
     event: ProcessEvent,
     queue_stats: &ProcessQueueStats,
-) -> Result<()> {
-    match event {
-        ProcessEvent::Frame {
-            scene_index,
-            connection_id,
-            internal,
-            frame,
-        } => {
-            queue_stats.inbound_frames.fetch_add(1, Ordering::Relaxed);
-            let event_type = if internal && crate::transport::inner_frame_rpc_id(&frame).is_some() {
-                5
-            } else {
-                1
-            };
-            push_packed_event(
-                packed_events,
-                event_type,
-                connection_id,
-                scene_index,
-                &frame,
-            )?;
+) -> Result<bool> {
+    let kind = event.kind();
+    let class = event.ingress_class();
+    match events.try_push(event, queue_stats) {
+        Ok(Some(event)) => {
+            receiver.return_front(event);
+            return Ok(false);
         }
-        ProcessEvent::Disconnect {
-            scene_index,
-            connection_id,
-        } => {
-            queue_stats.disconnects.fetch_add(1, Ordering::Relaxed);
-            push_packed_event(packed_events, 2, connection_id, scene_index, &[])?;
+        Err(error) => {
+            queue_stats.dequeue(kind, class);
+            return Err(error);
         }
-        ProcessEvent::HostSceneCompletion(completion) => {
-            queue_stats.host_completions.fetch_add(1, Ordering::Relaxed);
-            let (event_type, payload) = match completion.result {
-                Ok(frame) => (3, frame),
-                Err(error) => (4, error.into_bytes()),
-            };
-            push_packed_event(
-                packed_events,
-                event_type,
-                completion.operation_id as u64,
-                0,
-                &payload,
-            )?;
-        }
-        ProcessEvent::Shutdown => bail!("shutdown event cannot enter a host event batch"),
+        Ok(None) => {}
     }
-    *event_count += 1;
-    Ok(())
-}
-
-fn push_packed_event(
-    packed_events: &mut Vec<u8>,
-    event_type: u8,
-    connection_id: u64,
-    scene_index: u32,
-    payload: &[u8],
-) -> Result<()> {
-    let connection_id = u32::try_from(connection_id).context("connection id exceeds uint32")?;
-    let payload_len = u32::try_from(payload.len()).context("host event payload exceeds uint32")?;
-    packed_events.reserve(EVENT_HEADER_BYTES + payload.len());
-    packed_events.push(event_type);
-    packed_events.extend_from_slice(&connection_id.to_le_bytes());
-    packed_events.extend_from_slice(&scene_index.to_le_bytes());
-    packed_events.extend_from_slice(&payload_len.to_le_bytes());
-    packed_events.extend_from_slice(payload);
-    Ok(())
+    queue_stats.dequeue(kind, class);
+    Ok(true)
 }
 
 fn flush_outbound(
@@ -1874,12 +1881,8 @@ mod tests {
             wake_sender,
             stats: Arc::clone(&stats),
         };
-        let mut receiver = ProcessEventReceiver {
-            control_receiver,
-            data_receiver,
-            wake_receiver,
-            consecutive_control: 0,
-        };
+        let mut receiver =
+            ProcessEventReceiver::new(control_receiver, data_receiver, wake_receiver);
 
         sender
             .send(
@@ -1937,12 +1940,8 @@ mod tests {
             wake_sender,
             stats: Arc::clone(&stats),
         };
-        let mut receiver = ProcessEventReceiver {
-            control_receiver,
-            data_receiver,
-            wake_receiver,
-            consecutive_control: 0,
-        };
+        let mut receiver =
+            ProcessEventReceiver::new(control_receiver, data_receiver, wake_receiver);
 
         for connection_id in 1..=(MAX_CONSECUTIVE_CONTROL_EVENTS as u64 + 1) {
             sender
@@ -2272,9 +2271,23 @@ mod tests {
 
     #[test]
     fn packs_host_events_with_payload_length() {
-        let mut packed = vec![0; 4];
-        push_packed_event(&mut packed, 1, 7, 3, &[10, 11]).unwrap();
-        packed[0..4].copy_from_slice(&1_u32.to_le_bytes());
+        let stats = ProcessQueueStats::default();
+        let mut batch = HostEventBatch::new();
+        assert!(
+            batch
+                .try_push(
+                    ProcessEvent::Frame {
+                        connection_id: 7,
+                        scene_index: 3,
+                        internal: false,
+                        frame: Bytes::from_static(&[10, 11]),
+                    },
+                    &stats
+                )
+                .unwrap()
+                .is_none()
+        );
+        let packed = batch.into_bytes(&stats);
 
         assert_eq!(&packed[0..4], &1_u32.to_le_bytes());
         assert_eq!(packed[4], 1);
