@@ -3,11 +3,16 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
+import assert from "node:assert/strict";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const root = path.resolve(path.dirname(scriptFile), "..");
 const npmExecPath = process.env.npm_execpath;
 const childEnvironment = { ...process.env };
+const cargoFeatures = parseCargoFeatures(process.env.TIANGZ_VERIFY_CARGO_FEATURES ?? "");
+const featureArguments = cargoFeatures.length ? ["--features", cargoFeatures.join(",")] : [];
+childEnvironment.TIANGZ_VERIFY_CARGO_FEATURES = cargoFeatures.join(",");
 // MSVC目标不能继承其他开发环境设置的GCC编译器。 / Do not pass inherited GCC compilers to an MSVC build.
 if (process.platform === "win32") {
   for (const key of ["CC", "CXX"]) if (/^(gcc|g\+\+)(\.exe)?$/i.test(path.basename(childEnvironment[key] ?? ""))) delete childEnvironment[key];
@@ -50,10 +55,11 @@ const profiles = Object.freeze({
     commandStep("module typecheck host selection", process.execPath, ["tools/module_typecheck_host_self_test.mjs"]),
     commandStep("module live checker", process.execPath, ["--test", "tools/module_type_cache.test.mjs", "tools/module_live_worker.test.mjs"]),
     commandStep("cargo fmt", "cargo", ["fmt", "--all", "--", "--check"]),
-    commandStep("cargo clippy", "cargo", ["clippy", "--all-targets", "--", "-D", "warnings"]),
-    commandStep("cargo test", "cargo", ["test", "--all-targets"]),
+    commandStep("cargo clippy", "cargo", ["clippy", "--all-targets", ...featureArguments, "--", "-D", "warnings"]),
+    commandStep("cargo test", "cargo", ["test", "--all-targets", ...featureArguments]),
   ],
   full: [
+    commandStep("build runtime", process.execPath, ["tools/run_cargo.mjs", "build", "--bin", "TiangZ", ...featureArguments]),
     npmStep("verify:quick"),
     npmStep("test:module-host"),
     npmStep("test:game-project"),
@@ -76,6 +82,10 @@ if (argument === "--self-test") {
   for (const [name, steps] of Object.entries(profiles)) {
     console.log(`${name}: ${steps.length} steps`);
   }
+} else if (argument === "--plan") {
+  const profile = process.argv[3] ?? "full";
+  if (!profiles[profile]) throw new Error(`unknown test matrix profile: ${profile}`);
+  console.log(JSON.stringify({ profile, cargoFeatures, steps: profiles[profile] }));
 } else {
   await runProfile(argument ?? "check");
 }
@@ -85,6 +95,7 @@ async function runProfile(profileName, explicitSteps) {
   if (!steps) throw new Error(`unknown test matrix profile: ${profileName}`);
   const startedAt = new Date();
   const results = [];
+  let runtimeHost;
   // CI 上捕获每步输出，失败时落盘并放进注解；本机保持实时输出不变。
   // Capture step output on CI so failures can be written out and annotated; local runs keep streaming.
   const captureOutput = process.env.GITHUB_ACTIONS === "true";
@@ -92,6 +103,16 @@ async function runProfile(profileName, explicitSteps) {
   console.log(`[test-matrix] profile=${profileName} steps=${steps.length}`);
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index];
+    // quick 中的 cargo test 会重新链接普通宿主；在实际运行时用例前核对身份。 / Cargo test in quick can relink the normal host; capture identity before runtime cases.
+    if (profileName === "full" && step.name === "test:module-host") {
+      const binary = path.join("target", "debug", process.platform === "win32" ? "TiangZ.exe" : "TiangZ");
+      try {
+        runtimeHost = { binary: binary.replaceAll("\\", "/"), sha256: createHash("sha256").update(readFileSync(path.join(root, binary))).digest("hex") };
+        console.log(`[test-matrix] runtime-host sha256=${runtimeHost.sha256} cargoFeatures=${cargoFeatures.join(",") || "default"}`);
+      } catch (error) {
+        runtimeHost = { binary: binary.replaceAll("\\", "/"), error: error.message };
+      }
+    }
     const started = performance.now();
     console.log(`[test-matrix] START ${index + 1}/${steps.length} ${step.name}`);
     const outcome = spawnSync(step.command, step.args, {
@@ -126,6 +147,8 @@ async function runProfile(profileName, explicitSteps) {
   const report = {
     schemaVersion: 1,
     profile: profileName,
+    cargoFeatures,
+    runtimeHost,
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
     durationMs: finishedAt.getTime() - startedAt.getTime(),
@@ -203,7 +226,41 @@ function escapeXml(value) {
     .replaceAll(">", "&gt;");
 }
 
+/** 明确传给子矩阵和 Cargo，拒绝把 shell 选项混作 feature。 / Pass explicit features to nested matrices and Cargo, rejecting option-like input. */
+function parseCargoFeatures(value) {
+  const features = [...new Set(value.trim().split(/[\s,]+/).filter(Boolean))];
+  if (features.some(feature => !/^[A-Za-z0-9_][A-Za-z0-9_/-]*$/.test(feature))) {
+    throw new Error("TIANGZ_VERIFY_CARGO_FEATURES must contain Cargo feature names separated by commas or spaces");
+  }
+  return features;
+}
+
 function selfTest() {
+  assert.deepEqual(parseCargoFeatures(" kcp,io-uring kcp "), ["kcp", "io-uring"]);
+  assert.throws(() => parseCargoFeatures("kcp --no-default-features"));
+  assert.throws(() => parseCargoFeatures("kcp;exit"));
+  for (const selection of ["", "kcp,io-uring"]) for (const profile of ["full", "quick"]) {
+    const planned = spawnSync(process.execPath, [scriptFile, "--plan", profile], {
+      cwd: root, encoding: "utf8", windowsHide: true, shell: false,
+      env: { ...childEnvironment, TIANGZ_VERIFY_CARGO_FEATURES: selection },
+    });
+    assert.equal(planned.status, 0, planned.stderr);
+    const plan = JSON.parse(planned.stdout);
+    assert.deepEqual(plan.cargoFeatures, parseCargoFeatures(selection));
+    const steps = plan.steps.filter(step => ["build runtime", "cargo clippy", "cargo test"].includes(step.name));
+    assert.equal(steps.length, profile === "full" ? 1 : 2);
+    if (profile === "full") assert.equal(plan.steps[0].name, "build runtime");
+    for (const step of steps) {
+      const position = step.args.indexOf("--features");
+      if (!selection) assert.equal(position, -1);
+      else {
+        assert.ok(position > 0);
+        assert.equal(step.args[position + 1], selection);
+        const compilerArguments = step.args.indexOf("--");
+        assert.ok(compilerArguments < 0 || position < compilerArguments);
+      }
+    }
+  }
   for (const [profile, steps] of Object.entries(profiles)) {
     if (steps.length === 0) throw new Error(`empty test matrix profile: ${profile}`);
     const names = new Set();

@@ -188,6 +188,8 @@ Demo 部署配置、示例运维资产和游戏测试在 Examples；旧固定拓
 
 # TiangZ AI 项目上下文
 
+验证时不能用预构建哈希替代实际运行身份：原矩阵 quick 的无 features Cargo 步骤会覆盖预构建的 KCP 宿主，之后 full 测到的是默认 feature。显式 Rust/KCP/UDP 通过与默认 full 通过分别报告，原热更 JSON 已记录真实 SHA。现用 `TIANGZ_VERIFY_CARGO_FEATURES=kcp` 贯穿嵌套矩阵，full 先构建，并在 quick 之后记录实际 Host 哈希；不靠额外手动构建或修改旧报告伪装原轮包含 KCP。原证据、哈希更正与复测见[进度](../design/v0.7-progress.md)。
+
 0.7 KCP 使用独立 `maxKcpBufferedBytes`（默认 64 MiB、1..1 GiB），全部 KCP listener 共享，各 Session 另限 4 MiB。预留 C 控制块/工作区、段上界、保留 ACK 容量及输出 Bytes，扩容前保守准入，纯 ACK 在满额度时仍可归还，最后输出引用释放才退额度。额度不足/输出 callback 失败只终结该 Session，不能只记日志或依赖 C 忽略的 callback 返回值。一个 datagram 可让 ACK 数组连续扩容，须计最后中间数组与新数组同时存活的峰值，不只是调用前容量。接收/UDP 封包副本、Rust 容器、系统和 V8 另有边界；配置、Rust 包装器接口变化与验收见[KCP 预算](../design/v0.7-kcp-buffers.md)。
 
 0.7 已解码 Rust 入站帧独立使用 `maxIngressBufferedBytes`（默认 64 MiB、1..1 GiB）。所有业务 listener 的控制 RPC 与数据帧共享，首次入队前接管 Bytes、不复制 payload，排队重试/取消/热更延后均保持同一预留，最后引用释放才归还；超限 Inner RPC 返回既有入口过载，外部/单向来源关闭，控制通知不占本项帧额度。固定 kind=ingress 指标不混作慢客户端。解码器、Host 打包副本、V8/TS mailbox、RPC completion 与 KCP 可靠缓存另算，不称为全进程内存上限。契约与证据见[入站预算](../design/v0.7-ingress-buffers.md)。

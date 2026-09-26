@@ -45,6 +45,8 @@ npm run project:create -- --path ../MyGame --id org.example.game
 
 上表命令均使用 npm run。完整当前脚本清单以根 package.json 为准。旧 --host-profile demo 已移除，默认 modules；不通过兼容别名偷偷装配 MMORPG。
 
+`npm run verify` 先构建普通 Rust 宿主，再执行 quick 与运行时用例，共 9 步。选择 Cargo feature 时，在同一命令环境设置 `TIANGZ_VERIFY_CARGO_FEATURES`，例如 PowerShell 的 `$env:TIANGZ_VERIFY_CARGO_FEATURES='kcp'`；构建、Clippy、Rust 测试和嵌套矩阵均继承该选择。未设置时使用默认 features。`node tools/run_test_matrix.mjs --plan full` 只展示执行计划。`dist/test-results/full.json` 记录实际普通宿主 SHA256 与 feature 选择；组合 Native 宿主另有独立构建身份，不由这个哈希代替。
+
 配套组件生成：module:new-component -- --project ../MyGame --module org.example.game --name Inventory --feature inventory --dry-run；去掉 dry-run 才写入。生成器不替开发者决定组件所有者。
 
 ## MMORPG / 客户端示例
