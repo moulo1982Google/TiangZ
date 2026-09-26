@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+Spawn 总量最终复测：相关 17/17、Rust 232 项、含 KCP check 8/8、quick 33/33、full 9/9 通过，`temp/v0.7-scene-task-capacity-verify.log`。实际 HTTP 指标与 V8 验证 4096 项、销毁 16 个 owner 仍占额度、过载 RPC 码/关联号、独立 Worker、释放后只执行一次及热更恢复。Linux 仅条件编译，AI 仍 0.2.0；二进制/归档身份和首轮失败见[容量验收](../design/v0.7-scene-task-capacity.md)，不把这一范围当作全部 TS 工作有界。
+
+Spawn 总量反例：16 个各 256 项的 Scope 满额后，第 17 个 Scope 仍能接受任务；旧局部容量错误也不是 SceneOverloaded。`temp/v0.7-scene-task-capacity-first.log` 2/2 失败。按[总量契约](../design/v0.7-scene-task-capacity.md)在任务微任务前增加 Process 准入，失败只退回当次预留，真实完成归还原 Host；禁止销毁即清零、把旧任务释放到新 Runtime、自动重试或增大上限迁就测试。复测 `npx vitest run tests/unit/scene_task_capacity.test.ts tests/unit/scene_task_admission.test.ts tests/unit/scene_task_disposal.test.ts tests/unit/hotfix_drain.test.ts`，随后验证实际 V8 和完整矩阵。
+
 任务准入最终复测已补充同 Scope 的旧任务不能被误清理这一反例，相关测试从 11/11 增至 12/12；测试类型检查与含 KCP 完整 check 8/8、quick 33/33、full 9/9 均通过。真实 V8 新用例验证拒绝后热更恢复；AI 0.2.0 归档和实际宿主身份核对见[准入验收](../design/v0.7-scene-task-admission.md)，保留首轮失败证据。
 
 `Tasks.Spawn` 返回 ID 才表示接受；watchdog 注册同步抛错必须撤回本次 task record。原实现先插入/增加高水位再注册 Timer，失败时 body 尚未排微任务，留下不能完成的在途计数并阻挡热更。`temp/v0.7-scene-task-admission-first.log` 的三个反例均在 1→0 断言失败。修复保留原异常、禁止 body 执行、Timer owner/句柄创建成功后一起发布，保留其他 Scene 的真实任务；不能吞错误、清空全表或把失败尝试算成功高水位。复测 `npx vitest run tests/unit/scene_task_admission.test.ts tests/unit/scene_task_disposal.test.ts tests/unit/hotfix_drain.test.ts` 为 11/11；真实 V8 与完整矩阵见[任务准入](../design/v0.7-scene-task-admission.md)。

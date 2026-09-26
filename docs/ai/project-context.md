@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+Process Spawn 总额度已完成：每 Scope 256、每原 Host 4096；定向 17/17、最终含 KCP check 8/8、quick 33/33、full 9/9 和 Linux 条件编译通过。实际 V8 验证拒绝、注销后占用、完成恢复与固定 Process 指标，AI 归档同步核对，详见[容量验收](../design/v0.7-scene-task-capacity.md)。mailbox/二进制总量及 Linux 实际 I/O 仍是独立缺口。
+
+Spawn 的每 Scope 256 上限不能形成 Process 总量限制：首轮跨 17 个 Scope 的用例仍接受第 4097 项，且原局部上限只抛普通 Error。当前按[进程 Spawn 准入](../design/v0.7-scene-task-capacity.md)补齐 4096 总额度和明确过载码；首次 2/2 失败日志 `temp/v0.7-scene-task-capacity-first.log` 保留。额度须绑定原 Host，注销/取消不能提前归还，不能拿此项代替 mailbox 或堆内存总预算。
+
 任务准入修复最终定向 12/12、含 KCP 完整 check 8/8、quick 33/33、full 9/9 通过，含真实 V8 拒绝后热更恢复；实际 Host/报告身份及 AI 0.2.0 归档已核对，见[准入验收](../design/v0.7-scene-task-admission.md)。既有 Godot、Linux 实际 I/O 和发布冻结缺口仍保留。
 
 Spawn 准入失败原子性反例：缺少 TimerSystem 或 watchdog 注册抛错后，旧 Scope 已插入 record 却未创建任务微任务，InFlightCount 永久为 1。首轮 3 个反例均失败；现只撤回本次 record，成功注册后一起保存 Timer owner/句柄并更新成功高水位。原异常保持，body 不运行，同 Scope 重试可恢复，其他 Scene 已接受任务保持；禁止吞错、停掉 watchdog 或清空其他工作。定向与真实 V8 验证见[任务准入](../design/v0.7-scene-task-admission.md)，不等于新增 Process 总额度。

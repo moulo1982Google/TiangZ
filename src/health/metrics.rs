@@ -1889,6 +1889,37 @@ fn append_game_metrics_prometheus(
         process_name, snapshot.coroutine_lock_timeouts
     )
     .expect("formatting metric");
+    for (name, kind, help, value) in [
+        (
+            "tiangz_scene_tasks_in_flight",
+            "gauge",
+            "Accepted Spawn tasks including disposed owners until actual completion",
+            snapshot.scene_task_in_flight,
+        ),
+        (
+            "tiangz_scene_tasks_capacity",
+            "gauge",
+            "Process-wide Spawn task limit",
+            snapshot.scene_task_capacity,
+        ),
+        (
+            "tiangz_scene_tasks_max_in_flight",
+            "gauge",
+            "Maximum successfully admitted concurrent Spawn tasks",
+            snapshot.scene_task_max_in_flight,
+        ),
+        (
+            "tiangz_scene_tasks_rejected_total",
+            "counter",
+            "Spawn attempts rejected by the Process-wide limit, excluding Scope-local limits",
+            snapshot.scene_task_rejections,
+        ),
+    ] {
+        writeln!(output, "# HELP {name} {help}").expect("formatting metric help");
+        writeln!(output, "# TYPE {name} {kind}").expect("formatting metric type");
+        writeln!(output, "{name}{{process=\"{process_name}\"}} {value}")
+            .expect("formatting metric");
+    }
 }
 
 fn append_native_data_metrics_prometheus(

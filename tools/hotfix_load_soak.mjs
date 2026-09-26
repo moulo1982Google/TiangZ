@@ -135,6 +135,8 @@ export class CounterScene extends EntryScene {
   drainActor: DrainActor | undefined;
   detachedState = 0;
   detachedValue = 0;
+  spawnQuotaOwners: DrainScene[] = [];
+  spawnQuotaRelease: (() => void) | undefined;
   readonly repository = new DbProxyEntityRepository<number, number>({
     recordNamespace: ${JSON.stringify(`hotfix-fault-${path.basename(directory)}`)}, schema: "hotfix-fault", schemaVersion: 1,
     Capture: value => value, Encode: value => new Uint8Array([value]), Decode: bytes => bytes[0]!
@@ -218,6 +220,36 @@ export class IncrementHandler implements SceneRpcHandler<CounterScene, C2S_Incre
       return { count: owner.Tasks.InFlightCount };
     }
     if (request.mode === 25) return { count: scene.DespawnChildScene("failed-task-admission") ? 1 : 0 };
+    if (request.mode === 26) {
+      if (scene.spawnQuotaOwners.length) throw new Error("spawn quota fixture already active");
+      const result = new Promise<void>(resolve => { scene.spawnQuotaRelease = resolve; });
+      for (let i = 0; i < 17; i++) {
+        const owner = scene.SpawnChildScene("spawn-quota-" + i, DrainScene);
+        scene.spawnQuotaOwners.push(owner);
+        if (i < 16) for (let task = 0; task < 256; task++) owner.Tasks.Spawn("held-quota", () => result);
+      }
+      return { count: scene.spawnQuotaOwners.reduce((count, owner) => count + owner.Tasks.InFlightCount, 0) };
+    }
+    if (request.mode === 27) {
+      scene.spawnQuotaOwners[16]!.Tasks.Spawn("probe-quota", () => { scene.detachedValue += 1; });
+      return { count: 1 };
+    }
+    if (request.mode === 28) {
+      scene.spawnQuotaRelease?.(); scene.spawnQuotaRelease = undefined;
+      return { count: 0 };
+    }
+    if (request.mode === 29) return { count: scene.spawnQuotaOwners.reduce((count, owner) => count + owner.Tasks.InFlightCount, 0) };
+    if (request.mode === 30) return { count: scene.detachedValue };
+    if (request.mode === 31) {
+      let removed = 0;
+      for (let i = 0; i < 16; i++) if (scene.DespawnChildScene("spawn-quota-" + i)) removed++;
+      return { count: removed };
+    }
+    if (request.mode === 32) {
+      for (let i = 0; i < 17; i++) scene.DespawnChildScene("spawn-quota-" + i);
+      scene.spawnQuotaOwners.length = 0;
+      return { count: 0 };
+    }
     if ((request.mode ?? 0) >= 1000) return scene.scenes.call(scene.scenes.byName("counter"), StarterProtocol.Work, { mode: (request.mode ?? 0) - 1000 }, { timeoutMs: 30000 });
     if (request.mode === 4) await scene.scenes.call(scene.scenes.byName("worker"), StarterProtocol.Work, { mode: 1 }, { timeoutMs: 30000 });
     if (request.mode === 10 && (await scene.repository.Load("probe"))?.data !== 42) throw new Error("stored fixture value changed");

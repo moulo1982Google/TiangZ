@@ -58,6 +58,8 @@ Read only the additional source material relevant to the request:
 
 ## Change routing
 
+- In the 0.7 candidate, Spawn keeps the 256-per-scope cap and adds 4096 per original ProcessHost. Overload rejects synchronously with SceneOverloaded before queuing a body. Unstarted, cancelled and disposed-owner tasks retain quota until real completion; synchronous admission failure rolls back, and successful high-water counts change only after acceptance. Late completion releases the original Host. This does not bound arbitrary Promises, mailboxes or heap memory; Process rejection metrics exclude scope-local limits.
+
 - Spawn admission is atomic: synchronous watchdog failure must remove only the new record before its body is queued. Publish the original timer owner/handle and successful high-water count only after registration succeeds. Preserve the original error, allow retry, and leave other scopes' accepted work intact; do not swallow errors or clear all tasks.
 
 - New player, item, buff, quest, numeric, combat, or map behavior: first inspect `docs/patterns`, the capability ownership table, and the closest existing Model/Hotfix example.

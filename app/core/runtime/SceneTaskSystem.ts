@@ -1,4 +1,6 @@
 import { isPromiseLike, type MaybePromise } from "../async";
+import { RpcError } from "../protocol/RpcError";
+import { SystemErrCode } from "../protocol/SystemErrCode";
 import type { Scene } from "./entities";
 import {
   TimerSystem,
@@ -79,11 +81,16 @@ export class SceneTaskScope {
     if (!taskName) throw new Error("spawn task name must not be empty");
     if (typeof body !== "function") throw new Error("spawn task body must be a function");
     if (this.tasks.size >= MAX_SCENE_TASK_IN_FLIGHT) {
-      throw new Error(
+      throw new RpcError(
+        SystemErrCode.SceneOverloaded,
         `scene task capacity exceeded: ${String(this.scene.Id)} limit=${MAX_SCENE_TASK_IN_FLIGHT}`,
       );
     }
 
+    return this.scene.__admitSceneTask(release => this.spawnAdmitted(taskName, body, release));
+  }
+
+  private spawnAdmitted(taskName: string, body: SpawnTaskBody, release: () => void): SpawnTaskId {
     const id = this.allocateId();
     const record: SpawnTaskRecord = {
       id,
@@ -116,6 +123,9 @@ export class SceneTaskScope {
       })
       .finally(() => {
         this.tasks.delete(id);
+        // 清理 watchdog/通知 idle 可能抛错，真实任务额度必须先归还原 Host。
+        // Return the real task's quota to its original Host before fallible watchdog/idle cleanup.
+        release();
         if (this.tasks.size === 0) {
           const onIdle = this.onIdle;
           this.onIdle = undefined;

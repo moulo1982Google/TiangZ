@@ -45,6 +45,10 @@ export interface GameMetricsSnapshot {
   timers: number;
   coroutineLockWaiters: number;
   coroutineLockTimeouts: number;
+  sceneTaskInFlight: number;
+  sceneTaskCapacity: number;
+  sceneTaskMaxInFlight: number;
+  sceneTaskRejections: number;
 }
 
 export class ProcessRuntime implements LocalSceneRouter {
@@ -198,6 +202,7 @@ export class ProcessRuntime implements LocalSceneRouter {
       this.entryScenes.map((scene, index) =>
         scene.__completeUpdate(startedAt[index] ?? monotonicNow(), includeMetrics)
       ),
+      this.processHost,
     );
     const result: ProcessUpdateResult = {
       ...merged,
@@ -297,8 +302,9 @@ export class ProcessRuntime implements LocalSceneRouter {
 
 function mergeResults(
   results: SceneUpdateResult[],
+  processHost: ProcessHost,
 ): Omit<ProcessUpdateResult, "actorMailbox"> {
-  const game = gameMetricsSnapshot();
+  const game = gameMetricsSnapshot(processHost);
   if (results.length === 1) {
     return {
       outbound: results[0].outbound,
@@ -341,8 +347,9 @@ function resolveMaxEventsPerUpdate(config: ProcessRuntimeConfig["process"]["sche
   return 512;
 }
 
-function gameMetricsSnapshot(): GameMetricsSnapshot {
+function gameMetricsSnapshot(processHost: ProcessHost): GameMetricsSnapshot {
   return {
+    ...processHost.SceneTaskMetrics(),
     fixedUpdateMs: Game.Instance.FixedUpdateMs,
     frameCount: TimeSystem.Instance.FrameCount,
     skippedFixedUpdates: Game.Instance.SkippedFixedUpdates,

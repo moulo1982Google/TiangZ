@@ -18,6 +18,8 @@
 
 ## 相关能力被修改时再核对
 
+- **Spawn 总量**：0.7 候选保留每 Scope 256 项，原 ProcessHost 总计最多 4096 项，超限同步 SceneOverloaded，不创建无限等待/自动重试。未开始、取消及 owner 已销毁但未真正完成的任务继续占用；同步失败回滚，成功后才更新高水位，释放绑定原 Host。固定 Process 指标中的拒绝数只包括总额度拒绝。它不是全部 mailbox、业务 Promise 或堆字节预算，见[任务容量](../design/v0.7-scene-task-capacity.md)。
+
 - **任务准入回滚**：Spawn 同步失败不能留下尚未启动却永远在途的 record；只撤回本次接受过程，保持其他 Scope 的任务。watchdog 成功创建后才一起保存原 Timer owner/句柄并增加成功高水位，body 不执行、原异常仍抛出，同 Scope 可重试。不要吞错、关闭监控或清空全部任务，见 [任务准入](../design/v0.7-scene-task-admission.md)。
 
 - **依赖方向**：Model/Hotfix/Stable 使用 Developer Tools dependency ruleset 1，CLI/LSP/模块 Host worker 与宿主边界命令共用。包含 import-type/import-equals 和字面量动态导入，计算目标 warning 不证明安全；当前 Program 解析别名，路径比较遵循平台身份而非直接比较字符串。Model 走 Core public，启动和生成 ABI 只保留精确例外，不忽略整目录。跨模块公共 API 须证明直接依赖。正式生成锁/指纹仍单独验证，纯 AST 不代替实际安装 LSP；详见 [依赖方向](../design/v0.7-dependency-rules.md)。

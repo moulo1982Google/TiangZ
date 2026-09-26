@@ -85,9 +85,13 @@ export interface ActorMailboxMetricsSnapshot {
 
 export class ProcessHost {
   private static readonly MAX_RECYCLED_MAILBOX_ITEMS = 64;
+  private static readonly MAX_SCENE_TASKS = 4096;
   readonly Root = new EntityRoot();
   private readonly scenes = new Map<SceneId, SceneRuntime>();
   private readonly retiredTaskScopes = new Set<SceneTaskScope>();
+  private sceneTaskCount = 0;
+  private sceneTaskMaxCount = 0;
+  private sceneTaskRejections = 0;
   private readonly actorsByInstanceId = new Map<InstanceId, ActorRuntime>();
   private actorMailboxPendingCount = 0;
   private readonly actorMailboxMetrics = {
@@ -108,12 +112,38 @@ export class ProcessHost {
 
   /** 聚合入口、动态及已注销但尚未排空 Scene 的任务；路由注销不提前释放。 / Counts entry, dynamic, and removed Scenes' tasks until actual drain, independent of routing lifetime. */
   get SceneTaskInFlightCount(): number {
-    let count = 0;
-    for (const scene of this.scenes.values()) {
-      count += scene.instance.__taskInFlightCount();
+    return this.sceneTaskCount;
+  }
+
+  /** @internal 任务接受是同步事务；释放闭包始终绑定原 Host，失败回滚、真实完成归还。 / Task acceptance is synchronous; rollback and actual completion release only the original Host. */
+  __admitSceneTask<T>(accept: (release: () => void) => T): T {
+    if (this.sceneTaskCount >= ProcessHost.MAX_SCENE_TASKS) {
+      this.sceneTaskRejections += 1;
+      throw new RpcError(SystemErrCode.SceneOverloaded,
+        `process scene task capacity exceeded: ${this.processId} limit=${ProcessHost.MAX_SCENE_TASKS}`);
     }
-    for (const scope of this.retiredTaskScopes) count += scope.InFlightCount;
-    return count;
+    this.sceneTaskCount += 1;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      this.sceneTaskCount -= 1;
+    };
+    try {
+      const result = accept(release);
+      this.sceneTaskMaxCount = Math.max(this.sceneTaskMaxCount, this.sceneTaskCount);
+      return result;
+    } catch (error) { release(); throw error; }
+  }
+
+  /** 进程 Spawn 额度快照；拒绝数仅记录 Process 总量限制。 / Process Spawn quota snapshot; rejections count the Process-wide limit only. */
+  SceneTaskMetrics() {
+    return {
+      sceneTaskInFlight: this.sceneTaskCount,
+      sceneTaskCapacity: ProcessHost.MAX_SCENE_TASKS,
+      sceneTaskMaxInFlight: this.sceneTaskMaxCount,
+      sceneTaskRejections: this.sceneTaskRejections,
+    };
   }
 
   Dispose(): void {

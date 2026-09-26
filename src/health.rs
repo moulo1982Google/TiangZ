@@ -257,6 +257,10 @@ pub(crate) struct GameObservabilitySnapshot {
     pub(crate) timers: u64,
     pub(crate) coroutine_lock_waiters: u64,
     pub(crate) coroutine_lock_timeouts: u64,
+    pub(crate) scene_task_in_flight: u64,
+    pub(crate) scene_task_capacity: u64,
+    pub(crate) scene_task_max_in_flight: u64,
+    pub(crate) scene_task_rejections: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1303,6 +1307,37 @@ mod tests {
         assert!(body.contains(
             "tiangz_transport_inner_timeouts_by_route_total{process=\"process-1\",msgcode=\"1001\",source=\"gate-1\\\"edge\",target=\"map-1\",traffic=\"call\",stage=\"manager_queue\"} 2"
         ));
+    }
+
+    #[test]
+    fn process_spawn_metrics_keep_retired_tasks_and_have_only_process_labels() {
+        let state = ProcessHealthState::starting(Duration::from_secs(15));
+        state.set_observability_snapshot(ProcessObservabilitySnapshot {
+            game: Some(GameObservabilitySnapshot {
+                scene_task_in_flight: 17,
+                scene_task_capacity: 4096,
+                scene_task_max_in_flight: 4096,
+                scene_task_rejections: 3,
+                ..GameObservabilitySnapshot::default()
+            }),
+            ..ProcessObservabilitySnapshot::default()
+        });
+        let body = format_prometheus_metrics("worker", &state);
+        for (suffix, value) in [
+            ("in_flight", 17),
+            ("capacity", 4096),
+            ("max_in_flight", 4096),
+            ("rejected_total", 3),
+        ] {
+            let prefix = format!("tiangz_scene_tasks_{suffix}{{");
+            let lines: Vec<_> = body
+                .lines()
+                .filter(|line| line.starts_with(&prefix))
+                .collect();
+            assert_eq!(lines, [format!("{prefix}process=\"worker\"}} {value}")]);
+        }
+        assert!(body.contains("# TYPE tiangz_scene_tasks_rejected_total counter"));
+        assert!(body.contains("# TYPE tiangz_scene_tasks_in_flight gauge"));
     }
 
     #[test]

@@ -269,6 +269,8 @@ npm run verify:observability
 
 ## Game.Update 与定时器指标
 
+0.7 候选额外提供 Process Spawn 额度的四条 Prometheus 序列，只使用固定 `process` 标签：`tiangz_scene_tasks_in_flight`（包括已销毁 owner 的未完成任务）、`tiangz_scene_tasks_capacity`（4096）、`tiangz_scene_tasks_max_in_flight`（成功接受高水位）和 counter `tiangz_scene_tasks_rejected_total`（仅 Process 总额度拒绝，不含每 Scope 256 上限）。指标按既有观测周期发布；取消不提前减在途数，注册失败回滚且不增成功高水位。它们只描述 Spawn，不是所有 TS 任务或堆内存的指标，详见[容量验收](../design/v0.7-scene-task-capacity.md)。
+
 日志格式：
 
 ```text

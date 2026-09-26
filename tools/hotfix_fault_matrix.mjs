@@ -248,6 +248,46 @@ try {
       return { rejectedTaskCount: 0, taskBodyStarted: false, generationAdvanced: true, pauseMs };
     } finally { assert.equal((await control.call(25)).count, 1); }
   });
+  await test("process-spawn-quota-rejects-recovers-and-retains-disposed-work", async () => {
+    const taskMetrics = async () => {
+      const response = await fetch(`http://127.0.0.1:${config.process.observability.health.port}/metrics`, { signal: AbortSignal.timeout(2000) });
+      assert.ok(response.ok);
+      const lines = (await response.text()).split(/\r?\n/);
+      return Object.fromEntries(["in_flight", "capacity", "max_in_flight", "rejected_total"].map(name => {
+        const matching = lines.filter(line => line.startsWith(`tiangz_scene_tasks_${name}{`));
+        assert.equal(matching.length, 1, "Spawn metrics have one Process series, independent of Scene count");
+        return [name, Number(matching[0].split(" ").at(-1))];
+      }));
+    };
+    try {
+      const beforeBodies = (await control.call(30)).count;
+      assert.equal((await control.call(26)).count, 4096);
+      await assert.rejects(control.call(27), error => error.code === 1011 && /process scene task capacity exceeded/.test(error.message) && error.response.rpcId > 0);
+      assert.equal((await control.call(31)).count, 16);
+      await assert.rejects(control.call(27), error => error.code === 1011);
+      assert.equal((await control.call(30)).count, beforeBodies, "rejected task bodies must not execute");
+      await until(async () => (await taskMetrics()).in_flight === 4096, "disposed Spawn tasks remain in actual Process metrics");
+      assert.deepEqual(await taskMetrics(), { in_flight: 4096, capacity: 4096, max_in_flight: 4096, rejected_total: 2 });
+      // 独立 Process 仍可接受工作；总额度不是全机共享的全局变量。 / An independent Process still admits work; the quota is not machine-global.
+      assert.equal((await workerControl.call(23)).count, 0);
+      await workerControl.call(2);
+      await until(async () => (await workerControl.call(19)).count === 2, "independent Process task completion");
+      const before = await admin("status"), op = begin(undefined, 422);
+      await op.paused();
+      const rejected = await op.pending;
+      assert.equal(rejected.status, "rejected");
+      assert.match(rejected.error, /drain deadline exceeded/);
+      assert.equal((await admin("status")).hotfix.generation, before.hotfix.generation);
+      await control.call(28);
+      await until(async () => (await control.call(29)).count === 0, "all held tasks actually finish");
+      assert.equal((await control.call(27)).count, 1, "released quota permits a new Spawn");
+      await until(async () => (await control.call(30)).count === beforeBodies + 1, "recovered task body executes once");
+      await until(async () => (await taskMetrics()).in_flight === 0, "quota metrics return to baseline");
+      const recovery = begin(); await recovery.paused(); await commit(recovery);
+      assert.equal((await admin("status")).hotfix.generation, before.hotfix.generation + 1);
+      return { admittedTasks: 4096, disposedOwners: 16, overloadResponses: 2, recovered: true };
+    } finally { await control.call(28); await control.call(32); }
+  });
   for (let round = 0; round < rounds; round++) {
     await test(`remote-completion-and-500-queued-${round}`, async () => {
       const held = await holdRemote(), op = begin(); await op.paused();
