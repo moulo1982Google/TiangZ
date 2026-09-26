@@ -43,7 +43,9 @@ Compress-Archive -LiteralPath dist/ai-assistants/claude/tiangz-game-backend -Des
 
 ## 当前验证记录
 
-0.7 开发 worktree 更新（AI 清单仍为 0.2.0，发行号独立冻结）：技能/随包契约补入操作预算、在途回调、可选逻辑目录与独立版本身份。Cindy 环境工具停止把旧 0.6.0/main 作为当前版本；返回 `versionStatus: not-probed`、空工作版本和应核对的清单。四个只读工具与六类领域建议保持，规则为 36 条。
+0.7 开发 worktree 更新（AI 清单仍为 0.2.0，发行号独立冻结）：技能/随包契约补入操作预算、在途回调、可选逻辑目录与独立版本身份；G2/G3 轮继续补充共享 Program 检查、模块部署、资源预算范围及只读容量/消费幂等。Cindy 环境工具停止把旧 0.6.0/main 作为当前版本；返回 `versionStatus: not-probed`、空工作版本和应核对的清单。四个只读工具与六类领域建议保持，当前规则为 40 条。
+
+G2/G3 轮已实际生成和分发至 AI Plugins 0.7 worktree，7 个受清单记录文件 SHA256、Cindy 归档 CRC 和归档内容与源码一致性通过。提取实际归档后四工具/六建议检查通过，Codex/Claude 两个技能经独立 venv quick_validate 通过；日志 `temp/v0.7-ai-g2-{build,check,distribute,distribution-check,artifact-check}.log`，身份 `temp/v0.7-ai-g2-artifact-identity.json`。没有改工作区已装技能、Forge 或客户端安装状态。
 
 分发须显式指定目标 worktree，避免把开发分支内容写回原仓库：
 

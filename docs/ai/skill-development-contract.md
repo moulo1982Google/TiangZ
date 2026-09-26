@@ -16,6 +16,14 @@
 10. **预算与所有权覆盖整个操作**：存储排队、读取、迁移、编码、退避和重试共用上层期限，重试保持原 ID 与同一字节载荷；支持预算的 SDK/Host 才能宣称 I/O 有界，Promise.race 不代表后台任务已取消。Timer 取消或所有者销毁不代表已触发的异步回调结束，热更需等待其真实收敛；回调中新建的到期任务按当前版本的执行轮次契约验证。句柄移除不代表 Socket/任务已经释放，限额测试检查实际资源回到基线。
 11. **保持通用后端与克制拆分**：已经持有 Actor 地址就直接路由；LocationDirectory 是按需选用的逻辑所有者目录，不是地图坐标、MMORPG 必装服务或每条消息的必经查询。MapHost/AOI 等留在领域模块。按独立职责拆分大型文件，避免每个函数一份文件、只转发的抽象层及把搬移与语义修改混在一个提交；原顺序、所有权与错误行为需可核对。
 
+## 相关能力被修改时再核对
+
+- **类型规则**：生命周期/方法名 Timer 复用 Developer Tools 的 Program 规则，调用者传与该 Program 配套的 TS API、当前 Core 和生成声明。普通 tsc 不自动接入。默认参数允许 undefined；动态名称/any 等未证明情况保留 warning。主工程实时 LSP 与外置模块宿主任务的覆盖不同，不能把前者结果当作后者未保存源码已检查。详见 [Program 契约](../design/v0.7-program-contracts.md)。
+- **跨 worktree 身份**：TS Core、SDK 和 Native Cargo 依赖均须来自选定版本；同版本号不代表同一源码。模块 Cargo 路径显式对齐并重新生成，Native 与 Model 指纹不匹配时完整重建，不篡改哈希。无需为了读取单例暴露内部 SingletonRegistry；使用已有 Stable API。详见 [消费方迁移](../design/v0.7-map-deployment.md)。
+- **部署归属**：地图实例部署属于 MMORPG 模块，复用 dataPacks 通用信封和模块自己的强类型校验，文件名为 runtime.pack.json。部署不是玩法表或任意 Scene 字典；声明包漏实例、显式新旧值冲突必须失败，修改后重建重启。简单房间可采用一个直接连接的 Scene 与 Component，无需目录服务；演示重连快照不代表生产鉴权或持久恢复。详见 [房间消费方](../design/v0.7-room-consumer.md)。
+- **资源边界**：已登记 ConnectionWriter 的进程 payload 预算覆盖排队、发送和 KCP 转发引用，不能等同于整个进程内存、入站解码、主动 Inner 链路或 KCP 未确认队列的上限。每项新增额度均需保留在途占用和失败释放证据，标签不带用户/连接 ID。详见 [传输契约](../reference/transport-backend.md)。
+- **存储观测与恢复**：dbproxy_capacity 默认只读固定表的 catalog/分区字节，可选服务器时间扫描有独立期限；未知估算、缺表、RLS 和超时不能报告为零，业务时间不能作为回执 TTL。Outbox 重投允许重复投递，消费 inbox 与投影在同一事务后再 ACK；短时隔离恢复验证不等于断电、备份恢复或长稳。容量诊断不自动迁移、删除回执/事实或清理未确认事件。实际范围见 [实施进度](../design/v0.7-progress.md)。
+
 ## 哪些放技能，哪些交给工具
 
 | 位置 | 内容 |
