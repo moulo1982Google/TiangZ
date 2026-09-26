@@ -27,6 +27,7 @@ const Transfer = defineRpc({ ...Work, name: "MailboxLifetime.Transfer", requestC
 const rpcFrame = (value: number) => packFrame(Work.requestCode, Work.requestCodec.encode({ value, rpcId: value + 1 }));
 const messageFrame = (value: number) => packFrame(Message.msgcode, Message.codec.encode({ value }));
 const array = (owner: object, name: string): unknown[] => Reflect.get(owner, name) as unknown[];
+const connectionState = (owner: object): object => Reflect.get(owner, "connections") as object;
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>(complete => { resolve = complete; });
@@ -248,7 +249,7 @@ test.each([false, true])("Scene disposal prevents late network output and termin
     runtime.pushHostDisconnect(0, 1);
     expect(array(scene, "dataIngress")).toHaveLength(0);
     expect(array(scene, "controlIngress")).toHaveLength(0);
-    expect((Reflect.get(scene, "asyncIngressSources") as Map<number, unknown>).size).toBe(0);
+    expect((Reflect.get(connectionState(scene), "asyncIngressSources") as Map<number, unknown>).size).toBe(0);
     expect((Reflect.get(scene, "actorTransferBuffers") as Map<number, unknown>).size).toBe(0);
     if (!transfer) expect(scene.__canCommitHotfix()).toBe(false);
     gate.resolve(); await running;
@@ -307,7 +308,7 @@ test.each([
     gate.resolve(); await running;
     scene.__pumpMailbox(10);
     expect.soft(scene.__completeUpdate(0, false).outbound).toHaveLength(0);
-    expect.soft((Reflect.get(scene, "connectionIdBytes") as Map<number, unknown>).has(77)).toBe(false);
+    expect.soft((Reflect.get(connectionState(scene), "connectionIdBytes") as Map<number, unknown>).has(77)).toBe(false);
     expect(scene.__canCommitHotfix()).toBe(true);
   } finally { now?.mockRestore(); gate.resolve(); await running; await runtime.stop(); }
 });
@@ -334,7 +335,7 @@ test("a disconnected request cannot remove the pending response state of a reuse
     now.mockReturnValue(baseline + 60_002);
     next.resolve(); await current;
     expect(scene.__completeUpdate(0, false).outbound).toHaveLength(0);
-    expect((Reflect.get(scene, "connectionIdBytes") as Map<number, unknown>).has(77)).toBe(false);
+    expect((Reflect.get(connectionState(scene), "connectionIdBytes") as Map<number, unknown>).has(77)).toBe(false);
   } finally { now.mockRestore(); first.resolve(); next.resolve(); await Promise.all([old, current]); await runtime.stop(); }
 });
 
@@ -351,7 +352,7 @@ test("disconnecting one source preserves another source's actual response", asyn
     const output = scene.__completeUpdate(0, false).outbound;
     expect(output).toHaveLength(1);
     expect(Work.responseCodec.decode(output[0]!.frame.subarray(2))).toMatchObject({ value: 1, rpcId: 2 });
-    const cached = Reflect.get(scene, "connectionIdBytes") as Map<number, unknown>;
+    const cached = Reflect.get(connectionState(scene), "connectionIdBytes") as Map<number, unknown>;
     expect(cached.has(77)).toBe(false);
     expect(cached.has(78)).toBe(true);
     expect(scene.__canCommitHotfix()).toBe(true);
@@ -376,7 +377,7 @@ test("one completed request cannot release another active request's shared sourc
     now = vi.spyOn(performance, "now").mockReturnValue(performance.now() + 30_001);
     second.resolve(); await secondCall;
     expect(scene.__completeUpdate(0, false).outbound).toHaveLength(0);
-    expect((Reflect.get(scene, "connectionIdBytes") as Map<number, unknown>).size).toBe(0);
+    expect((Reflect.get(connectionState(scene), "connectionIdBytes") as Map<number, unknown>).size).toBe(0);
     expect(scene.__canCommitHotfix()).toBe(true);
   } finally { now?.mockRestore(); first.resolve(); second.resolve(); await Promise.all([firstCall, secondCall]); await runtime.stop(); }
 });

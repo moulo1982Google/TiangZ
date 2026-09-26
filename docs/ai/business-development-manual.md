@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+纯拆分应比对实际 AST 所有者：连接记账提取脚本首次在 __dispose 顶层查到 0 个 clear，期望 3，因而在生产源码写入前停止。清理实际位于 discardQueuedWork；修正定位并保留数量/不重叠断言，禁止按方法名称猜测、删断言或在提取时顺手改行为。EntrySceneConnections 只拥有缓存/墓碑/异步来源与指标；118 项执行体/声明比对、原测试路径迁移后的 21/21 和含 KCP 完整 check 8/8、quick 33/33、full 9/9 通过，实际二进制/报告身份见[拆分记录](../design/v0.7-connection-state-split.md)。
+
+拆分声明验证的 TS2339 指向 processIngress 遗漏迁移的 connectionIdBytes.delete，日志 `temp/v0.7-connections-split-diagnostics.log`。正确做法是在原 Disconnect 消费位置调用新所有者的缓存删除，不提前到通知接收时机，也不暴露旧影子字段让编译通过。须同时证明所有保留方法在展开已审核所有权调用后保持；这是拆分接线错误，不是此前已验收行为本身失败。
+
 迟到响应最终复测 20/20、含 KCP 完整 check 8/8、quick 33/33、full 9/9，日志 `temp/v0.7-late-responses-verify.log`；实际 WebSocket 关闭与 HTTP 指标验证没有回填连接缓存，原任务仍阻挡热更至真正结束，随后恢复。单测另覆盖 30 秒后、同号重用和同来源多个等待，不能把可控时钟反例描述为真实网络长稳。失败记录、实际宿主哈希与 AI 0.2.0 归档见[迟到响应](../design/v0.7-late-responses.md)。
 
 来源连接断开不等于 Scene 销毁：旧 enqueueResponse 只检查 mailboxClosed，异步业务结束仍排队迟到响应，并在 unordered Disconnect 已处理后重新插入 connectionIdBytes。`temp/v0.7-late-responses-first.log` 为 6 新用例失败/13 原用例通过，`temp/v0.7-late-responses-cache-red.log` 同时保留两处缓存断言失败。修法是等待绑定来源状态、断线立即失效、最后实际结束按对象身份清理；不提前取消业务计数，不靠短期墓碑判断长任务，不删除同号新来源状态或其他连接队列。复测 `npx vitest run tests/unit/mailbox_lifetime.test.ts`，并验证实际 V8/断线及完整矩阵，见[迟到响应](../design/v0.7-late-responses.md)。

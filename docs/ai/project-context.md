@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+EntryScene 连接记账已按独立职责搬到 `app/core/process/EntrySceneConnections.ts`，不加入 Socket/Session/业务取消能力；118 项 AST/声明比对、定向 21/21 和含 KCP check 8/8、quick 33/33、full 9/9 通过，完整构建与真实宿主身份见[纯拆分记录](../design/v0.7-connection-state-split.md)。提取脚本初版把清理语句误当作直接位于 __dispose，AST 数量断言在写源码前拒绝执行；真实所有者是 discardQueuedWork。移动前须先定位实际语句块，不能删除数量检查来让脚本继续。
+
+连接记账拆分的声明检查随后发现原 processIngress 仍直接删除旧缓存字段；应在原 Disconnect 消费点调用新所有者，不能把删除提前到入站通知时机来消除编译错误。除了迁移执行体，也要展开所有权调用后比对 EntryScene 剩余方法，防止搬移漏接或时序变化。
+
 迟到响应修复最终 20/20、含 KCP check 8/8、quick 33/33、full 9/9 通过；真实 V8/WebSocket 断开后仍等待实际任务、抑制迟到响应、缓存保持基线、热更恢复，实际宿主和 AI 归档身份见[迟到响应验收](../design/v0.7-late-responses.md)。编码临时副本和业务 DTO 仍不在此项预算范围。
 
 连接迟到响应反例：Scene 析构保护不覆盖单个来源断线，旧异步 RPC 在 Disconnect 后仍向出站队列追加响应，unordered 路径还会重新填入已清理的连接 ID 缓存。新增 6 个用例全部先失败，含超过 30 秒墓碑、同号新等待和其他来源；独立软断言进一步复现缓存残留。按[迟到响应契约](../design/v0.7-late-responses.md)保存等待所属状态，断线使其失效，旧 finally 不能删除同号新状态；业务任务仍按真实完成排空，不能延长墓碑为永久或清空所有队列来绕过。

@@ -1,3 +1,4 @@
+import { EntrySceneConnections, packConnectionIds, type AsyncIngressSource } from "./EntrySceneConnections";
 import {
   getKnownMessageDescriptors,
   getMessageBindings,
@@ -99,11 +100,6 @@ interface MailboxTask<T = unknown> {
   oneWay?: boolean;
 }
 
-interface AsyncIngressSource {
-  pending: number;
-  disconnected: boolean;
-}
-
 interface QueuedActorFrame {
   readonly frame: Uint8Array;
   readonly context: ProtocolContext;
@@ -135,8 +131,6 @@ export abstract class EntryScene extends Scene {
   private static readonly MAX_TRANSFER_BYTES_PER_CONNECTION = 256 * 1024;
   private static readonly MAX_TRANSFER_WAIT_MS = 3_000;
   private static readonly LATEST_ACTOR_FORWARD_WINDOW_MS = 20;
-  private static readonly DISCONNECTED_FRAME_TOMBSTONE_MS = 30_000;
-  private static readonly MAX_DISCONNECTED_FRAME_TOMBSTONES = 65_536;
   protected readonly registry: ProtocolRegistry;
   private readonly actorRegistry: ProtocolRegistry;
   protected readonly ctx: SceneCallContext;
@@ -176,11 +170,7 @@ export abstract class EntryScene extends Scene {
     queuedDepth: 0,
     maxQueuedDepth: 0,
   };
-  private readonly connectionIdBytes = new Map<number, Uint8Array>();
-  private readonly asyncIngressSources = new Map<number, AsyncIngressSource>();
-  private droppedResponsesAfterDisconnect = 0;
-  private readonly disconnectedFrameTombstones = new Map<number, number>();
-  private droppedFramesAfterDisconnect = 0;
+  private readonly connections = new EntrySceneConnections();
   private readonly actorTransferBuffers = new Map<number, ActorTransferBuffer>();
   private readonly actorTransferMetrics = {
     started: 0,
@@ -611,9 +601,7 @@ export abstract class EntryScene extends Scene {
     this.dataIngress.length = 0;
     this.controlIngressHead = this.dataIngressHead = 0;
     this.outboundControl.length = this.outboundReliable.length = this.outboundLatest.length = 0;
-    this.connectionIdBytes.clear();
-    this.asyncIngressSources.clear();
-    this.disconnectedFrameTombstones.clear();
+    this.connections.clear();
     this.dropLatestActorLocationFrames();
     // 整个 Scene 退出时无需为失效连接编码回复；唤醒框架等待后由关闭身份拒绝迟到结果。 / On Scene disposal, wake framework waits without encoding replies for dead connections.
     for (const buffer of this.actorTransferBuffers.values()) {
@@ -630,8 +618,8 @@ export abstract class EntryScene extends Scene {
 
   pushHostFrame(connectionId: number, frame: Uint8Array): void {
     if (this.mailboxClosed) return;
-    if (this.isDisconnectedFrame(connectionId)) {
-      this.droppedFramesAfterDisconnect += 1;
+    if (this.connections.isDisconnectedFrame(connectionId)) {
+      this.connections.droppedFramesAfterDisconnect += 1;
       return;
     }
     this.enqueueIngress({
@@ -644,8 +632,8 @@ export abstract class EntryScene extends Scene {
 
   pushHostControlFrame(connectionId: number, frame: Uint8Array): void {
     if (this.mailboxClosed) return;
-    if (this.isDisconnectedFrame(connectionId)) {
-      this.droppedFramesAfterDisconnect += 1;
+    if (this.connections.isDisconnectedFrame(connectionId)) {
+      this.connections.droppedFramesAfterDisconnect += 1;
       return;
     }
     this.enqueueIngress({
@@ -658,12 +646,7 @@ export abstract class EntryScene extends Scene {
 
   pushHostDisconnect(connectionId: number): void {
     if (this.mailboxClosed) return;
-    // 原等待保留失效状态，不依赖短期墓碑；同号新连接会取得另一份状态。
-    // Existing waits retain invalidation beyond tombstone expiry; a reused ID gets separate state.
-    const source = this.asyncIngressSources.get(connectionId);
-    if (source) source.disconnected = true;
-    this.asyncIngressSources.delete(connectionId);
-    this.markDisconnectedFrame(connectionId);
+    this.connections.markDisconnected(connectionId);
     this.enqueueIngress({
       kind: "disconnect",
       connectionId,
@@ -798,7 +781,7 @@ export abstract class EntryScene extends Scene {
     if (delivery === "latest") this.onClientLatestFrameQueued([connectionId]);
     else this.onClientSendQueued([connectionId]);
     this.outboundQueue(delivery).push({
-      connectionIdBytes: this.packConnectionId(connectionId),
+      connectionIdBytes: this.connections.packConnectionId(connectionId),
       frame,
     });
   }
@@ -906,23 +889,7 @@ export abstract class EntryScene extends Scene {
             outbound_latest_enqueued_total: "counter",
           },
         },
-        {
-          name: "connection_ingress",
-          values: {
-            dropped_frames_after_disconnect_total: this.droppedFramesAfterDisconnect,
-            dropped_responses_after_disconnect_total: this.droppedResponsesAfterDisconnect,
-            connected_async_sources: this.asyncIngressSources.size,
-            connection_id_cache_entries: this.connectionIdBytes.size,
-            disconnect_tombstones: this.disconnectedFrameTombstones.size,
-          },
-          kinds: {
-            dropped_frames_after_disconnect_total: "counter",
-            dropped_responses_after_disconnect_total: "counter",
-            connected_async_sources: "gauge",
-            connection_id_cache_entries: "gauge",
-            disconnect_tombstones: "gauge",
-          },
-        },
+        this.connections.metricsSnapshot(),
         {
           name: "actor_location_fence",
           values: {
@@ -934,39 +901,6 @@ export abstract class EntryScene extends Scene {
         },
       ],
     };
-  }
-
-  /** 控制队列可能先于旧数据帧交付Disconnect；短期墓碑用于拒绝这些不再可响应的残留帧。 / A control-lane disconnect may overtake old data frames; a short-lived tombstone drops frames that can no longer receive responses. */
-  private markDisconnectedFrame(connectionId: number): void {
-    const now = nowMs();
-    this.pruneDisconnectedFrames(now);
-    this.disconnectedFrameTombstones.delete(connectionId);
-    this.disconnectedFrameTombstones.set(
-      connectionId,
-      now + EntryScene.DISCONNECTED_FRAME_TOMBSTONE_MS,
-    );
-    while (
-      this.disconnectedFrameTombstones.size > EntryScene.MAX_DISCONNECTED_FRAME_TOMBSTONES
-    ) {
-      const oldest = this.disconnectedFrameTombstones.keys().next().value;
-      if (oldest === undefined) break;
-      this.disconnectedFrameTombstones.delete(oldest);
-    }
-  }
-
-  private isDisconnectedFrame(connectionId: number): boolean {
-    const expiresAt = this.disconnectedFrameTombstones.get(connectionId);
-    if (expiresAt === undefined) return false;
-    if (expiresAt > nowMs()) return true;
-    this.disconnectedFrameTombstones.delete(connectionId);
-    return false;
-  }
-
-  private pruneDisconnectedFrames(now: number): void {
-    for (const [connectionId, expiresAt] of this.disconnectedFrameTombstones) {
-      if (expiresAt > now) break;
-      this.disconnectedFrameTombstones.delete(connectionId);
-    }
   }
 
   private drainOutbound(): OutboundBatch[] {
@@ -1317,7 +1251,7 @@ export abstract class EntryScene extends Scene {
       this.latencies.record("ingress.queue", nowMs() - item.queuedAtMs);
     }
     if (item.kind === "disconnect") {
-      this.connectionIdBytes.delete(item.connectionId);
+      this.connections.forgetConnectionId(item.connectionId);
       this.cancelActorTransfer(item.connectionId);
       try {
         const result = this.onDisconnect(item.connectionId);
@@ -1343,8 +1277,8 @@ export abstract class EntryScene extends Scene {
       return;
     }
 
-    if (this.isDisconnectedFrame(item.connectionId)) {
-      this.droppedFramesAfterDisconnect += 1;
+    if (this.connections.isDisconnectedFrame(item.connectionId)) {
+      this.connections.droppedFramesAfterDisconnect += 1;
       return;
     }
 
@@ -1354,15 +1288,10 @@ export abstract class EntryScene extends Scene {
       connectionId: item.connectionId,
     });
     if (isPromiseLike(response)) {
-      const source = this.retainAsyncIngressSource(item.connectionId);
+      const source = this.connections.retainAsyncIngressSource(item.connectionId);
       return Promise.resolve(response)
         .then(value => { this.enqueueResponse(item.connectionId, value, source); })
-        .finally(() => {
-          source.pending -= 1;
-          if (source.pending === 0 && this.asyncIngressSources.get(item.connectionId) === source) {
-            this.asyncIngressSources.delete(item.connectionId);
-          }
-        });
+        .finally(() => this.connections.releaseAsyncIngressSource(item.connectionId, source));
     }
     this.enqueueResponse(item.connectionId, response);
   }
@@ -1373,33 +1302,15 @@ export abstract class EntryScene extends Scene {
     source?: AsyncIngressSource,
   ): void {
     if (!response || this.mailboxClosed) return;
-    if (source?.disconnected || (!source && this.isDisconnectedFrame(connectionId))) {
-      this.droppedResponsesAfterDisconnect += 1;
+    if (source?.disconnected || (!source && this.connections.isDisconnectedFrame(connectionId))) {
+      this.connections.droppedResponsesAfterDisconnect += 1;
       return;
     }
     this.onClientSendQueued([connectionId]);
     this.outboundControl.push({
-      connectionIdBytes: this.packConnectionId(connectionId),
+      connectionIdBytes: this.connections.packConnectionId(connectionId),
       frame: response,
     });
-  }
-
-  /** 只为实际异步入站等待保留来源，最后结束释放索引；断线不提前结束业务。 / Retains a source only for actual async ingress waits; disconnect invalidates replies without settling business work. */
-  private retainAsyncIngressSource(connectionId: number): AsyncIngressSource {
-    const current = this.asyncIngressSources.get(connectionId);
-    if (current) { current.pending += 1; return current; }
-    const source = { pending: 1, disconnected: this.isDisconnectedFrame(connectionId) };
-    if (!source.disconnected) this.asyncIngressSources.set(connectionId, source);
-    return source;
-  }
-
-  private packConnectionId(connectionId: number): Uint8Array {
-    let bytes = this.connectionIdBytes.get(connectionId);
-    if (!bytes) {
-      bytes = packConnectionIds([connectionId]);
-      this.connectionIdBytes.set(connectionId, bytes);
-    }
-    return bytes;
   }
 
   private handleFrame(
@@ -2175,23 +2086,6 @@ const hostCloseConnection = (globalThis as typeof globalThis & {
 }).__hostCloseConnection;
 
 export type EntrySceneCtor = new (config: RuntimeEntrySceneConfig) => EntryScene;
-
-function packConnectionIds(connectionIds: readonly number[]): Uint8Array {
-  const bytes = new Uint8Array(connectionIds.length * 4);
-  const view = new DataView(bytes.buffer);
-  for (let index = 0; index < connectionIds.length; index += 1) {
-    const connectionId = connectionIds[index];
-    if (
-      !Number.isInteger(connectionId) ||
-      connectionId < 0 ||
-      connectionId > 0xffff_ffff
-    ) {
-      throw new Error(`invalid connection id: ${connectionId}`);
-    }
-    view.setUint32(index * 4, connectionId, true);
-  }
-  return bytes;
-}
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
