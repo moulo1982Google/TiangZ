@@ -18,6 +18,8 @@
 
 ## 相关能力被修改时再核对
 
+- **远程 Host 共享准入**：0.7 候选 call/send/sleep 的未提交队列共用 65536 项、含批头与元数据的 64 MiB 上限，call/send 帧遵循既有 Rust 2..1048576 字节格式。先验证再注册路由/等待者，容量拒绝保留 1011，只拒绝新增项；回复名额另计且跨提交保留。帧是借用引用，交付后不得修改，flush 检出长度变化只终结本项；不声称识别同长度内容修改。排队成本、待回复和原生包各有释放点与固定 Process 指标，send 接受不代表可靠送达或允许重放。不是全部远程在途、V8 内存或原生批次排队期限上限，见[共享准入](../design/v0.7-host-operation-admission.md)。
+
 - **本地 Scene 准入**：0.7 候选每 EntryScene 4096、原 ProcessHost 16384 项本地 call/send，排队与真实运行一起计数；先检查存活，再检查 Scene/Process，公开 call/send 保留 1011。busy void 返回并不代表完成，名额附着实际节点；销毁只立即释放未执行工作，运行任务与旧 Runtime 回调释放原所有者。网络入站、Disconnect 和 Host completion 使用各自路径，不能占用这份本地配额来完成释放，也不能越过 ordered 顺序。嵌套 Actor 调用可同时持有两类名额，指标不能相加冒充唯一请求或堆字节，见[本地容量](../design/v0.7-local-scene-capacity.md)。
 
 - **调用期限资源**：显式本地 RPC 先预留当前 isolate 的原生绝对期限，再启动目标；宿主刷新时仍未完成才启动原生 waiter，此前完成则同步关闭资源，已有 waiter 的调用等真实退出。延后注册失败不能撤销已开始业务。期限届满不取消 callee，不能释放实际 mailbox 名额、破坏 ordered 或提前允许热更；保留桥接前的参数/错误转换。该内部资源不供游戏定时使用；不能将准入失败不执行的包装器直接套到 stop，见[期限契约](../design/v0.7-host-deadlines.md)。

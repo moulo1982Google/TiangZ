@@ -1,6 +1,7 @@
 import type { MaybePromise } from "../async";
 import { Game, InitializeGameSingletons, monotonicNow } from "../runtime/Game";
 import { ProcessHost } from "../runtime/host";
+import { hostSceneOperationMetrics } from "./HostSceneTransport";
 import { RpcError } from "../protocol/RpcError";
 import { SystemErrCode } from "../protocol/SystemErrCode";
 import { SingletonRegistry } from "../runtime/Singleton";
@@ -61,6 +62,17 @@ export interface GameMetricsSnapshot {
   localSceneMailboxMaxInFlight: number;
   localSceneMailboxSceneRejections: number;
   localSceneMailboxProcessRejections: number;
+  hostSceneQueuedOperations: number;
+  hostSceneQueuedBytes: number;
+  hostScenePendingReplies: number;
+  hostSceneQueueCapacity: number;
+  hostSceneQueueByteCapacity: number;
+  hostScenePendingCapacity: number;
+  hostSceneQueueRejections: number;
+  hostSceneByteRejections: number;
+  hostScenePendingRejections: number;
+  hostSceneInvalidFrames: number;
+  hostSceneSubmitFailures: number;
 }
 
 export class ProcessRuntime implements LocalSceneRouter {
@@ -367,6 +379,7 @@ function gameMetricsSnapshot(processHost: ProcessHost): GameMetricsSnapshot {
     ...processHost.SceneTaskMetrics(),
     ...processHost.ActorMailboxTaskMetrics(),
     ...processHost.LocalSceneMailboxMetrics(),
+    ...hostSceneOperationMetrics(),
     fixedUpdateMs: Game.Instance.FixedUpdateMs,
     frameCount: TimeSystem.Instance.FrameCount,
     skippedFixedUpdates: Game.Instance.SkippedFixedUpdates,

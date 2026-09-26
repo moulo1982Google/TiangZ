@@ -1986,6 +1986,72 @@ fn append_game_metrics_prometheus(
             "Local calls rejected by the Process limit after passing the per-Scene limit",
             snapshot.local_scene_mailbox_process_rejections,
         ),
+        (
+            "tiangz_host_scene_operations_queued",
+            "gauge",
+            "Unsubmitted Host scene operations across call, send and sleep",
+            snapshot.host_scene_queued_operations,
+        ),
+        (
+            "tiangz_host_scene_operations_queued_bytes",
+            "gauge",
+            "Unsubmitted packed operation cost including headers, not retained heap bytes",
+            snapshot.host_scene_queued_bytes,
+        ),
+        (
+            "tiangz_host_scene_operations_pending_replies",
+            "gauge",
+            "Host call and sleep reply waiters, including submitted operations",
+            snapshot.host_scene_pending_replies,
+        ),
+        (
+            "tiangz_host_scene_operations_queue_capacity",
+            "gauge",
+            "Maximum operations in one unsubmitted Host queue",
+            snapshot.host_scene_queue_capacity,
+        ),
+        (
+            "tiangz_host_scene_operations_queue_byte_capacity",
+            "gauge",
+            "Maximum metadata-inclusive bytes in one Host operation packet",
+            snapshot.host_scene_queue_byte_capacity,
+        ),
+        (
+            "tiangz_host_scene_operations_pending_capacity",
+            "gauge",
+            "Maximum Host call and sleep reply waiters",
+            snapshot.host_scene_pending_capacity,
+        ),
+        (
+            "tiangz_host_scene_operations_queue_count_rejected_total",
+            "counter",
+            "Operations rejected by the shared unsubmitted count limit",
+            snapshot.host_scene_queue_rejections,
+        ),
+        (
+            "tiangz_host_scene_operations_queue_bytes_rejected_total",
+            "counter",
+            "Operations rejected by the shared packed byte limit",
+            snapshot.host_scene_byte_rejections,
+        ),
+        (
+            "tiangz_host_scene_operations_pending_rejected_total",
+            "counter",
+            "Operations rejected by the pending reply limit",
+            snapshot.host_scene_pending_rejections,
+        ),
+        (
+            "tiangz_host_scene_operations_invalid_frames_total",
+            "counter",
+            "Frames rejected at admission or invalidated before submission",
+            snapshot.host_scene_invalid_frames,
+        ),
+        (
+            "tiangz_host_scene_operations_submit_failures_total",
+            "counter",
+            "Packed Host operation submissions that failed",
+            snapshot.host_scene_submit_failures,
+        ),
     ] {
         writeln!(output, "# HELP {name} {help}").expect("formatting metric help");
         writeln!(output, "# TYPE {name} {kind}").expect("formatting metric type");

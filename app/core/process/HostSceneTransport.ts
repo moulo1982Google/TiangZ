@@ -1,9 +1,13 @@
 import type { SceneConfig } from "./types";
 import { utf8Decode } from "../protocol/binary";
 import type { MaybePromise } from "../async";
+import { RpcError } from "../protocol/RpcError";
+import { SystemErrCode } from "../protocol/SystemErrCode";
 
 const MAX_PENDING_OPERATIONS = 65_536;
 const OPERATION_META_BYTES = 17;
+const MAX_PACKED_BYTES = 64 * 1024 * 1024;
+const MAX_FRAME_BYTES = 1024 * 1024;
 
 interface PendingOperation {
   resolve: (value: Uint8Array) => void;
@@ -16,6 +20,7 @@ interface QueuedOperation {
   kind: 1 | 2 | 3;
   timeoutMs: number;
   frame: Uint8Array;
+  frameLength: number;
 }
 
 interface PendingDeadline {
@@ -31,6 +36,59 @@ const queued: QueuedOperation[] = [];
 const deadlines = new Map<number, PendingDeadline>();
 const unstartedDeadlines = new Set<PendingDeadline>();
 let nextOperationId = 1;
+let queuedPackedBytes = 4;
+const operationCounters = { queueRejected: 0, bytesRejected: 0, pendingRejected: 0, invalidFrames: 0, submitFailures: 0 };
+
+/** 仅记录未提交打包成本与等待回复数，不能当作全部远程在途或堆内存。 / Reports unsubmitted packed cost and reply waiters, not all remote in-flight work or heap memory. */
+export function hostSceneOperationMetrics() {
+  return {
+    hostSceneQueuedOperations: queued.length,
+    hostSceneQueuedBytes: queued.length === 0 ? 0 : queuedPackedBytes,
+    hostScenePendingReplies: pending.size,
+    hostSceneQueueCapacity: MAX_PENDING_OPERATIONS,
+    hostSceneQueueByteCapacity: MAX_PACKED_BYTES,
+    hostScenePendingCapacity: MAX_PENDING_OPERATIONS,
+    hostSceneQueueRejections: operationCounters.queueRejected,
+    hostSceneByteRejections: operationCounters.bytesRejected,
+    hostScenePendingRejections: operationCounters.pendingRejected,
+    hostSceneInvalidFrames: operationCounters.invalidFrames,
+    hostSceneSubmitFailures: operationCounters.submitFailures,
+  };
+}
+
+/** 在新增项进入队列前验证既有 Rust 帧边界。 / Validates the existing Rust frame boundary before admitting a new operation. */
+function requireSceneFrame(frame: Uint8Array): void {
+  if (!(frame instanceof Uint8Array) || !ArrayBuffer.isView(frame) || frame.length < 2 || frame.length > MAX_FRAME_BYTES) {
+    operationCounters.invalidFrames += 1;
+    throw new Error(`invalid host scene frame length: ${frame?.length}`);
+  }
+}
+
+/** 回复名额跨 flush 保留；单向消息不持有此资源。 / Reply admission survives flush and is not held by one-way operations. */
+function requireReplyCapacity(): void {
+  if (pending.size >= MAX_PENDING_OPERATIONS) {
+    operationCounters.pendingRejected += 1;
+    throw new RpcError(SystemErrCode.SceneOverloaded, "host scene pending reply limit reached");
+  }
+}
+
+/** call/send/sleep 共用条数与含元数据的成本；拒绝不会改变旧队列。 / Shares count and metadata-inclusive cost across call/send/sleep without changing admitted work on rejection. */
+function requireQueueCapacity(frameLength: number): void {
+  if (queued.length >= MAX_PENDING_OPERATIONS) {
+    operationCounters.queueRejected += 1;
+    throw new RpcError(SystemErrCode.SceneOverloaded, "host scene operation queue limit reached");
+  }
+  if (queuedPackedBytes + OPERATION_META_BYTES + frameLength > MAX_PACKED_BYTES) {
+    operationCounters.bytesRejected += 1;
+    throw new RpcError(SystemErrCode.SceneOverloaded, "host scene packed byte limit reached");
+  }
+}
+
+/** 在全部同步验证成功后接收原帧引用和固定成本。 / Accepts the original frame reference and fixed cost after all synchronous checks succeed. */
+function queueOperation(operation: QueuedOperation): void {
+  queued.push(operation);
+  queuedPackedBytes += OPERATION_META_BYTES + operation.frameLength;
+}
 
 /** 先预留绝对期限；未跨 Update 的调用同步释放，已启动的原生等待实际退出后才返回。 / Reserves an absolute deadline; calls finishing before Update release synchronously, while started native waits drain before returning. */
 export async function withHostDeadline<T>(run: () => MaybePromise<T>, ms: number, timeoutMessage: string): Promise<T> {
@@ -79,33 +137,37 @@ export function sendRemoteScene(
   frame: Uint8Array,
   timeoutMs: number,
 ): void {
-  if (queued.length >= MAX_PENDING_OPERATIONS) {
-    throw new Error("host scene operation queue limit reached");
-  }
-  queued.push({
+  requireSceneFrame(frame);
+  requireQueueCapacity(frame.length);
+  queueOperation({
     id: 0,
     routeId: resolveRoute(source, target),
     kind: 2,
     timeoutMs: Math.max(1, Math.min(timeoutMs, 0xffff_ffff)),
     frame,
+    frameLength: frame.length,
   });
 }
 
 /** 传输超时使用 Rust 宿主定时器；游戏逻辑定时必须使用 TimerSystem。 / Uses the Rust host timer for transport deadlines; gameplay timers belong to TimerSystem. */
 export function sleepHost(ms: number): Promise<void> {
-  if (pending.size >= MAX_PENDING_OPERATIONS) {
-    return Promise.reject(new Error("host async operation limit reached"));
+  try {
+    requireReplyCapacity();
+    requireQueueCapacity(0);
+  } catch (error) {
+    return Promise.reject(error);
   }
   const id = allocateOperationId();
   const promise = new Promise<Uint8Array>((resolve, reject) => {
     pending.set(id, { resolve, reject });
   });
-  queued.push({
+  queueOperation({
     id,
     routeId: 0,
     kind: 3,
     timeoutMs: Math.max(0, Math.min(ms, 0xffff_ffff)),
     frame: new Uint8Array(0),
+    frameLength: 0,
   });
   return promise.then(() => undefined);
 }
@@ -117,22 +179,26 @@ function enqueue(
   timeoutMs: number,
   kind: 1,
 ): Promise<Uint8Array> {
-  if (pending.size >= MAX_PENDING_OPERATIONS) {
-    return Promise.reject(new Error("host scene operation limit reached"));
-  }
-  const id = allocateOperationId();
-  const routeId = resolveRoute(source, target);
-  const promise = new Promise<Uint8Array>((resolve, reject) => {
-    pending.set(id, { resolve, reject });
-  });
-  queued.push({
-    id,
-    routeId,
-    kind,
-    timeoutMs: Math.max(1, Math.min(timeoutMs, 0xffff_ffff)),
-    frame,
-  });
-  return promise;
+  try {
+    requireSceneFrame(frame);
+    requireReplyCapacity();
+    requireQueueCapacity(frame.length);
+    const routeId = resolveRoute(source, target);
+    const id = allocateOperationId();
+    const promise = new Promise<Uint8Array>((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+    });
+    queueOperation({ id, routeId, kind, timeoutMs: Math.max(1, Math.min(timeoutMs, 0xffff_ffff)), frame, frameLength: frame.length });
+    return promise;
+  } catch (error) { return Promise.reject(error); }
+}
+
+/** 只终结该项的回复等待；单向失败由聚合指标记录。 / Settles only this operation's reply waiter; one-way failures are counted in aggregate metrics. */
+function rejectOperation(operation: QueuedOperation, reason: Error): void {
+  if (operation.id === 0) return;
+  const reply = pending.get(operation.id);
+  pending.delete(operation.id);
+  reply?.reject(reason);
 }
 
 /** 在本次 Update 末尾把所有待处理 call/send 打包为一次 host op。 / Packs all queued call/send operations into one host op at the end of the update. */
@@ -140,16 +206,23 @@ export function flushHostSceneOperations(): void {
   flushHostDeadlines();
   if (queued.length === 0) return;
   const operations = queued.splice(0, queued.length);
-  try {
-    hostSubmitSceneOperations(packOperations(operations));
-  } catch (error) {
-    const reason = error instanceof Error ? error : new Error(String(error));
-    for (const operation of operations) {
-      if (operation.id !== 0) {
-        pending.get(operation.id)?.reject(reason);
-        pending.delete(operation.id);
-      }
+  queuedPackedBytes = 4;
+  const valid: QueuedOperation[] = [];
+  for (const operation of operations) {
+    if (operation.frame.length !== operation.frameLength) {
+      operationCounters.invalidFrames += 1;
+      rejectOperation(operation, new Error("host scene frame changed before submission"));
+    } else {
+      valid.push(operation);
     }
+  }
+  if (valid.length === 0) return;
+  try {
+    hostSubmitSceneOperations(packOperations(valid));
+  } catch (error) {
+    operationCounters.submitFailures += 1;
+    const reason = error instanceof Error ? error : new Error(String(error));
+    for (const operation of valid) rejectOperation(operation, reason);
   }
 }
 
@@ -171,6 +244,7 @@ export function cancelHostSceneOperations(
   reason = "process stopped before host operation completed",
 ): void {
   queued.splice(0, queued.length);
+  queuedPackedBytes = 4;
   const error = new Error(reason);
   for (const deadline of deadlines.values()) {
     hostCancelDeadline(deadline.id);
@@ -208,7 +282,7 @@ function resolveRoute(source: SceneConfig, target: SceneConfig): number {
 function packOperations(operations: readonly QueuedOperation[]): Uint8Array {
   let byteLength = 4;
   for (const operation of operations) {
-    byteLength += OPERATION_META_BYTES + operation.frame.length;
+    byteLength += OPERATION_META_BYTES + operation.frameLength;
   }
   const packed = new Uint8Array(byteLength);
   const view = new DataView(packed.buffer);
@@ -219,10 +293,10 @@ function packOperations(operations: readonly QueuedOperation[]): Uint8Array {
     view.setUint32(offset + 4, operation.routeId, true);
     packed[offset + 8] = operation.kind;
     view.setUint32(offset + 9, operation.timeoutMs, true);
-    view.setUint32(offset + 13, operation.frame.length, true);
+    view.setUint32(offset + 13, operation.frameLength, true);
     offset += OPERATION_META_BYTES;
     packed.set(operation.frame, offset);
-    offset += operation.frame.length;
+    offset += operation.frameLength;
   }
   return packed;
 }

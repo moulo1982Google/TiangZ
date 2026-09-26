@@ -123,6 +123,28 @@ pub(super) struct GameMetricsSnapshot {
     local_scene_mailbox_scene_rejections: u64,
     #[serde(default)]
     local_scene_mailbox_process_rejections: u64,
+    #[serde(default)]
+    host_scene_queued_operations: u64,
+    #[serde(default)]
+    host_scene_queued_bytes: u64,
+    #[serde(default)]
+    host_scene_pending_replies: u64,
+    #[serde(default)]
+    host_scene_queue_capacity: u64,
+    #[serde(default)]
+    host_scene_queue_byte_capacity: u64,
+    #[serde(default)]
+    host_scene_pending_capacity: u64,
+    #[serde(default)]
+    host_scene_queue_rejections: u64,
+    #[serde(default)]
+    host_scene_byte_rejections: u64,
+    #[serde(default)]
+    host_scene_pending_rejections: u64,
+    #[serde(default)]
+    host_scene_invalid_frames: u64,
+    #[serde(default)]
+    host_scene_submit_failures: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -519,6 +541,17 @@ pub(super) fn maybe_log_metrics(
         local_scene_mailbox_max_in_flight: game.local_scene_mailbox_max_in_flight,
         local_scene_mailbox_scene_rejections: game.local_scene_mailbox_scene_rejections,
         local_scene_mailbox_process_rejections: game.local_scene_mailbox_process_rejections,
+        host_scene_queued_operations: game.host_scene_queued_operations,
+        host_scene_queued_bytes: game.host_scene_queued_bytes,
+        host_scene_pending_replies: game.host_scene_pending_replies,
+        host_scene_queue_capacity: game.host_scene_queue_capacity,
+        host_scene_queue_byte_capacity: game.host_scene_queue_byte_capacity,
+        host_scene_pending_capacity: game.host_scene_pending_capacity,
+        host_scene_queue_rejections: game.host_scene_queue_rejections,
+        host_scene_byte_rejections: game.host_scene_byte_rejections,
+        host_scene_pending_rejections: game.host_scene_pending_rejections,
+        host_scene_invalid_frames: game.host_scene_invalid_frames,
+        host_scene_submit_failures: game.host_scene_submit_failures,
     });
     let native_snapshot = native_data_metrics.map(|native| NativeDataObservabilitySnapshot {
         scalar_gets: native.scalar_gets,
@@ -752,7 +785,18 @@ mod tests {
                     "localSceneMailboxPerSceneCapacity": 4096,
                     "localSceneMailboxMaxInFlight": 16384,
                     "localSceneMailboxSceneRejections": 6,
-                    "localSceneMailboxProcessRejections": 7
+                    "localSceneMailboxProcessRejections": 7,
+                    "hostSceneQueuedOperations": 3,
+                    "hostSceneQueuedBytes": 59,
+                    "hostScenePendingReplies": 2,
+                    "hostSceneQueueCapacity": 65536,
+                    "hostSceneQueueByteCapacity": 67108864,
+                    "hostScenePendingCapacity": 65536,
+                    "hostSceneQueueRejections": 10,
+                    "hostSceneByteRejections": 20,
+                    "hostScenePendingRejections": 30,
+                    "hostSceneInvalidFrames": 40,
+                    "hostSceneSubmitFailures": 50
                 },
                 "actorMailbox": {
                     "queuedCalls": 8,
@@ -792,6 +836,17 @@ mod tests {
         assert_eq!(game.local_scene_mailbox_max_in_flight, 16384);
         assert_eq!(game.local_scene_mailbox_scene_rejections, 6);
         assert_eq!(game.local_scene_mailbox_process_rejections, 7);
+        assert_eq!(game.host_scene_queued_operations, 3);
+        assert_eq!(game.host_scene_queued_bytes, 59);
+        assert_eq!(game.host_scene_pending_replies, 2);
+        assert_eq!(game.host_scene_queue_capacity, 65536);
+        assert_eq!(game.host_scene_queue_byte_capacity, 67108864);
+        assert_eq!(game.host_scene_pending_capacity, 65536);
+        assert_eq!(game.host_scene_queue_rejections, 10);
+        assert_eq!(game.host_scene_byte_rejections, 20);
+        assert_eq!(game.host_scene_pending_rejections, 30);
+        assert_eq!(game.host_scene_invalid_frames, 40);
+        assert_eq!(game.host_scene_submit_failures, 50);
         assert_eq!(result.actor_mailbox.queued_calls, 8);
         assert_eq!(result.actor_mailbox.one_way_queued_calls, 9);
         assert_eq!(result.actor_mailbox.queued_depth, 2);

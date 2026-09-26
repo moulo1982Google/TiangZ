@@ -53,7 +53,7 @@ async function testHostCompletionAndShutdown(
 ): Promise<void> {
   const source = scene("source", 7001);
   const target = scene("target", 7002);
-  const first = transport.callRemoteScene(source, target, Uint8Array.of(1), 1000);
+  const first = transport.callRemoteScene(source, target, Uint8Array.of(0, 1), 1000);
   transport.flushHostSceneOperations();
   const operationId = new DataView(
     submitted().buffer,
@@ -64,7 +64,7 @@ async function testHostCompletionAndShutdown(
   assert.deepEqual(await first, Uint8Array.of(7));
 
   transport.completeHostSceneOperation(operationId, true, Uint8Array.of(8));
-  const cancelled = transport.callRemoteScene(source, target, Uint8Array.of(2), 1000);
+  const cancelled = transport.callRemoteScene(source, target, Uint8Array.of(0, 2), 1000);
   transport.flushHostSceneOperations();
   transport.cancelHostSceneOperations("self-test shutdown");
   await assert.rejects(cancelled, /self-test shutdown/);

@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+远程共享准入的最终复测为相关 **27/27**，含 KCP `npm run verify` **check 8/8、quick 33/33、full 9/9**，457372ms，`temp/v0.7-host-operation-admission-verify.log`；Rust 240 项、Linux 条件编译与 AI 实际归档通过。真实 V8 完整保留 65536 条单向消息及 64 MiB 整包，4 次公开 1011 只拒绝新增项，排空后恢复，宿主/报告 SHA256 `73d8d2ee0bd1e1404fe75dd08400bcad73330d6bde5492ddba6230c9c83c27d0`。下方失败反例及初步阶段保留；临时容量夹具的 Rust 出站预算与被测单批上限分开，不能改变默认值后声称默认吞吐已验收。详见[准入最终证据](../design/v0.7-host-operation-admission.md)，停机与排队期限仍有独立边界。
+
+共享准入必须覆盖所有入口和旧项保留：`temp/v0.7-host-operation-admission-red.log` **10 failed/2 passed**，旧 call/sleep 能绕过单向队列上限，无效或已 detach 的帧还能使整批失败。修复在接受前检查输入、pending、条数和含头字节，flush 仅拒绝失效的本项，不能丢旧队列、只改 Rust 上限或把排队成本算成在途总内存。复测 `npx vitest run tests/unit/host_operation_admission.test.ts tests/unit/scene_call_deadline.test.ts tests/legacy/rpc_actor_correctness_self_test.test.ts` 初步 26/26；现有 mock 的一字节业务帧修正为原 Rust 已要求的二字节，完成和 rpcId 断言保留。指标、真实生成协议与完整矩阵另验，见[准入契约](../design/v0.7-host-operation-admission.md)。
+
 本地期限最终复测为相关 **31/31**，含 KCP `npm run verify` **check 8/8、quick 33/33、full 9/9**，434358ms，`temp/v0.7-host-deadlines-verify-final.log`。Rust 239 项、Linux 条件编译、AI 实际归档通过；真实 V8 2000 次快速调用合计 148.95ms，期限届满后原 callee/mailbox/热更仍等实际完成，宿主/两份报告共同 SHA256 `670e83f915b0067d8fe8a979bae688ff77d3855f520f1c3e0740cee3164bf224`。见[最终证据](../design/v0.7-host-deadlines.md)。下方旧夹具缺桥、参数转换、waiter 快速路径反例和首轮 ENOBUFS 逐项保留；未改变网络参数，不能用后续通过覆盖首轮失败或宣称全部队列/内存有界。
 
 跨入口的队列需要共同反例：`node temp/v0.7-host-operation-admission-probe.mjs` 仅在隔离 Node 中记录当前 TS Host 打包，65536 个单向消息加一个 RPC 被全部接受，形成 Rust 不允许的 **65537** 项整批。证据 `temp/v0.7-host-operation-admission-audit.json`，未发网络；下一批需在接受新项前验证共享限制，保留先前已接受项，不能把 TS Mock 打包观测称为真实传输验收或清空旧队列绕过。见[后续盘点](../design/v0.7-ts-mailbox-audit.md)。

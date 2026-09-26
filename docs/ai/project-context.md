@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+远程共享准入最终通过：相关 **27/27**，含 KCP **check 8/8、quick 33/33、full 9/9**，457372ms，`temp/v0.7-host-operation-admission-verify.log`；Rust 240 项、Linux 条件编译、AI 实际归档通过。真实 V8 新场景 9888.79ms，65536 条单向消息、64 MiB 整包完整送达，4 次公开 1011 及排空恢复通过。宿主/两份报告共同 SHA256 `73d8d2ee0bd1e1404fe75dd08400bcad73330d6bde5492ddba6230c9c83c27d0`；范围、隔离夹具的独立 256 MiB Rust 出站预算与证据见[最终验收](../design/v0.7-host-operation-admission.md)。下方探针/RED 是修复前记录；排队期限、停机资源和 TS 全部二进制保留仍另行处理。
+
+远程 Host 共享准入按[独立契约](../design/v0.7-host-operation-admission.md)实施：旧反例 `temp/v0.7-host-operation-admission-red.log` 为 **10 failed/2 passed**，包括混合 call/send/sleep 整批超限、超大/过短帧污染旧项、公开错误类型和借用帧失效。先验证输入及共享条数/含头成本，再建立路由和等待记录；失效帧只影响本项，计数与待回复按不同释放时机观测，不能清空此前已接受队列或把 queued bytes 叫作堆上限。初步相关 26/26 通过；旧 RPC mock 的一字节输入本就不满足 Rust 最小帧长，迁移为二字节后保留原完成/ID断言。真实宿主、指标及最终矩阵仍待验证。
+
 本地期限资源最终验收通过：相关 **31/31**，含 KCP **check 8/8、quick 33/33、full 9/9**，434358ms，`temp/v0.7-host-deadlines-verify-final.log`；Rust 239 项、Linux 条件编译和 AI 实际 0.2.0 归档通过。实际 V8 期限场景 9972ms，其中 2000 次快速调用合计 148.95ms，超时后 callee 继续占额并阻止热更，真实完成才恢复；普通 Host 与两份报告共同 SHA256 `670e83f915b0067d8fe8a979bae688ff77d3855f520f1c3e0740cee3164bf224`。完整证据、初版 waiter 成本、legacy 夹具缺桥及首轮 ENOBUFS 保留在[期限验收](../design/v0.7-host-deadlines.md)；没有改系统参数，后续通过不证明 ENOBUFS 根因已修复。远程整批准入和停机期限仍有独立边界。
 
 后续远程 Host 队列审查发现混合准入问题：独立 Node 边界探针先接受 65536 个 send，再接受一个 call，打包总数 **65537**，超出 Rust 整批解码上限。`temp/v0.7-host-operation-admission-audit.json` 只证明当前 TS 打包结果，未运行网络；应按[队列盘点](../design/v0.7-ts-mailbox-audit.md)在接受新项之前统一共享容量、帧和打包成本检查。不能只看各入口自己的 pending/queued 上限，也不能丢弃此前已接受项来让整批通过；该远程路径尚未修改。

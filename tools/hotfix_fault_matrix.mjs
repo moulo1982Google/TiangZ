@@ -123,6 +123,10 @@ async function responseProxy(upstream) {
 }
 try {
   const config = JSON.parse(await readFile(configPath, "utf8"));
+  // 独立 Rust 总预算容纳 64 MiB 包及传输副本；TS 单批 64 MiB 硬上限保持不变。
+  // An independent Rust budget holds the 64 MiB packet and transport copies; the TS 64 MiB packet limit remains unchanged.
+  config.process.network = { ...config.process.network, maxOutboundBufferedBytes: 256 * 1024 * 1024 };
+  assert.notEqual(config.process.observability.tracing?.enabled, true, "exact packet fixture expects tracing disabled");
   const mainScene = { ...config.scenes[0], protocol: "auto", audience: "mixed" };
   const usedPorts = new Set([mainScene.port, config.process.observability.health.port]);
   const uniquePort = async () => { let port; do { port = await freePort(); } while (usedPorts.has(port)); usedPorts.add(port); return port; };
@@ -451,6 +455,45 @@ try {
       for (const client of [control, target, workerControl]) await client.call(61);
       target.close();
     }
+  });
+  await test("remote-host-shared-admission-preserves-count-and-byte-full-batches", async () => {
+    const metrics = async () => {
+      const response = await fetch(`http://127.0.0.1:${config.process.observability.health.port}/metrics`, { signal: AbortSignal.timeout(2000) });
+      assert.ok(response.ok);
+      const lines = (await response.text()).split(/\r?\n/);
+      return Object.fromEntries(["queued", "queued_bytes", "pending_replies", "queue_capacity", "queue_byte_capacity", "pending_capacity",
+        "queue_count_rejected_total", "queue_bytes_rejected_total", "pending_rejected_total", "invalid_frames_total", "submit_failures_total"].map(key => {
+        const matching = lines.filter(line => line.startsWith(`tiangz_host_scene_operations_${key}{`));
+        assert.equal(matching.length, 1, "Host operation metrics have one Process series");
+        return [key, Number(matching[0].split(" ").at(-1))];
+      }));
+    };
+    await workerControl.call(71);
+    const before = await metrics();
+    assert.equal((await control.call(66)).count, 2, "both public send and call reject the full count queue");
+    await until(async () => (await workerControl.call(67)).count === 65536, "all accepted one-way frames reach Worker", 30000);
+    assert.equal((await workerControl.call(68)).count, 65536, "every accepted sequence arrives");
+    assert.equal((await workerControl.call(69)).count, 0, "no duplicated accepted messages");
+    assert.equal((await workerControl.call(75)).count, 0, "rejected RPC never executes");
+    await until(async () => (await metrics()).queue_count_rejected_total === before.queue_count_rejected_total + 2, "shared count rejection metrics");
+    assert.equal((await control.call(76)).count, 1, "remote RPC recovers after flush");
+    assert.equal((await workerControl.call(75)).count, 1);
+    assert.equal((await control.call(72)).count, 2, "both public send and call reject the exact byte-full queue");
+    await until(async () => (await workerControl.call(73)).count === 64, "all byte-full batch payloads reach Worker", 30000);
+    const payloadBytes = 67108864 - 4 - 64 * (17 + 6);
+    assert.equal((await workerControl.call(74)).count, payloadBytes);
+    assert.equal((await workerControl.call(67)).count, 65536, "byte rejection did not deliver the extra one-way frame");
+    assert.equal((await workerControl.call(75)).count, 1, "byte rejection did not execute the extra RPC");
+    await until(async () => (await metrics()).queue_bytes_rejected_total === before.queue_bytes_rejected_total + 2, "shared byte rejection metrics");
+    assert.equal((await control.call(76)).count, 1);
+    await until(async () => { const current = await metrics(); return current.queued === 0 && current.queued_bytes === 0 && current.pending_replies === 0; }, "Host operation drain");
+    const after = await metrics();
+    assert.equal(after.queue_capacity, 65536); assert.equal(after.queue_byte_capacity, 67108864); assert.equal(after.pending_capacity, 65536);
+    for (const key of ["pending_rejected_total", "invalid_frames_total", "submit_failures_total"]) assert.equal(after[key], before[key], key);
+    const status = await admin("status"); await commit(begin());
+    assert.equal((await admin("status")).hotfix.generation, status.hotfix.generation + 1);
+    await workerControl.call(71);
+    return { acceptedMessages: 65536, blobMessages: 64, packedBytes: 67108864, payloadBytes, publicOverloads: 4, recovered: true };
   });
   await test("disconnected-in-flight-rpc-does-not-refill-response-cache", async () => {
     const sourceMetrics = async () => {

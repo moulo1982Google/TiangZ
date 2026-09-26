@@ -273,6 +273,17 @@ pub(crate) struct GameObservabilitySnapshot {
     pub(crate) local_scene_mailbox_max_in_flight: u64,
     pub(crate) local_scene_mailbox_scene_rejections: u64,
     pub(crate) local_scene_mailbox_process_rejections: u64,
+    pub(crate) host_scene_queued_operations: u64,
+    pub(crate) host_scene_queued_bytes: u64,
+    pub(crate) host_scene_pending_replies: u64,
+    pub(crate) host_scene_queue_capacity: u64,
+    pub(crate) host_scene_queue_byte_capacity: u64,
+    pub(crate) host_scene_pending_capacity: u64,
+    pub(crate) host_scene_queue_rejections: u64,
+    pub(crate) host_scene_byte_rejections: u64,
+    pub(crate) host_scene_pending_rejections: u64,
+    pub(crate) host_scene_invalid_frames: u64,
+    pub(crate) host_scene_submit_failures: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1411,6 +1422,50 @@ mod tests {
             ("process_rejected_total", 7, "counter"),
         ] {
             let name = format!("tiangz_local_scene_mailbox_tasks_{suffix}");
+            let lines: Vec<_> = body
+                .lines()
+                .filter(|line| line.starts_with(&format!("{name}{{")))
+                .collect();
+            assert_eq!(lines, [format!("{name}{{process=\"worker\"}} {value}")]);
+            assert!(body.contains(&format!("# TYPE {name} {kind}")));
+        }
+    }
+
+    #[test]
+    fn host_scene_operation_metrics_separate_queued_cost_from_reply_waiters() {
+        let state = ProcessHealthState::starting(Duration::from_secs(15));
+        state.set_observability_snapshot(ProcessObservabilitySnapshot {
+            game: Some(GameObservabilitySnapshot {
+                host_scene_queued_operations: 3,
+                host_scene_queued_bytes: 59,
+                host_scene_pending_replies: 2,
+                host_scene_queue_capacity: 65536,
+                host_scene_queue_byte_capacity: 67108864,
+                host_scene_pending_capacity: 65536,
+                host_scene_queue_rejections: 10,
+                host_scene_byte_rejections: 20,
+                host_scene_pending_rejections: 30,
+                host_scene_invalid_frames: 40,
+                host_scene_submit_failures: 50,
+                ..GameObservabilitySnapshot::default()
+            }),
+            ..ProcessObservabilitySnapshot::default()
+        });
+        let body = format_prometheus_metrics("worker", &state);
+        for (suffix, value, kind) in [
+            ("queued", 3, "gauge"),
+            ("queued_bytes", 59, "gauge"),
+            ("pending_replies", 2, "gauge"),
+            ("queue_capacity", 65536, "gauge"),
+            ("queue_byte_capacity", 67108864, "gauge"),
+            ("pending_capacity", 65536, "gauge"),
+            ("queue_count_rejected_total", 10, "counter"),
+            ("queue_bytes_rejected_total", 20, "counter"),
+            ("pending_rejected_total", 30, "counter"),
+            ("invalid_frames_total", 40, "counter"),
+            ("submit_failures_total", 50, "counter"),
+        ] {
+            let name = format!("tiangz_host_scene_operations_{suffix}");
             let lines: Vec<_> = body
                 .lines()
                 .filter(|line| line.starts_with(&format!("{name}{{")))
