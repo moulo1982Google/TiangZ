@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+候选跨平台重建：三个 npm tgz 已从冻结 Git bundle 清洁重建并取得完全相同 SHA256；VSIX 运行载荷一致，ZIP 时间不同，Native sourcemap 另有内嵌源文件 CRLF/LF 差异，不能称原始 VSIX 字节一致。Examples 增加 LF 检出约定，在标准同级布局正式刷新生成物与输入哈希，避免冻结作者 worktree 路径；不手改生成清单或协议锁。复测与原始差异在 `temp/v0.7-clean-artifact-reproduction.json` 及业务手册对应条目。
+
+2026-09-27 清洁候选重建发现 System 声明生成缺陷：普通 `import type` 已转换模块入口，但签名中的 `import("#tiangz/module").T` 被原样搬入 Model，MMORPG 的九处生成声明被正确的依赖规则拒绝。修复生成器按 AST 将这些 import-type 重定位至模块 Model public 相对入口，覆盖参数、返回值、泛型和访问器；普通字符串类型不改。禁止手改 `.d.ts`、放宽 Model 边界或复用旧生成物遮盖。失败日志 `temp/v0.7-clean-mmorpg-build.log`、编译 RED `temp/v0.7-inline-system-types-red-imports.log`；三个生成器测试、含 KCP quick 33/33（check 8/8，231029ms）与 MMORPG 193 项 TS 测试已通过，真实模块重新生成后类型与依赖检查通过，Native/运行时验证继续。首次测试因单双引号触发既有访问器文本比较而未到导入断言，已修正夹具并单独保存日志。宿主候选改用 0.7.0-rc.2，保留原 RC1。
+
 最终 VSIX（两端均 0.16.2）在 VS Code 1.139.1 中连续三次通过六组实际编辑器用例。第一次 RC1 测试把重复 typeId 的诊断强制限定在 Collision 文件而超时；同字节重跑通过，两种索引顺序证明诊断属于后发现的声明。修正测试为本工程的任一冲突文件，仍严格检查跨根隔离和两文件修复，不延长超时、不改语言规则。Native Core 0.17.1-rc.2 的 npm tarball 仅 README/package.json 与 RC1 不同，语言/生成器字节一致。证据在 `temp/v0.7-editor-acceptance/result-rc2-{1,2,3}.json`，原失败保留。
 
 AI 0.3.0-rc.1 已做实际客户端验收：Codex 0.158.0-alpha.2 安装技能并调用两种只读 MCP 场景，Claude Code 2.1.275 新控制会话连接 MCP 0.16.1-rc.2 并发现三种只读工具，Cindy 0.1.93 的真实归档安装/重载后沙箱 running、两文件逐字节匹配。Cindy 首次在登录页启动失败是尚无数据所有者，改用其正式本地模式后通过；没有打开被发行客户端禁用的主进程调试器或改其沙箱。Cindy 四工具/六建议来自归档测试，不冒充客户端模型对话，未发起模型推理。候选分发的 MCP 字节以 Git 属性保留原样，防止换行转换破坏哈希；详见 [候选冻结](../design/v0.7-release-candidate.md)。

@@ -254,6 +254,14 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 
 ## 失败教训与复测流程
 
+### 清洁目录的 System 声明必须重新生成
+
+跨平台重建还要区分原始归档、解包载荷与文本换行：三个 npm 候选从 bundle 清洁重建后整个 tgz 哈希一致；VSIX ZIP 时间字段不同，Native 的 sourcemap 内嵌 `server.ts` 另有 CRLF/LF 差异，规范化该项后相同，运行 bundle 本身逐字节一致。不得把它写成两份 VSIX 原始哈希相同。Examples 的协议/配置清单含输入字节哈希，新增 `.gitattributes` 固定文本 LF，并在标准同级目录用正式生成器刷新声明和清单；不手改锁/哈希或拿原 worktree 名作为发行路径。证据 `temp/v0.7-clean-artifact-reproduction.json`，重新检出后应再生成并检查 Git 差异。
+
+2026-09-27，正式候选依赖的清洁 MMORPG 构建在九处生成声明报 `tiangz.architecture.invalid-dependency`。生成器只转换普通 type import，漏掉签名中的 `import("#tiangz/module").T`；Hotfix 的模块别名被复制到 Model 后不再是合法入口。正确修法是在生成器按 AST 重定位自己的 import-type 至 Model public 相对路径，覆盖参数、返回值、泛型约束及访问器，保留普通字符串和其他依赖给既有检查。不能放宽依赖规则、手改生成物、打开 skipLibCheck 跳过声明检查或复用开发目录旧输出。
+
+复测：`node --test tools/system_declarations.test.mjs`，然后在标准同级候选目录运行 `npm run build -- --package mmorpg`、`check`、`test:native` 和 `smoke`。首轮真实失败为 `temp/v0.7-clean-mmorpg-build.log`，针对性编译 RED 为 `temp/v0.7-inline-system-types-red-imports.log`；修复后三个生成器测试通过，真实模块重新生成后的依赖/类型检查通过，Native 与联机结果另记。初次新增夹具把同一访问器类型写成单双引号两种文本，先触发既有文本比较而未验证本缺陷；统一夹具引用后才取得正确 RED，原日志 `temp/v0.7-inline-system-types-red.log` 保留。生成检查通过不等于连续长稳或清洁冻结源验证完成。
+
 ### 0.7 依赖规则入口不一致
 
 候选安装的进程完成也是依赖边界：一次 `npm install` 工具返回 session_id 后，检查过早启动，安装实际上运行了 26 秒。此时调用返回不能证明依赖已稳定；重叠的 final 命名日志也不能当最终证据。必须取得安装退出码 0，再运行依赖它的 quick/LSP，换新日志并对 npm 归档/安装内容逐字节核对。原安装和重叠报告保留，见[依赖方向](../design/v0.7-dependency-rules.md)。
