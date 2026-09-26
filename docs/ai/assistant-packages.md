@@ -1,5 +1,7 @@
 # Codex、Claude 与 Cindy 技能交付
 
+2026-09-26 KCP 预算轮：分发提交 `ea6f292`，版本 0.2.0、40 条规则及四工具/六建议保持。Cindy SHA256 `fa7ba5cccae77ab51c2df418393053122643121dfcd2c27bb6f468d7bc411018`，实际归档 CRC/7 文件哈希/提取后工具/两份技能校验通过，证据 `temp/v0.7-ai-kcp-{build,check,distribute,distribution-check,artifact-check}.log` 与 artifact-identity.json。规则明确 KCP 的独立范围、ACK 峰值和 callback 终止义务；客户端/Forge/工作区已装技能未覆盖。
+
 2026-09-26 入站预算轮：分发提交 `d83df86`，清单仍 0.2.0，Cindy 仍为 40 条规则、四工具/六类建议。已从唯一源同步独立入站与出站所有权及明确排除范围；Cindy SHA256 为 `02a7b9750505768bbbd0975b7b85b6cad1fcfd47dde4e2cf7786bba43b5726d0`。`temp/v0.7-ai-ingress-{build,check,distribute,distribution-check,artifact-check}.log` 和 artifact-identity.json 保存 CRC、7 文件哈希、提取后工具及两份技能校验通过的证据。无 Forge/客户端安装或工作区已装技能覆盖。下方旧哈希仅对应各自阶段。
 
 ## 唯一维护入口

@@ -34,7 +34,7 @@
     rule("compatibility.package-identity", "独立版本身份", "框架0.7不改变各插件的版本序列；分别核对Core、VSIX、AI清单和宿主实际依赖，同名类型不能替代当前Host声明身份。", "docs/ai/skill-development-contract.md"),
     rule("validation.program-contracts", "共享类型契约", "生命周期/Timer使用共享Program规则与当前Host的TS API/Core/生成声明；默认参数接受undefined，动态warning只是未证明。普通tsc不自动接入；模块实时检查仅由受信任工作区的已保存声明选择Host worker，配置未保存或环境不可用须明确提示，不能替代生成锁和完整构建。", "docs/design/v0.7-program-contracts.md"),
     rule("deployment.module-owned", "模块部署配置", "地图实例部署归MMORPG模块，经runtime.pack.json信封与模块校验；声明包漏实例或新旧显式值冲突必须失败，修改后重建重启。简单房间可直接连接Scene，无需Location/MapHost。", "docs/design/v0.7-map-deployment.md"),
-    rule("transport.budget-scope", "字节预算范围", "Writer payload与主动Inner Host整包共享出站额度，复制前预留，最后切片释放，writer出队不重置操作/写出期限。独立入站额度覆盖已解码Rust帧及排队/热更延后，控制通知不占；超限Inner RPC明确过载、外部/单向来源关闭。两者不代表全进程内存、响应、解码器、Host/V8副本、TS mailbox或KCP未确认缓存上限，按真实所有者验证释放。", "docs/reference/transport-backend.md"),
+    rule("transport.budget-scope", "字节预算范围", "Writer与主动Inner Host共享出站额度，复制前预留、最后引用释放、排队不续期。入站额度仅覆盖已解码Rust帧及等待/热更延后，控制通知不占。KCP另限C缓存、ACK扩容峰值和输出引用，纯ACK满额度仍可回收；callback失败必须终结对应Session，不能静默丢可靠数据。按真实所有者验证，三项均不代表全进程、V8/TS mailbox或其他副本内存上限。", "docs/reference/transport-backend.md"),
     rule("persistence.readonly-capacity", "只读容量观测", "dbproxy_capacity只读catalog/分区字节，可选服务器时间扫描有期限；未知估算、缺表与超时不报零，业务时间不授权TTL删除。Outbox消费inbox与投影同事务后ACK，短测不等于长稳。", "docs/ai/skill-development-contract.md"),
     rule("hotfix.atomic-config", "原子发布", "当前保持单Hotfix包与配置进程内原子切换，沿用帧间切换和主动暂停入口、默认3000ms窗口；超时恢复旧版。不是全Pod同时切换，也不保证任何30秒RPC都不超时；Model/协议/Native变化须重建重启。", "docs/design/typescript-hot-reload.md"),
     rule("sync.durable-fact", "事实与持久保证", "latest只覆盖可替代当前状态，抽卡/扣费/结算事实不能静默覆盖；可靠网络队列不等于持久exactly-once。", "docs/patterns/state-replication.md"),

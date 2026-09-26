@@ -147,6 +147,7 @@ async fn run_kcp_endpoint(
                                 .and_then(|_| session.kcp.send(&frame))
                             {
                                 tracing::warn!(target: "tiangz::transport", connection_id = session.connection_id, error = ?error, "KCP outbound frame rejected");
+                                remove_session(&socket, local_conn, &context, &mut sessions, &mut session_by_peer, true).await?;
                             } else {
                                 session.last_activity = Instant::now();
                             }
@@ -186,7 +187,11 @@ async fn run_kcp_endpoint(
                     continue;
                 }
             }
-            session.kcp.update(now);
+            if let Err(error) = session.kcp.update(now) {
+                tracing::warn!(target: "tiangz::transport", local_conn = session.local_conn, error = ?error, "KCP output failed; closing session");
+                expired.push(session.local_conn);
+                continue;
+            }
             flush_kcp_output(&socket, session, &context).await?;
             if session.last_activity.elapsed() >= SESSION_IDLE_TIMEOUT {
                 expired.push(session.local_conn);
@@ -261,7 +266,17 @@ async fn handle_datagram(
             let connection_id = context.next_connection_id.fetch_add(1, Ordering::Relaxed);
             let local_conn = allocate_local_conn(connection_id, sessions)?;
             let profile = KcpProfile::Outer;
-            let kcp = KcpSession::new(local_conn, KcpConfig::for_profile(profile))?;
+            let kcp = match KcpSession::new_with_budget(
+                local_conn,
+                KcpConfig::for_profile(profile),
+                Arc::clone(&context.stats.kcp_buffers),
+            ) {
+                Ok(kcp) => kcp,
+                Err(error) => {
+                    tracing::warn!(target: "tiangz::transport", error = ?error, "KCP session admission rejected");
+                    return Ok(());
+                }
+            };
             let (write_tx, write_rx) =
                 mpsc::channel::<ConnectionWriteBatch>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
             let queued_bytes = Arc::new(AtomicUsize::new(0));
@@ -315,7 +330,7 @@ async fn handle_datagram(
             }
             let received: Result<()> = async {
                 session.kcp.input(&packet[DATA_HEADER_BYTES..])?;
-                session.kcp.update(elapsed_ms(started_at));
+                session.kcp.update(elapsed_ms(started_at))?;
                 session.last_activity = Instant::now();
                 while let Some(frame) = session.kcp.receive()? {
                     if !(2..=MAX_FRAME_LEN).contains(&frame.len()) {

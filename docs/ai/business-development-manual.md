@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+0.7 KCP 使用独立 `maxKcpBufferedBytes`（默认 64 MiB、1..1 GiB），全部 KCP listener 共享，各 Session 另限 4 MiB。预留 C 控制块/工作区、段上界、保留 ACK 容量及输出 Bytes，扩容前保守准入，纯 ACK 在满额度时仍可归还，最后输出引用释放才退额度。额度不足/输出 callback 失败只终结该 Session，不能只记日志或依赖 C 忽略的 callback 返回值。一个 datagram 可让 ACK 数组连续扩容，须计最后中间数组与新数组同时存活的峰值，不只是调用前容量。接收/UDP 封包副本、Rust 容器、系统和 V8 另有边界；配置、Rust 包装器接口变化与验收见[KCP 预算](../design/v0.7-kcp-buffers.md)。
+
 0.7 已解码 Rust 入站帧独立使用 `maxIngressBufferedBytes`（默认 64 MiB、1..1 GiB）。所有业务 listener 的控制 RPC 与数据帧共享，首次入队前接管 Bytes、不复制 payload，排队重试/取消/热更延后均保持同一预留，最后引用释放才归还；超限 Inner RPC 返回既有入口过载，外部/单向来源关闭，控制通知不占本项帧额度。固定 kind=ingress 指标不混作慢客户端。解码器、Host 打包副本、V8/TS mailbox、RPC completion 与 KCP 可靠缓存另算，不称为全进程内存上限。契约与证据见[入站预算](../design/v0.7-ingress-buffers.md)。
 
 入站实测首轮的两个夹具问题已保留：误用不存在的 EndpointTask.stop/wait 导致编译失败；随后给真实 Inner Socket 发了外部 msgcode，访问校验正确拒绝，预算尚未入队。应先读真实生命周期 API（request_stop + await），传输专用夹具使用 Inner 保留范围并单独检查 RPC 标识；禁止新增空转接口、关闭协议检查或仅延长等待。原记录 temp/v0.7-ingress-first.log、v0.7-ingress-focused.log；修正后定向和全目标验证见入站预算文档。

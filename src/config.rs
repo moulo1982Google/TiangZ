@@ -332,6 +332,9 @@ pub struct ProcessNetworkConfig {
     /// 已解码 Process 入站帧的共享逻辑字节额度，不含解码器或 V8 副本。 / Shared logical byte limit for decoded Process ingress frames, excluding decoders and V8 copies.
     #[serde(default = "default_max_ingress_buffered_bytes")]
     pub max_ingress_buffered_bytes: usize,
+    /// KCP C 缓存与输出引用的进程共享保守字节额度。 / Shared conservative byte budget for KCP C caches and output references.
+    #[serde(default = "default_max_kcp_buffered_bytes")]
+    pub max_kcp_buffered_bytes: usize,
     /// 出站批次从准入到写出完成的总期限，包含排队。 / Total outbound batch budget from admission through writing, including queue wait.
     #[serde(default = "default_connection_write_timeout_ms")]
     pub write_timeout_ms: u64,
@@ -351,6 +354,7 @@ impl Default for ProcessNetworkConfig {
             max_pending_handshakes: default_max_pending_handshakes(),
             max_outbound_buffered_bytes: default_max_outbound_buffered_bytes(),
             max_ingress_buffered_bytes: default_max_ingress_buffered_bytes(),
+            max_kcp_buffered_bytes: default_max_kcp_buffered_bytes(),
             write_timeout_ms: default_connection_write_timeout_ms(),
             uring_entries: default_uring_entries(),
             uring_read_buffer_bytes: default_uring_read_buffer_bytes(),
@@ -639,6 +643,10 @@ fn default_max_outbound_buffered_bytes() -> usize {
 }
 
 fn default_max_ingress_buffered_bytes() -> usize {
+    64 * 1024 * 1024
+}
+
+fn default_max_kcp_buffered_bytes() -> usize {
     64 * 1024 * 1024
 }
 
@@ -1023,6 +1031,9 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     }
     if !(1..=1024 * 1024 * 1024).contains(&config.process.network.max_ingress_buffered_bytes) {
         bail!("process network.maxIngressBufferedBytes must be between 1 and 1073741824");
+    }
+    if !(1..=1024 * 1024 * 1024).contains(&config.process.network.max_kcp_buffered_bytes) {
+        bail!("process network.maxKcpBufferedBytes must be between 1 and 1073741824");
     }
     if config.process.scheduling.idle_tick_ms == Some(0) {
         bail!("process scheduling.idleTickMs must be greater than 0");
@@ -1615,6 +1626,40 @@ mod tests {
             assert!(
                 serde_json::from_str::<ProcessNetworkConfig>(&format!(
                     r#"{{"maxIngressBufferedBytes":{invalid}}}"#
+                ))
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn validates_shared_kcp_cache_budget_and_legacy_default() {
+        let legacy: ProcessConfig = serde_json::from_str(r#"{"name":"test"}"#).unwrap();
+        assert_eq!(legacy.network.max_kcp_buffered_bytes, 64 * 1024 * 1024);
+        for limit in [0, 1, 1024 * 1024 * 1024, 1024 * 1024 * 1024 + 1] {
+            let mut process = process(None);
+            process.network.max_kcp_buffered_bytes = limit;
+            let config = RuntimeConfig {
+                process,
+                scenes: vec![scene("gate", 7201)],
+                known_scenes: vec![],
+            };
+            let result = validate_runtime_config(&config);
+            if (1..=1024 * 1024 * 1024).contains(&limit) {
+                result.unwrap();
+            } else {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .to_string()
+                        .contains("maxKcpBufferedBytes")
+                );
+            }
+        }
+        for invalid in ["-1", "1.5", "\"4096\"", "null", "true"] {
+            assert!(
+                serde_json::from_str::<ProcessNetworkConfig>(&format!(
+                    r#"{{"maxKcpBufferedBytes":{invalid}}}"#
                 ))
                 .is_err()
             );

@@ -67,7 +67,7 @@ impl KcpClient {
                 }
                 _ = tick.tick() => {}
             }
-            self.kcp.update(self.elapsed_ms());
+            self.kcp.update(self.elapsed_ms())?;
             self.flush_output().await?;
             if let Some(frame) = self.kcp.receive()? {
                 return Ok(frame);

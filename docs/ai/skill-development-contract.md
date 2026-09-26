@@ -22,6 +22,7 @@
 - **跨 worktree 身份**：TS Core、SDK 和 Native Cargo 依赖均须来自选定版本；同版本号不代表同一源码。模块 Cargo 路径显式对齐并重新生成，Native 与 Model 指纹不匹配时完整重建，不篡改哈希。无需为了读取单例暴露内部 SingletonRegistry；使用已有 Stable API。详见 [消费方迁移](../design/v0.7-map-deployment.md)。
 - **部署归属**：地图实例部署属于 MMORPG 模块，复用 dataPacks 通用信封和模块自己的强类型校验，文件名为 runtime.pack.json。部署不是玩法表或任意 Scene 字典；声明包漏实例、显式新旧值冲突必须失败，修改后重建重启。简单房间可采用一个直接连接的 Scene 与 Component，无需目录服务；演示重连快照不代表生产鉴权或持久恢复。详见 [房间消费方](../design/v0.7-room-consumer.md)。
 - **资源边界**：ConnectionWriter payload 与主动 Inner Host 整包共享出站预算；复制前准入，最后引用释放，writer 排队不能重置操作/写出期限。独立入站预算只接管已解码 Rust 帧，等待空位/热更延后仍持有；控制通知不占帧额度，超限 Inner RPC 明确过载、外部/单向来源关闭。两者都不等同于整个进程内存、RPC 响应、解码器、Host/V8 副本、TS mailbox 或 KCP 未确认队列上限。每项新增额度均需保留在途占用和失败释放证据，标签不带用户/连接 ID。详见 [传输契约](../reference/transport-backend.md)。
+- **KCP 可靠缓存**：另有进程共享额度与每 Session 上限，C 缓存/ACK 扩容峰值在分配前预留，纯 ACK 满额度仍可回收，输出 Bytes 最后引用归还。callback 返回负值并不让 C 自动终止，包装器须返回错误并关闭对应 Session，不能丢可靠数据后只记日志。接收/UDP 封包副本与 Rust 容器等仍在范围之外；见 [KCP 预算](../design/v0.7-kcp-buffers.md)。
 - **存储观测与恢复**：dbproxy_capacity 默认只读固定表的 catalog/分区字节，可选服务器时间扫描有独立期限；未知估算、缺表、RLS 和超时不能报告为零，业务时间不能作为回执 TTL。Outbox 重投允许重复投递，消费 inbox 与投影在同一事务后再 ACK；短时隔离恢复验证不等于断电、备份恢复或长稳。容量诊断不自动迁移、删除回执/事实或清理未确认事件。实际范围见 [实施进度](../design/v0.7-progress.md)。
 
 ## 哪些放技能，哪些交给工具

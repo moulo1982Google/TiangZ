@@ -39,6 +39,8 @@
 
 ## 配置
 
+0.7 的 `maxKcpBufferedBytes` 为全部 KCP listener 的独立共享保守额度，默认 64 MiB，整数 1..1073741824，每 Session 另限 4 MiB。覆盖 C 控制块/MTU 工作区、收发与未确认段、保留 ACK 数组、尚未释放的输出 Bytes；创建、输入、发送与输出复制前准入，并覆盖 ACK 连续扩容的瞬时峰值。纯 ACK 在额度满时仍可释放已确认数据，复合 PUSH 包保守预留。超过协定 MSS 的输入拒绝；额度不足/发送失败/输出回调失败只终结对应 Session，不能静默丢弃可靠数据或停止共享 listener。固定 `kind="kcp"` 指标属于同一 buffer 指标族，共享额度拒绝与单 Session 限额日志区分。接收和 UDP 封包副本、Rust 容器容量、allocator 元数据、系统/V8 不计在内，不能当作 RSS 上限。Rust KcpSession.update 现返回 Result、take_output 返回持有预算的 Bytes；握手/线协议保持。详见[KCP 预算](../design/v0.7-kcp-buffers.md)。
+
 0.7 的 `process.network.maxIngressBufferedBytes` 独立限制 Rust Process 已解码帧，默认 67108864，整数 1..1073741824。TCP/WS/io-uring/KCP 共用，包含 Inner RPC 控制帧；首次入队前无等待预留，原 Bytes 移交不复制，等待帧数空位/出队/热更延后仍占额度，直到最后引用释放。额度满时 Inner RPC 保持原 rpcId 返回既有目标入口过载，外部/单向来源按接收错误关闭连接或 Session；Disconnect、Shutdown、Host completion 不占本项帧额度。指标复用 `tiangz_transport_buffer_bytes/limit_bytes/rejections_total`，固定 `kind="ingress"`，不算慢客户端。此处是逻辑帧字节，未包括解码器、Host 打包副本、V8/TS mailbox、completion 响应、KCP 内部或系统缓冲；契约与测试范围见[入站预算](../design/v0.7-ingress-buffers.md)。
 
 默认配置无需修改，仍然使用 epoll 和协议自动探测：

@@ -65,6 +65,13 @@ impl BufferBudget {
 
     /// 在实际接收入队前原子预留；容量不足立即拒绝，不等待。 / Atomically reserves before admission and rejects immediately at capacity.
     pub fn try_reserve(self: &Arc<Self>, bytes: usize) -> Option<BufferReservation> {
+        self.try_acquire(bytes).then(|| BufferReservation {
+            budget: self.clone(),
+            bytes,
+        })
+    }
+
+    fn try_acquire(&self, bytes: usize) -> bool {
         if self
             .used
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |used| {
@@ -73,12 +80,9 @@ impl BufferBudget {
             .is_err()
         {
             self.rejections.fetch_add(1, Ordering::Relaxed);
-            return None;
+            return false;
         }
-        Some(BufferReservation {
-            budget: self.clone(),
-            bytes,
-        })
+        true
     }
 
     /// 各计数为采样时近似同时的观察，所有实际准入始终受原子上限保护。 / Snapshots are approximate across counters; admission always enforces the atomic limit.
@@ -88,6 +92,23 @@ impl BufferBudget {
             limit_bytes: self.limit as u64,
             rejections: self.rejections.load(Ordering::Relaxed),
         }
+    }
+}
+
+impl BufferReservation {
+    /// 独占所有者按差额改变预留，扩容失败保持原额度；缩减立即归还。 / Resizes an exclusive reservation by its delta, preserving it on failed growth and returning shrunk bytes immediately.
+    pub fn try_resize(&mut self, bytes: usize) -> bool {
+        if bytes > self.bytes {
+            if !self.budget.try_acquire(bytes - self.bytes) {
+                return false;
+            }
+        } else {
+            self.budget
+                .used
+                .fetch_sub(self.bytes - bytes, Ordering::Relaxed);
+        }
+        self.bytes = bytes;
+        true
     }
 }
 
@@ -102,6 +123,21 @@ impl Drop for BufferReservation {
 mod tests {
     use super::*;
     use std::sync::Barrier;
+
+    #[test]
+    fn resizing_preserves_existing_reservations_when_growth_is_rejected() {
+        let budget = BufferBudget::new(10);
+        let mut first = budget.try_reserve(4).unwrap();
+        let second = budget.try_reserve(3).unwrap();
+        assert!(first.try_resize(7));
+        assert!(!first.try_resize(8));
+        assert_eq!(budget.snapshot().used_bytes, 10);
+        assert_eq!(budget.snapshot().rejections, 1);
+        assert!(first.try_resize(2));
+        assert_eq!(budget.snapshot().used_bytes, 5);
+        drop((first, second));
+        assert_eq!(budget.snapshot().used_bytes, 0);
+    }
 
     #[test]
     fn held_bytes_keep_the_payload_allocation_and_reservation_until_last_clone() {

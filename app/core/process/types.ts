@@ -91,6 +91,8 @@ export interface ProcessNetworkConfig {
   maxOutboundBufferedBytes?: number;
   /** 0.7：Rust 已解码入站帧共享逻辑字节额度，1..1073741824，默认64MiB；不含解码器、Host 打包副本和 V8/TS mailbox。 / Since 0.7: shared decoded Rust ingress frame budget, 1..1073741824, default 64MiB; excludes decoders, host batch copies and V8/TS mailboxes. */
   maxIngressBufferedBytes?: number;
+  /** 0.7：KCP C 缓存与输出引用的共享保守额度，1..1073741824，默认64MiB；每 Session 另限4MiB，不代表进程总内存。 / Since 0.7: conservative shared KCP cache/output budget, 1..1073741824, default 64MiB; each session also has a 4MiB limit, excluding total process memory. */
+  maxKcpBufferedBytes?: number;
   /** 0.7：出站批次从准入起的总写出预算，1..300000ms，默认10000。 / Since 0.7: total outbound budget from admission, 1..300000ms, default 10000. */
   writeTimeoutMs?: number;
   ioBackend?: "epoll" | "io-uring";

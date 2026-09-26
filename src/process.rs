@@ -280,6 +280,7 @@ pub(crate) struct ProcessQueueStats {
     pub(crate) admission: Arc<crate::transport_backend::admission::ConnectionAdmission>,
     pub(crate) outbound_buffers: Arc<tiangz_transport::buffer_budget::BufferBudget>,
     pub(crate) ingress_buffers: Arc<tiangz_transport::buffer_budget::BufferBudget>,
+    pub(crate) kcp_buffers: Arc<tiangz_transport::buffer_budget::BufferBudget>,
     capacity: usize,
     depth: AtomicUsize,
     max_depth: AtomicUsize,
@@ -332,6 +333,9 @@ impl ProcessQueueStats {
             ),
             ingress_buffers: tiangz_transport::buffer_budget::BufferBudget::new(
                 network.max_ingress_buffered_bytes,
+            ),
+            kcp_buffers: tiangz_transport::buffer_budget::BufferBudget::new(
+                network.max_kcp_buffered_bytes,
             ),
             admission: Arc::new(
                 crate::transport_backend::admission::ConnectionAdmission::new(

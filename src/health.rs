@@ -102,6 +102,7 @@ pub(crate) struct ProcessObservabilitySnapshot {
     pub(crate) admission: crate::transport_backend::admission::AdmissionSnapshot,
     pub(crate) outbound_buffers: tiangz_transport::buffer_budget::BufferBudgetSnapshot,
     pub(crate) ingress_buffers: tiangz_transport::buffer_budget::BufferBudgetSnapshot,
+    pub(crate) kcp_buffers: tiangz_transport::buffer_budget::BufferBudgetSnapshot,
     pub(crate) remote_transport_active_connections: u64,
     pub(crate) remote_transport_opened_connections: u64,
     pub(crate) remote_transport_pending_calls: u64,
@@ -1215,6 +1216,11 @@ mod tests {
                 limit_bytes: 32,
                 rejections: 5,
             },
+            kcp_buffers: tiangz_transport::buffer_budget::BufferBudgetSnapshot {
+                used_bytes: 19,
+                limit_bytes: 48,
+                rejections: 7,
+            },
             ..ProcessObservabilitySnapshot::default()
         });
         let body = format_prometheus_metrics("worker", &state);
@@ -1253,8 +1259,13 @@ mod tests {
             body.lines()
                 .filter(|line| line.starts_with("tiangz_transport_buffer_"))
                 .count(),
-            6
+            9
         );
+        for (metric, expected) in [("bytes", 19), ("limit_bytes", 48), ("rejections_total", 7)] {
+            assert!(body.contains(&format!(
+                "tiangz_transport_buffer_{metric}{{process=\"worker\",kind=\"kcp\"}} {expected}"
+            )));
+        }
     }
 
     #[test]

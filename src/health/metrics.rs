@@ -1035,13 +1035,14 @@ fn append_process_metrics_prometheus(
                 .expect("formatting admission metric");
         }
     }
-    for (metric, kind, description, outbound, ingress) in [
+    for (metric, kind, description, outbound, ingress, kcp) in [
         (
             "bytes",
             "gauge",
-            "Reserved logical transport bytes by buffer ownership kind",
+            "Reserved transport buffer bytes by kind, using conservative native bounds for KCP",
             snapshot.outbound_buffers.used_bytes,
             snapshot.ingress_buffers.used_bytes,
+            snapshot.kcp_buffers.used_bytes,
         ),
         (
             "limit_bytes",
@@ -1049,6 +1050,7 @@ fn append_process_metrics_prometheus(
             "Configured shared transport buffer byte limit by kind",
             snapshot.outbound_buffers.limit_bytes,
             snapshot.ingress_buffers.limit_bytes,
+            snapshot.kcp_buffers.limit_bytes,
         ),
         (
             "rejections_total",
@@ -1056,6 +1058,7 @@ fn append_process_metrics_prometheus(
             "Transport buffer admissions rejected at the shared byte limit by kind",
             snapshot.outbound_buffers.rejections,
             snapshot.ingress_buffers.rejections,
+            snapshot.kcp_buffers.rejections,
         ),
     ] {
         writeln!(
@@ -1065,7 +1068,7 @@ fn append_process_metrics_prometheus(
         .expect("formatting buffer help");
         writeln!(output, "# TYPE tiangz_transport_buffer_{metric} {kind}")
             .expect("formatting buffer type");
-        for (buffer_kind, value) in [("outbound", outbound), ("ingress", ingress)] {
+        for (buffer_kind, value) in [("outbound", outbound), ("ingress", ingress), ("kcp", kcp)] {
             writeln!(output, "tiangz_transport_buffer_{metric}{{process=\"{process_name}\",kind=\"{buffer_kind}\"}} {value}")
                 .expect("formatting buffer metric");
         }

@@ -816,6 +816,126 @@ async fn ingress_byte_budget_closes_only_rejected_kcp_session_and_listener_recov
 
 #[cfg(feature = "kcp")]
 #[tokio::test]
+async fn kcp_cache_budget_rejects_creation_without_stopping_shared_listener() {
+    let stats = Arc::new(ProcessQueueStats::with_network_limits(
+        16,
+        &ProcessNetworkConfig {
+            max_kcp_buffered_bytes: 16 * 1024,
+            ..Default::default()
+        },
+    ));
+    let fixture = endpoint_with_stats(
+        EndpointAudience::Outer,
+        EndpointProtocol::Kcp,
+        stats.clone(),
+    );
+    let occupied = stats.kcp_buffers.try_reserve(16 * 1024).unwrap();
+    assert!(
+        timeout(
+            Duration::from_millis(100),
+            tiangz_transport::KcpClient::connect(fixture.address)
+        )
+        .await
+        .is_err()
+    );
+    assert!(stats.kcp_buffers.snapshot().rejections >= 1);
+    assert!(fixture.writers.lock().unwrap().is_empty());
+    wait_admission(&stats.admission, 0, 0).await;
+    drop(occupied);
+    let recovered = timeout(
+        Duration::from_secs(1),
+        tiangz_transport::KcpClient::connect(fixture.address),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(fixture.writers.lock().unwrap().len(), 1);
+    assert!(stats.kcp_buffers.snapshot().used_bytes > 0);
+    recovered.close().await.unwrap();
+    fixture.task.request_stop();
+    timeout(Duration::from_secs(2), fixture.task)
+        .await
+        .unwrap()
+        .unwrap();
+    wait_admission(&stats.admission, 0, 0).await;
+    assert_eq!(stats.kcp_buffers.snapshot().used_bytes, 0);
+}
+
+#[cfg(feature = "kcp")]
+#[tokio::test]
+async fn kcp_unacknowledged_output_exhaustion_closes_only_its_session_and_releases_cache() {
+    let stats = Arc::new(ProcessQueueStats::with_network_limits(
+        16,
+        &ProcessNetworkConfig {
+            max_kcp_buffered_bytes: 16 * 1024,
+            ..Default::default()
+        },
+    ));
+    let fixture = endpoint_with_stats(
+        EndpointAudience::Outer,
+        EndpointProtocol::Kcp,
+        stats.clone(),
+    );
+    let _nonreading = tiangz_transport::KcpClient::connect(fixture.address)
+        .await
+        .unwrap();
+    let mut healthy = tiangz_transport::KcpClient::connect(fixture.address)
+        .await
+        .unwrap();
+    {
+        let writers = fixture.writers.lock().unwrap();
+        let writer = writers.get(&1).unwrap();
+        let mut payload = vec![7; 8192];
+        payload[..2].copy_from_slice(&1_u16.to_be_bytes());
+        for _ in 0..8 {
+            try_queue_connection_frame(writer, Bytes::copy_from_slice(&payload)).unwrap();
+        }
+    }
+    timeout(Duration::from_secs(2), async {
+        while fixture.writers.lock().unwrap().contains_key(&1) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(stats.kcp_buffers.snapshot().rejections >= 1);
+    assert!(fixture.writers.lock().unwrap().contains_key(&2));
+    assert_eq!(stats.slow_client_disconnects.load(Ordering::Relaxed), 0);
+    let (response, ()) = tokio::join!(healthy.request(&[0, 1], Duration::from_secs(1)), async {
+        timeout(Duration::from_secs(1), async {
+            loop {
+                if let Ok(ProcessEvent::Frame {
+                    connection_id,
+                    frame,
+                    ..
+                }) = fixture._data.try_recv()
+                {
+                    assert_eq!(connection_id, 2);
+                    let writers = fixture.writers.lock().unwrap();
+                    try_queue_connection_frame(writers.get(&connection_id).unwrap(), frame)
+                        .unwrap();
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    });
+    assert_eq!(response.unwrap(), [0, 1]);
+    healthy.close().await.unwrap();
+    fixture.task.request_stop();
+    timeout(Duration::from_secs(2), fixture.task)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stats.kcp_buffers.snapshot().used_bytes, 0);
+    assert_eq!(stats.outbound_buffers.snapshot().used_bytes, 0);
+    wait_admission(&stats.admission, 0, 0).await;
+}
+
+#[cfg(feature = "kcp")]
+#[tokio::test]
 async fn kcp_endpoint_stop_releases_udp_listener() {
     let fixture = endpoint(EndpointAudience::Outer, EndpointProtocol::Kcp);
     fixture.task.request_stop();
