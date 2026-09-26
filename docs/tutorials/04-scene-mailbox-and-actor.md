@@ -58,6 +58,8 @@ MapHost return EnterMap response
 
 本地 `send` 若已进入忙碌 Scene，后续 Actor 跳转仍可能拒绝；其返回不表示最终送达或事务完成。不可丢失的业务事实需要 RPC 结果确认、幂等或持久 Outbox，不能在过载后无限重试或假定未回包就未执行。这组数量界限不限制 DTO/闭包/ArrayBuffer 的实际堆大小，部署时应观察固定 Process 的任务数、峰值和两级拒绝指标，详见[Actor 容量与验收](../design/v0.7-actor-mailbox-capacity.md)。
 
+本地 EntryScene 的 `call/send` 另有每目标 **4096**、每 Process **16384** 项准入，仍包含排队与实际执行。单向消息返回后，名额跟着目标节点保留；目标销毁只立即终结未执行节点，异步任务实际结束后才归还。公开 `call/send` 超限均保留 1011。网络入站和 Host completion 使用独立路径，不能借这份本地额度完成释放，也不越过 ordered 的业务顺序。一次 Scene 调用再进入 Actor 会持有两类名额，监控不得相加当作唯一业务请求数，详见[本地 Scene 容量](../design/v0.7-local-scene-capacity.md)。
+
 ## EntityRoot、Unit 与 Component
 
 `ProcessHost.Root` 是进程级 Entity 索引，对应 ET 的 `Root.Instance`。每个动态 Scene/Actor 都有：

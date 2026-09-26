@@ -1950,6 +1950,42 @@ fn append_game_metrics_prometheus(
             "Calls rejected by the Process limit after passing the per-Actor limit",
             snapshot.actor_mailbox_process_rejections,
         ),
+        (
+            "tiangz_local_scene_mailbox_tasks_in_flight",
+            "gauge",
+            "Accepted local Scene calls until execution completes, including queued void work",
+            snapshot.local_scene_mailbox_in_flight,
+        ),
+        (
+            "tiangz_local_scene_mailbox_tasks_capacity",
+            "gauge",
+            "Process-wide local Scene call limit, excluding network ingress",
+            snapshot.local_scene_mailbox_capacity,
+        ),
+        (
+            "tiangz_local_scene_mailbox_tasks_per_scene_capacity",
+            "gauge",
+            "Local call limit for each EntryScene",
+            snapshot.local_scene_mailbox_per_scene_capacity,
+        ),
+        (
+            "tiangz_local_scene_mailbox_tasks_max_in_flight",
+            "gauge",
+            "Maximum admitted concurrent local Scene calls",
+            snapshot.local_scene_mailbox_max_in_flight,
+        ),
+        (
+            "tiangz_local_scene_mailbox_tasks_scene_rejected_total",
+            "counter",
+            "Local calls rejected by the per-Scene limit, checked before the Process limit",
+            snapshot.local_scene_mailbox_scene_rejections,
+        ),
+        (
+            "tiangz_local_scene_mailbox_tasks_process_rejected_total",
+            "counter",
+            "Local calls rejected by the Process limit after passing the per-Scene limit",
+            snapshot.local_scene_mailbox_process_rejections,
+        ),
     ] {
         writeln!(output, "# HELP {name} {help}").expect("formatting metric help");
         writeln!(output, "# TYPE {name} {kind}").expect("formatting metric type");

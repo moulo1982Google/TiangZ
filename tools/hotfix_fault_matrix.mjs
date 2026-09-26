@@ -128,14 +128,17 @@ try {
   const uniquePort = async () => { let port; do { port = await freePort(); } while (usedPorts.has(port)); usedPorts.add(port); return port; };
   const workerScene = { ...mainScene, name: "worker", port: await uniquePort() };
   const localScene = { ...mainScene, name: "local-target", port: await uniquePort() };
+  const workerLocalScene = { ...mainScene, name: "worker-local-quota", port: await uniquePort() };
+  const quotaScenes = [];
+  for (let i = 0; i < 5; i++) quotaScenes.push({ ...mainScene, name: `local-quota-${i}`, port: await uniquePort() });
   const workerHealth = await uniquePort();
-  config.scenes = [mainScene, localScene]; config.knownScenes = [workerScene];
+  config.scenes = [mainScene, localScene, ...quotaScenes]; config.knownScenes = [workerScene];
   if (endpoint) {
     proxy = await responseProxy(endpoint);
     config.process.persistence = { dbProxy: { endpoint: proxy.endpoint, authTokenEnv: "TIANGZ_DBPROXY_AUTH_TOKEN", clientPoolSize: 1, requestTimeoutMs: 8000, connectTimeoutMs: 5000 } };
   }
   const workerConfig = { ...config, process: { ...config.process, name: "fault-worker", identity: { originServerId: 93, workerId: 0 },
-    persistence: undefined, observability: { health: { ip: "127.0.0.1", port: workerHealth } } }, scenes: [workerScene], knownScenes: [mainScene] };
+    persistence: undefined, observability: { health: { ip: "127.0.0.1", port: workerHealth } } }, scenes: [workerScene, workerLocalScene], knownScenes: [mainScene] };
   await writeFile(configPath, JSON.stringify(config));
   const workerPath = path.join(project, "configs/local/fault-worker.json");
   await writeFile(workerPath, JSON.stringify(workerConfig));
@@ -349,6 +352,65 @@ try {
         await until(async () => (await client.call(40)).count === 0, "quota fixture drain");
         await client.call(41);
       }
+    }
+  });
+  await test("local-scene-quotas-retain-void-work-and-allow-host-completion", async () => {
+    const targets = await Promise.all(quotaScenes.map(scene => open(scene.port)));
+    const quotaMetrics = async () => {
+      const response = await fetch(`http://127.0.0.1:${config.process.observability.health.port}/metrics`, { signal: AbortSignal.timeout(2000) });
+      assert.ok(response.ok);
+      const lines = (await response.text()).split(/\r?\n/);
+      return Object.fromEntries(["in_flight", "capacity", "per_scene_capacity", "max_in_flight", "scene_rejected_total", "process_rejected_total"].map(name => {
+        const matching = lines.filter(line => line.startsWith(`tiangz_local_scene_mailbox_tasks_${name}{`));
+        assert.equal(matching.length, 1, "local quotas are aggregated once for the Process");
+        return [name, Number(matching[0].split(" ").at(-1))];
+      }));
+    };
+    const rejectOneWay = async index => {
+      const victim = await open(mainScene.port), disconnected = (await control.call(33)).count;
+      try {
+        await victim.sendLocalQuota(index);
+        await until(victim.closed, "local Scene overload closes its physical forwarding source");
+        await until(async () => (await control.call(33)).count === disconnected + 1, "local quota Disconnect delivery");
+        assert.equal(control.closed(), false);
+      } finally { victim.close(); }
+    };
+    try {
+      assert.equal((await control.call(49)).count, 2048, "RPC half has completion promises; void half already returned");
+      assert.equal((await targets[0].call(57)).count, 4096);
+      for (const mode of [51, 52]) await assert.rejects(control.call(mode), error => error.code === 1011 && error.response.rpcId > 0);
+      await rejectOneWay(0);
+      assert.equal((await control.call(50)).count, 8192);
+      await until(async () => (await workerControl.call(60)).count === 4, "all four targets await real Worker RPC results");
+      for (const mode of [53, 54]) await assert.rejects(control.call(mode), error => error.code === 1011 && error.response.rpcId > 0);
+      await rejectOneWay(4);
+      await until(async () => (await quotaMetrics()).process_rejected_total === 3, "local quota metrics update");
+      assert.deepEqual(await quotaMetrics(), { in_flight: 16384, capacity: 16384, per_scene_capacity: 4096,
+        max_in_flight: 16384, scene_rejected_total: 3, process_rejected_total: 3 });
+      assert.equal((await targets[4].call(57)).count, 0, "rejected messages never reach the fifth target");
+      assert.equal((await workerControl.call(62)).count, 1, "independent Process still admits local calls");
+      const before = await admin("status"), failed = begin(undefined, 422);
+      await failed.paused();
+      assert.match((await failed.pending).error, /drain deadline exceeded/);
+      assert.equal((await admin("status")).hotfix.generation, before.hotfix.generation);
+      // 主进程再次暂停时释放远程结果；验证真实 Host completion 在满额/暂停期间仍能排空。
+      // Release remote results while the main Process is paused again, proving real Host completion drains full quotas.
+      const recovery = begin(); await recovery.paused();
+      await workerControl.call(55);
+      await commit(recovery);
+      await until(async () => (await control.call(56)).count === 0, "all local RPC callers finish");
+      for (let i = 0; i < 4; i++) assert.equal((await targets[i].call(58)).count, 4096, "RPC and void target work both actually complete");
+      assert.equal((await control.call(59)).count, 0);
+      assert.equal((await control.call(53)).count, 1, "released Process capacity permits a new local RPC");
+      assert.equal((await targets[4].call(57)).count, 1);
+      await until(async () => (await quotaMetrics()).in_flight === 0, "local call quota returns to zero");
+      assert.equal((await admin("status")).hotfix.generation, before.hotfix.generation + 1);
+      return { admittedCalls: 16384, rpcCalls: 8192, voidCalls: 8192, rpcOverloads: 4, oneWaySourceClosures: 2, completionDuringPause: true };
+    } finally {
+      await workerControl.call(55);
+      await until(async () => (await quotaMetrics()).in_flight === 0, "local quota cleanup drain");
+      for (const client of [control, ...targets, workerControl]) await client.call(61);
+      for (const client of targets) client.close();
     }
   });
   await test("disconnected-in-flight-rpc-does-not-refill-response-cache", async () => {

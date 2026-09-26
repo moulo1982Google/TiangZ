@@ -55,6 +55,12 @@ export interface GameMetricsSnapshot {
   actorMailboxMaxInFlight: number;
   actorMailboxActorRejections: number;
   actorMailboxProcessRejections: number;
+  localSceneMailboxInFlight: number;
+  localSceneMailboxCapacity: number;
+  localSceneMailboxPerSceneCapacity: number;
+  localSceneMailboxMaxInFlight: number;
+  localSceneMailboxSceneRejections: number;
+  localSceneMailboxProcessRejections: number;
 }
 
 export class ProcessRuntime implements LocalSceneRouter {
@@ -130,6 +136,7 @@ export class ProcessRuntime implements LocalSceneRouter {
     return this.lifecycleState === "ready" &&
       this.processHost.SceneTaskInFlightCount === 0 &&
       this.processHost.ActorMailboxPendingCount === 0 &&
+      this.processHost.LocalSceneMailboxPendingCount === 0 &&
       TimerSystem.Instance.InFlightCount === 0 &&
       this.entryScenes.every((scene) => scene.__canCommitHotfix());
   }
@@ -215,7 +222,8 @@ export class ProcessRuntime implements LocalSceneRouter {
       actorMailbox: this.processHost.MailboxMetrics(),
     };
     return this.processHost.SceneTaskInFlightCount === 0 &&
-      this.processHost.ActorMailboxPendingCount === 0 && TimerSystem.Instance.InFlightCount === 0
+      this.processHost.ActorMailboxPendingCount === 0 &&
+      this.processHost.LocalSceneMailboxPendingCount === 0 && TimerSystem.Instance.InFlightCount === 0
       ? result
       : { ...result, pendingAsync: true };
   }
@@ -358,6 +366,7 @@ function gameMetricsSnapshot(processHost: ProcessHost): GameMetricsSnapshot {
   return {
     ...processHost.SceneTaskMetrics(),
     ...processHost.ActorMailboxTaskMetrics(),
+    ...processHost.LocalSceneMailboxMetrics(),
     fixedUpdateMs: Game.Instance.FixedUpdateMs,
     frameCount: TimeSystem.Instance.FrameCount,
     skippedFixedUpdates: Game.Instance.SkippedFixedUpdates,

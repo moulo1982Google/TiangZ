@@ -89,6 +89,8 @@ export class ProcessHost {
   private static readonly MAX_SCENE_TASKS = 4096;
   private static readonly MAX_TASKS_PER_ACTOR = 4096;
   private static readonly MAX_ACTOR_TASKS = 16384;
+  private static readonly MAX_LOCAL_CALLS_PER_SCENE = 4096;
+  private static readonly MAX_LOCAL_SCENE_CALLS = 16384;
   readonly Root = new EntityRoot();
   private readonly scenes = new Map<SceneId, SceneRuntime>();
   private readonly retiredTaskScopes = new Set<SceneTaskScope>();
@@ -100,6 +102,10 @@ export class ProcessHost {
   private actorMailboxMaxPendingCount = 0;
   private actorMailboxActorRejections = 0;
   private actorMailboxProcessRejections = 0;
+  private localSceneMailboxCount = 0;
+  private localSceneMailboxMaxCount = 0;
+  private localSceneMailboxSceneRejections = 0;
+  private localSceneMailboxProcessRejections = 0;
   private readonly actorMailboxMetrics = {
     fastPathCalls: 0,
     queuedCalls: 0,
@@ -115,6 +121,43 @@ export class ProcessHost {
 
   /** 包括已接受的排队/在途调用；移除 Actor 路由不能提前归还运行中的调用。 / Includes admitted queued/in-flight calls; removing Actor routing never settles a running call. */
   get ActorMailboxPendingCount(): number { return this.actorMailboxPendingCount; }
+
+  /** 本地 Scene 调用包括排队和实际等待，目标注销不能提前释放运行中的调用。 / Local Scene calls include queued and actual waits; target removal cannot release executing calls early. */
+  get LocalSceneMailboxPendingCount(): number { return this.localSceneMailboxCount; }
+
+  /** @internal 先检查目标 Scene 再检查 Process；归还闭包绑定原 Host 且幂等。 / Checks the target Scene before the Process; the idempotent release belongs to the original Host. */
+  __admitLocalSceneMailbox(sceneId: SceneId, scenePending: number): () => void {
+    if (scenePending >= ProcessHost.MAX_LOCAL_CALLS_PER_SCENE) {
+      this.localSceneMailboxSceneRejections += 1;
+      throw new RpcError(SystemErrCode.SceneOverloaded,
+        `local scene mailbox capacity exceeded: ${sceneId} limit=${ProcessHost.MAX_LOCAL_CALLS_PER_SCENE}`);
+    }
+    if (this.localSceneMailboxCount >= ProcessHost.MAX_LOCAL_SCENE_CALLS) {
+      this.localSceneMailboxProcessRejections += 1;
+      throw new RpcError(SystemErrCode.SceneOverloaded,
+        `process local scene mailbox capacity exceeded: ${this.processId} limit=${ProcessHost.MAX_LOCAL_SCENE_CALLS}`);
+    }
+    this.localSceneMailboxCount += 1;
+    this.localSceneMailboxMaxCount = Math.max(this.localSceneMailboxMaxCount, this.localSceneMailboxCount);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.localSceneMailboxCount -= 1;
+    };
+  }
+
+  /** 仅统计本地 Scene 调用；网络入站和 Actor 各自记账，不重复聚合为请求总数。 / Counts only local Scene calls; network ingress and Actors have separate accounting, not an additive request total. */
+  LocalSceneMailboxMetrics() {
+    return {
+      localSceneMailboxInFlight: this.localSceneMailboxCount,
+      localSceneMailboxCapacity: ProcessHost.MAX_LOCAL_SCENE_CALLS,
+      localSceneMailboxPerSceneCapacity: ProcessHost.MAX_LOCAL_CALLS_PER_SCENE,
+      localSceneMailboxMaxInFlight: this.localSceneMailboxMaxCount,
+      localSceneMailboxSceneRejections: this.localSceneMailboxSceneRejections,
+      localSceneMailboxProcessRejections: this.localSceneMailboxProcessRejections,
+    };
+  }
 
   /** 聚合入口、动态及已注销但尚未排空 Scene 的任务；路由注销不提前释放。 / Counts entry, dynamic, and removed Scenes' tasks until actual drain, independent of routing lifetime. */
   get SceneTaskInFlightCount(): number {

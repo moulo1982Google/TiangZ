@@ -1,5 +1,15 @@
 # 2026-09-16 模块拆分后的当前事实
 
+本地 Scene 两级准入最终完成：4096/EntryScene、16384/原 ProcessHost，定向 **49/49**，含 KCP **check 8/8、quick 33/33、full 9/9**，430647ms，`temp/v0.7-local-scene-capacity-verify.log`。实际生成协议保留 8192 RPC+8192 单向工作，验证两级 1011、来源关闭、独立 Worker，以及热更暂停期间真实 Worker RPC 完成排空；普通 Host 与两份报告共同 SHA256 `604c5e0d2b887b00a836298c5f50cf499745c818fa7931144064df452b86da40`。Rust 234 项、Linux 条件编译、AI 0.2.0 实际归档通过，完整证据和以下阶段失败见[本地 Scene 验收](../design/v0.7-local-scene-capacity.md)。网络控制积压、二进制保留和期限资源仍独立审查，阶段记录不代替最终结果。
+
+本地 Scene 真实夹具首轮已通过满额/拒绝，但独立 Worker 探针错误地用 scene.scenes.call 调用自己，被既有 self-call 防护拒绝（`temp/v0.7-local-scene-capacity-v8.log`、`temp/hotfix-load-r9hBNs/fault-report.json`，1006）。这是夹具调用设计错误；改为 Worker 中第二个真实 EntryScene 作为本地目标，不关闭防护、不改 mailbox 顺序或吞掉错误，整轮 V8 故障场景重验。
+
+本地容量 Vitest 49/49 后，独立类型检查仍发现夹具自定义 encode 的参数被泛型注册推断为 unknown（TS2345，`temp/v0.7-local-scene-capacity-types.log`）。给夹具函数显式 Response 类型，重新检查，不能用 as any 或将转译运行通过当作类型证明；此项是夹具标注错误，不是运行时容量失效。
+
+本地 Scene 容量按[独立契约](../design/v0.7-local-scene-capacity.md)实施，4096/Scene、16384/原 ProcessHost，只覆盖本地 call/send 的排队和真实在途。首个反例直接 await 旧 ordered 队列中不会立即拒绝的调用，导致 30 秒测试超时（`temp/v0.7-local-scene-capacity-first.log`）；应先断言拒绝没有入队，再等待其错误，清理仍释放夹具 gate。修正夹具后 `temp/v0.7-local-scene-capacity-red.log` 8/8 失败，明确旧实现无新额度/指标，不靠加长 timeout 绕过。
+
+接入本地节点释放后 7/8 通过，但公开 Scene.call 将本地 1011 重映射为 1006，`temp/v0.7-local-scene-capacity-propagation-red.log`。须像 send 一样保留已知 RpcError(1011)，其余现有错误映射保持；不能只看内部 dispatch 或把本地错误改成伪 Rust 字符串。节点销毁只释放未执行调用，实际等待仍绑定旧 Host；网络/控制与二进制预算另行处理。
+
 Actor 两级准入与公开 send/网络拒绝传播已完成：定向 **42/42**、含 KCP 完整 **check 8/8、quick 33/33、full 9/9**，412040ms。实际 V8 16384 项、5 次 RPC 1011（含公开 send）、2 次来源关闭及销毁后保留/释放/热更恢复均通过，普通 Host 与报告共同 SHA256 `25e9130a1c4d0a9c9378c8348da865fb57d22f6ca2295c788f74d17302289281`，最终日志 `temp/v0.7-actor-capacity-verify-final.log`。Rust 233 项、Linux 条件编译和 AI 实际 0.2.0 归档通过，详情及此前各层失败保留在[Actor 验收](../design/v0.7-actor-mailbox-capacity.md)。本地 Scene 总量、TS 控制积压与二进制保留仍另行推进，不把本项当作全部 TS 内存上限。
 
 容量验收必须覆盖业务公开入口：内部 ProcessRuntime.sendLocalScene 已返回 1011 后，SceneCallContext.sendFrame 仍仅识别 Rust 的 `[scene-overloaded]` 文本，并将本地 RpcError(1011) 重映射为 1006。`temp/v0.7-actor-capacity-public-send-first.log` 的公开 scene.scenes.send 断言失败，不能只用低层 router 通过证明对业务可用。需保留本地已知过载类型，同时保留远程 Host 字符串映射，再从生成协议验证公开路径并重跑最终矩阵；不改错误文本来匹配旧判断。

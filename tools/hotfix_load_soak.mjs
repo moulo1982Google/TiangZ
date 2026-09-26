@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { immutableCandidateFromOutput } from "./build_result.mjs";
 import { resolveModuleRuntimeBinary } from "./module_runtime_binary.mjs";
 import { installActorQuotaFixture } from "./hotfix_actor_quota_fixture.mjs";
+import { installLocalSceneQuotaFixture } from "./hotfix_local_scene_quota_fixture.mjs";
 
 // 独立本机夹具；所有写入都在本轮临时工程，保留报告和失败现场。
 // Isolated local fixture; writes stay in this run's temporary project, retaining evidence.
@@ -267,6 +268,7 @@ export class IncrementHandler implements SceneRpcHandler<CounterScene, C2S_Incre
 }
 `);
   await installActorQuotaFixture(module);
+  await installLocalSceneQuotaFixture(module);
   await run(["tools/game_project.mjs", "protocol-update", "--project", project]);
   await run(["tools/game_project.mjs", "build", "--project", project]);
   const candidates = [path.join(directory, "pair-1"), path.join(directory, "pair-2")];
@@ -290,7 +292,7 @@ export async function connect(port) {
   const timer = setInterval(() => socket.update(), 10);
   const close = () => { clearInterval(timer); socket.close(); };
   try { await socket.connect(); } catch(error) { close(); throw error; }
-  return { call: (mode = 0) => client.increment({ mode }), sendQuota: (actorIndex = 0) => client.actorQuota({ actorIndex }), closed: () => socket.state === "closed", close };
+  return { call: (mode = 0) => client.increment({ mode }), sendQuota: (actorIndex = 0) => client.actorQuota({ actorIndex }), sendLocalQuota: (sceneIndex = 0) => client.localQuota({ sceneIndex }), closed: () => socket.state === "closed", close };
 }`, resolveDir: path.join(project, "tools"), sourcefile: "load-client.ts", loader: "ts" }, outfile: probe, bundle: true, platform: "node", format: "esm", target: "node22", logLevel: "silent" });
   const { connect } = await import(pathToFileURL(probe).href);
   const binary = await resolveModuleRuntimeBinary({ engineRoot: engine, modulesDirectory: path.join(project, "modules") });

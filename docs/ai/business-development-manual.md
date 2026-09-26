@@ -1,5 +1,15 @@
 # 2026-09-16：先选业务工程，再写模块
 
+本地 Scene 容量最终复测：`npx vitest run tests/unit/local_scene_capacity.test.ts tests/unit/mailbox_lifetime.test.ts tests/unit/mailbox_overload_delivery.test.ts tests/unit/actor_mailbox_capacity.test.ts` **49/49**；含 KCP `npm run verify` **check 8/8、quick 33/33、full 9/9**，430647ms，`temp/v0.7-local-scene-capacity-verify.log`。真实 V8 16384 项中一半为已返回发送者的单向工作，仍占原名额；热更暂停期间 Worker RPC 返回后排空并恢复提交。Rust 234 项、Linux 条件编译、AI 实际归档通过，普通 Host/报告共同 SHA256 `604c5e0d2b887b00a836298c5f50cf499745c818fa7931144064df452b86da40`，详见[最终证据](../design/v0.7-local-scene-capacity.md)。下方夹具超时、类型标注、self RPC 误用与公开错误映射按阶段保留，不能混称框架容量失效；网络控制与字节上限仍独立处理。
+
+独立 Process 容量探针也要遵守既有调用契约：`temp/v0.7-local-scene-capacity-v8.log`、`temp/hotfix-load-r9hBNs/fault-report.json` 在 Worker self RPC 处收到 1006 `cannot synchronously call itself`。不能为证明独立额度而绕过 self-call 防护或改 ordered 语义；夹具给 Worker 配置独立 EntryScene，公开 call 指向该目标，重跑完整真实 V8 场景。此轮是夹具误用，不是数量限制失效，热更恢复部分当时尚未完成。
+
+转译测试不等于类型检查：本地容量及相关 Vitest 49/49 通过后，`npm run test:unit:typecheck` 仍报 TS2345（`temp/v0.7-local-scene-capacity-types.log`），泛型 register 的自定义 encode 参数缺少显式 Response 标注而被推断为 unknown。修正夹具的函数参数类型并重跑 `temp/v0.7-local-scene-capacity-types-final.log`；不要 as any、改协议类型或删除类型检查绕过。
+
+容量 RED 用例不能先等待无界旧队列拒绝：本地 Scene 首轮 ordered 用例在 gate 后排队却直接 await rejects，触发测试 30 秒期限（`temp/v0.7-local-scene-capacity-first.log`）。正确反例先检查队列长度没有增加，再等错误，finally 仍释放 gate；修正后 `temp/v0.7-local-scene-capacity-red.log` 8 项均明确失败，不能把夹具 timeout 当作框架崩溃或提高超时来掩盖。配额附着实际节点，void 返回不是归还点，见[本地 Scene 准入](../design/v0.7-local-scene-capacity.md)。
+
+公开 RPC 入口也需保留准入类型：本地节点接线后 7/8 通过，SceneCallContext.callFrame 却把本地 1011 按缺少 Rust 前缀重映射成 1006，`temp/v0.7-local-scene-capacity-propagation-red.log`。修复保留 RpcError(1011)，保持其他错误映射和原 rpcId 释放流程，再验证业务公开 call/send 与真实生成协议；不拼假错误文本、不绕过正常 dispatcher。正在运行的旧任务不能因 Scene/Runtime 销毁提前归还新 Host 的额度。
+
 Actor 容量最终复测：四个相关文件 **42/42**，`temp/v0.7-actor-capacity-focused-final.log`；公开 send 修复后重新执行含 KCP **check 8/8、quick 33/33、full 9/9**，412040ms，`temp/v0.7-actor-capacity-verify-final.log`。真实生成协议验证两级额度、5 次带关联号的 1011（含两次公开 send）、2 次单向来源关闭、销毁保留和热更恢复，Rust 233 项及 Linux 条件编译通过；宿主、报告、AI 归档身份见[最终验收](../design/v0.7-actor-mailbox-capacity.md)。下方阶段失败按发生顺序保留，阶段通过不能覆盖后来发现的公开 API 缺口；现行完整证据以上述最终轮为准。
 
 单测内部 router 通过不能替代公开 Scene API：新增 scene.scenes.send 用例收到 1006 而不是 1011（`temp/v0.7-actor-capacity-public-send-first.log`，1 failed/14 skipped）。原因是外层 SceneCallContext.sendFrame 的 mapError 只按 Rust `[scene-overloaded]` 文本识别过载，本地有类型的错误被重映射。应保留本地 RpcError(1011)，其他原有错误映射保持，并继续支持远程 Host 文本；禁止拼接假 Rust 错误文本或只改断言。真实生成协议须再调用公开 send 验证两级拒绝，改动后重跑完整矩阵。

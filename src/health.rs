@@ -267,6 +267,12 @@ pub(crate) struct GameObservabilitySnapshot {
     pub(crate) actor_mailbox_max_in_flight: u64,
     pub(crate) actor_mailbox_actor_rejections: u64,
     pub(crate) actor_mailbox_process_rejections: u64,
+    pub(crate) local_scene_mailbox_in_flight: u64,
+    pub(crate) local_scene_mailbox_capacity: u64,
+    pub(crate) local_scene_mailbox_per_scene_capacity: u64,
+    pub(crate) local_scene_mailbox_max_in_flight: u64,
+    pub(crate) local_scene_mailbox_scene_rejections: u64,
+    pub(crate) local_scene_mailbox_process_rejections: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1371,6 +1377,40 @@ mod tests {
             ("process_rejected_total", 5, "counter"),
         ] {
             let name = format!("tiangz_process_actor_mailbox_tasks_{suffix}");
+            let lines: Vec<_> = body
+                .lines()
+                .filter(|line| line.starts_with(&format!("{name}{{")))
+                .collect();
+            assert_eq!(lines, [format!("{name}{{process=\"worker\"}} {value}")]);
+            assert!(body.contains(&format!("# TYPE {name} {kind}")));
+        }
+    }
+
+    #[test]
+    fn process_local_scene_quota_counts_only_local_calls_without_scene_series() {
+        let state = ProcessHealthState::starting(Duration::from_secs(15));
+        state.set_observability_snapshot(ProcessObservabilitySnapshot {
+            game: Some(GameObservabilitySnapshot {
+                local_scene_mailbox_in_flight: 29,
+                local_scene_mailbox_capacity: 16384,
+                local_scene_mailbox_per_scene_capacity: 4096,
+                local_scene_mailbox_max_in_flight: 16384,
+                local_scene_mailbox_scene_rejections: 6,
+                local_scene_mailbox_process_rejections: 7,
+                ..GameObservabilitySnapshot::default()
+            }),
+            ..ProcessObservabilitySnapshot::default()
+        });
+        let body = format_prometheus_metrics("worker", &state);
+        for (suffix, value, kind) in [
+            ("in_flight", 29, "gauge"),
+            ("capacity", 16384, "gauge"),
+            ("per_scene_capacity", 4096, "gauge"),
+            ("max_in_flight", 16384, "gauge"),
+            ("scene_rejected_total", 6, "counter"),
+            ("process_rejected_total", 7, "counter"),
+        ] {
+            let name = format!("tiangz_local_scene_mailbox_tasks_{suffix}");
             let lines: Vec<_> = body
                 .lines()
                 .filter(|line| line.starts_with(&format!("{name}{{")))

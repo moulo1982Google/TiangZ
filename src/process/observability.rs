@@ -111,6 +111,18 @@ pub(super) struct GameMetricsSnapshot {
     actor_mailbox_actor_rejections: u64,
     #[serde(default)]
     actor_mailbox_process_rejections: u64,
+    #[serde(default)]
+    local_scene_mailbox_in_flight: u64,
+    #[serde(default)]
+    local_scene_mailbox_capacity: u64,
+    #[serde(default)]
+    local_scene_mailbox_per_scene_capacity: u64,
+    #[serde(default)]
+    local_scene_mailbox_max_in_flight: u64,
+    #[serde(default)]
+    local_scene_mailbox_scene_rejections: u64,
+    #[serde(default)]
+    local_scene_mailbox_process_rejections: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -501,6 +513,12 @@ pub(super) fn maybe_log_metrics(
         actor_mailbox_max_in_flight: game.actor_mailbox_max_in_flight,
         actor_mailbox_actor_rejections: game.actor_mailbox_actor_rejections,
         actor_mailbox_process_rejections: game.actor_mailbox_process_rejections,
+        local_scene_mailbox_in_flight: game.local_scene_mailbox_in_flight,
+        local_scene_mailbox_capacity: game.local_scene_mailbox_capacity,
+        local_scene_mailbox_per_scene_capacity: game.local_scene_mailbox_per_scene_capacity,
+        local_scene_mailbox_max_in_flight: game.local_scene_mailbox_max_in_flight,
+        local_scene_mailbox_scene_rejections: game.local_scene_mailbox_scene_rejections,
+        local_scene_mailbox_process_rejections: game.local_scene_mailbox_process_rejections,
     });
     let native_snapshot = native_data_metrics.map(|native| NativeDataObservabilitySnapshot {
         scalar_gets: native.scalar_gets,
@@ -728,7 +746,13 @@ mod tests {
                     "actorMailboxPerActorCapacity": 4096,
                     "actorMailboxMaxInFlight": 16384,
                     "actorMailboxActorRejections": 4,
-                    "actorMailboxProcessRejections": 5
+                    "actorMailboxProcessRejections": 5,
+                    "localSceneMailboxInFlight": 29,
+                    "localSceneMailboxCapacity": 16384,
+                    "localSceneMailboxPerSceneCapacity": 4096,
+                    "localSceneMailboxMaxInFlight": 16384,
+                    "localSceneMailboxSceneRejections": 6,
+                    "localSceneMailboxProcessRejections": 7
                 },
                 "actorMailbox": {
                     "queuedCalls": 8,
@@ -762,6 +786,12 @@ mod tests {
         assert_eq!(game.actor_mailbox_max_in_flight, 16384);
         assert_eq!(game.actor_mailbox_actor_rejections, 4);
         assert_eq!(game.actor_mailbox_process_rejections, 5);
+        assert_eq!(game.local_scene_mailbox_in_flight, 29);
+        assert_eq!(game.local_scene_mailbox_capacity, 16384);
+        assert_eq!(game.local_scene_mailbox_per_scene_capacity, 4096);
+        assert_eq!(game.local_scene_mailbox_max_in_flight, 16384);
+        assert_eq!(game.local_scene_mailbox_scene_rejections, 6);
+        assert_eq!(game.local_scene_mailbox_process_rejections, 7);
         assert_eq!(result.actor_mailbox.queued_calls, 8);
         assert_eq!(result.actor_mailbox.one_way_queued_calls, 9);
         assert_eq!(result.actor_mailbox.queued_depth, 2);

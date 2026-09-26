@@ -213,6 +213,7 @@ export class SceneCallContext {
         },
       );
     } catch (error) {
+      if (error instanceof RpcError && error.code === SystemErrCode.SceneOverloaded) throw error;
       const message = error instanceof Error ? error.message : String(error);
       throw new RpcError(
         message.includes("[scene-overloaded]")

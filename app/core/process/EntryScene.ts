@@ -98,6 +98,7 @@ interface MailboxTask<T = unknown> {
   resolve?: (value: T | PromiseLike<T>) => void;
   reject?: (reason?: unknown) => void;
   oneWay?: boolean;
+  releaseAdmission?: () => void;
 }
 
 interface QueuedActorFrame {
@@ -203,6 +204,7 @@ export abstract class EntryScene extends Scene {
   private mailboxBusy = false;
   private mailboxClosed = false;
   private mailboxInFlight = 0;
+  private localMailboxPendingCount = 0;
   private readonly mailboxTasks: (MailboxTask | undefined)[] = [];
   private readonly metrics = {
     processedFrames: 0,
@@ -808,18 +810,36 @@ export abstract class EntryScene extends Scene {
 
   /** 按正常 mailbox 与协议分发语义路由本地 call。 / Routes a local call through normal mailbox and protocol dispatch semantics. */
   dispatchLocalCall(frame: Uint8Array): Promise<Uint8Array> {
+    let release: (() => void) | undefined;
     try {
-      const result = this.dispatchMailbox(() => this.handleFrame(frame));
+      release = this.admitLocalMailboxCall();
+      const result = this.dispatchMailbox(() => this.handleFrame(frame), release);
       return Promise.resolve(result).then((response) => {
         if (!response) throw new Error(`scene ${this.self.name} returned no RPC response`);
         return response;
       });
-    } catch (error) { return Promise.reject(error); }
+    } catch (error) { release?.(); return Promise.reject(error); }
   }
 
   /** 路由本地单向帧，不创建响应完成项。 / Routes a local one-way frame without creating a response completion. */
   dispatchLocalSend(frame: Uint8Array): MaybePromise<void> {
-    return this.dispatchMailboxVoid(() => this.handleFrame(frame));
+    const release = this.admitLocalMailboxCall();
+    try { return this.dispatchMailboxVoid(() => this.handleFrame(frame), release); }
+    catch (error) { release(); throw error; }
+  }
+
+  /** 本地名额由实际调用持有；快速失败可重复回滚，排队 void 的返回不能提前归还。 / The actual call owns local admission; rollback is idempotent and a queued void return cannot release it early. */
+  private admitLocalMailboxCall(): () => void {
+    this.requireMailboxAlive();
+    const releaseHost = this.processHost.__admitLocalSceneMailbox(this.self.name, this.localMailboxPendingCount);
+    this.localMailboxPendingCount += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.localMailboxPendingCount -= 1;
+      releaseHost();
+    };
   }
 
   /** 返回当前Scene mailbox热路径计数；监控读取不会改变队列。 / Returns Scene mailbox hot-path counters without changing the queue. */
@@ -1040,11 +1060,11 @@ export abstract class EntryScene extends Scene {
     return processed;
   }
 
-  private dispatchMailbox<T>(run: () => MaybePromise<T>): MaybePromise<T> {
+  private dispatchMailbox<T>(run: () => MaybePromise<T>, release?: () => void): MaybePromise<T> {
     this.requireMailboxAlive();
     if (this.mailbox === "unordered") {
       this.mailboxMetrics.fastPathCalls += 1;
-      const result = this.executeMailboxTask(run);
+      const result = this.executeMailboxTask(run, release);
       if (isPromiseLike(result)) this.mailboxMetrics.asyncCalls += 1;
       return result;
     }
@@ -1055,12 +1075,14 @@ export abstract class EntryScene extends Scene {
           run as () => MaybePromise<unknown>,
           resolve as (value: unknown) => void,
           reject,
+          false,
+          release,
         );
       });
     }
     this.mailboxMetrics.fastPathCalls += 1;
     this.mailboxBusy = true;
-    return this.runMailboxTask(run);
+    return this.runMailboxTask(run, false, release);
   }
 
   /**
@@ -1071,11 +1093,11 @@ export abstract class EntryScene extends Scene {
    * Promise. If the current handler is async, its result is still returned so
    * the caller can observe and log the failure.
    */
-  private dispatchMailboxVoid(run: () => MaybePromise<unknown>): MaybePromise<void> {
+  private dispatchMailboxVoid(run: () => MaybePromise<unknown>, release?: () => void): MaybePromise<void> {
     this.requireMailboxAlive();
     if (this.mailbox === "unordered") {
       this.mailboxMetrics.oneWayFastPathCalls += 1;
-      const result = this.executeMailboxTask(run);
+      const result = this.executeMailboxTask(run, release);
       if (isPromiseLike(result)) {
         this.mailboxMetrics.oneWayAsyncCalls += 1;
         // unordered 透传已跟踪生命周期的结果，不进入串行队列。
@@ -1086,20 +1108,21 @@ export abstract class EntryScene extends Scene {
     }
     if (this.mailboxBusy) {
       this.mailboxMetrics.oneWayQueuedCalls += 1;
-      this.enqueueMailboxTask(run, undefined, undefined, true);
+      this.enqueueMailboxTask(run, undefined, undefined, true, release);
       return undefined;
     }
     this.mailboxMetrics.oneWayFastPathCalls += 1;
     this.mailboxBusy = true;
-    return this.runMailboxTask(run, true) as MaybePromise<void>;
+    return this.runMailboxTask(run, true, release) as MaybePromise<void>;
   }
 
   private runMailboxTask<T>(
     run: () => MaybePromise<T>,
     oneWay = false,
+    release?: () => void,
   ): MaybePromise<T> {
     try {
-      const result = this.executeMailboxTask(run);
+      const result = this.executeMailboxTask(run, release);
       if (isPromiseLike(result)) {
         if (oneWay) this.mailboxMetrics.oneWayAsyncCalls += 1;
         else this.mailboxMetrics.asyncCalls += 1;
@@ -1170,12 +1193,14 @@ export abstract class EntryScene extends Scene {
     resolve?: (value: unknown) => void,
     reject?: (reason?: unknown) => void,
     oneWay = false,
+    releaseAdmission?: () => void,
   ): void {
     const task = this.recycledMailboxTasks.pop() ?? { run };
     task.run = run;
     task.resolve = resolve;
     task.reject = reject;
     task.oneWay = oneWay;
+    task.releaseAdmission = releaseAdmission;
     this.mailboxTasks.push(task);
     this.mailboxMetrics.queuedDepth += 1;
     this.mailboxMetrics.maxQueuedDepth = Math.max(
@@ -1206,6 +1231,9 @@ export abstract class EntryScene extends Scene {
   }
 
   private recycleMailboxTask(task: MailboxTask): void {
+    const release = task.releaseAdmission;
+    task.releaseAdmission = undefined;
+    release?.();
     task.run = undefined;
     task.resolve = undefined;
     task.reject = undefined;
@@ -1216,7 +1244,7 @@ export abstract class EntryScene extends Scene {
   }
 
   /** 只在实际业务完成时检查拥有者；销毁不伪造 Promise 已取消。 / Checks ownership at real completion; disposal does not pretend to cancel a business promise. */
-  private executeMailboxTask<T>(run: () => MaybePromise<T>): MaybePromise<T> {
+  private executeMailboxTask<T>(run: () => MaybePromise<T>, release?: () => void): MaybePromise<T> {
     this.requireMailboxAlive();
     this.mailboxInFlight += 1;
     let asynchronous = false;
@@ -1226,12 +1254,12 @@ export abstract class EntryScene extends Scene {
         asynchronous = true;
         return Promise.resolve(result)
           .then(value => { this.requireMailboxAlive(); return value; })
-          .finally(() => { this.mailboxInFlight -= 1; });
+          .finally(() => { this.mailboxInFlight -= 1; release?.(); });
       }
       this.requireMailboxAlive();
       return result;
     } finally {
-      if (!asynchronous) this.mailboxInFlight -= 1;
+      if (!asynchronous) { this.mailboxInFlight -= 1; release?.(); }
     }
   }
 
