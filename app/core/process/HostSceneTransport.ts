@@ -92,7 +92,23 @@ function queueOperation(operation: QueuedOperation): void {
 
 /** 先预留绝对期限；未跨 Update 的调用同步释放，已启动的原生等待实际退出后才返回。 / Reserves an absolute deadline; calls finishing before Update release synchronously, while started native waits drain before returning. */
 export async function withHostDeadline<T>(run: () => MaybePromise<T>, ms: number, timeoutMessage: string): Promise<T> {
-  const id = hostCreateDeadline(ms);
+  return withReservedHostDeadline(hostCreateDeadline(ms), run, timeoutMessage);
+}
+
+/** 停机使用独立预留；创建失败仍观察真实清理，外层 Rust drain 期限继续兜底。 / Uses shutdown admission; creation failure still observes real cleanup under the outer Rust drain deadline. */
+export async function withHostShutdownDeadline<T>(run: () => MaybePromise<T>, ms: number, timeoutMessage: string): Promise<T> {
+  let id: number;
+  try { id = hostCreateShutdownDeadline(ms); }
+  catch (admissionError) {
+    try { await run(); }
+    catch (stopError) { throw new AggregateError([admissionError, stopError], "shutdown deadline and cleanup failed"); }
+    throw admissionError;
+  }
+  return withReservedHostDeadline(id, run, timeoutMessage);
+}
+
+/** 只接管已经预留的本次资源，跨刷新等待仍按真实退出收敛。 / Owns this reserved resource and drains any started native wait to actual completion. */
+async function withReservedHostDeadline<T>(id: number, run: () => MaybePromise<T>, timeoutMessage: string): Promise<T> {
   let resolve!: () => void, reject!: (reason: unknown) => void;
   const timeout = new Promise<void>((ok, fail) => { resolve = ok; reject = fail; });
   const deadline: PendingDeadline = { id, resolve, reject };
@@ -310,11 +326,13 @@ const hostApi = globalThis as typeof globalThis & {
   ) => number;
   __hostSubmitSceneOperations: (packed: Uint8Array) => number;
   __hostCreateDeadline: (ms: number) => number;
+  __hostCreateShutdownDeadline: (ms: number) => number;
   __hostWaitDeadline: (id: number) => Promise<void>;
   __hostCancelDeadline: (id: number) => void;
 };
 const hostRegisterSceneRoute = hostApi.__hostRegisterSceneRoute;
 const hostSubmitSceneOperations = hostApi.__hostSubmitSceneOperations;
 const hostCreateDeadline = hostApi.__hostCreateDeadline;
+const hostCreateShutdownDeadline = hostApi.__hostCreateShutdownDeadline;
 const hostWaitDeadline = hostApi.__hostWaitDeadline;
 const hostCancelDeadline = hostApi.__hostCancelDeadline;

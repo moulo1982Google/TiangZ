@@ -1,5 +1,11 @@
 # 2026-09-16：先选业务工程，再写模块
 
+停机改动最终复测 **35/35**，Rust 专项 6/6，含 KCP `npm run verify` **check 8/8、quick 33/33、full 9/9**，461927ms，`temp/v0.7-shutdown-deadline-verify.log`；Rust 共 241 项、Linux 条件编译、AI 实际归档通过。真实 Native/V8 证明普通期限满额仍有独立停机资源，完整 Process 故障矩阵的停机场景 187.94ms，三个宿主 exit 0 且无强制终止。宿主/报告 SHA256 `b69e8de9e89542e1ace6b881bd0f20001c6b7ec41343530c4957fa9acc4b7260`，证据和范围见[停机验收](../design/v0.7-shutdown-deadline.md)；保留下方 8 项 RED，不把替身失败注入当作真实满载停机演练。
+
+排队时间要实测纳入预算：`node temp/v0.7-remote-deadline-probe.mjs` 将 20ms 的 call/send/sleep 暂留 TS 队列 **77.32ms**，实际打包仍写入完整 20ms，证据 `temp/v0.7-remote-deadline-audit.json`。探针未发网络，不能据此声称对端执行。后续需统一单调绝对期限，未获得原生执行槽的过期操作也须处理，而非等轮到自己后重新计时；不以 Promise.race 冒充业务取消、不删旧项或降低并发来掩盖。真实 Rust/V8 路径另验，本批停机修改不修此项，见[后续盘点](../design/v0.7-ts-mailbox-audit.md)。
+
+停机 watchdog 不能依赖普通工作队列：`temp/v0.7-shutdown-deadline-red.log` **8 failed**，286ms，其中满远程队列反例证明旧 stop 在实际钩子未完成时已失败退出；其余覆盖共享结果与专用资源的新契约。正确修法是独立的一项原生预留、共享同轮 stop，并在期限创建异常时仍执行/观察清理，继续由 Rust 外层 drain 期限限制异常回退。禁止直接用准入失败不执行 factory 的普通包装器、吞掉创建/钩子异常或将超时冒充取消完成。复测 `npx vitest run tests/unit/process_shutdown_deadline.test.ts tests/unit/scene_call_deadline.test.ts tests/unit/global_id_bootstrap.test.ts`，见[停机期限](../design/v0.7-shutdown-deadline.md)；替身与真实 V8 分别报告。
+
 远程共享准入的最终复测为相关 **27/27**，含 KCP `npm run verify` **check 8/8、quick 33/33、full 9/9**，457372ms，`temp/v0.7-host-operation-admission-verify.log`；Rust 240 项、Linux 条件编译与 AI 实际归档通过。真实 V8 完整保留 65536 条单向消息及 64 MiB 整包，4 次公开 1011 只拒绝新增项，排空后恢复，宿主/报告 SHA256 `73d8d2ee0bd1e1404fe75dd08400bcad73330d6bde5492ddba6230c9c83c27d0`。下方失败反例及初步阶段保留；临时容量夹具的 Rust 出站预算与被测单批上限分开，不能改变默认值后声称默认吞吐已验收。详见[准入最终证据](../design/v0.7-host-operation-admission.md)，停机与排队期限仍有独立边界。
 
 共享准入必须覆盖所有入口和旧项保留：`temp/v0.7-host-operation-admission-red.log` **10 failed/2 passed**，旧 call/sleep 能绕过单向队列上限，无效或已 detach 的帧还能使整批失败。修复在接受前检查输入、pending、条数和含头字节，flush 仅拒绝失效的本项，不能丢旧队列、只改 Rust 上限或把排队成本算成在途总内存。复测 `npx vitest run tests/unit/host_operation_admission.test.ts tests/unit/scene_call_deadline.test.ts tests/legacy/rpc_actor_correctness_self_test.test.ts` 初步 26/26；现有 mock 的一字节业务帧修正为原 Rust 已要求的二字节，完成和 rpcId 断言保留。指标、真实生成协议与完整矩阵另验，见[准入契约](../design/v0.7-host-operation-admission.md)。

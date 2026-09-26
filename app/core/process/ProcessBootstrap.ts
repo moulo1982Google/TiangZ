@@ -9,6 +9,7 @@ import {
   completeHostSceneOperation,
   flushHostSceneOperations,
   sleepHost,
+  withHostShutdownDeadline,
 } from "./HostSceneTransport";
 
 interface ProcessBootstrapAdapters {
@@ -31,6 +32,7 @@ export function installProcessBootstrap(adapters: ProcessBootstrapAdapters): voi
   let processRuntime: ProcessRuntime | undefined;
   let processStopping = false;
   let processStarting = false;
+  let stoppingPromise: Promise<string> | undefined;
 
   async function startProcess(configJson: string): Promise<string> {
     if (processStarting || processRuntime || processStopping) throw new Error("process cannot start twice or while shutting down");
@@ -53,18 +55,23 @@ export function installProcessBootstrap(adapters: ProcessBootstrapAdapters): voi
     }
   }
 
-  async function stopProcess(): Promise<string> {
+  /** 并发停机共享同一轮清理和专用期限，完成后才释放入口。 / Concurrent shutdown callers share cleanup and its reserved deadline until the attempt settles. */
+  function stopProcess(): Promise<string> {
+    stoppingPromise ??= stopCurrentProcess().finally(() => { stoppingPromise = undefined; });
+    return stoppingPromise;
+  }
+
+  async function stopCurrentProcess(): Promise<string> {
     processStopping = true;
     if (!processRuntime) return "already stopped";
     const runtime = processRuntime;
     const timeoutMs = runtime.StopTimeoutMs;
     try {
-      await Promise.race([
-        runtime.stop(),
-        sleepHost(timeoutMs).then(() => {
-          throw new Error(`process stop timed out after ${timeoutMs}ms`);
-        }),
-      ]);
+      await withHostShutdownDeadline(
+        () => runtime.stop(),
+        Math.max(0, Math.min(timeoutMs, 0xffff_ffff)) >>> 0,
+        `process stop timed out after ${timeoutMs}ms`,
+      );
       return "stopped";
     } finally {
       flushHostSceneOperations();

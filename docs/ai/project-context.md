@@ -1,5 +1,11 @@
 # 2026-09-16 模块拆分后的当前事实
 
+停机专用期限最终验收：相关 **35/35**、Rust 专项 6/6，含 KCP **check 8/8、quick 33/33、full 9/9**，461927ms，`temp/v0.7-shutdown-deadline-verify.log`；Rust 总计 241 项、Linux 条件编译和 AI 实际归档通过。真实 Native/V8 在普通期限满 65536 且 256 项正等待时仍可创建/到期/归还独立停机资源；完整 Process 故障矩阵的停机场景 187.94ms，三个宿主均 exit 0、无强制退出。共同 Host/报告 SHA256 `b69e8de9e89542e1ace6b881bd0f20001c6b7ec41343530c4957fa9acc4b7260`，见[最终证据](../design/v0.7-shutdown-deadline.md)。下方 RED 保留为修复前记录，满 TS 队列的确定性 Bootstrap 测试与真实宿主证据分层。
+
+普通远程期限另有反例：`node temp/v0.7-remote-deadline-probe.mjs` 用隔离 Node 记录实际 TS 打包，20ms 的 call/send/sleep 等待 **77.32ms** 后仍提交完整 20ms，`temp/v0.7-remote-deadline-audit.json`。它未发网络，不能宣称对端执行；正确方向是单调绝对期限覆盖 TS 与原生排队，且未轮询的过期工作也要能完成通知。不能只在出队时重新启动相对计时、以普通 Promise.race 冒充取消或减少并发夹具绕过。后续需 Rust 调度及真实 V8/网络反例，见[盘点](../design/v0.7-ts-mailbox-audit.md)。
+
+停机期限已保留修复前反例：`temp/v0.7-shutdown-deadline-red.log` **8 failed**，286ms。满 65536 项远程队列时，旧 watchdog 的 sleepHost 准入拒绝使 stop 在实际钩子未结束前提前终结；并发调用也没有共用 Bootstrap 结果，其余反例检验尚不存在的专用资源契约。按[停机设计](../design/v0.7-shutdown-deadline.md)独立预留一项，并在创建异常时仍执行/观察清理；不能直接套满额后跳过 factory 的普通本地期限包装器、吞错或关闭真实停机钩子。复测 `npx vitest run tests/unit/process_shutdown_deadline.test.ts tests/unit/scene_call_deadline.test.ts tests/unit/global_id_bootstrap.test.ts`；原生资源与实际宿主证据另验。
+
 远程共享准入最终通过：相关 **27/27**，含 KCP **check 8/8、quick 33/33、full 9/9**，457372ms，`temp/v0.7-host-operation-admission-verify.log`；Rust 240 项、Linux 条件编译、AI 实际归档通过。真实 V8 新场景 9888.79ms，65536 条单向消息、64 MiB 整包完整送达，4 次公开 1011 及排空恢复通过。宿主/两份报告共同 SHA256 `73d8d2ee0bd1e1404fe75dd08400bcad73330d6bde5492ddba6230c9c83c27d0`；范围、隔离夹具的独立 256 MiB Rust 出站预算与证据见[最终验收](../design/v0.7-host-operation-admission.md)。下方探针/RED 是修复前记录；排队期限、停机资源和 TS 全部二进制保留仍另行处理。
 
 远程 Host 共享准入按[独立契约](../design/v0.7-host-operation-admission.md)实施：旧反例 `temp/v0.7-host-operation-admission-red.log` 为 **10 failed/2 passed**，包括混合 call/send/sleep 整批超限、超大/过短帧污染旧项、公开错误类型和借用帧失效。先验证输入及共享条数/含头成本，再建立路由和等待记录；失效帧只影响本项，计数与待回复按不同释放时机观测，不能清空此前已接受队列或把 queued bytes 叫作堆上限。初步相关 26/26 通过；旧 RPC mock 的一字节输入本就不满足 Rust 最小帧长，迁移为二字节后保留原完成/ID断言。真实宿主、指标及最终矩阵仍待验证。

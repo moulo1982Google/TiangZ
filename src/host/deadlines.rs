@@ -1,4 +1,4 @@
-//! 为调用期限提供 isolate 所有的可取消资源，不占远程操作批次槽。 / Provides isolate-owned cancellable call deadlines outside remote-operation batch slots.
+//! 为调用和停机期限提供 isolate 所有的独立额度与可取消资源。 / Provides isolate-owned independent admission and cancellable resources for call and shutdown deadlines.
 
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
@@ -14,6 +14,9 @@ const MAX_DEADLINES: usize = 65_536;
 #[derive(Default)]
 pub(super) struct DeadlineBudget(Rc<Cell<usize>>);
 
+#[derive(Default)]
+pub(super) struct ShutdownDeadlineBudget(Rc<Cell<usize>>);
+
 struct Deadline {
     expires_at: Instant,
     cancel: Rc<CancelHandle>,
@@ -24,12 +27,22 @@ struct Deadline {
 impl Deadline {
     /// 创建前检查原预算，实际资源 Drop 才归还。 / Checks the original budget before creation and releases only on the resource's actual Drop.
     fn create(budget: &DeadlineBudget, ms: u32) -> Result<Self, JsErrorBox> {
-        let live = Rc::clone(&budget.0);
-        if live.get() >= MAX_DEADLINES {
-            return Err(JsErrorBox::generic(
-                "[scene-overloaded] host deadline capacity reached",
-            ));
+        Self::create_with_limit(&budget.0, MAX_DEADLINES, ms, "host deadline")
+    }
+
+    /// 两类期限共享资源实现，但各自保留独立的原所有者额度。 / Shares deadline resources while retaining independent admission on each original owner.
+    fn create_with_limit(
+        live: &Rc<Cell<usize>>,
+        limit: usize,
+        ms: u32,
+        name: &str,
+    ) -> Result<Self, JsErrorBox> {
+        if live.get() >= limit {
+            return Err(JsErrorBox::generic(format!(
+                "[scene-overloaded] {name} capacity reached"
+            )));
         }
+        let live = Rc::clone(live);
         live.set(live.get() + 1);
         Ok(Self {
             expires_at: Instant::now() + Duration::from_millis(u64::from(ms)),
@@ -75,6 +88,21 @@ impl Drop for Deadline {
 #[op2(fast)]
 pub(super) fn op_host_create_deadline(state: &mut OpState, ms: u32) -> Result<u32, JsErrorBox> {
     let deadline = Deadline::create(state.borrow::<DeadlineBudget>(), ms)?;
+    Ok(state.resource_table.add(deadline))
+}
+
+/// 每 isolate 为停机预留一个期限，不竞争普通 RPC 期限或远程批次。 / Reserves one shutdown deadline per isolate outside ordinary RPC deadlines and remote batches.
+#[op2(fast)]
+pub(super) fn op_host_create_shutdown_deadline(
+    state: &mut OpState,
+    ms: u32,
+) -> Result<u32, JsErrorBox> {
+    let deadline = Deadline::create_with_limit(
+        &state.borrow::<ShutdownDeadlineBudget>().0,
+        1,
+        ms,
+        "host shutdown deadline",
+    )?;
     Ok(state.resource_table.add(deadline))
 }
 
@@ -169,6 +197,26 @@ mod tests {
         assert_eq!(new.0.get(), 0);
     }
 
+    #[test]
+    fn shutdown_reservation_is_independent_and_returns_only_after_the_last_reference() {
+        let calls = DeadlineBudget::default();
+        let shutdown = ShutdownDeadlineBudget::default();
+        let call = Deadline::create(&calls, 30000).unwrap();
+        let stop = Rc::new(Deadline::create_with_limit(&shutdown.0, 1, 30000, "shutdown").unwrap());
+        let running = Rc::clone(&stop);
+        stop.close();
+        assert!(Deadline::create_with_limit(&shutdown.0, 1, 1, "shutdown").is_err());
+        assert_eq!(shutdown.0.get(), 1);
+        drop(running);
+        assert_eq!(shutdown.0.get(), 0);
+        let next = Deadline::create_with_limit(&shutdown.0, 1, 1, "shutdown").unwrap();
+        drop(call);
+        assert_eq!(calls.0.get(), 0);
+        assert_eq!(shutdown.0.get(), 1);
+        drop(next);
+        assert_eq!(shutdown.0.get(), 0);
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn real_v8_deadlines_release_resources_and_do_not_share_scene_batch_slots() {
         const CASE_ENV: &str = "TIANGZ_TEST_HOST_DEADLINES_CASE";
@@ -211,6 +259,20 @@ mod tests {
                 const short = __hostCreateDeadline(1);
                 await __hostWaitDeadline(short);
                 __hostCancelDeadline(short);
+                const full = Array.from({length: 65536 - held.length}, () => __hostCreateDeadline(30000));
+                let callRejected = false;
+                try { __hostCreateDeadline(1); } catch (error) { callRejected = String(error).includes('capacity reached'); }
+                if (!callRejected) throw new Error('ordinary call capacity was not full');
+                const shutdown = __hostCreateShutdownDeadline(1);
+                let duplicateRejected = false;
+                try { __hostCreateShutdownDeadline(1); } catch (error) { duplicateRejected = String(error).includes('capacity reached'); }
+                if (!duplicateRejected) throw new Error('shutdown reservation admitted two resources');
+                await __hostWaitDeadline(shutdown);
+                __hostCancelDeadline(shutdown);
+                __hostCancelDeadline(shutdown);
+                const nextShutdown = __hostCreateShutdownDeadline(30000);
+                __hostCancelDeadline(nextShutdown);
+                for (const id of full) __hostCancelDeadline(id);
                 for (const id of held) { __hostCancelDeadline(id); __hostCancelDeadline(id); }
                 await Promise.all(waits);
                 for (let i = 0; i < 65540; i++) {
@@ -227,6 +289,7 @@ mod tests {
             });
             runtime.execute_script("deadline:assert", "if (!deadlineFinished || deadlineFailure) throw new Error('deadline lifecycle failed: ' + deadlineFailure);").unwrap();
             assert_eq!(state.borrow().borrow::<DeadlineBudget>().0.get(), 0);
+            assert_eq!(state.borrow().borrow::<ShutdownDeadlineBudget>().0.get(), 0);
             assert_eq!(state.borrow().resource_table.len(), 1);
         }).await.unwrap();
     }
