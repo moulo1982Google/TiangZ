@@ -112,6 +112,18 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 
 ## 失败教训与复测流程
 
+### 0.7 依赖规则入口不一致
+
+候选安装的进程完成也是依赖边界：一次 `npm install` 工具返回 session_id 后，检查过早启动，安装实际上运行了 26 秒。此时调用返回不能证明依赖已稳定；重叠的 final 命名日志也不能当最终证据。必须取得安装退出码 0，再运行依赖它的 quick/LSP，换新日志并对 npm 归档/安装内容逐字节核对。原安装和重叠报告保留，见[依赖方向](../design/v0.7-dependency-rules.md)。
+
+去重也必须按实际检查文件：新增 `dist/v0.7-dependency-excluded-first.log` 反例为 0 错误而应有 1 错误。tsconfig 仅包含 Core 时，索引器仍发现被排除的 Model 深层导入；全局 Program checked 标志错误地禁止全部语法回退。改为返回实际文件集合，仅对这些文件去重，排除文件仍作可确定的 AST 检查。禁止为了修复扩大用户 tsconfig、把全部索引文件宣称已获类型证明，或只在完整夹具测试。
+
+实际 CLI/LSP 首轮比纯规则多报 Stable 身份错误：TS 返回正斜杠 SourceFile 路径，Windows 预期值为反斜杠，直接字符串相等错误地拒绝合法导入。应使用平台路径身份比较，保留大小写/分隔符对照；不能删掉身份核对或仅扩展等待。原插件 `dist/v0.7-dependency-check-first.log` 保留，修复后需要重打候选、重装和实际 LSP 复跑，旧 npm/VSIX 结果不能复用。
+
+新增模块边界反例初次实际返回 TS5097，原因是夹具相对导入携带 `.ts` 扩展，正式模块 tsconfig 在类型阶段先拒绝。应使用当前支持的无扩展导入，使类型合法后验证依赖方向；禁止放宽编译配置或把 TS 错误当作规则覆盖证据。原 `temp/v0.7-dependency-module-worker-first.log` 保留，复跑 `node --test tools/module_live_worker.test.mjs` 与实际安装 LSP。
+
+Developer Tools 首轮依赖反例 5 项中 4 项失败（`dist/v0.7-dependency-rules-first.log`）：Model 仍可深入 Core，Core 通过 `#tiangz/model` 反向依赖，type-only/import-equals 未检查，相似启动文件未按 Stable 约束。宿主另有正则扫描和不同 AST 遍历，不能靠“都检查 imports”推断一致。现统一到 dependency ruleset 1，传入调用方 TS API/Program 与模块清单，仅保留精确启动、生成协议 ABI 和 System 增补例外。禁止宽泛忽略 generated/main、把错误降级或保留旧错误正例；动态目标 warning 不证明安全。旧 LSP 夹具的 Model 别名直接指向 Core，需补实际 Model 聚合文件而不是关闭 Stable 身份核对。复测纯规则、TS 5/6、模块 CLI/Host worker、实际安装 LSP、制品身份及宿主 quick，详见[依赖方向](../design/v0.7-dependency-rules.md)。
+
 ### 0.7 动态 Scene 任务的实际结束与 Timer 所有者
 
 首次 `tests/unit/scene_task_disposal.test.ts` 两项均失败（`temp/v0.7-scene-task-disposal-first.log`）：动态 Scene 已注销，Scope 仍在途，但仅遍历路由表的 ProcessHost 错误报告排空；旧 Runtime 的任务 finally 还通过当前单例取消新 Runtime 的 Timer。Host 必须保留未完成 Scope 并在真实完成时主动移除，watchdog 取消绑定创建它的服务实例，销毁停止告警但不强制终止 Promise。禁止清空任务表、把 aborted 当完成、只在读取计数时清理引用，或用 TryGet 当前单例掩盖跨实例句柄错误。复测定向 `vitest run tests/unit/scene_task_disposal.test.ts`、正式生成的真实 V8 夹具及完整 `npm run verify`；范围和结果记入[Scene 任务销毁](../design/v0.7-scene-task-disposal.md)。

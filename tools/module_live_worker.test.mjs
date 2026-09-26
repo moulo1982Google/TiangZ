@@ -83,6 +83,16 @@ test("real module worker and CLI agree; unsaved fixes and closing restore withou
     assert.equal(corrected.status, "checked");
     assert.deepEqual(corrected.diagnostics.map(item => [item.code, item.severity]), [["tiangz.timer.unverifiable", "warning"]]);
     assert.equal(corrected.cache.sourceFiles, baseline.cache.sourceFiles);
+    const internalCore = path.relative(path.dirname(input.file), path.join(root, "app/core/runtime/entities")).replaceAll("\\", "/");
+    const forbidden = fixed.replace("#tiangz/core", internalCore);
+    const boundary = await client.analyze([{ file: input.file, text: forbidden }]);
+    assert.deepEqual(boundary.diagnostics.map(item => [item.code, item.severity]), [["tiangz.architecture.invalid-dependency", "error"], ["tiangz.timer.unverifiable", "warning"]]);
+    await writeFile(input.file, forbidden);
+    try {
+      const checkedBoundary = spawnSync(process.execPath, ["tools/typecheck_game_modules.mjs", "--modules-dir", path.join(input.project, "modules"), "--host-profile", "modules", "--json"], { cwd: root, windowsHide: true, encoding: "utf8" });
+      assert.equal(checkedBoundary.status, 1, checkedBoundary.stderr);
+      assert.deepEqual(JSON.parse(checkedBoundary.stdout).diagnostics, boundary.diagnostics);
+    } finally { await writeFile(input.file, input.source); }
     const closed = await client.analyze();
     assert.deepEqual(closed.diagnostics, expected);
     assert.equal(await readFile(input.file, "utf8"), input.source);

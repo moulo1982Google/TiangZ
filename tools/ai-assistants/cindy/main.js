@@ -23,7 +23,7 @@
     rule("persistence.stable-id", "稳定持久化身份", "持久化业务ID和时间戳，不保存InstanceId或TimerId。", "docs/patterns/lifecycle-and-persistence.md"),
     rule("execution.update", "固定帧更新", "每个固定逻辑帧必须执行的连续逻辑使用Update。", "docs/patterns/timer-update-and-action.md"),
     rule("execution.timer", "稀疏Timer", "游戏业务禁止await时间（含短/零延迟、原生定时器和Promise绕过）；使用所有者方法名Timer，持久化任务与截止时间，恢复不重复扣费。DB/RPC结果等待仍允许。", "docs/patterns/timer-update-and-action.md"),
-    rule("module.ownership", "模块归属", "TiangZ是宿主；SLG/MMORPG业务在Examples或外置模块。Model持有状态，Hotfix只放行为，Handler薄适配；不将业务塞回Core。", "docs/ai/skill-development-contract.md"),
+    rule("module.ownership", "模块归属", "TiangZ是宿主；SLG/MMORPG业务在Examples或外置模块。Model持有状态，Hotfix只放行为，Handler薄适配；不将业务塞回Core。依赖方向复用dependency ruleset 1，类型导入/别名也检查，动态未证明只给warning；Model走Core public，启动/生成ABI仅精确例外，公共模块API须声明直接依赖。路径按平台身份比较，生成锁和实际LSP另验。", "docs/ai/skill-development-contract.md"),
     rule("execution.pump-vs-update", "运行循环不是模拟帧", "按实际注册代码区分RPC、Timer、固定Update与出站队列；SLG不因框架存在帧尾队列就已经具备状态广播。", "docs/ai/skill-development-contract.md"),
     rule("protocol.inner-identity", "内外协议身份", "C协议不能用于Inner RPC，字段相同也需生成S descriptor；不关闭访问校验、不手改协议锁和SDK。", "docs/ai/business-development-manual.md"),
     rule("persistence.no-fallback", "数据库故障不降级", "IsHostDbProxyAvailable仅表示宿主桥存在，不表示进程配置或连接就绪；配置数据库后故障不可回退内存或重置资产。", "docs/ai/business-development-manual.md"),

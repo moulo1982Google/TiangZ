@@ -1,5 +1,15 @@
 # 2026-09-16 模块拆分后的当前事实
 
+安装工具返回 session_id 仅表示仍在运行，不能据此启动依赖它的测试。本轮候选重装曾与 quick/LSP 重叠，相关结果不作最终证据；须 wait 到退出码 0 后重验，并比较实际 npm/VSIX 字节。具体日志见[依赖方向](../design/v0.7-dependency-rules.md)。
+
+Program 已检查不能替代“每个文件已检查”：首轮新增排除文件反例证明，全局关闭语法回退会漏掉 tsconfig 排除但索引器仍发现的 Model 文件。现记录实际检查文件集合，仅该集合禁用重复语法诊断，其他文件保留确定性检查；见[依赖方向](../design/v0.7-dependency-rules.md)。
+
+依赖规则首轮真实 CLI/LSP 暴露 Windows 路径比较缺陷：TS SourceFile 的 `/` 与 path.join 的反斜杠被当作不同 Stable 文件。比较须按平台路径段/大小写规则归一，不能移除目标身份检查或放宽 LSP 期望。纯内存 AST 不足以证明实际安装行为；失败和重打包复测见[依赖方向](../design/v0.7-dependency-rules.md)。
+
+依赖 worker 夹具首轮 TS5097 是测试带 `.ts` 相对导入先被正式 tsconfig 拒绝；应改为受支持的无扩展路径再验边界，不能放宽编译选项。原失败及重跑记录见[依赖方向](../design/v0.7-dependency-rules.md)。
+
+0.7 依赖方向检查统一至 Developer Tools dependency ruleset 1：主工程/模块 CLI 与实际 LSP、宿主两处边界命令共享 AST 规则和当前 Program 的解析目标。Model 深入 Core、Core 反向别名、type-only/import-equals 曾漏检，首轮 5 项中 4 项失败。使用 Stable public、精确启动/生成 ABI 例外，禁止目录级放行或把动态未证明当成功；规则、夹具修正和复测见[依赖方向](../design/v0.7-dependency-rules.md)。
+
 动态 Scene 注销路由不等于 Spawn 结束：已运行任务须在 ProcessHost 独立持有 Scope，直到真实完成才主动移除引用；协作取消不能清零在途数。watchdog 句柄必须绑定原 TimerSystem，禁止迟到 finally 重新读取当前单例。首轮两个真实 Runtime 反例分别证明销毁后漏计热更和旧任务访问新 Runtime Timer；修复契约、禁止绕过与复测见[Scene 任务销毁](../design/v0.7-scene-task-disposal.md)。
 
 真实热更夹具需使用当前错误契约：首次新增本地 mailbox 用例已返回 `drain deadline exceeded` 与 `pendingAsync=true`，因测试猜测 timeout 文字而失败。复测应核对拒绝状态、实际错误字段、在途标志及 generation 保持，不改宿主期限或把拒绝记成成功。原报告与命令见[mailbox 生命周期](../design/v0.7-mailbox-lifetime.md)。

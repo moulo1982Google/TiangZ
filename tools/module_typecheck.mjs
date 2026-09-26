@@ -3,6 +3,7 @@ import ts from "typescript";
 import { resolveModuleApi } from "./game_module_imports.mjs";
 import { verifyModuleBridge } from "./module_bridge_check.mjs";
 import * as developerTools from "@tiangz/developer-tools-core";
+import { dependencyDiagnostics } from "./dependency_rules.mjs";
 
 /** CLI 与编辑器共享宿主检查入口；当前提取保持原检查顺序。 / Shared host checker with the original diagnostic ordering. */
 export function runModuleCompiler({ project, moduleId, root, catalog, modulesOnly, json = false, contractWarnings = [], createProgram = ts.createProgram }) {
@@ -48,14 +49,15 @@ export function runModuleCompiler({ project, moduleId, root, catalog, modulesOnl
     }) });
   }
   const owner = catalog.modules.find(module => module.id === moduleId);
+  const dependencies = dependencyDiagnostics(program, program.getSourceFiles(), { root, catalog, module: owner });
   if (typeof developerTools.runtimeContractDiagnostics !== "function" || !(developerTools.RUNTIME_CONTRACT_RULESET_VERSION >= 2)) throw new Error("Developer Tools 缺少共享 Program/Hotfix 契约检查；请安装当前联合验证的 @tiangz/developer-tools-core（ruleset >= 2）。");
   // 复用已绑定当前宿主和 System 声明的 Program；不得重读旧宿主 tsconfig。
   // Reuse the Program bound to this host and generated System declarations.
-  const contracts = developerTools.runtimeContractDiagnostics(program, {
+  const contracts = [...dependencies, ...developerTools.runtimeContractDiagnostics(program, {
     typescript: ts, projectRoot: owner.root, coreRoot: path.join(root, "app/core"),
     sourceFiles: program.getSourceFiles().filter(source => [...owner.entries.modelRoots, ...owner.entries.hotfixRoots].some(directory => isWithin(directory, source.fileName))),
     hotfixSourceFiles: program.getSourceFiles().filter(source => owner.entries.hotfixRoots.some(directory => isWithin(directory, source.fileName))),
-  }).map(item => ({ code: item.code, severity: item.severity, file: path.resolve(owner.root, item.location.relativePath), line: item.location.line + 1, column: item.location.character + 1, message: item.message }));
+  }).map(item => ({ code: item.code, severity: item.severity, file: path.resolve(owner.root, item.location.relativePath), line: item.location.line + 1, column: item.location.character + 1, message: item.message }))];
   if (contracts.some(item => item.severity === "error")) throw Object.assign(new Error(`game module ${moduleId} runtime contracts failed:\n${contracts.map(item => `${item.file}:${item.line}:${item.column} [${item.code}] ${item.message}`).join("\n")}`), { diagnostics: contracts });
   contractWarnings.push(...contracts);
   if (!json) for (const item of contracts) process.stderr.write(`warning ${item.file}:${item.line}:${item.column} [${item.code}] ${item.message}\n`);
