@@ -464,6 +464,7 @@ deno_core::extension!(
     state = |state| {
         state.put(deadlines::DeadlineBudget::default());
         state.put(deadlines::ShutdownDeadlineBudget::default());
+        state.put(deadlines::DeadlineTable::default());
     },
 );
 
@@ -493,6 +494,12 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
           }
           return value;
         };
+        const deadlineId = (value) => {
+          if (!Number.isSafeInteger(value) || value < 0) {
+            throw new RangeError("deadline id must be a non-negative safe integer");
+          }
+          return value;
+        };
         const stringify = (value) => {
           if (typeof value === "string") return value;
           if (value instanceof Error) return value.stack || value.message;
@@ -516,8 +523,8 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
         globalThis.__hostSleep = (ms) => core.ops.op_host_sleep(u32(ms, "ms"));
         globalThis.__hostCreateDeadline = (ms) => core.ops.op_host_create_deadline(u32(ms, "ms"));
         globalThis.__hostCreateShutdownDeadline = (ms) => core.ops.op_host_create_shutdown_deadline(u32(ms, "ms"));
-        globalThis.__hostWaitDeadline = (id) => core.ops.op_host_wait_deadline(u32(id, "deadline id"));
-        globalThis.__hostCancelDeadline = (id) => core.ops.op_host_cancel_deadline(u32(id, "deadline id"));
+        globalThis.__hostWaitDeadline = (id) => core.ops.op_host_wait_deadline(deadlineId(id));
+        globalThis.__hostCancelDeadline = (id) => core.ops.op_host_cancel_deadline(deadlineId(id));
         globalThis.__hostTakeEventBatch = () => core.ops.op_host_take_event_batch();
         globalThis.__hostPushOutbound = (connectionId, frame) =>
           core.ops.op_host_push_outbound(u32(connectionId, "connectionId"), frame);

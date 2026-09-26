@@ -1,5 +1,11 @@
 # 2026-09-16：先选业务工程，再写模块
 
+期限句柄修复复测 **原生 9/9、TS 43/43**，含 KCP `npm run verify` **8/33/9** 全过，468894ms，`temp/v0.7-deadline-handles-verify.log`；Rust 248 项、Linux 条件编译与 AI 实际归档通过。Host/报告 SHA256 `db89ee6f56a1b92f7e8ff82df834b7986344d49579f09a88a6af2676149f1bc6`，真实 V8 证明高频期限不消耗通用编号、大句柄无截断、Runtime 清理后原 waiter 才归还。真实 Process 本地期限、超时后业务保留、远程排队期限和停机均通过，三个宿主 exit 0 且无强制终止。完整命令、最初失败与验证范围见[验收](../design/v0.7-deadline-handles.md)；仍须重建重启，不持久化内部句柄或宣称任意业务取消。
+
+期限句柄测试编译的 E0061/E0599 与 E0509 保留在 `temp/v0.7-deadline-handles-compile-failure.log`。原因分别为把 `#[op2]` 生成的 OpDecl 工厂当普通函数调用，以及用结构更新语法搬出 Drop 类型的非 Copy 字段；不是运行时期限缺陷。正确做法是实际 V8 调桥创建资源、测试边界表显式初始化，不能修改依赖宏或去除资源析构绕过。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::deadlines::tests -- --nocapture`，保留原 RED、容量和最终释放断言。
+
+原生期限新增反例：资源都释放后，实际 V8 再创建通用资源取得编号 **131080**，预期 **1**；`temp/v0.7-deadline-handles-red.log` **1 failed**，2.48 秒。原因是 deno_core 0.411.0 的 u32 通用资源编号只增不复用；存活额度正确不等于累计编号可长期使用。正确修法需独立期限表、精确安全整数和明确耗尽，不清空其他资源、不绕过容量/取消完成断言、不将此反例称为已复现生产溢出。见[冻结契约](../design/v0.7-deadline-handles.md)，复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::deadlines::tests -- --nocapture`。
+
 远程排队期限已以原绝对时间贯穿 TS/Native/传输：相关 **43/43**、Rust 专项 **4/4**，设置 `TIANGZ_VERIFY_CARGO_FEATURES=kcp` 后 `npm run verify` **8/33/9** 全过，462086ms，`temp/v0.7-remote-operation-deadlines-verify.log`。245 项 Rust、Linux 条件编译、实际 AI 归档通过，Host/报告 SHA256 `be70e7d8b72465ab72370721866ed46701cdaffeacd1dc5ab3f5b048f0b741f1`。真实 256 个长 RPC 占槽时，短 call/send 在原生队列各记一次到期、单向没有迟到执行，释放后恢复，三宿主正常退出；80ms 短调用在 168.99ms 被观察到，不能把控制通知背压忽略成严格实时保证。定向复测与完整身份见[验收记录](../design/v0.7-remote-operation-deadlines.md)，下方原失败记录保留，不用延长反例阈值或减少并发来绕过。
 
 原生调度反例 `temp/v0.7-remote-operation-deadlines-native-red.log`：隔离真实 V8 先提交 256 个 1000ms sleep，再提交短 RPC；400ms 上限内 RPC 仍没有完成，子进程失败。测试未初始化网络管理器，检验的是普通计时占执行槽导致错误/超时也被阻塞，并非真实网络送达。修复需独立处理 sleep 与排队项绝对到期，不能延长上限、减少 256 项或宣称已取消对端。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::scene_operations_tests -- --nocapture`，与真实网络证据分开。

@@ -1,5 +1,11 @@
 # 2026-09-16 模块拆分后的当前事实
 
+期限句柄最终验收：原生 **9/9**、相关 TS **43/43**，含 KCP 完整 **check 8/8、quick 33/33、full 9/9**，468894ms，`temp/v0.7-deadline-handles-verify.log`。Rust 248 项、Linux 条件编译、AI 实际 0.2.0 归档通过；Host/报告 SHA256 `db89ee6f56a1b92f7e8ff82df834b7986344d49579f09a88a6af2676149f1bc6`。真实 V8 保留原 131079 次期限创建/释放后通用编号不再前进，实际大句柄与 Runtime 清理通过；真实 Process 2000 次快速本地调用 150.06ms，超时后的业务仍由原 mailbox 排空，三宿主正常退出。见[证据与边界](../design/v0.7-deadline-handles.md)，下方 RED/编译失败保留，不把有限编号测试冒充生产溢出或长稳。
+
+期限句柄夹具首次编译失败记录在 `temp/v0.7-deadline-handles-compile-failure.log`：`#[op2]` 将原函数入口生成为 `OpDecl`，不能按普通 Rust 函数直接调用（E0061/E0599）；实现 Drop 的表也不能用结构更新语法移动其非 Copy 字段（E0509）。这是测试写法错误；改为经真实 V8 桥创建待销毁资源，并显式初始化测试表。保留原边界/回收断言，不修改 deno_core 宏或去掉 Drop 来绕过；复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::deadlines::tests -- --nocapture`。
+
+期限句柄审查取得新的真实 V8 RED：`temp/v0.7-deadline-handles-red.log` **1 failed**，2.48 秒。存活资源已归零后，下一个通用 Deno 编号为 131080 而非 1；deno_core 0.411.0 的 `ResourceTable` 用 u32 单调编号，关闭不回收编号。这是创建次数消耗，未实际复现 2^32 次溢出或内存泄漏。按[期限句柄契约](../design/v0.7-deadline-handles.md)改为 isolate 专属安全整数表，保留最后引用、独立停机预留与耗尽失败；禁止重置通用表、改依赖私有字段或放宽旧断言。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::deadlines::tests -- --nocapture`。
+
 远程排队期限最终通过：TS 相关 **43/43**、原生专项 **4/4**，含 KCP **check 8/8、quick 33/33、full 9/9**，462086ms，`temp/v0.7-remote-operation-deadlines-verify.log`；Rust 共 245 项、Linux 条件编译、AI 实际归档通过。Host/报告 SHA256 `be70e7d8b72465ab72370721866ed46701cdaffeacd1dc5ab3f5b048f0b741f1`。真实跨 Process 保持 256 个长 RPC 时，80ms 短调用在 168.99ms 被观察到超时；Rust `host_queue` 的 call/send 各增加一次，过期单向送达 0，释放后全部恢复，三个宿主正常退出。见[完整证据](../design/v0.7-remote-operation-deadlines.md)，原 RED 保留。新的内部桥接必须重建重启；控制通知仍有背压，超时不代表撤回已发帧或取消业务。
 
 原生队列 RED 也已取得：`temp/v0.7-remote-operation-deadlines-native-red.log` 中真实 V8 提交 256 个 1000ms 普通 sleep 后的短 RPC，在 400ms 内仍未完成，子进程明确失败；它未初始化网络管理器，本应立即失败或按短期限过期，而不是等普通 sleep 腾槽。正确修法需在有界调度器中独立处理 sleep/未开始项期限；不能只延長测试超时、降低并发或把此项当作真实对端网络测试。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::scene_operations_tests -- --nocapture`。
