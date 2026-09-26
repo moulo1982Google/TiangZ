@@ -16,6 +16,7 @@ use deno_core::{
 };
 use deno_error::JsErrorBox;
 use futures_util::{StreamExt, stream};
+use tiangz_transport::buffer_budget::BufferBudget;
 use tokio::runtime::Handle;
 
 const HOST_CALL_MAX_FRAME_LEN: usize = 1024 * 1024;
@@ -36,6 +37,7 @@ thread_local! {
     static HOST_SCENE_ROUTES: RefCell<Vec<HostSceneRoute>> = const { RefCell::new(Vec::new()) };
     static HOST_SCENE_RUNTIME: RefCell<Option<Handle>> = const { RefCell::new(None) };
     static HOST_SCENE_COMPLETION_SINK: RefCell<Option<HostSceneCompletionSink>> = const { RefCell::new(None) };
+    static HOST_SCENE_BUFFERS: RefCell<Option<Arc<BufferBudget>>> = const { RefCell::new(None) };
 }
 
 #[derive(Debug)]
@@ -90,10 +92,25 @@ struct HostSceneOperation {
 /// This is process-global state for one runtime and must be configured before
 /// any TS Scene call/send op executes. Reconfiguration while a process is live
 /// would route completions to the wrong queue and is unsupported.
-pub fn configure_host_scene_bridge(runtime: Handle, completion_sink: HostSceneCompletionSink) {
+pub fn configure_host_scene_bridge(
+    runtime: Handle,
+    completion_sink: HostSceneCompletionSink,
+    buffers: Arc<BufferBudget>,
+) {
     HOST_SCENE_ROUTES.with(|slot| slot.borrow_mut().clear());
     HOST_SCENE_RUNTIME.with(|slot| *slot.borrow_mut() = Some(runtime));
     HOST_SCENE_COMPLETION_SINK.with(|slot| *slot.borrow_mut() = Some(completion_sink));
+    HOST_SCENE_BUFFERS.with(|slot| *slot.borrow_mut() = Some(buffers));
+}
+
+/// 复制前预留整包；所有切片和排队/在途引用释放后才归还。 / Reserves before copying and releases only after every queued or in-flight slice is dropped.
+fn reserve_scene_packet(packet: &[u8], budget: &Arc<BufferBudget>) -> Result<Bytes> {
+    if !(4..=HOST_OUTBOUND_MAX_PACKED_LEN).contains(&packet.len()) {
+        bail!("invalid packed scene operation length: {}", packet.len());
+    }
+    budget
+        .try_copy_bytes(packet)
+        .context("[scene-overloaded] process outbound byte budget is full")
 }
 
 #[op2(nofast)]
@@ -224,7 +241,12 @@ fn op_host_register_scene_route(
 
 #[op2]
 fn op_host_submit_scene_operations(#[buffer] packed: JsBuffer) -> Result<u32, JsErrorBox> {
-    let operations = decode_packed_scene_operations(Bytes::from(packed.to_vec()))
+    let buffers = HOST_SCENE_BUFFERS
+        .with(|slot| slot.borrow().clone())
+        .ok_or_else(|| JsErrorBox::generic("host scene buffer budget is not configured"))?;
+    let packet = reserve_scene_packet(&packed, &buffers)
+        .map_err(|error| JsErrorBox::generic(error.to_string()))?;
+    let operations = decode_packed_scene_operations(packet)
         .map_err(|error| JsErrorBox::generic(error.to_string()))?;
     let operation_count = operations.len() as u32;
     let runtime = HOST_SCENE_RUNTIME
@@ -875,6 +897,78 @@ pub fn pump_js_event_loop_once(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn v8_scene_submit_rejects_over_budget_before_decoding_or_spawning() {
+        let mut runtime = create_runtime(false, 0).unwrap();
+        let budget = BufferBudget::new(3);
+        HOST_SCENE_BUFFERS.with(|slot| *slot.borrow_mut() = Some(Arc::clone(&budget)));
+        runtime.execute_script("test:scene-budget.js", r#"
+            let error;
+            try { globalThis.__hostSubmitSceneOperations(new Uint8Array(4)); } catch (value) { error = value; }
+            if (!String(error).includes('[scene-overloaded] process outbound byte budget is full')) throw new Error('budget was not checked before decode/spawn: ' + error);
+        "#).unwrap();
+        assert_eq!(budget.snapshot().used_bytes, 0);
+        assert_eq!(budget.snapshot().rejections, 1);
+        let admitted = BufferBudget::new(4);
+        HOST_SCENE_BUFFERS.with(|slot| *slot.borrow_mut() = Some(Arc::clone(&admitted)));
+        runtime.execute_script("test:scene-decode.js", r#"
+            let failure;
+            try { globalThis.__hostSubmitSceneOperations(new Uint8Array(4)); } catch (value) { failure = value; }
+            if (!String(failure).includes('invalid host scene operation count')) throw new Error('invalid packet was not decoded after admission: ' + failure);
+        "#).unwrap();
+        assert_eq!(admitted.snapshot().used_bytes, 0);
+        HOST_SCENE_BUFFERS.with(|slot| *slot.borrow_mut() = None);
+    }
+
+    #[test]
+    fn scene_packet_budget_is_shared_by_operations_and_released_on_decode_failure() {
+        HOST_SCENE_ROUTES.with(|slot| {
+            slot.borrow_mut().push(HostSceneRoute {
+                source_name: "source".into(),
+                target_name: "target".into(),
+                target_ip: "127.0.0.1".into(),
+                target_port: 1,
+            })
+        });
+        let mut packet = 2_u32.to_le_bytes().to_vec();
+        for _ in 0..2 {
+            packet.extend_from_slice(&0_u32.to_le_bytes());
+            packet.extend_from_slice(&1_u32.to_le_bytes());
+            packet.push(2);
+            packet.extend_from_slice(&1000_u32.to_le_bytes());
+            packet.extend_from_slice(&2_u32.to_le_bytes());
+            packet.extend_from_slice(&[0x4e, 0x21]);
+        }
+        let budget = BufferBudget::new(packet.len());
+        let mut operations =
+            decode_packed_scene_operations(reserve_scene_packet(&packet, &budget).unwrap())
+                .unwrap();
+        assert_eq!(budget.snapshot().used_bytes, packet.len() as u64);
+        assert!(
+            reserve_scene_packet(&packet, &budget)
+                .unwrap_err()
+                .to_string()
+                .contains("[scene-overloaded]")
+        );
+        drop(operations.remove(0));
+        assert_eq!(budget.snapshot().used_bytes, packet.len() as u64);
+        let last = operations[0].frame.clone();
+        drop(operations);
+        assert_eq!(budget.snapshot().used_bytes, packet.len() as u64);
+        drop(last);
+        assert_eq!(budget.snapshot().used_bytes, 0);
+        assert!(
+            decode_packed_scene_operations(reserve_scene_packet(&[0; 4], &budget).unwrap())
+                .is_err()
+        );
+        assert_eq!(budget.snapshot().used_bytes, 0);
+        assert!(
+            decode_packed_scene_operations(reserve_scene_packet(&packet, &budget).unwrap()).is_ok()
+        );
+        assert_eq!(budget.snapshot().used_bytes, 0);
+        HOST_SCENE_ROUTES.with(|slot| slot.borrow_mut().clear());
+    }
 
     #[test]
     fn business_v8_gets_frozen_secure_random_bridge() {

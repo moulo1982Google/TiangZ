@@ -1,5 +1,6 @@
 //! 由资源所有者持有的共享字节预算，无等待队列。 / Owner-held shared byte reservations with no waiting queue.
 
+use bytes::Bytes;
 use std::sync::{
     Arc,
     atomic::{AtomicU64, AtomicUsize, Ordering},
@@ -23,7 +24,27 @@ pub struct BufferReservation {
     bytes: usize,
 }
 
+struct ReservedBytes {
+    bytes: Vec<u8>,
+    _reservation: BufferReservation,
+}
+
+impl AsRef<[u8]> for ReservedBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
 impl BufferBudget {
+    /// 预留成功才复制；切片与克隆共享最后所有者的预算。 / Copies only after admission; slices and clones retain the reservation until the final owner drops.
+    pub fn try_copy_bytes(self: &Arc<Self>, bytes: &[u8]) -> Option<Bytes> {
+        let reservation = self.try_reserve(bytes.len())?;
+        Some(Bytes::from_owner(ReservedBytes {
+            bytes: bytes.to_vec(),
+            _reservation: reservation,
+        }))
+    }
+
     /// 创建共享所有者，限制由调用方配置校验。 / Creates a shared owner; callers validate configuration limits.
     pub fn new(limit: usize) -> Arc<Self> {
         Arc::new(Self {
@@ -72,6 +93,22 @@ impl Drop for BufferReservation {
 mod tests {
     use super::*;
     use std::sync::Barrier;
+
+    #[test]
+    fn copied_bytes_retain_the_whole_reservation_until_the_last_slice_drops() {
+        let budget = BufferBudget::new(8);
+        let bytes = budget.try_copy_bytes(&[1; 8]).unwrap();
+        let clone = bytes.clone();
+        let slice = bytes.slice(3..5);
+        assert!(budget.try_copy_bytes(&[0]).is_none());
+        drop(bytes);
+        drop(clone);
+        assert_eq!(budget.snapshot().used_bytes, 8);
+        assert_eq!(&slice[..], &[1, 1]);
+        drop(slice);
+        assert_eq!(budget.snapshot().used_bytes, 0);
+        assert!(budget.try_copy_bytes(&[2; 8]).is_some());
+    }
 
     #[test]
     fn shared_reservations_reject_overflow_and_return_on_drop() {

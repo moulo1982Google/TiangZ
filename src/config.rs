@@ -326,7 +326,7 @@ pub struct ProcessNetworkConfig {
     /// 全部流式监听端口共享的未完成握手名额。 / Pending stream handshake slots shared by all listeners.
     #[serde(default = "default_max_pending_handshakes")]
     pub max_pending_handshakes: usize,
-    /// 全部已登记 ConnectionWriter 的批次 payload 总预算。 / Total payload budget for batches held by registered ConnectionWriters.
+    /// 全部 ConnectionWriter payload 与主动 Inner Host 整包共享预算。 / Shared byte budget for ConnectionWriter payloads and active Inner host packets.
     #[serde(default = "default_max_outbound_buffered_bytes")]
     pub max_outbound_buffered_bytes: usize,
     /// 出站批次从准入到写出完成的总期限，包含排队。 / Total outbound batch budget from admission through writing, including queue wait.

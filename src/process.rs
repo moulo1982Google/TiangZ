@@ -708,7 +708,9 @@ async fn run_runtime_config_with_backend(
     ) -> Result<Arc<dyn crate::transport_backend::IoBackend>>,
 ) -> Result<()> {
     let runtime_data_packs = load_runtime_data_packs(resolved_config, &config.process.data_packs)?;
-    init_remote_transport();
+    init_remote_transport(Duration::from_millis(
+        config.process.network.write_timeout_ms,
+    ));
     let runtime_bundles = RuntimeBundles::load(root)?;
 
     tracing::info!(
@@ -1005,7 +1007,11 @@ fn run_process_runtime(
         .enable_all()
         .build()
         .context("failed to create JS event loop runtime")?;
-    configure_host_scene_bridge(host_runtime.clone(), completion_sink);
+    configure_host_scene_bridge(
+        host_runtime.clone(),
+        completion_sink,
+        Arc::clone(&queue_stats.outbound_buffers),
+    );
     crate::event_stream::configure(&process, host_runtime.clone())?;
     crate::dbproxy::configure(&process, host_runtime)?;
     js_event_loop

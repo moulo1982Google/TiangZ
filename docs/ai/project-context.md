@@ -10,7 +10,11 @@ Timer 默认参数 `Tick(now = Date.now())` 的声明内类型是 number，但�
 
 0.7 DBProxy 已提供独立 `dbproxy_capacity`：固定 18 表、分区叶子字节与 catalog 估算，默认不扫描业务时间；`--include-server-age` 仅针对已存在的服务器时间列，250ms/表，总预算默认 10 秒，独立只读事务且无迁移/worker。业务 `updated_at_unix_ms` 不能当保留年龄；未知估算/缺表/RLS/超时必须明确，不做 TTL 或回执删除。临时 PG18.4/Redis8.8.1 上真实容量与 7 项恢复用例通过，含 COMMIT 回包丢失、部分成功和 Outbox 双消费组去重；这不等于长稳、断电或备份恢复。范围、提交和日志入口见[进度](../design/v0.7-progress.md)，测试容器已核对身份并回收。
 
-0.7 增加 ConnectionWriter 共享 `maxOutboundBufferedBytes`（64 MiB 默认、1..1 GiB）：资源守卫从批次入队持续到写出/最后转发引用释放，满队列、关闭、取消/panic 均回收。广播按接收者保守累计；总预算拒绝与每连接慢消费分开统计。该额度只覆盖已登记 Writer payload，不含独立主动 Inner 链路、入站/V8/系统缓冲及 KCP 内部重传，不能宣称整个 Process 内存有界。Rust/TS/Schema/固定 kind 指标同步，详见[传输说明](../reference/transport-backend.md)。
+0.7 增加 ConnectionWriter 共享 `maxOutboundBufferedBytes`（64 MiB 默认、1..1 GiB）：资源守卫从批次入队持续到写出/最后转发引用释放，满队列、关闭、取消/panic 均回收。广播按接收者保守累计；总预算拒绝与每连接慢消费分开统计。该额度同时覆盖主动 Inner Host 整包：V8 复制前预留，切片持有至队列/在途写出结束；整包超限同步拒绝。writer 入队取操作/写出最早期限，成功后立即清空批次，会话退出取消读写任务。不含响应、入站/V8/系统缓冲及 KCP 内部重传，不能宣称整个 Process 内存有界。Rust/TS/Schema/固定 kind 指标同步，详见[传输说明](../reference/transport-backend.md)。
+
+主动 Inner 的慢写单测不能假定 Windows 回环的小 Socket 缓冲必然造成阻塞：首次两帧 2 MiB 已被系统接收。保留真实 TCP 写出/空闲释放/EOF；用固定容量异步流确定性验证部分写、过期队列与取消，同一写者实现和原断线/公平性断言均保留。范围、原失败和复测见[预算契约](../design/v0.7-batch2-contracts.md)。
+
+Linux 编译容器不要把只有 registry/git 的 Cargo 缓存挂到镜像工具链的安装目录；这会遮住 cargo/bin，出现 cargo: command not found，并非代码编译失败。缓存单独挂到 /cargo-cache 并指定 CARGO_HOME，保留镜像 PATH，用非 login shell。首次日志 temp/v0.7-inner-budget-linux.log；原条件编译命令的复测记录为 temp/v0.7-inner-budget-linux-ready.log，不以跳过 Linux 或改全局 PATH 绕过。
 
 0.7 生命周期/Timer 类型规则由 Developer Tools 唯一维护；Host/外置模块传自己的 TypeScript API 和当前 Program，不能跨 TS 版本复用 SyntaxKind 或按同名类猜 Core 身份。主工程 CLI/LSP 已共用类型规则，实际 receiver、当前取消上下文与生成 System 声明参与判断；明确违例 error，动态未证明 warning。普通 tsc 不自动加载规则。受信任工作区的模块实时 LSP 已通过只读 Host worker 接入同一检查入口，已保存声明选择宿主、既有 TS 未保存内容只作内存覆盖；配置未保存或环境失败须明确不可用，详见[Program 记录](../design/v0.7-program-contracts.md)。LSP 必须随 VSIX 携带匹配标准库并释放工程缓存；测试通信使用生产的对象参数协议，不以超时或“0 条错误”冒充成功。
 

@@ -8,7 +8,11 @@
 
 0.7 DBProxy 容量诊断使用独立 `dbproxy_capacity --postgres-url-env <变量名>`，默认只读固定表目录与大小，不跟每次请求/scrape 查询。显式 `--include-server-age` 有逐表期限，仍须检查每表时间状态；客户端提供的时间不是回执保留时钟。无自动清理，不按 TTL 删回执/事实/未确认 Outbox。真实存储恢复验证已覆盖同 ID 同内容恢复、异内容拒绝、批量逐条结果与重复 Outbox 消费；业务重试不能换操作号或重做随机效果，消费 inbox 与投影同事务后再 ACK。最新隔离范围与证据见[进度](../design/v0.7-progress.md)，不能把短测当长稳或生产就绪。
 
-0.7 部署可用 `maxOutboundBufferedBytes` 限制已登记 ConnectionWriter 的总 payload（默认 64 MiB，1..1 GiB）。排队/正在发送/转发引用都持有资源预留，最后释放才归还；满额度的发送会被拒绝并关闭其连接，不给失败批次额外排队。Process 级压力有独立原因和指标，不能直接归咎慢客户端。额度不覆盖独立主动 Inner 链路、入站/V8/Socket 及 KCP 内部重传，不能以此推导整机内存或可靠发送已全部有界；见[传输说明](../reference/transport-backend.md)。
+0.7 部署可用 `maxOutboundBufferedBytes` 限制已登记 ConnectionWriter 的总 payload（默认 64 MiB，1..1 GiB）。排队/正在发送/转发引用都持有资源预留，最后释放才归还；满额度的发送会被拒绝并关闭其连接，不给失败批次额外排队。Process 级压力有独立原因和指标，不能直接归咎慢客户端。同一额度也覆盖主动 Inner Host 整包，从复制前预留到最后切片释放；整包超限同步拒绝，不能部分入队后声称整批成功。writer 入队记录操作/写出最早期限，出队不延长，部分写失败关闭流。额度不覆盖 RPC 响应、入站/V8/Socket 及 KCP 内部重传，不能以此推导整机内存或可靠发送已全部有界；见[传输说明](../reference/transport-backend.md)。
+
+主动 Inner 的慢写单测不能假定 Windows 回环的小 Socket 缓冲必然造成阻塞：首次两帧 2 MiB 已被系统接收。保留真实 TCP 写出/空闲释放/EOF；用固定容量异步流确定性验证部分写、过期队列与取消，同一写者实现和原断线/公平性断言均保留。范围、原失败和复测见[预算契约](../design/v0.7-batch2-contracts.md)。
+
+Linux 编译容器不要把只有 registry/git 的 Cargo 缓存挂到镜像工具链的安装目录；这会遮住 cargo/bin，出现 cargo: command not found，并非代码编译失败。缓存单独挂到 /cargo-cache 并指定 CARGO_HOME，保留镜像 PATH，用非 login shell。首次日志 temp/v0.7-inner-budget-linux.log；原条件编译命令的复测记录为 temp/v0.7-inner-budget-linux-ready.log，不以跳过 Linux 或改全局 PATH 绕过。
 
 生命周期/Timer 契约现在复用 Developer Tools 的 Program 规则，业务工程须运行声明宿主的 check/modules:typecheck，普通 tsc 不会自动执行它。只有当前 Core 的实体/组件钩子和方法名 Timer 被识别；Timer 实际接收者、生成 System 方法、参数和当前 TimerCancelledContext 共同检查。可忽略回调参数并使用可选参数，动态字符串/any/未实例化泛型只表示未证明，不等于运行安全。主工程 CLI/实时 LSP 使用同源诊断；受信任工作区的模块实时 worker 与宿主 CLI 共用 Program，支持既有 TS 的未保存文本及联接真实路径；项目/模块声明与 tsconfig 须保存后刷新，环境失败不能写成零错误。实现、边界与夹具教训见[Program 记录](../design/v0.7-program-contracts.md)。
 

@@ -43,6 +43,8 @@ Compress-Archive -LiteralPath dist/ai-assistants/claude/tiangz-game-backend -Des
 
 ## 当前验证记录
 
+主动 Inner 预算轮已同步复制前准入、最后切片释放、writer 排队共用期限与排除响应/入站/KCP 缓存的边界。Cindy 仍为 40 条规则、清单 0.2.0；实际归档 SHA256 `8897a980c63e7302a08b706a1ef8337bba4ca6607d6258dba198eb36c4b83ccb`。CRC、7 文件哈希、与生成输入一致、归档提取后的四工具/六建议及两个技能校验通过，日志 `temp/v0.7-ai-inner-{build,check,distribute,distribution-check,artifact-check}.log`，身份 `temp/v0.7-ai-inner-artifact-identity.json`。AI Plugins 本地提交 `eda1965`；这仍是制品验收，没有替换工作区已装技能或运行客户端安装。
+
 模块实时检查轮已同步受信任工作区、已保存 Host 声明、未保存 TS overlay 与明确不可用边界；不把实时检查当成生成锁/完整 build。Cindy 仍为 40 条规则、清单 0.2.0。本轮实际归档 SHA256 `e946e577af1c9ca80989009fdbfc880ee6bc8cf8417ec51c8a4384f08a5155c8`；CRC、7 文件清单哈希、与生成输入逐字节一致、提取后四工具/六建议及两个技能校验均通过。证据为 `temp/v0.7-ai-live-{build,check,distribute,distribution-check,artifact-check}.log` 和 `temp/v0.7-ai-live-artifact-identity.json`。工作区已装技能与客户端安装状态没有改变。
 
 0.7 开发 worktree 更新（AI 清单仍为 0.2.0，发行号独立冻结）：技能/随包契约补入操作预算、在途回调、可选逻辑目录与独立版本身份；G2/G3 轮继续补充共享 Program 检查、模块部署、资源预算范围及只读容量/消费幂等。Cindy 环境工具停止把旧 0.6.0/main 作为当前版本；返回 `versionStatus: not-probed`、空工作版本和应核对的清单。四个只读工具与六类领域建议保持，当前规则为 40 条。

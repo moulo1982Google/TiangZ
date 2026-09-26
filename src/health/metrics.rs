@@ -1039,19 +1039,19 @@ fn append_process_metrics_prometheus(
         (
             "bytes",
             "gauge",
-            "Reserved payload bytes held by ConnectionWriter batches",
+            "Reserved bytes held by connection writer batches and host scene packets",
             snapshot.outbound_buffers.used_bytes,
         ),
         (
             "limit_bytes",
             "gauge",
-            "Configured shared ConnectionWriter payload byte limit",
+            "Configured shared outbound buffer byte limit",
             snapshot.outbound_buffers.limit_bytes,
         ),
         (
             "rejections_total",
             "counter",
-            "ConnectionWriter batches rejected at the shared payload byte limit",
+            "Connection writer batches or host scene packets rejected at the shared byte limit",
             snapshot.outbound_buffers.rejections,
         ),
     ] {
