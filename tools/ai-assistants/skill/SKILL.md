@@ -69,6 +69,7 @@ Read only the additional source material relevant to the request:
 
 Select validation from the changed surface rather than running every expensive suite:
 
+- Matrix steps need finite deadlines and owned process trees. Timeouts, interruptions and failed cleanup are not passes; unstarted steps after interruption are skipped. Record explicit Cargo features and the actual runtime binary identity. Reproduce build-path failures with a real rebuild, not only a cache hit. See the selected host's matrix lifecycle documentation.
 - Ordinary business or documentation work: use the narrowest relevant check, then normally `npm run verify:quick` for code changes.
 - Protocol, mailbox, process communication, lifecycle, backpressure, or Hotfix-barrier changes: use the full `npm run verify` path when authorized.
 - Model, Proto, Native schema, or generated-source changes: run the required codegen/build and restart-sensitive checks; never bypass fingerprint or lock failures.

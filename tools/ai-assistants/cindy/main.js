@@ -38,7 +38,7 @@
     rule("persistence.readonly-capacity", "只读容量观测", "dbproxy_capacity只读catalog/分区字节，可选服务器时间扫描有期限；未知估算、缺表与超时不报零，业务时间不授权TTL删除。Outbox消费inbox与投影同事务后ACK，短测不等于长稳。", "docs/ai/skill-development-contract.md"),
     rule("hotfix.atomic-config", "原子发布", "当前保持单Hotfix包与配置进程内原子切换，沿用帧间切换和主动暂停入口、默认3000ms窗口；超时恢复旧版。不是全Pod同时切换，也不保证任何30秒RPC都不超时；Model/协议/Native变化须重建重启。", "docs/design/typescript-hot-reload.md"),
     rule("sync.durable-fact", "事实与持久保证", "latest只覆盖可替代当前状态，抽卡/扣费/结算事实不能静默覆盖；可靠网络队列不等于持久exactly-once。", "docs/patterns/state-replication.md"),
-    rule("validation.evidence", "证据与授权", "分别报告单测、假存储、真实RPC、真实DB恢复、UI和长稳；故障原因及复测留档，Rust重建前旧结果不能算给新版。故障/清库/长稳只在用户授权范围执行。", "docs/ai/business-development-manual.md"),
+    rule("validation.evidence", "证据与授权", "分别报告单测、假存储、真实RPC、真实DB恢复、UI和长稳；故障原因及复测留档，Rust重建前旧结果不能算给新版。矩阵每步有限期限并拥有进程树，超时/中止/未回收不是通过，中止后未运行记skipped。记录Cargo features及实际宿主身份；编译路径须重新编译复测，不能只靠缓存。故障/清库/长稳只在用户授权范围执行。", "docs/ai/business-development-manual.md"),
     rule("execution.coalesced-timer", "合并Timer", "同一所有者下大量定时对象使用最近到期Timer统一调度。", "docs/patterns/timer-update-and-action.md"),
     rule("execution.action-delegation", "Action领域委托", "Action修改哪个领域，就调用哪个领域能力并复用其同步机制。", "docs/patterns/timer-update-and-action.md"),
     rule("data.ts-default", "TypeScript优先", "普通业务状态和行为默认留在Model/Hotfix TypeScript。", "docs/patterns/data-placement.md"),

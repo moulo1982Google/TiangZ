@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+夜间矩阵的冷链接反例：Rust 223 项用例通过后仍有本步骤 vctip 后代，属于构建工具生命周期，不能用缓存命中的重跑冒充修复。仅设 VSCMD_SKIP_SENDTELEMETRY 未解决，现 Cargo 步骤统一使用既有 run_cargo.mjs，由 Node 启动路径与外层 Job 保持所有权；强制重新链接确认退出，不按名称豁免、不改全局配置、不碰用户既有进程。原 full 8/9 和修正证据见[矩阵生命周期](../design/v0.7-matrix-lifecycle.md)。
+
+夜间验证的超时/中止先回收本步骤进程树，再写 JSON/JUnit；超时计失败，整轮中止之后的步骤计 skipped，回收失败则不继续。Windows 的单 PID 清理不足以覆盖先退出的父进程，使用暂停创建并挂入专属 Job；Linux 嵌套步骤使用 IPC 父级消失通知回收独立组，不能只向外层进程组发信号。PowerShell 5 的 @(...ConvertFrom-Json) 曾令 string[] 变成一个空格拼接参数，应直接转换并验证逐参数原值。Windows 普通 Node 子进程可能已由 Node 自己管理，回收夹具须另测 detached 后代与真实端口，不能用未制造出的残留冒充所有权证明。首轮 4/5 与修正、Linux 隔离复测见[矩阵生命周期](../design/v0.7-matrix-lifecycle.md)。
+
 0.7 Hotfix 成员检查使用 Developer Tools 共享 ruleset 2，CLI 和编辑器同源。确定属于当前 Core 的 System/Handler 禁字段、构造和 static 成员；同名业务函数或其他宿主装饰器不能据名称拒绝。没有 Program 的显式稳定入口候选只能给 `tiangz.hotfix.unverifiable` warning，不能宣称验证成功；真正违规保持 `tiangz.hotfix.instance-state` error。共享代码须调用创建节点的 TS API，ClassElement 用 canHaveModifiers/getModifiers 读取修饰符，不能凭 JS 可用属性绕过 TS 5/6 差异。模块范围由 Host 声明选择，见[Hotfix 契约](../design/v0.7-hotfix-contracts.md)。
 
 验证时不能用预构建哈希替代实际运行身份：原矩阵 quick 的无 features Cargo 步骤会覆盖预构建的 KCP 宿主，之后 full 测到的是默认 feature。显式 Rust/KCP/UDP 通过与默认 full 通过分别报告，原热更 JSON 已记录真实 SHA。现用 `TIANGZ_VERIFY_CARGO_FEATURES=kcp` 贯穿嵌套矩阵，full 先构建，并在 quick 之后记录实际 Host 哈希；不靠额外手动构建或修改旧报告伪装原轮包含 KCP。原证据、哈希更正与复测见[进度](../design/v0.7-progress.md)。

@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+矩阵的 Cargo 步骤统一走 run_cargo.mjs：直接启动 Cargo 的冷链接曾留下本步骤的 MSVC vctip 后代，缓存命中重试则不复现。只设置 VSCMD_SKIP_SENDTELEMETRY 在此路径无效；已有 Node 启动器负责工具后代，外层 Job 仍严格检查残留。必须强制重新链接验证，禁止按进程名忽略失败、清理用户工具或把此前 quick 31/33 改写通过。诊断、修正及原报告见[矩阵生命周期](../design/v0.7-matrix-lifecycle.md)。
+
+夜间验证每步现有墙钟期限与进程所有权：Windows 使用暂停创建后分配的 Job，Linux 独立组由轻量 Node/IPC EOF 回收嵌套步骤。不能只 kill 根 PID 或仅靠父矩阵的信号监听；父级可能先退出或同步阻塞。PowerShell 5 的 JSON 参数数组要直接转换，外包 @() 曾把多参数拼成一个；测试须覆盖空串/Unicode/引号与 shell 元字符。Windows 残留夹具须让子进程脱离 Node 自身约束，才能证明外层 Job 的回收。原失败、正确做法及 Windows/Linux 复测入口见[矩阵生命周期](../design/v0.7-matrix-lifecycle.md)，不得把超时/中止/未回收改记通过。
+
 0.7 Hotfix 成员禁令已迁到 Developer Tools 共享 ruleset 2。必须用当前 Core 的装饰器声明身份，不能从同名字符串或旧宿主推断；缺 Program 的显式稳定入口候选只报 `tiangz.hotfix.unverifiable` warning，真实违反保持 `tiangz.hotfix.instance-state` error。TypeScript 5 的 ClassElement 不能直接读取 modifiers，跨版本共享实现使用调用者 API 的 canHaveModifiers/getModifiers；首轮编译错误修正后保留字段/构造/static/无关装饰器负例，不能降低确定错误级别来迁就测试。成员规则、独立模块范围和 CLI/LSP 证据见[Hotfix 契约](../design/v0.7-hotfix-contracts.md)。
 
 0.7 G2 将地图部署迁到 MMORPG 的 `org.tiangz.mmorpg.map-deployment` 数据包；Core 只保留信封和旧字段兼容投影。缺失旧字段不得补成显式 `[]/false`，双写冲突或声明包缺当前实例必须拒绝。文件名严格为 `runtime.pack.json`，独立目录表达用途。模块使用 Stable `RuntimeDataPackRegistry.Instance`，不向 public 添加内部 SingletonRegistry。见[地图部署契约](../design/v0.7-map-deployment.md)。

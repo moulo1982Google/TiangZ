@@ -47,6 +47,8 @@ npm run project:create -- --path ../MyGame --id org.example.game
 
 `npm run verify` 先构建普通 Rust 宿主，再执行 quick 与运行时用例，共 9 步。选择 Cargo feature 时，在同一命令环境设置 `TIANGZ_VERIFY_CARGO_FEATURES`，例如 PowerShell 的 `$env:TIANGZ_VERIFY_CARGO_FEATURES='kcp'`；构建、Clippy、Rust 测试和嵌套矩阵均继承该选择。未设置时使用默认 features。`node tools/run_test_matrix.mjs --plan full` 只展示执行计划。`dist/test-results/full.json` 记录实际普通宿主 SHA256 与 feature 选择；组合 Native 宿主另有独立构建身份，不由这个哈希代替。
 
+矩阵每步有独立期限：普通检查 5 分钟，Rust/Native 构建与嵌套 check 30 分钟，嵌套 quick 90 分钟。`TIANGZ_VERIFY_TIMEOUT_SCALE` 可设 0.1..100 的倍率，`--plan` 显示实际毫秒。超时回收所属进程树后继续；Ctrl+C/SIGTERM 中止整轮并将后续标为 skipped，JSON/JUnit 仍保留结果。若回收失败则不启动后续步骤。Windows 使用随仓库 PowerShell Job Object 辅助器，Linux 使用进程组及父级 IPC 生命周期；见[矩阵期限](../design/v0.7-matrix-lifecycle.md)。
+
 配套组件生成：module:new-component -- --project ../MyGame --module org.example.game --name Inventory --feature inventory --dry-run；去掉 dry-run 才写入。生成器不替开发者决定组件所有者。
 
 ## MMORPG / 客户端示例
