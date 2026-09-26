@@ -9,22 +9,29 @@ pub(super) fn channel(bytes: usize, capacity: usize) -> (ProcessEventSender, Pro
         max_ingress_buffered_bytes: bytes,
         ..Default::default()
     };
+    let stats = Arc::new(ProcessQueueStats::with_network_limits(
+        capacity * 2,
+        &network,
+    ));
     (
         ProcessEventSender {
             control_sender,
             data_sender,
             wake_sender,
-            stats: Arc::new(ProcessQueueStats::with_network_limits(
-                capacity * 2,
-                &network,
-            )),
+            stats: Arc::clone(&stats),
         },
-        ProcessEventReceiver::new(control_receiver, data_receiver, wake_receiver),
+        ProcessEventReceiver::new(
+            control_receiver,
+            data_receiver,
+            wake_receiver,
+            Arc::clone(&stats.control_admission),
+        ),
     )
 }
 
 fn frame(internal: bool) -> ProcessEvent {
     ProcessEvent::Frame {
+        control_reservation: None,
         scene_index: 0,
         connection_id: 1,
         internal,
@@ -60,6 +67,7 @@ async fn ingress_bytes_are_shared_by_control_and_data_but_leave_control_notifica
     sender
         .send(
             ProcessEvent::Disconnect {
+                control_reservation: None,
                 scene_index: 0,
                 connection_id: 1,
             },

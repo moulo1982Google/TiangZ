@@ -634,6 +634,7 @@ pub(super) fn maybe_log_metrics(
         admission: queue_stats.admission.snapshot(),
         outbound_buffers: queue_stats.outbound_buffers.snapshot(),
         host_scene_batches: queue_stats.host_scene_batches.snapshot(),
+        control_admission: queue_stats.control_admission.snapshot(),
         ingress_buffers: queue_stats.ingress_buffers.snapshot(),
         kcp_buffers: queue_stats.kcp_buffers.snapshot(),
         remote_transport_active_connections: remote_transport

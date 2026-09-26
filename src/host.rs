@@ -5,13 +5,14 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::process::control_ingress::{HostEventPayload, PublishedControls};
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
 use deno_core::convert::Uint8Array;
 use deno_core::error::AnyError;
 use deno_core::{
-    FsModuleLoader, JsBuffer, JsRuntime, ModuleSpecifier, PollEventLoopOptions, RuntimeOptions,
-    op2, v8,
+    FsModuleLoader, JsBuffer, JsRuntime, ModuleSpecifier, OpState, PollEventLoopOptions,
+    RuntimeOptions, op2, v8,
 };
 use deno_error::JsErrorBox;
 use tiangz_transport::buffer_budget::BufferBudget;
@@ -33,7 +34,7 @@ const HOST_SCENE_MAX_OPERATIONS: usize = 65_536;
 const HOST_SCENE_OPERATION_META_BYTES: usize = 17;
 
 thread_local! {
-    static NEXT_HOST_EVENT_BATCH: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
+    static NEXT_HOST_EVENT_BATCH: RefCell<Option<HostEventPayload>> = const { RefCell::new(None) };
     static OUTBOUND_BINARY_BATCHES: RefCell<Vec<BinaryOutboundBatch>> = const { RefCell::new(Vec::new()) };
     static CLOSE_CONNECTION_REQUESTS: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
     static HOST_SCENE_ROUTES: RefCell<Vec<HostSceneRoute>> = const { RefCell::new(Vec::new()) };
@@ -63,6 +64,7 @@ pub struct JsEntrypoints {
     stop_process: v8::Global<v8::Function>,
     update: v8::Global<v8::Function>,
     dispatch_host_events: v8::Global<v8::Function>,
+    take_released_controls: v8::Global<v8::Function>,
     begin_hotfix: v8::Global<v8::Function>,
     commit_hotfix: v8::Global<v8::Function>,
     abort_hotfix: v8::Global<v8::Function>,
@@ -169,9 +171,17 @@ async fn op_host_sleep(ms: u32) {
 }
 
 #[op2]
-fn op_host_take_event_batch() -> Uint8Array {
-    let bytes = NEXT_HOST_EVENT_BATCH.with(|slot| slot.borrow_mut().take().unwrap_or_default());
-    bytes.into()
+fn op_host_take_event_batch(state: &mut OpState) -> Result<Uint8Array, JsErrorBox> {
+    let payload = NEXT_HOST_EVENT_BATCH.with(|slot| slot.borrow_mut().take().unwrap_or_default());
+    if !payload.reservations.is_empty() {
+        state
+            .try_borrow_mut::<PublishedControls>()
+            .ok_or_else(|| {
+                JsErrorBox::generic("control ingress owner is not installed in this isolate")
+            })?
+            .publish(payload.reservations);
+    }
+    Ok(payload.bytes.into())
 }
 
 #[op2]
@@ -622,6 +632,7 @@ pub fn load_js_entrypoints(runtime: &mut JsRuntime) -> Result<JsEntrypoints> {
         stop_process: get_global_function(runtime, "__etsStopProcess")?,
         update: get_global_function(runtime, "__etsUpdateBinary")?,
         dispatch_host_events: get_global_function(runtime, "__etsDispatchHostEvents")?,
+        take_released_controls: get_global_function(runtime, "__etsTakeReleasedControlIngress")?,
         begin_hotfix: get_global_function(runtime, "__etsBeginHotfix")?,
         commit_hotfix: get_global_function(runtime, "__etsCommitHotfix")?,
         abort_hotfix: get_global_function(runtime, "__etsAbortHotfix")?,
@@ -818,8 +829,18 @@ pub fn poll_js_stop_process(
 pub fn call_js_push_host_events(
     runtime: &mut JsRuntime,
     entrypoints: &JsEntrypoints,
-    packed_events: Vec<u8>,
+    packed_events: HostEventPayload,
 ) -> Result<()> {
+    // JS 未取走或异常退出也要销毁未发布批次；不能遗留在线程本地槽位。 / Drop unpublished batches even when JS never takes them or throws.
+    struct ClearPendingBatch;
+    impl Drop for ClearPendingBatch {
+        fn drop(&mut self) {
+            NEXT_HOST_EVENT_BATCH.with(|slot| {
+                slot.borrow_mut().take();
+            });
+        }
+    }
+    let _clear_pending = ClearPendingBatch;
     NEXT_HOST_EVENT_BATCH.with(|slot| {
         *slot.borrow_mut() = Some(packed_events);
     });
@@ -849,8 +870,33 @@ pub fn call_js_update_binary(
         &entrypoints.update,
         &[arg, draining_arg],
     )?;
+    release_control_ingress(runtime, entrypoints)?;
     let outbound = OUTBOUND_BINARY_BATCHES.with(|slot| slot.borrow_mut().drain(..).collect());
     Ok((metrics_json, outbound))
+}
+
+/// 同步确认只能释放本 isolate 已发布的同质数量槽，错误按既有 Process 监督退出。 / Synchronous acknowledgements release only this isolate's published count slots; invalid values fail the Process through existing supervision.
+fn release_control_ingress(runtime: &mut JsRuntime, entrypoints: &JsEntrypoints) -> Result<()> {
+    let count = {
+        deno_core::scope!(scope, runtime);
+        let function = entrypoints.take_released_controls.open(scope);
+        let receiver = v8::undefined(scope).into();
+        let result = function
+            .call(scope, receiver, &[])
+            .context("failed to acknowledge control ingress")?;
+        v8::Local::<v8::Number>::try_from(result)
+            .map_err(|_| anyhow::anyhow!("control ingress acknowledgement must be a number"))?
+            .value()
+    };
+    let state = runtime.op_state();
+    let mut state = state.borrow_mut();
+    if let Some(published) = state.try_borrow_mut::<PublishedControls>() {
+        published.release(count)
+    } else if count == 0.0 {
+        Ok(())
+    } else {
+        bail!("control ingress acknowledgement has no isolate owner")
+    }
 }
 
 /// 用有界预算推进待完成JS Promise；超过预算的任务留到下个游戏Tick，禁止在V8线程等待完整I/O。
@@ -995,6 +1041,7 @@ mod tests {
           for (const name of ['__etsStartProcess','__etsUpdateBinary','__etsDispatchHostEvents',
             '__etsBeginHotfix','__etsCommitHotfix','__etsAbortHotfix','__etsInstallGameConfig']) globalThis[name]=()=>'';
           globalThis.__etsStopProcess=()=>new Promise((resolve,reject)=>{globalThis.finishStop=resolve;globalThis.failStop=reject;});
+          globalThis.__etsTakeReleasedControlIngress=()=>0;
         "#).unwrap();
         let entrypoints = load_js_entrypoints(&mut runtime).unwrap();
         let pending = call_js_stop_process(&event_loop, &mut runtime, &entrypoints).unwrap();

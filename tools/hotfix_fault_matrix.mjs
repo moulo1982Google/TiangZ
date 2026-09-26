@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { runControlIngressFault } from "./hotfix_control_ingress_fixture.mjs";
 
 // 只控制本轮创建的进程与代理；真实DBProxy只写唯一测试namespace，不停库、不清库。
 // Controls only owned processes/proxies; an optional real DBProxy gets one unique test namespace.
@@ -65,7 +66,7 @@ const report = { status: "running", startedAt: new Date().toISOString(), binaryS
 const driverStarted = performance.now(), driverCpuStarted = process.cpuUsage();
 if (endpoint) report.storageRecords = { namespace: `hotfix-fault-${path.basename(directory)}`, keys: ["probe", "ack-loss"] };
 const save = () => writeFile(reportPath, JSON.stringify(report, null, 2));
-const { connect } = await import(pathToFileURL(probe).href);
+const { connect, innerWorkProtocol } = await import(pathToFileURL(probe).href);
 const processes = [], clients = [];
 let proxy, cancelled = false;
 const cancel = () => {
@@ -133,10 +134,11 @@ try {
   const workerScene = { ...mainScene, name: "worker", port: await uniquePort() };
   const localScene = { ...mainScene, name: "local-target", port: await uniquePort() };
   const workerLocalScene = { ...mainScene, name: "worker-local-quota", port: await uniquePort() };
+  const controlIngressScene = { ...mainScene, name: "control-ingress-target", port: await uniquePort() };
   const quotaScenes = [];
   for (let i = 0; i < 5; i++) quotaScenes.push({ ...mainScene, name: `local-quota-${i}`, port: await uniquePort() });
   const workerHealth = await uniquePort();
-  config.scenes = [mainScene, localScene, ...quotaScenes]; config.knownScenes = [workerScene];
+  config.scenes = [mainScene, localScene, ...quotaScenes, controlIngressScene]; config.knownScenes = [workerScene];
   if (endpoint) {
     proxy = await responseProxy(endpoint);
     config.process.persistence = { dbProxy: { endpoint: proxy.endpoint, authTokenEnv: "TIANGZ_DBPROXY_AUTH_TOKEN", clientPoolSize: 1, requestTimeoutMs: 8000, connectTimeoutMs: 5000 } };
@@ -504,6 +506,11 @@ try {
     await workerControl.call(71);
     return { acceptedMessages: 65536, blobMessages: 64, packedBytes: 67108864, payloadBytes, publicOverloads: 4, nativePeakSlots: after.native_max_reserved_slots, nativeSlotsAfter: after.native_reserved_slots, recovered: true };
   });
+  await test("control-ingress-default-quota-preserves-completion-hotfix-and-recovery", () => runControlIngressFault({
+    port: controlIngressScene.port, healthPort: config.process.observability.health.port,
+    protocol: innerWorkProtocol, token: env.ETS_INNER_TOKEN ?? "ets-local-inner-token",
+    open, workerControl, until, sleep, begin, commit,
+  }));
   await test("remote-queued-deadline-expires-before-network-slots-are-released", async () => {
     const deadlineMetrics = async () => {
       const response = await fetch(`http://127.0.0.1:${config.process.observability.health.port}/metrics`, { signal: AbortSignal.timeout(2000) });

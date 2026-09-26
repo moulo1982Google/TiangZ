@@ -106,6 +106,7 @@ export class ProcessHost {
   private localSceneMailboxMaxCount = 0;
   private localSceneMailboxSceneRejections = 0;
   private localSceneMailboxProcessRejections = 0;
+  private controlIngressReleases = { count: 0 };
   private readonly actorMailboxMetrics = {
     fastPathCalls: 0,
     queuedCalls: 0,
@@ -118,6 +119,19 @@ export class ProcessHost {
   };
 
   constructor(public readonly processId = "process-1") {}
+
+  /** 启动前绑定原 isolate 的确认计数，迟到清理也不查找新的 Runtime。 / Binds the original isolate's acknowledgement counter before startup, including late cleanup. */
+  __bindControlIngressReleases(counter: { count: number }): void { this.controlIngressReleases = counter; }
+
+  /** 控制节点开始或被丢弃时仅确认一次，实际名额由 Native 归还。 / Acknowledges each control at start or discard; Native releases the actual slot. */
+  __releaseControlIngress(): void { this.controlIngressReleases.count += 1; }
+
+  /** 跨 mailbox 的单次确认只捕获原计数器，不附带 Scene、节点或帧。 / A mailbox acknowledgement captures only its original counter, never a Scene, node or frame. */
+  __controlIngressAcknowledgement(): () => void {
+    const counter = this.controlIngressReleases;
+    let pending = true;
+    return () => { if (pending) { pending = false; counter.count += 1; } };
+  }
 
   /** 包括已接受的排队/在途调用；移除 Actor 路由不能提前归还运行中的调用。 / Includes admitted queued/in-flight calls; removing Actor routing never settles a running call. */
   get ActorMailboxPendingCount(): number { return this.actorMailboxPendingCount; }

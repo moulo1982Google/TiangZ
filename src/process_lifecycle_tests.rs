@@ -60,6 +60,7 @@ fn runtime_fixture(pending_stop: bool) -> tempfile::TempDir {
         r#"
         for (const name of ['__etsStartProcess', '__etsUpdateBinary', '__etsDispatchHostEvents',
             '__etsBeginHotfix', '__etsCommitHotfix', '__etsAbortHotfix']) globalThis[name] = () => '{}';
+        globalThis.__etsTakeReleasedControlIngress = () => 0;
         globalThis.__etsUpdateBinary = sample => sample ? '{}' : '0';
         globalThis.__etsDispatchHostEvents = () => globalThis.__hostTakeEventBatch();
     "#,

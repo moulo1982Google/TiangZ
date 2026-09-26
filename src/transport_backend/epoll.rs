@@ -218,6 +218,7 @@ async fn handle_raw_tcp_connection(
                 .then(|| inner_frame_rpc_id(&frame))
                 .flatten();
             let event = ProcessEvent::Frame {
+                control_reservation: None,
                 internal: connection_kind == ConnectionKind::Internal,
                 scene_index,
                 connection_id,
@@ -348,6 +349,7 @@ async fn handle_websocket_connection(
                     event_tx
                         .send(
                             ProcessEvent::Frame {
+                                control_reservation: None,
                                 internal: false,
                                 scene_index,
                                 connection_id,
@@ -402,6 +404,7 @@ async fn finish_connection(
     event_tx
         .send(
             ProcessEvent::Disconnect {
+                control_reservation: None,
                 scene_index,
                 connection_id,
             },

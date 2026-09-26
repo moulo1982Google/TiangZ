@@ -144,6 +144,9 @@ export class ProcessRuntime implements LocalSceneRouter {
     return this.config.process.lifecycle?.stopTimeoutMs ?? 10_000;
   }
 
+  /** Bootstrap 在启动前安装同一 isolate 的控制确认所有者。 / Bootstrap installs the isolate's control acknowledgement owner before startup. */
+  __bindControlIngressReleases(counter: { count: number }): void { this.processHost.__bindControlIngressReleases(counter); }
+
   /** 仅在没有待处理帧和异步业务任务时开放 Hotfix 提交屏障。 / Opens the Hotfix commit barrier only when no queued frame or asynchronous business task remains. */
   get CanCommitHotfix(): boolean {
     return this.lifecycleState === "ready" &&

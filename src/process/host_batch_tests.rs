@@ -73,6 +73,7 @@ async fn host_batches_bound_real_v8_delivery_during_running_and_shutdown() {
             if (!duringStop) {{ verify(); return 'stopped'; }}
             return new Promise(resolve => finish = resolve);
         }};
+        globalThis.__etsTakeReleasedControlIngress = () => 0;
         globalThis.__etsUpdateBinary = sample => {{
             if (duringStop && stopping && received === 80) {{ verify(); finish('stopped'); }}
             return sample ? '{{}}' : '0';
@@ -100,7 +101,12 @@ async fn host_batches_bound_real_v8_delivery_during_running_and_shutdown() {
     if !during_stop {
         queue(ProcessEvent::Shutdown);
     }
-    let event_rx = ProcessEventReceiver::new(control_receiver, data_receiver, wake_receiver);
+    let event_rx = ProcessEventReceiver::new(
+        control_receiver,
+        data_receiver,
+        wake_receiver,
+        Arc::clone(&stats.control_admission),
+    );
     let (_runtime_control, runtime_control_rx) = mpsc::channel();
     let process: ProcessConfig = serde_json::from_value(json!({
         "name": "host-batch-fixture", "identity": { "originServerId": 91, "workerId": 0 },
@@ -143,6 +149,7 @@ async fn host_batches_bound_real_v8_delivery_during_running_and_shutdown() {
 
 fn data_frame(id: u64) -> ProcessEvent {
     ProcessEvent::Frame {
+        control_reservation: None,
         scene_index: 2,
         connection_id: id,
         internal: false,
@@ -152,6 +159,7 @@ fn data_frame(id: u64) -> ProcessEvent {
 
 fn disconnect(id: u64) -> ProcessEvent {
     ProcessEvent::Disconnect {
+        control_reservation: None,
         scene_index: 2,
         connection_id: id,
     }
@@ -210,7 +218,7 @@ async fn host_batch_refill_stops_before_copy_and_retains_ingress_until_next_batc
     }
     assert_eq!(stats.depth.load(Ordering::Relaxed), 1);
     assert_eq!(stats.inbound_frames.load(Ordering::Relaxed), 2);
-    let bytes = batch.into_bytes(stats);
+    let bytes = batch.into_payload(stats).bytes;
     assert_eq!(bytes.len(), 40);
     assert_eq!(u32::from_le_bytes(bytes[..4].try_into().unwrap()), 2);
     assert_eq!(u32::from_le_bytes(bytes[5..9].try_into().unwrap()), 1);
@@ -221,7 +229,7 @@ async fn host_batch_refill_stops_before_copy_and_retains_ingress_until_next_batc
     assert!(push_received_event(&mut next, &mut receiver, event, stats).unwrap());
     assert_eq!(stats.depth.load(Ordering::Relaxed), 0);
     assert_eq!(stats.ingress_buffers.snapshot().used_bytes, 0);
-    assert_eq!(next.into_bytes(stats).len(), 22);
+    assert_eq!(next.into_payload(stats).bytes.len(), 22);
     assert_eq!(stats.host_event_batch_splits.load(Ordering::Relaxed), 1);
 }
 
@@ -341,7 +349,7 @@ async fn host_batch_hotfix_deferred_frames_keep_original_guard_and_order() {
         .unwrap();
     assert_eq!(sender.stats.ingress_buffers.snapshot().used_bytes, 5);
     deferred.push_front(returned);
-    let bytes = batch.into_bytes(&sender.stats);
+    let bytes = batch.into_payload(&sender.stats).bytes;
     assert_eq!(bytes[4], 5, "Inner RPC remains control ingress");
     assert_eq!(event_id(deferred.front().unwrap()), 2);
     drop(deferred);

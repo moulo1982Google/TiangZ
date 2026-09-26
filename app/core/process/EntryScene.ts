@@ -83,12 +83,14 @@ type ClientFrameDelivery = "reliable" | "latest";
 type QueuedEvent =
   | {
       kind: "frame";
+      controlPending: boolean;
       connectionId: number;
       frame: Uint8Array;
       queuedAtMs: number;
     }
   | {
       kind: "disconnect";
+      controlPending: boolean;
       connectionId: number;
       queuedAtMs: number;
     };
@@ -599,6 +601,10 @@ export abstract class EntryScene extends Scene {
     }
     this.recycledMailboxTasks.length = 0;
     const droppedIngress = this.ingressLength;
+    for (let index = this.controlIngressHead; index < this.controlIngress.length; index += 1) {
+      const item = this.controlIngress[index];
+      if (item) this.releaseControlIngress(item);
+    }
     this.controlIngress.length = 0;
     this.dataIngress.length = 0;
     this.controlIngressHead = this.dataIngressHead = 0;
@@ -626,6 +632,7 @@ export abstract class EntryScene extends Scene {
     }
     this.enqueueIngress({
       kind: "frame",
+      controlPending: false,
       connectionId,
       frame,
       queuedAtMs: this.latencies.enabled ? nowMs() : 0,
@@ -633,13 +640,15 @@ export abstract class EntryScene extends Scene {
   }
 
   pushHostControlFrame(connectionId: number, frame: Uint8Array): void {
-    if (this.mailboxClosed) return;
+    if (this.mailboxClosed) { this.processHost.__releaseControlIngress(); return; }
     if (this.connections.isDisconnectedFrame(connectionId)) {
       this.connections.droppedFramesAfterDisconnect += 1;
+      this.processHost.__releaseControlIngress();
       return;
     }
     this.enqueueIngress({
       kind: "frame",
+      controlPending: true,
       connectionId,
       frame,
       queuedAtMs: this.latencies.enabled ? nowMs() : 0,
@@ -647,10 +656,11 @@ export abstract class EntryScene extends Scene {
   }
 
   pushHostDisconnect(connectionId: number): void {
-    if (this.mailboxClosed) return;
+    if (this.mailboxClosed) { this.processHost.__releaseControlIngress(); return; }
     this.connections.markDisconnected(connectionId);
     this.enqueueIngress({
       kind: "disconnect",
+      controlPending: true,
       connectionId,
       queuedAtMs: this.latencies.enabled ? nowMs() : 0,
     }, true);
@@ -1009,7 +1019,16 @@ export abstract class EntryScene extends Scene {
       processed < maxFrames
     ) {
       const item = this.dequeueIngress()!;
-      const result = this.dispatchMailbox(() => this.processIngress(item));
+      // 将确认转交实际 mailbox 节点；回收回调不捕获整个入站帧，普通数据不创建确认。 / Transfers acknowledgement to the actual mailbox node without capturing the ingress frame or allocating a data receipt.
+      const release = item.controlPending ? this.processHost.__controlIngressAcknowledgement() : undefined;
+      item.controlPending = false;
+      let result: MaybePromise<void>;
+      try {
+        result = this.dispatchMailbox(() => { release?.(); return this.processIngress(item); }, release);
+      } catch (error) {
+        release?.();
+        throw error;
+      }
       processed += 1;
       if (isPromiseLike(result)) {
         let task: Promise<void>;
@@ -1274,7 +1293,15 @@ export abstract class EntryScene extends Scene {
     return this.mailboxTasks.length - this.mailboxTaskHead;
   }
 
+  /** 搬入忙碌 mailbox 不算开始；节点销毁和最终回收重复经过这里也只能确认一次。 / Moving into a busy mailbox is not a start; discard and later recycling acknowledge at most once. */
+  private releaseControlIngress(item: QueuedEvent): void {
+    if (!item.controlPending) return;
+    item.controlPending = false;
+    this.processHost.__releaseControlIngress();
+  }
+
   private processIngress(item: QueuedEvent): MaybePromise<void> {
+    this.releaseControlIngress(item);
     if (this.latencies.enabled) {
       this.latencies.record("ingress.queue", nowMs() - item.queuedAtMs);
     }

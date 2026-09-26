@@ -1,5 +1,7 @@
 # 2026-09-16 模块拆分后的当前事实
 
+控制入站共享 65536 项未开始额度已贯穿 Native 队列、V8 批次和 TS 实际开始/丢弃；Disconnect 等待仍属于原清理任务，完成与 Shutdown 不竞争额度。最终含 KCP **8/33/9**、471440ms、Rust 262 项，`temp/v0.7-control-ingress-verify-final.log`；Host/两报告 SHA256 `305b6dc50b08c6bf0347a5a0cf010b84fbef8bb69a2a035550c0685324adae05`。真实 77825 输入中 69631 完成、8194 明确过载，共享峰值 65536 后归零，完成旁路、380.65ms 热更暂停和原连接恢复通过，三宿主正常退出。Linux 实际 V8/io-uring/kcp **266 项**与 Clippy、AI 0.2.0 实际归档通过。原实现/夹具失败与最终结果见[控制入站验收](../design/v0.7-control-ingress.md)，内部桥需重建重启；此数量额度不等于 TS 存活 backing buffer 或业务堆上限。
+
 Linux 原生验收现已从条件编译推进到实际运行：发现并修复 io-uring 握手/写失败后遗留 Socket、收割连接时遗弃 pending accept 两项问题，四项专项 **4/4**。最终 Linux V8/全目标 **260 项**与 Clippy `-D warnings` 通过，`temp/v0.7-linux-native-final.log`；Linux Host SHA256 `2338a1ba0b463851372c65eb5255587dc15d1de3137238aedf9d6cc149e0f8c4`。Windows 含 KCP 完整 **8/33/9**、524857ms、Rust 256 项，`temp/v0.7-linux-native-verify.log`，Host/两报告 SHA256 `4370b245a006fd8f3d642962446f49e5cd08674da4f92082291687c0fad6b500`，三个宿主正常退出。真实反例、编译错误、容器策略与平台验收边界均见[Linux 完整验收](../design/v0.7-linux-native-validation.md)。
 
 保留 accept 的首版产生 E0505，`temp/v0.7-linux-uring-handshake-final.log`：被 Future 借用的 listener 不能一起移入同一 async 关闭块。修法是 shutdown 先停止接入，在原总预算中消费 Future/排空连接，然后外层释放 listener；不能 unsafe 绕过借用或丢掉等待。与握手 Socket 泄漏、接入恢复两个运行时反例分开记录，见[Linux 验收](../design/v0.7-linux-native-validation.md)。
@@ -305,6 +307,16 @@ Demo 部署配置、示例运维资产和游戏测试在 Examples；旧固定拓
 ---
 
 # TiangZ AI 项目上下文
+
+控制入站默认额度的首次真实 Process 故障场景因夹具解析失败：既有 29998/6 字节过载信封中 rpcId 是 **LE**，新驱动误用 BE，将实际 69632 读成 1048832，报 unknown response。`temp/hotfix-load-yYtUnM/fault-report.json` 保留失败、两宿主 exit 0/无强制停止；来源日志明确拒绝 69632。应按 `build_target_ingress_overload/parse_target_ingress_overload` 修夹具，不改线上格式或去掉关联验证；原 full 不计通过，重新执行完整含 KCP verify。
+
+控制确认 TS 第二轮 **2 failed / 40 passed**（724ms，`temp/v0.7-control-ingress-ts-second.log`）剩余为新夹具错误：混合 control/data 忽略既有公平顺序，直接调用 Scene 内部 dispose 又绕过 Host 的 Root 注销。应按原顺序断言并使用 `ProcessHost.despawnScene`；不能修改生产公平调度或忽略实体泄漏检查来迁就夹具。四文件复测与完整矩阵仍必需。
+
+控制确认第一轮 TS 回归 **12 failed / 30 passed**（818ms，`temp/v0.7-control-ingress-ts-initial.log`）：实现误从 SceneCallContext 的不存在 `processHost` 字段释放，连带中断销毁。EntryScene 已保存原 `private readonly processHost`，应使用该所有者；不是旧框架容量反例，也不能用可选调用吞掉失败。相关四文件原样复测，确认关闭/销毁/迟到回调与原 mailbox 生命周期恢复。
+
+控制桥初次 Native 编译失败于 `#[op2]` 参数使用 `deno_core::OpState` 完整路径，宏明确要求导入后写 `OpState`（`temp/v0.7-control-ingress-native-initial.log`）。这是桥接宏形状错误，尚未执行测试；应遵循当前锁定宏的诊断修正，不删除状态参数或跳过实际 V8 检验。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp control_ingress -- --nocapture`。
+
+控制入站总量反例：隔离 Node 使用真实 ProcessRuntime/EntryScene，阻塞 ordered 断线钩子后每轮注入 128 条，520 轮保留 **66560** 条；放行后 130 轮排空、执行 66561 次钩子。`temp/v0.7-control-ingress-audit.json` 与 `node temp/v0.7-control-ingress-probe.mjs` 只证明 TS 队列没有累计上限，未创建网络连接或 Session。按[控制入站契约](../design/v0.7-control-ingress.md)将 Rust 准入所有权保留至 TS 实际开始/丢弃未执行节点；不能丢 Disconnect、关闭完成通道或把单轮 128 条当作共享总量，也不能把这一数量限制称为 TS 堆内存预算。
 
 验证时不能用预构建哈希替代实际运行身份：原矩阵 quick 的无 features Cargo 步骤会覆盖预构建的 KCP 宿主，之后 full 测到的是默认 feature。显式 Rust/KCP/UDP 通过与默认 full 通过分别报告，原热更 JSON 已记录真实 SHA。现用 `TIANGZ_VERIFY_CARGO_FEATURES=kcp` 贯穿嵌套矩阵，full 先构建，并在 quick 之后记录实际 Host 哈希；不靠额外手动构建或修改旧报告伪装原轮包含 KCP。原证据、哈希更正与复测见[进度](../design/v0.7-progress.md)。
 

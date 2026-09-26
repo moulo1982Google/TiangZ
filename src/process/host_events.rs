@@ -1,5 +1,6 @@
 //! 在复制前约束单个 Rust→V8 批次，满批保留原事件所有权。 / Bounds each Rust-to-V8 batch before copying, retaining original events when full.
 
+use super::control_ingress::{ControlReservation, HostEventPayload};
 use super::{ProcessEvent, ProcessEventKind, ProcessQueueStats};
 use anyhow::{Context, Result, bail};
 use std::sync::atomic::Ordering;
@@ -12,6 +13,7 @@ pub(super) struct HostEventBatch {
     bytes: Vec<u8>,
     count: u32,
     byte_limit: usize,
+    reservations: Vec<ControlReservation>,
 }
 
 impl HostEventBatch {
@@ -26,6 +28,7 @@ impl HostEventBatch {
             bytes: vec![0; BATCH_HEADER_BYTES],
             count: 0,
             byte_limit,
+            reservations: Vec::new(),
         }
     }
 
@@ -36,7 +39,7 @@ impl HostEventBatch {
     /// 容量不足原样返回，不复制、不计为业务拒绝；非法单事件在任何修改前失败。 / Returns a full-batch event untouched; invalid single events fail before mutation.
     pub(super) fn try_push(
         &mut self,
-        event: ProcessEvent,
+        mut event: ProcessEvent,
         stats: &ProcessQueueStats,
     ) -> Result<Option<ProcessEvent>> {
         let (event_type, connection_id, scene_index, payload): (u8, u64, u32, &[u8]) = match &event
@@ -46,6 +49,7 @@ impl HostEventBatch {
                 connection_id,
                 internal,
                 frame,
+                ..
             } => (
                 if *internal && crate::transport::inner_frame_rpc_id(frame).is_some() {
                     5
@@ -59,6 +63,7 @@ impl HostEventBatch {
             ProcessEvent::Disconnect {
                 scene_index,
                 connection_id,
+                ..
             } => (2, *connection_id, *scene_index, &[]),
             ProcessEvent::HostSceneCompletion(completion) => match &completion.result {
                 Ok(frame) => (3, completion.operation_id as u64, 0, frame),
@@ -112,16 +117,22 @@ impl HostEventBatch {
             ProcessEventKind::Shutdown => unreachable!(),
         }
         .fetch_add(1, Ordering::Relaxed);
+        if let Some(reservation) = event.control_reservation_mut().and_then(Option::take) {
+            self.reservations.push(reservation);
+        }
         Ok(None)
     }
 
     /// 转移本批所有权给 V8，记录实际逻辑大小，不保留历史峰值缓冲。 / Transfers this batch to V8, recording logical size without retaining a high-water buffer.
-    pub(super) fn into_bytes(mut self, stats: &ProcessQueueStats) -> Vec<u8> {
+    pub(super) fn into_payload(mut self, stats: &ProcessQueueStats) -> HostEventPayload {
         self.bytes[..BATCH_HEADER_BYTES].copy_from_slice(&self.count.to_le_bytes());
         stats
             .max_host_event_batch_bytes
             .fetch_max(self.bytes.len(), Ordering::Relaxed);
-        self.bytes
+        HostEventPayload {
+            bytes: self.bytes,
+            reservations: self.reservations,
+        }
     }
 }
 
@@ -137,6 +148,7 @@ mod tests {
         batch
             .try_push(
                 ProcessEvent::Disconnect {
+                    control_reservation: None,
                     scene_index: 0,
                     connection_id: 1,
                 },
@@ -147,6 +159,7 @@ mod tests {
         let pointer = batch.bytes.as_ptr();
         for event in [
             ProcessEvent::Disconnect {
+                control_reservation: None,
                 scene_index: 0,
                 connection_id: u64::MAX,
             },
@@ -179,6 +192,7 @@ mod tests {
                 batch
                     .try_push(
                         ProcessEvent::Disconnect {
+                            control_reservation: None,
                             scene_index: 7,
                             connection_id: id
                         },

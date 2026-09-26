@@ -2,6 +2,8 @@
 
 ## 边界
 
+0.7 控制入站在 Process 全部 listener、Native 队列、Host 批次与 TS 之间共用 **65536** 个未开始名额。Inner RPC 满额返回既有 1011；Disconnect 等待留在原连接/Session 清理中并保留连接名额，实际开始或丢弃未执行节点才确认归还。搬入忙碌 Scene mailbox、Rust 出队或 V8 拷贝都不代表开始；Host completion/Shutdown 不占此额度，避免妨碍完成与释放。指标 `tiangz_control_ingress_{reserved,capacity,max_reserved,rejections_total,waits_total}` 只带固定 Process 标签。新增必需 Model 确认入口，部署须完整重建并重启；无新增配置或插件版本变更。该数量不包含已开始 Handler、普通数据与任意 TS 对象/字节，详见[所有权和验收](../design/v0.7-control-ingress.md)。
+
 0.7 Rust→V8 packed event 单批另限 64 MiB（含 4 字节数量与每条 13 字节头），普通 Update 和停机 completion 路径共用。满批执行 Update 后再继续，无新增配置字段。两条接收通道各可保留一个队首事件，保持原字节守卫与 FIFO；物理 mpsc 槽位外最多另有两条，控制通知不被暂存数据挡住。拆批不截断 payload、不产生业务过载；无法放入空批的异常内部事件复制前明确失败。其指标为 `tiangz_process_host_event_batch_{limit_bytes,max_bytes,splits_total}`，不能当作 V8/TS 存活副本或进程内存总量，见[批次契约](../design/v0.7-host-event-batches.md)。
 
 0.7 准入修正：`inner` 只接受通过凭据认证的内部 TCP，`outer` 只接受外部连接，`mixed` 允许两者。TCP/Auto 在 writer 注册前执行该规则；WebSocket 在 HTTP Upgrade 前检查外部准入。内部身份和内部 msgcode 校验继续生效。WebSocket 解码器的单帧、分片消息均限制为既有 1 MiB，避免接收超大载荷后才检查逻辑帧。

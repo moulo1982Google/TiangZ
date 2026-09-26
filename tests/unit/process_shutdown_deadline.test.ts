@@ -9,6 +9,7 @@ const native = vi.hoisted(() => {
   const delayedCancellations: Array<() => void> = [];
   let nextId = 1;
   const state = { holdCancellation: false };
+  const controlReleases: Array<{ count: number }> = [];
   const createResource = (_ms: number) => {
     const id = nextId++;
     let resolve!: () => void, reject!: (error: Error) => void;
@@ -40,12 +41,13 @@ const native = vi.hoisted(() => {
   vi.stubGlobal("__hostSubmitSceneOperations", submit);
   vi.stubGlobal("__hostRegisterSceneRoute", vi.fn(() => 1));
   vi.stubGlobal("__hostSceneNowMs", () => 0);
-  return { resources, running, delayedCancellations, state, createCall, createStop, createResource,
+  return { resources, running, delayedCancellations, controlReleases, state, createCall, createStop, createResource,
     wait, cancel, submit, packets, start, stop };
 });
 vi.mock("../../app/core/persistence/PrepareGlobalIds", () => ({ PrepareGlobalIds: async () => undefined }));
 vi.mock("../../app/core/process/ProcessRuntime", () => ({ ProcessRuntime: class {
   readonly StopTimeoutMs = 30000;
+  __bindControlIngressReleases(counter: { count: number }): void { native.controlReleases.push(counter); }
   start = native.start;
   stop = native.stop;
 } }));
@@ -54,6 +56,7 @@ const modelExports = {};
 const host = globalThis as typeof globalThis & {
   __etsStartProcess(config: string): Promise<string>;
   __etsStopProcess(): Promise<string>;
+  __etsTakeReleasedControlIngress(): number;
 };
 function gate() {
   let resolve!: () => void, reject!: (error: Error) => void;
@@ -67,6 +70,7 @@ beforeEach(async () => {
   native.stop.mockReset().mockResolvedValue(undefined);
   native.createStop.mockReset().mockImplementation(native.createResource);
   native.packets.length = 0;
+  native.controlReleases.length = 0;
   native.state.holdCancellation = false;
   installProcessBootstrap({ modelExports });
   await host.__etsStartProcess(JSON.stringify({ process: { name: "shutdown" }, scenes: [], knownScenes: [], tickMs: 50 }));
@@ -87,6 +91,17 @@ test("fast shutdown closes its reserved deadline without submitting an ordinary 
   expect(native.wait).not.toHaveBeenCalled();
   expect(native.submit).not.toHaveBeenCalled();
   expect(native.resources.size).toBe(0);
+});
+
+test("control acknowledgements survive clearing the stopped Runtime and reset once", async () => {
+  const original = native.controlReleases[0];
+  original.count = 12;
+  expect(host.__etsTakeReleasedControlIngress()).toBe(12);
+  expect(host.__etsTakeReleasedControlIngress()).toBe(0);
+  await host.__etsStopProcess();
+  original.count += 1;
+  expect(host.__etsTakeReleasedControlIngress()).toBe(1);
+  expect(host.__etsTakeReleasedControlIngress()).toBe(0);
 });
 
 test("failed shutdown preserves its error and closes the reserved deadline", async () => {

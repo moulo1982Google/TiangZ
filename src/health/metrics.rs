@@ -1128,6 +1128,44 @@ fn append_process_metrics_prometheus(
         writeln!(output, "{name}{{process=\"{process_name}\"}} {value}")
             .expect("formatting batch admission metric");
     }
+    for (suffix, kind, value, description) in [
+        (
+            "reserved",
+            "gauge",
+            snapshot.control_admission.reserved,
+            "Admitted controls not yet started or discarded in TS",
+        ),
+        (
+            "capacity",
+            "gauge",
+            snapshot.control_admission.capacity,
+            "Shared unstarted control ingress limit",
+        ),
+        (
+            "max_reserved",
+            "gauge",
+            snapshot.control_admission.peak,
+            "Peak retained unstarted control ingress",
+        ),
+        (
+            "rejections_total",
+            "counter",
+            snapshot.control_admission.rejections,
+            "Immediate control ingress admission rejections",
+        ),
+        (
+            "waits_total",
+            "counter",
+            snapshot.control_admission.waits,
+            "Disconnect cleanups waiting for control ingress admission",
+        ),
+    ] {
+        let name = format!("tiangz_control_ingress_{suffix}");
+        writeln!(output, "# HELP {name} {description}").expect("formatting control admission help");
+        writeln!(output, "# TYPE {name} {kind}").expect("formatting control admission type");
+        writeln!(output, "{name}{{process=\"{process_name}\"}} {value}")
+            .expect("formatting control admission metric");
+    }
     writeln!(
         output,
         "# HELP tiangz_transport_inner_active_connections Active inner transport connections"

@@ -18,6 +18,8 @@
 
 ## 相关能力被修改时再核对
 
+- **控制入站数量**：每 Process 共享 65536 项未开始 Inner RPC/Disconnect，Native 入队前准入并将守卫转交批次与实际 isolate；TS 真正开始或销毁未执行节点才单次确认，搬入忙碌 mailbox 不释放。RPC 复用 1011，断线等待留在原连接清理，Host completion/Shutdown 不占额度。聚合确认先验证再原子归还，只适用于同质数量槽；旧 Model 缺少必需确认入口应启动失败。接收器/isolate 退出唤醒等待并回收原所有者；不能丢 Disconnect、使用当前 Runtime 释放旧节点，或将数量上限称为 TS 对象/字节上限。见[控制入站](../design/v0.7-control-ingress.md)。
+
 - **io-uring 实际所有权**：Future drop 不代表内核 I/O/FD 已释放；握手关闭守卫成功后转交 writer，错误/取消 shutdown，正常写入先排空。listener 保留 pending accept，收割连接不得丢弃它；停止在原总预算内 shutdown/消费 accept 结果并排空连接，不能遗弃成功返回的 Socket。验收要在 listener/测试 Runtime 仍存活时检查超时 Socket、恢复连接及控制通知堵塞，计数归零、条件编译或仅创建 ring 均不能代替实际后端验证。见[Linux 原生验收](../design/v0.7-linux-native-validation.md)。
 
 - **连接编号宽度**：TCP/Auto/WebSocket、io-uring 与 KCP 在共享原子入口只分配 1..u32::MAX，不复用 Process 生命周期内旧号。最后合法号仍可传输；耗尽在握手/登记/发布前明确失败并走既有 endpoint 监督，不能取低位、回绕或放宽 Host/TS 的 uint32 桥。KCP local_conn 另有线上避碰，不能替代 Host 编号检查。有限边界注入与真实海量连接、完整 Process 故障转移分别报告，见[连接编号](../design/v0.7-connection-id-admission.md)。

@@ -540,6 +540,105 @@ async fn ingress_byte_budget_is_shared_across_real_tcp_websocket_listeners_and_r
 }
 
 #[tokio::test]
+async fn control_ingress_real_inner_tcp_rejects_full_quota_and_retains_disconnect_cleanup() {
+    let stats = Arc::new(ProcessQueueStats {
+        control_admission: super::control_ingress::ControlAdmission::with_capacity(2),
+        ..ProcessQueueStats::default()
+    });
+    let fixture = endpoint_with_stats(
+        EndpointAudience::Inner,
+        EndpointProtocol::Tcp,
+        Arc::clone(&stats),
+    );
+    let mut client = preamble(&fixture, true).await;
+    // 只验证 Transport 的保留 Inner 范围与 rpcId，不冒充生成业务协议。 / Exercises transport-only reserved Inner codes and rpcId, not a generated business protocol.
+    let mut request = [0, 0, 0xd0, 0x05, 1];
+    request[..2].copy_from_slice(&crate::transport_backend::INNER_MSGCODE_START.to_be_bytes());
+    for id in 1..=2 {
+        request[4] = id;
+        client.write_u32(5).await.unwrap();
+        client.write_all(&request).await.unwrap();
+    }
+    wait_ingress(&stats, 10, 0).await;
+    let mut batch = HostEventBatch::new();
+    for _ in 0..2 {
+        let event = fixture._control.try_recv().unwrap();
+        stats.dequeue(event.kind(), event.ingress_class());
+        assert!(batch.try_push(event, &stats).unwrap().is_none());
+    }
+    let payload = batch.into_payload(&stats);
+    assert_eq!(stats.ingress_buffers.snapshot().used_bytes, 0);
+    assert_eq!(stats.control_admission.snapshot().reserved, 2);
+    let mut published =
+        super::control_ingress::PublishedControls::new(Arc::clone(&stats.control_admission));
+    published.publish(payload.reservations);
+    drop(payload.bytes);
+    request[4] = 3;
+    client.write_u32(5).await.unwrap();
+    client.write_all(&request).await.unwrap();
+    let response = timeout(Duration::from_secs(2), async {
+        let length = client.read_u32().await.unwrap();
+        let mut response = vec![0; length as usize];
+        client.read_exact(&mut response).await.unwrap();
+        response
+    })
+    .await
+    .unwrap();
+    assert_eq!(response, crate::transport::build_target_ingress_overload(3));
+    assert_eq!(stats.control_admission.snapshot().rejections, 1);
+    assert!(fixture._control.try_recv().is_err());
+    published.release(1.0).unwrap();
+    request[4] = 4;
+    client.write_u32(5).await.unwrap();
+    client.write_all(&request).await.unwrap();
+    wait_ingress(&stats, 5, 0).await;
+    let recovered = fixture._control.try_recv().unwrap();
+    stats.dequeue(recovered.kind(), recovered.ingress_class());
+    assert!(matches!(
+        &recovered,
+        ProcessEvent::Frame {
+            connection_id: 1,
+            ..
+        }
+    ));
+    drop(client);
+    timeout(Duration::from_secs(2), async {
+        while stats.control_admission.snapshot().waits != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        stats.admission.snapshot().connections,
+        1,
+        "cleanup retains its original connection permit"
+    );
+    assert!(fixture.writers.lock().unwrap().is_empty());
+    drop(recovered);
+    wait_admission(&stats.admission, 0, 0).await;
+    let disconnected = fixture._control.try_recv().unwrap();
+    assert!(matches!(
+        disconnected,
+        ProcessEvent::Disconnect {
+            connection_id: 1,
+            ..
+        }
+    ));
+    stats.dequeue(disconnected.kind(), disconnected.ingress_class());
+    drop(disconnected);
+    published.release(1.0).unwrap();
+    assert_eq!(stats.control_admission.snapshot().reserved, 0);
+    assert_eq!(stats.control_admission.snapshot().peak, 2);
+    assert_eq!(stats.ingress_buffers.snapshot().used_bytes, 0);
+    fixture.task.request_stop();
+    timeout(Duration::from_secs(2), fixture.task)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
 async fn ingress_full_inner_rpc_returns_wire_overload_and_same_connection_recovers() {
     let stats = Arc::new(ProcessQueueStats::with_network_limits(
         16,

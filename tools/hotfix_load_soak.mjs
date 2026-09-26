@@ -12,6 +12,7 @@ import { installActorQuotaFixture } from "./hotfix_actor_quota_fixture.mjs";
 import { installLocalSceneQuotaFixture } from "./hotfix_local_scene_quota_fixture.mjs";
 import { installHostOperationFixture } from "./hotfix_host_operation_fixture.mjs";
 import { installRemoteDeadlineFixture } from "./hotfix_remote_deadline_fixture.mjs";
+import { installControlIngressFixture } from "./hotfix_control_ingress_fixture.mjs";
 
 // 独立本机夹具；所有写入都在本轮临时工程，保留报告和失败现场。
 // Isolated local fixture; writes stay in this run's temporary project, retaining evidence.
@@ -273,6 +274,7 @@ export class IncrementHandler implements SceneRpcHandler<CounterScene, C2S_Incre
   await installLocalSceneQuotaFixture(module);
   await installHostOperationFixture(module);
   await installRemoteDeadlineFixture(module);
+  await installControlIngressFixture(module);
   await run(["tools/game_project.mjs", "protocol-update", "--project", project]);
   await run(["tools/game_project.mjs", "build", "--project", project]);
   const candidates = [path.join(directory, "pair-1"), path.join(directory, "pair-2")];
@@ -290,6 +292,8 @@ export class IncrementHandler implements SceneRpcHandler<CounterScene, C2S_Incre
   await build({ stdin: { contents: `import "../modules/starter/generated/typescript/Core/Net/BrowserWebSocketTransport";
 import { RpcSocket } from "../modules/starter/generated/typescript/Core/Net/RpcSocket";
 import { StarterClient } from "../modules/starter/generated/typescript/starter/protocol/clients";
+import { StarterProtocol as InternalProtocol } from "../modules/starter/src/model/generated/protocol/starter/protocol/rpcs";
+export const innerWorkProtocol = InternalProtocol.Work;
 export async function connect(port) {
   const socket = new RpcSocket({ transport: "websocket", host: "127.0.0.1", port }, { defaultTimeoutMs: ${rpcTimeoutMs} });
   const client = new StarterClient(socket);

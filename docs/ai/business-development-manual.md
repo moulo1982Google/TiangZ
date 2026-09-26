@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+控制入站现按 Process 共享 65536 个未开始项，确认必须等 TS 真正开始或丢弃未执行节点；转入忙碌 Scene mailbox 不得提前释放。实际完成通知和 Shutdown 保留独立通路。最终 Windows 含 KCP **8/33/9**、471440ms、Rust 262 项，`temp/v0.7-control-ingress-verify-final.log`；Host/报告 SHA256 `305b6dc50b08c6bf0347a5a0cf010b84fbef8bb69a2a035550c0685324adae05`。真实峰值 65536 后归零，77825 输入全部获得成功或明确过载，热更/原连接恢复及三宿主正常停机通过；Linux 实际原生 **266 项**、Clippy 和 AI 实际归档通过。完整失败、LE 过载信封夹具修正与边界见[验收](../design/v0.7-control-ingress.md)。必须使用配套新 Model 并重启；聚合确认只适合同质数量槽，不能拿它计不同大小或仍被 Actor DTO 持有的 backing buffer。
+
 io-uring 的 Socket 与 accept 所有权修复已通过真实专项 **4/4**，同一 listener 保持存活时验证关闭、恢复、阻塞控制通知及末条写入排空。最终 Linux **260 项**与全目标 Clippy 通过，`temp/v0.7-linux-native-final.log`；Windows 含 KCP 完整 **8/33/9**、524857ms，`temp/v0.7-linux-native-verify.log`，Host/两报告 SHA256 `4370b245a006fd8f3d642962446f49e5cd08674da4f92082291687c0fad6b500`。Linux 普通 Host SHA256 `2338a1ba0b463851372c65eb5255587dc15d1de3137238aedf9d6cc149e0f8c4`，AI 实际归档通过，三个 Windows 宿主正常退出。完整命令、原始失败与限制见[Linux 验收](../design/v0.7-linux-native-validation.md)；不将 Linux 原生验证说成完整 Linux 游戏热更矩阵。
 
 Linux listener 关闭块的 E0505 编译失败保留在 `temp/v0.7-linux-uring-handshake-final.log`。先 shutdown，再在原总预算消费借用 listener 的 accept Future、排空连接，外层最后 drop listener；不要把 listener 和它的借用一起移进 async 块，更不能用 unsafe 或删除等待规避。这是编译期所有权修正，不能与真实 Socket/恢复失败混成同一种证据；见[完整记录](../design/v0.7-linux-native-validation.md)。
@@ -408,6 +410,16 @@ SLG 首次玩法 smoke（临时目录 tiangz-slg-smoke-Lipipu）报 `DBProxy is 
 ---
 
 # TiangZ AI 业务开发手册
+
+新增 Transport 驱动不能从公共帧头 BE 推断所有内部字段：现有 29998/6 字节过载信封的 rpcId 使用 LE；控制入站首次真实故障夹具误读 BE，将 69632 变成 1048832 后失败（`temp/hotfix-load-yYtUnM/fault-report.json`，两宿主正常退出）。查生产 build/parse 函数修读取，不改已有线上格式或忽略未知/重复响应；本次 full 失败保留，修正后重新执行 `TIANGZ_VERIFY_CARGO_FEATURES=kcp npm run verify`。
+
+控制确认 TS 第二轮 **2 failed / 40 passed**，724ms，`temp/v0.7-control-ingress-ts-second.log`：新夹具误设跨 data/control 的执行顺序，且直接 Scene dispose 绕过 Host Root 注销。使用真实 `ProcessHost.despawnScene`、沿用既有公平调度顺序修正断言，不改生产调度或移除 Root 泄漏检查；复测原四个 TS 文件。此阶段与上一轮错误所有者接线分开记录。
+
+控制确认实现的 TS 首轮 **12 failed / 30 passed**，818ms，`temp/v0.7-control-ingress-ts-initial.log`。真实原因是把 SceneCallContext 当作持有 Host 的对象，读取 `this.ctx.processHost` 为 undefined；应沿用 EntryScene 构造时保存的 `this.processHost`，不能可选调用或吞错以隐藏名额泄漏。复测 `npx vitest run tests/unit/control_ingress.test.ts tests/unit/process_shutdown_deadline.test.ts tests/unit/mailbox_lifetime.test.ts tests/unit/local_scene_capacity.test.ts`；该失败属于本轮实现接线，不能归因于原先框架。
+
+新增 Native op 先按当前宏诊断验证参数形状：控制桥初次编译拒绝 `deno_core::OpState` 完整路径，`#[op2]` 要求显式导入 `OpState` 后使用短类型名；日志 `temp/v0.7-control-ingress-native-initial.log`，测试未运行。应修复宏参数再运行 `node tools/run_cargo.mjs test --bin TiangZ --features kcp control_ingress -- --nocapture`，不能移除生命周期所有者或用条件编译绕过。
+
+控制通道必须验证跨轮积压：`node temp/v0.7-control-ingress-probe.mjs` 在真实 TS Runtime 的 ordered 断线钩子阻塞时，按 128 条/轮、520 轮累积 **66560** 条，放行后才排空（`temp/v0.7-control-ingress-audit.json`）。这不是 6 万真实连接容量测试。原因是 Native 每轮控制泵继续投递、TS 无共享总额度；正确修法在 Native 入队前准入并将所有权贯穿 V8 到 TS 未执行节点，完成通知另行保留。禁止丢弃断线通知、扩大单轮界限或只在搬入另一个忙碌 mailbox 时提前归还。见[冻结设计与验证计划](../design/v0.7-control-ingress.md)；实际网络、V8 与 TS 各层证据须分别记录。
 
 0.7 慢写候选：`process.network.writeTimeoutMs` 为 1..300000 的正整数，默认 10000ms，包含出站批次排队与写入；关闭时全部批次另共用 stopTimeoutMs，先到期者生效。超时可能已发送部分字节，不等于操作取消或业务确认。KCP 此期限只覆盖可靠传输前的宿主队列；业务结果未知仍需原幂等号恢复。旧宿主不接受新字段，变更后重建/重启；见[具体契约](../design/v0.7-batch2-contracts.md)。
 
