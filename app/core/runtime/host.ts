@@ -20,6 +20,7 @@ import { MailBoxComponent } from "./MailBoxComponent";
 import { EntityRoot } from "./root";
 import { ActorUnit, Unit, UnitComponent } from "./Unit";
 import { Session, SessionComponent } from "./Session";
+import type { SceneTaskScope } from "./SceneTaskSystem";
 import {
   TimerSystem,
   type TimerCancelledContext,
@@ -86,6 +87,7 @@ export class ProcessHost {
   private static readonly MAX_RECYCLED_MAILBOX_ITEMS = 64;
   readonly Root = new EntityRoot();
   private readonly scenes = new Map<SceneId, SceneRuntime>();
+  private readonly retiredTaskScopes = new Set<SceneTaskScope>();
   private readonly actorsByInstanceId = new Map<InstanceId, ActorRuntime>();
   private actorMailboxPendingCount = 0;
   private readonly actorMailboxMetrics = {
@@ -104,12 +106,13 @@ export class ProcessHost {
   /** 包括已接受的排队/在途调用；移除 Actor 路由不能提前归还运行中的调用。 / Includes admitted queued/in-flight calls; removing Actor routing never settles a running call. */
   get ActorMailboxPendingCount(): number { return this.actorMailboxPendingCount; }
 
-  /** 聚合本Process全部入口Scene和动态子Scene的Spawn任务，供Hotfix屏障与Runtime Pump使用。 / Aggregates Spawn tasks from every entry and dynamic child Scene for the Hotfix barrier and Runtime Pump. */
+  /** 聚合入口、动态及已注销但尚未排空 Scene 的任务；路由注销不提前释放。 / Counts entry, dynamic, and removed Scenes' tasks until actual drain, independent of routing lifetime. */
   get SceneTaskInFlightCount(): number {
     let count = 0;
     for (const scene of this.scenes.values()) {
       count += scene.instance.__taskInFlightCount();
     }
+    for (const scope of this.retiredTaskScopes) count += scope.InFlightCount;
     return count;
   }
 
@@ -353,6 +356,11 @@ export class ProcessHost {
     } finally {
       this.Root.Remove(sceneInstanceId);
       this.scenes.delete(sceneId);
+      if (scene.instance.__taskInFlightCount() > 0) {
+        const scope = scene.instance.Tasks;
+        this.retiredTaskScopes.add(scope);
+        scope.__onIdle(() => { this.retiredTaskScopes.delete(scope); });
+      }
     }
     return true;
   }

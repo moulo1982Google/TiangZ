@@ -49,6 +49,8 @@ export class SceneTaskScope {
   private nextId = 1;
   private maxInFlightCount = 0;
   private watchdogTimer: TimerId | undefined;
+  private watchdogOwner: TimerSystem | undefined;
+  private onIdle: (() => void) | undefined;
   private disposed = false;
 
   constructor(private readonly scene: Scene) {}
@@ -111,9 +113,11 @@ export class SceneTaskScope {
       })
       .finally(() => {
         this.tasks.delete(id);
-        if (this.tasks.size === 0 && this.watchdogTimer !== undefined) {
-          TimerSystem.Instance.Cancel(this.watchdogTimer, "task-scope-idle", false);
-          this.watchdogTimer = undefined;
+        if (this.tasks.size === 0) {
+          const onIdle = this.onIdle;
+          this.onIdle = undefined;
+          try { this.cancelWatchdog("task-scope-idle"); }
+          finally { onIdle?.(); }
         }
       });
     return id;
@@ -138,6 +142,22 @@ export class SceneTaskScope {
         record.signal.reason = reason;
       }
     }
+    this.cancelWatchdog("owner-disposed");
+  }
+
+  /** 仅供 Host 在注销 Scene 后等待真实排空并主动释放持有引用。 / Lets the Host release its retained Scope immediately after actual drain following Scene removal. */
+  __onIdle(callback: () => void): void {
+    if (this.tasks.size === 0) callback();
+    else this.onIdle = callback;
+  }
+
+  /** 句柄只交还创建它的服务；迟到完成不得访问新 Runtime 的同号 Timer。 / Returns the handle only to its original service so late completion cannot affect a new Runtime's timer. */
+  private cancelWatchdog(reason: string): void {
+    const timer = this.watchdogTimer;
+    const owner = this.watchdogOwner;
+    this.watchdogTimer = undefined;
+    this.watchdogOwner = undefined;
+    if (timer !== undefined) owner?.Cancel(timer, reason, false);
   }
 
   private allocateId(): SpawnTaskId {
@@ -151,7 +171,7 @@ export class SceneTaskScope {
   }
 
   private scheduleWatchdog(): void {
-    if (this.watchdogTimer !== undefined) return;
+    if (this.disposed || this.watchdogTimer !== undefined) return;
     const now = Date.now();
     let delayMs = Number.POSITIVE_INFINITY;
     for (const record of this.tasks.values()) {
@@ -162,8 +182,11 @@ export class SceneTaskScope {
       );
     }
     if (!Number.isFinite(delayMs)) return;
-    this.watchdogTimer = TimerSystem.Instance.NewOnceTimer(delayMs, () => {
+    this.watchdogOwner = TimerSystem.Instance;
+    this.watchdogTimer = this.watchdogOwner.NewOnceTimer(delayMs, () => {
       this.watchdogTimer = undefined;
+      this.watchdogOwner = undefined;
+      if (this.disposed) return;
       const checkedAt = Date.now();
       for (const record of this.tasks.values()) {
         if (record.warned || checkedAt - record.startedAt < SCENE_TASK_WARNING_MS) continue;

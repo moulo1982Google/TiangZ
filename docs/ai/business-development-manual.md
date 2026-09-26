@@ -112,6 +112,10 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 
 ## 失败教训与复测流程
 
+### 0.7 动态 Scene 任务的实际结束与 Timer 所有者
+
+首次 `tests/unit/scene_task_disposal.test.ts` 两项均失败（`temp/v0.7-scene-task-disposal-first.log`）：动态 Scene 已注销，Scope 仍在途，但仅遍历路由表的 ProcessHost 错误报告排空；旧 Runtime 的任务 finally 还通过当前单例取消新 Runtime 的 Timer。Host 必须保留未完成 Scope 并在真实完成时主动移除，watchdog 取消绑定创建它的服务实例，销毁停止告警但不强制终止 Promise。禁止清空任务表、把 aborted 当完成、只在读取计数时清理引用，或用 TryGet 当前单例掩盖跨实例句柄错误。复测定向 `vitest run tests/unit/scene_task_disposal.test.ts`、正式生成的真实 V8 夹具及完整 `npm run verify`；范围和结果记入[Scene 任务销毁](../design/v0.7-scene-task-disposal.md)。
+
 ### 0.7 请求预算与部分写夹具（2026-09-26）
 
 Host 任务现在从提交前起计时，涵盖任务排队、连接池和 SDK，并由调用方 RAII 持有；调用方取消请求 abort，不能留下脱离所有者的后台 I/O。删除 Host 的整池重试层，让 SDK 的单连接恢复保留原身份，Host 仅执行一次闭包。4 个所有权/期限测试通过，`temp/v0.7-host-budget-msvc.log`。第一次手动复跑再次出现 LNK1143，是只匹配 `CC=gcc` 而遗漏 工具链目录下的 `gcc.exe` 完整路径；过滤必须按 basename 匹配 gcc/g++，或直接使用已有正式矩阵环境过滤，不能只比较完整变量字符串。原失败 `temp/v0.7-host-budget.log` 保留；修正后重建，不调整测试期望。

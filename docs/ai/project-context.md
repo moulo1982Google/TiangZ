@@ -1,5 +1,7 @@
 # 2026-09-16 模块拆分后的当前事实
 
+动态 Scene 注销路由不等于 Spawn 结束：已运行任务须在 ProcessHost 独立持有 Scope，直到真实完成才主动移除引用；协作取消不能清零在途数。watchdog 句柄必须绑定原 TimerSystem，禁止迟到 finally 重新读取当前单例。首轮两个真实 Runtime 反例分别证明销毁后漏计热更和旧任务访问新 Runtime Timer；修复契约、禁止绕过与复测见[Scene 任务销毁](../design/v0.7-scene-task-disposal.md)。
+
 真实热更夹具需使用当前错误契约：首次新增本地 mailbox 用例已返回 `drain deadline exceeded` 与 `pendingAsync=true`，因测试猜测 timeout 文字而失败。复测应核对拒绝状态、实际错误字段、在途标志及 generation 保持，不改宿主期限或把拒绝记成成功。原报告与命令见[mailbox 生命周期](../design/v0.7-mailbox-lifetime.md)。
 
 0.7 mailbox 生命周期：出队立即清空旧数组槽，Scene/Actor 空闲节点池各最多 64 个；这是复用缓存上限，未执行任务/TS 堆总预算仍未完成。EntryScene 实体销毁先关闭准入、拒绝未执行 RPC、断开帧和闭包引用；在途业务仍等真实完成，迟到结果不能重填出站或节点池。本地 direct Actor 与 unordered Scene 曾漏计热更在途，不能只用网络任务、Timer 或 Spawn 数量证明排空；ProcessActor 计数在路由销毁后仍保留，直到真实完成。首次引用/销毁 5 项失败与新增屏障 4 项失败、修法和复测见[mailbox 生命周期](../design/v0.7-mailbox-lifetime.md)。

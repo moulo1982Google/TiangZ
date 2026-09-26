@@ -218,22 +218,22 @@ try {
     await checked(control);
     return { rejectedConnections: 8 };
   });
-  for (const mode of [16, 17, 20]) {
-    await test(mode === 20 ? "local-unordered-scene-drain-timeout" : mode === 17 ? "disposed-actor-drain-timeout" : "direct-actor-drain-timeout", async () => {
+  for (const [mode, name] of [[16, "direct-actor-drain-timeout"], [17, "disposed-actor-drain-timeout"], [20, "local-unordered-scene-drain-timeout"], [23, "disposed-scene-spawn-drain-timeout"]]) {
+    await test(name, async () => {
       assert.equal((await control.call(mode)).count, 0, "starting request must already have returned");
-      assert.equal((await control.call(mode === 20 ? 21 : 3)).count, 1, "mailbox work must still await its result");
+      assert.equal((await control.call(mode === 20 ? 21 : 3)).count, 1, "owned work must still await its result");
       const before = await admin("status"), started = performance.now(), op = begin(undefined, 422);
       await op.paused();
       const rejected = await op.pending;
       assert.equal(rejected.status, "rejected");
       assert.match(rejected.error, /drain deadline exceeded/);
       assert.match(rejected.error, /pendingAsync=true/);
-      assert.ok(performance.now() - started >= 2800, "live mailbox must hold the drain until its deadline");
+      assert.ok(performance.now() - started >= 2800, "live work must hold the drain until its deadline");
       assert.equal((await admin("status")).hotfix.generation, before.hotfix.generation);
       await control.call(mode === 20 ? 22 : 2);
-      await until(async () => (await control.call(19)).count === (mode === 17 ? 3 : 2), "detached mailbox completion");
+      await until(async () => (await control.call(19)).count === (mode === 17 ? 3 : 2), "detached work completion");
       if (mode === 16) await checked(control, 18);
-      return { startedRequestCompleted: true, ownerDisposed: mode === 17, generationPreserved: true };
+      return { startedRequestCompleted: true, ownerDisposed: mode === 17 || mode === 23, generationPreserved: true };
     });
   }
   for (let round = 0; round < rounds; round++) {

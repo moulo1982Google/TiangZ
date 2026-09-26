@@ -122,9 +122,11 @@ message S2S_WorkResponse // IResponse
   uint32 count = 1;
 }
 `);
-  await writeFile(path.join(module, "src/model/counter/CounterScene.ts"), `import { EntryScene, entryScene, DbProxyEntityRepository, ActorUnit, actor } from "#tiangz/core";
+  await writeFile(path.join(module, "src/model/counter/CounterScene.ts"), `import { EntryScene, entryScene, DbProxyEntityRepository, ActorUnit, actor, Scene, scene } from "#tiangz/core";
 @actor({ mailbox: "ordered" })
 export class DrainActor extends ActorUnit {}
+@scene({ sceneType: "DrainScene" })
+export class DrainScene extends Scene {}
 @entryScene()
 export class CounterScene extends EntryScene {
   protected override readonly mailbox = "unordered" as const;
@@ -141,11 +143,11 @@ export class CounterScene extends EntryScene {
 `);
   const modelIndex = path.join(module, "src/model/index.ts");
   await writeFile(modelIndex, (await readFile(modelIndex, "utf8"))
-    .replace('import { CounterScene }', 'import { CounterScene, DrainActor }')
-    .replace('export { CounterScene,', 'export { CounterScene, DrainActor,')
-    .replace('modelExports: { CounterScene,', 'modelExports: { CounterScene, DrainActor,'));
+    .replace('import { CounterScene }', 'import { CounterScene, DrainActor, DrainScene }')
+    .replace('export { CounterScene,', 'export { CounterScene, DrainActor, DrainScene,')
+    .replace('modelExports: { CounterScene,', 'modelExports: { CounterScene, DrainActor, DrainScene,'));
   await writeFile(handlerPath, `import { rpcHandler, type SceneRpcHandler } from "#tiangz/model";
-import { CounterScene, CounterComponent, DrainActor, StarterProtocol, type C2S_Increment, type S2C_Increment } from "#tiangz/module";
+import { CounterScene, CounterComponent, DrainActor, DrainScene, StarterProtocol, type C2S_Increment, type S2C_Increment } from "#tiangz/module";
 @rpcHandler(CounterScene, StarterProtocol.Increment)
 @rpcHandler(CounterScene, StarterProtocol.Work)
 export class IncrementHandler implements SceneRpcHandler<CounterScene, C2S_Increment, S2C_Increment> {
@@ -185,6 +187,21 @@ export class IncrementHandler implements SceneRpcHandler<CounterScene, C2S_Incre
       return { count: 0 };
     }
     if (request.mode === 21 || request.mode === 22) return scene.scenes.call(scene.scenes.byName("local-target"), StarterProtocol.Work, { mode: request.mode === 21 ? 3 : 2 });
+    if (request.mode === 23) {
+      if (scene.holdResolve || scene.detachedState === 1) throw new Error("fixture already held");
+      const owner = scene.SpawnChildScene("drain-task", DrainScene);
+      scene.detachedState = 1;
+      await new Promise<void>(started => {
+        owner.Tasks.Spawn("held-result", async ({ signal }) => {
+          started();
+          await new Promise<void>(resolve => { scene.holdResolve = resolve; });
+          // 仅向仍存活的夹具记录结果；已取消时不再执行子 Scene 业务。 / Report to the live fixture without performing cancelled child Scene work.
+          scene.detachedState = signal.aborted ? 2 : 3;
+        });
+      });
+      if (!scene.DespawnChildScene("drain-task") || !owner.IsDisposed) throw new Error("child Scene must be disposed before acknowledgement");
+      return { count: 0 };
+    }
     if ((request.mode ?? 0) >= 1000) return scene.scenes.call(scene.scenes.byName("counter"), StarterProtocol.Work, { mode: (request.mode ?? 0) - 1000 }, { timeoutMs: 30000 });
     if (request.mode === 4) await scene.scenes.call(scene.scenes.byName("worker"), StarterProtocol.Work, { mode: 1 }, { timeoutMs: 30000 });
     if (request.mode === 10 && (await scene.repository.Load("probe"))?.data !== 42) throw new Error("stored fixture value changed");
