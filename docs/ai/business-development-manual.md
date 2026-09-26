@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+离线 Cargo 身份查询要明确实际目标：未过滤的 Linux `metadata --offline` 因缺 `bumpalo 3.20.3` 缓存在测试前失败，指定 `--filter-platform x86_64-unknown-linux-gnu` 后通过。SDK 候选完整矩阵随后 check 8/8、quick 33/33、full 8/9；全新脚手架还暴露缺发布 tag 引用，单有旧锁 commit 缓存不足。核对本机已有 annotated tag 的 peeled commit 与正式锁相同后才导入专用缓存，全新脚手架独立复测通过。保留原始失败，只接受三个候选 crate 来源变化，不手写锁、换依赖、伪造 tag 或禁用 V8。Windows 242 项/Clippy、Linux 268 项及独立复测分别见[SDK 联验](../design/v0.7-dbproxy-sdk-candidate-integration.md)，不把多次结果拼成一轮完整通过。
+
 包身份校验必须使用消费者实际的模块条件：Native 0.17.0 仅导出 types/import，校验夹具用 `createRequire.resolve` 会选择 require 条件并报 `ERR_PACKAGE_PATH_NOT_EXPORTED`。应在实际项目 cwd 启动 ESM import 分别验证 Core/codegen，不能新增 require/default 导出迁就错误夹具。此次三个本地候选一起安装、正式 package/lock 保持不变；0.17 候选在 Windows/Linux 新矩阵均 **8/33/9**、Rust 264/268 项，独立保留实际包/Host 身份，不能与此前 0.16 阶段混称。原始失败、139 文件检查、正式生成/Native 运行和命令见[Native 候选联验](../design/v0.7-native-candidate-integration.md)。
 
 上述 V8 上下文修复最终验证：Windows 含 KCP **check 8/8、quick 33/33、full 9/9**、Rust 264 项；Linux 实际 io-uring/kcp 同为 **8/33/9**、Rust 268 项，原默认并发主测试连续 10 轮各 226 项通过。没有放宽并发、GC 或原断言，生产路径本就使用正确 enter；原 RED、Linux 三轮失败及 core 单独保留。实际命令、宿主 SHA256 和验收范围见[构造上下文](../design/v0.7-v8-runtime-context.md)与[Linux 完整矩阵](../design/v0.7-linux-game-validation.md)。本轮 Native Core 0.16.0 与已打包的 0.17.0 候选不能混称，默认发布依赖尚未冻结。
