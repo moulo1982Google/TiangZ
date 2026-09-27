@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-09-27 11:25 最新长稳入口为 `temp/v0.7-joint-soak-r4/`，完整 30 分钟复跑正在进行，尚未通过。DBProxy 两处验收工具修复先完成，随后修正控制器计时/日志；新工具 Linux Release 构建及八条工具测试、Windows Rust 207（48 ignored）/格式/Clippy、TS SDK 29 与控制器 22 项通过。服务端保持原冻结字节，工具另记源提交和 SHA；本级完成后先复查原始故障、AOF、对账与计时日志，通过才继续 60 分钟。失败原因、禁止绕过与复测证据见下文[失败教训与复测流程](#失败教训与复测流程)，现场及修复追溯附件见[联合长稳](../design/v0.7-joint-soak.md)。原阶段、旧资源卷和原始失败全部保留，未 push。
+
 本地套件第三次修订仅补充 ELF 运行库说明与证据，70 个文件校验通过，源码/实际程序载荷与第二套完全一致。最终 Linux Host 使用到 GLIBC_2.39、DBProxy 使用到 GLIBC_2.34，不能把架构名 linux-x64 等同任意发行版兼容；原始 readelf 与二进制 SHA 绑定在 temp/v0.7-release/linux-dynamic-requirements.json。跨套件字节比较另发现 Windows BINARY.json 的 DLL 名单顺序不稳定：忽略大小写排序却用 set 去重，大小写变体产生相同排序键；包内程序和导入集合未变。保留差异 kit-comparison-initial-dll-order.diff，比较仍逐字节检查全部实际载荷，仅对这份名单检查完整元素集合；后续构建加入原字符串作为排序次键。不要把元数据顺序差异当程序差异，也不能据此跳过二进制哈希。
 
 三分钟控制器复测 smoke-QT8Qo0 完整通过：17,504 次 Host RPC、120 次直接事务、120 次交易、1400 次入队，原断言零错误；后台排空后 SQL 版本/回执/零和账本、120 个 Outbox 与 Redis Stream 事件集合均一致。它只是控制器预检，正式 30 分钟阶段随后开始，不算长稳完成。发行装配另一次失败是手工抄录 Windows DBProxy SHA256 多写一个字符，原装配目录与 build-kit.log 保留；核对清洁构建日志、实际 Release 输出和冻结副本一致后改读结构化身份文件，不关闭哈希检查。第二套件通过 64 个文件校验、11 个发行包载荷检查及六仓库 bundle 检出/精确远端来源重写验证；未 push。来源摘要应从实际产物计算并结构化传递，避免人工转抄。
@@ -270,7 +272,27 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 
 ## 失败教训与复测流程
 
+### 长稳初始化失败与正式负载分开计量
+
+2026-09-27 11:07，已修超时分类的新 Rust 客户端在并发预置 40 玩家时收到 StorageUnavailable，服务端日志为 PostgreSQL connection queue timed out after 2000ms; no SQL sent。发生在 SOAK_READY 前，既不是完整 30 分钟失败后的通过，也不是已进入正式负载的可用性错误。旧预置/预热函数直接传播暂时不可用，需在固定初始化期限内恢复；现在独立 `src/bin/fault_soak/seed.rs` 共用 90 秒绝对期限，写请求循环外构造，重试保持原 ID/完整载荷，永久错误或预热快照缺失立即失败，到期取消在途初始化。保留有限重试/恢复日志；不得增加服务端两秒或 SDK 五秒预算、把正式健康窗口的失败藏进预置、清理原数据或用短跑累计时长。
+
+新增三条回归验证暂时/永久分类、过期不启动、在途取消及重试不续期；工具八条通过，Rust 工作区 207 通过/48 ignored，格式及 Clippy 通过，日志在 DBProxy `temp/v0.7-soak-seed-*`。首次测试模块位置被 Clippy 拒绝，移动测试模块至文件末尾后重跑，不用 allow 关闭检查；原 lint 失败另存。原运行 `temp/v0.7-joint-soak-r3/joint-fXDpZh/`、诊断 `temp/v0.7-joint-review-r3/failure-seed-review.json` 保留，Host/DB 都已回收，没有正式时长额度。剩余旧 Redis 索引不足重新跑七级时，创建新的专用资源组与独立分配记录，保留原卷，不能清库挤出空间。
+
+### 重建验收程序与保留冻结服务端身份
+
+首次辅助 Linux 构建成功跑完测试及编译，但附加的“新编译副产物必须与旧 Release 字节相同”断言失败，记录在 `temp/v0.7-soak-client-r2/build-report.json`。未改对应源码并不能直接推出新产物逐字节相同；本轮未定位所有链接字节差异，因此不能宣称可重现构建成立。后续辅助构建只导出修复后的验收客户端，单独记录源提交/源码 bundle/二进制 SHA；新编译的其他副产物明确 usedInSoak=false。实际参与长稳的 Host/DB 服务端继续使用旧冻结文件，严格核对其 SHA，不替换为哈希不同的副产物、不把旧失败改为通过。第二次重新执行构建与身份检查的报告为 `temp/v0.7-soak-client-r3/build-report.json`，候选 tag 和原基线报告均未改写。
+
+加入预置修复后再次以 DBProxy `e9596d1` 的已核验源码 bundle 构建：Linux `cargo test --release --locked --bin dbproxy_fault_soak --bin dbproxy_relay_soak` 八条通过，`cargo build --release --locked --workspace --bins` 通过，报告为 `temp/v0.7-soak-client-r4/build-report.json`。实际负载客户端 SHA 为 `5d1a2b8afc8493e94920f38e18784f9e6eda7eeacbf5d433d9bc8a33025a8962`；冻结服务端与原业务 load 二进制仍逐字节检查，不把新编译副产物混入基线。58 文件追溯附件明确标记 soak-pending；逐项 ZIP 内容/SHA 与真实私密值排除检查通过，不能替代未完成长稳。版本化附件路径不能用 `Path.with_suffix('.zip')`，它会截去名称中最后一段版本；应在完整 basename 后追加 `.zip`，验证摘要后用已核定目录内的原生移动改正初次名称，禁止覆盖旧包。
+
+### SDK 错误分类新增分支必须同步验收消费者
+
+2026-09-27 10:54，联合 30 分钟在第五类 AOF 故障的暂停写入窗口收到“DBProxy request timed out before sending; no request was submitted”，`dbproxy_fault_soak` 将它输出为 SOAK_CONTRACT_ERROR，约 22 分 40 秒结束。真实原因是 0.7 SDK 的 `RequestBudget::timeout_error` 新增 RequestNotSentTimeout 后，验收客户端的暂时错误匹配只保留 RequestTimeout；SDK 遵守确定未发送的契约。`dbproxy_relay_soak` 同样漏分支。修复两个验收消费者并重新构建其 Rust 二进制，不改服务端、延长期限、重置幂等 ID、放行永久错误、删除 SOAK_CONTRACT_ERROR 门禁或改写本次失败。故障窗口外可用性错误与全部数据一致性断言继续成立。
+
+先添加反例，旧实现的两个测试确实失败；修后 `cargo test --locked --bin dbproxy_fault_soak --bin dbproxy_relay_soak` 五条通过，`cargo test --workspace --locked` 204 通过/48 ignored（含 SDK 28），`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings` 与 `npm run test:typescript` 29 条通过。DBProxy 日志为 `temp/v0.7-soak-budget-{red,green,workspace,fmt,clippy,typescript}.log` 和 `temp/v0.7-relay-budget-red.log`。原失败 `temp/v0.7-joint-soak-r2/joint-uOk7T5/` 已原样导出，诊断在 `temp/v0.7-joint-review-30-r2/failure-review.json`；Host/DB 服务正常退出，自有存储已恢复，未启动 60 分钟。清理后只读取证的 40 条积压与强杀前 SHA 相同，但故障窗口、最终验证及对账被中断，仍须使用新二进制、独立数据库重新完整跑 30 分钟，短跑不累加。
+
 ### 0.7 联合长稳的执行与证据边界
+
+最新用户指令优先于自动递增计划：当前联合 30 分钟完整结束后，先审查真实故障恢复、数据及资源；有产品问题先修，再改控制器的计时与事件日志，复测后继续。检查点在 `temp/v0.7-joint-review-30-r2/`，保持正在运行的冻结胶囊。没有阶段停止 API 时，可以在前一级完整通过后，经容器完整身份和准备状态校验，协作取消刚初始化的下一阶段；要预先记录用户指令与取消意图，核对实际取消原因，保留原始失败证据，不把无关失败统称人为中止。复查、修复和再运行分别留证，不能在本级未结束前宣称产品没有问题。
 
 2026-09-27 10:31 的实际进展：正常 30/60/120/240 分钟全部通过，240 分钟两端均连续超过 14400 秒且零错误，正常停止、资源趋势、维护排空及直接 SQL/Stream 对账完整通过。自动切换到 temp/v0.7-joint-soak-r2/joint-uOk7T5/ 联合 30 分钟，仍在运行；不能据启动或单个故障恢复宣称整轮通过。原总体 failed 对应随后新启动旧 480 分钟的主动取消，必须连同 handoff.json 的用户计划变更分类理解，既不抹掉原失败报告，也不误报已完成正常阶段失败。原四级证据与新联合阶段分别保存，不因更新状态重跑或改动已冻结工作负载。
 
@@ -285,6 +307,8 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 ### 联合驱动的延时余量与事件字段
 
 2026-09-27 首个节点故障恢复窗口实际通过后，`joint-uOk7T5/30m/db-driver.log` 记录 Node 对约负 0.000418 毫秒 delay 的警告：循环条件和 delay 参数分别取时钟，可能在两次取样之间越过期限，Node 将其钳制为 1 毫秒。`database/events.jsonl` 的 fault-passed 记录又因对象展开顺序把 ISO at 覆盖成计划秒数。两项属于控制器日志问题，业务错误计数为零，单调 start/actionCompleted/end/elapsedSeconds 和恢复断言继续成立；不在进行中的哈希冻结阶段修改文件或放宽门槛。后续控制器修订应对最终余量做非负钳制，事件时刻与计划偏移使用独立字段；以零/负余量和包含同名计划字段的事件做定向复测，再在新冻结版本运行。原始日志保留，当前没有宣称这些后续修订已经完成。
+
+同日先完成 10:54 的真实失败诊断和验收客户端修复，再在新胶囊修订控制器：等待循环每轮只读取一次时钟，余量耗尽直接返回，期限边界仍调用取消检查；不传负值，不取消总时长要求。日志以独立 `scheduledAtSeconds` 保存计划偏移，保护 ISO `at`、事件名和实际 elapsed，不修改调用方对象。新增完成本级退出/对账后等待复查决定的入口，决定必须绑定运行身份及两端报告 SHA；取消或失败决定不记为通过。R4 的 policy/export/controller 共 22 项覆盖零/跨期余量、总时长、取消、字段覆盖、陈旧复查决定与原故障/对账反例，命令见联合文档。实际新 30 分钟仍须核对所有日志没有负/溢出 delay 警告且事件字段类型正确；只有独立复查通过才放行后一级，不能用脚本测试替代真实运行。
 
 ### 容器 PID 1 必须回收构建工具子进程
 
