@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-09-27 22:12 已按用户授权安排完整 240 分钟之后重启 Docker Desktop：外部任务 `temp/v0.7-desktop-maintenance-240/maintenance.json` 正等待原协调器的 240 分钟复核点，当前尝试零次，受测负载继续。先归档/复核，再尝试一次重启、恢复原运行容器、核对 SQL/Stream 和内存；全部通过才放行新的完整 480 分钟，失败保留等待点。维护与新旧内存观察分代记录，维护时长不累计、缺口不伪装无压力；下一代观察目录为 `temp/v0.7-memory-after-desktop-240/`，尚未启动。八项规则检查、语法和真实 120 分钟/容器只读预检通过；尚未执行重启或完成 240 分钟。接续前先查维护状态及[具体恢复契约](../design/v0.7-machine-memory-observation.md#已安排完整-240-分钟之后重启-docker-desktop)，不得另起重启任务或越过等待点。
+
 整机观察的身份检查教训：本机 PowerShell `ConvertFrom-Json` 默认把 ISO 时间变成 DateTime，再隐式转字符串送入 Parse 会丢时区/小数秒，导致只读身份检查误报。以 `-DateKind String` 保留时间文本后重新核对，创建时间差为零，未停止或替换进程；不得放宽身份容差。原错误/正确结果及复测口径见[内存观察记录](../design/v0.7-machine-memory-observation.md)，这不是产品或冻结协调器故障。
 
 2026-09-27 21:40 内存与测试关联：独立 `temp/v0.7-memory-diagnostic-20260927/impact-status.json` 每分钟关联整机压力、Host 吞吐/错误和 DBProxy 正常窗口阶段耗时；分类变化与原始证据保留。21:28–21:40 的 13 次有效样本可用内存 12.15–12.98 GiB、swap 未增长、WSL 内存阻塞累计未增长，近期 Host 约 99 RPC/s、数据库正常窗口无错误，未见影响。调查阈值不修改原长稳门禁，观察缺失不能记作正常；后续验收须核对累计 `reviewRequiredEver` 和异常/未知时段，不能仅凭协调器 passed 宣称无环境干扰，也不能以环境理由豁免产品失败。Host 逐分钟延迟未采集，完整阶段报告再查延迟分布。只读观察器不自动暂停或清缓存；口径与复查证据见[整机内存观察](../design/v0.7-machine-memory-observation.md#内存是否影响测试同期关联)。
