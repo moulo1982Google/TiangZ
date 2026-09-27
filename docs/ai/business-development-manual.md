@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-09-27 15:07：R5 新可靠 Redis NVMe 路径已开始完整 30 分钟复跑，现场 `temp/v0.7-joint-soak-r5/joint-dIm8zA/`；约 15:06 正式起表，当前约 95 秒无错误，尚未合格。22 项控制器检查、资源/源码预检与实际只读存储观察通过；首级完成后独立复查再递增。十份执行/观察文件冻结，新的诊断附件与 SHA 见[联合长稳](../design/v0.7-joint-soak.md)，不可将它标记为 24 小时通过。产品字节未改，本轮未重编或生成协议，也未重复 Rust/TS 全矩阵。
+
+2026-09-27 14:51 更新：R4 的联合 120 分钟在约 57 分 10 秒失败，触发正常窗口 Redis AOF 两秒确认超时；先前联合 30/60 仍保留通过，后续未启动。事后事务/钱包/账本相符，但 16 条 Outbox 未发布，不能登记最终对账通过。原失败、短存储路径对照与准备的新 R5 入口见[联合长稳](../design/v0.7-joint-soak.md)及下文失败教训；下列较早运行中描述均为历史。
+
 2026-09-27 12:17：`temp/v0.7-joint-soak-r4/` 完整 30 分钟复跑及独立复查均于 11:49 通过，五类故障/AOF、最终对账、正常退出、健康窗口与数据一致性门槛全部通过，计时/事件日志两项回归未再出现。60 分钟已自动启动，当前约 28 分钟、3/5 类故障通过；尚未通过完整 60 分钟或单次 24 小时。新工具 Linux Release 构建及八条工具测试、Windows Rust 207（48 ignored）/格式/Clippy、TS SDK 29 与控制器 22 项通过；服务端保持原冻结字节，工具另记源提交和 SHA。失败原因、禁止绕过与复测证据见下文[失败教训与复测流程](#失败教训与复测流程)，现场及独立复查结果见[联合长稳](../design/v0.7-joint-soak.md)。原阶段、旧资源卷和原始失败全部保留，未 push。
 
 本地套件第三次修订仅补充 ELF 运行库说明与证据，70 个文件校验通过，源码/实际程序载荷与第二套完全一致。最终 Linux Host 使用到 GLIBC_2.39、DBProxy 使用到 GLIBC_2.34，不能把架构名 linux-x64 等同任意发行版兼容；原始 readelf 与二进制 SHA 绑定在 temp/v0.7-release/linux-dynamic-requirements.json。跨套件字节比较另发现 Windows BINARY.json 的 DLL 名单顺序不稳定：忽略大小写排序却用 set 去重，大小写变体产生相同排序键；包内程序和导入集合未变。保留差异 kit-comparison-initial-dll-order.diff，比较仍逐字节检查全部实际载荷，仅对这份名单检查完整元素集合；后续构建加入原字符串作为排序次键。不要把元数据顺序差异当程序差异，也不能据此跳过二进制哈希。
@@ -271,6 +275,18 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 2026-09-17 SLG D1夹具隔离失败：run-cHJ8WY在D1提前退出；补齐子进程stdout/stderr日志后，run-TC9Bun确认StorageBackend初始化报publisher endpoint changed，尚未执行读取断言。原因是独立存储测试与SLG共用PG数据库，却以宿主机缓存Redis地址注册已被容器队列Redis占用的legacy Publisher。正确做法是在本轮隔离PG容器内创建authority_probe专用数据库；SLG原子批量探针仍检查SLG数据库，存储级断言单独标明范围。禁止清空Publisher注册表、放宽端点校验或手改构建哈希。复测：在Examples/packages/slg执行node tools/authoritative_acceptance.mjs build，再run --cases D1 --rounds 1 --confirm isolated-slg-authoritative-test；失败证据为temp/authoritative-acceptance/run-TC9Bun/D1-1/sql-snapshot-probe.log。修复后的结果以新报告为准。
 
 ## 失败教训与复测流程
+
+### 正常窗口 AOF 确认失败须保留，不能按故障重试掩盖
+
+R5 启动前的源码核对另发现：新的专项失败诊断使用具体状态 `confirmed-unexpected-availability-failure`，原协调器要求通用 `failed-run-reviewed`。最初预检只查报告 SHA，可能预检通过而启动拒绝。正确做法是保持原诊断，新增绑定其 SHA 和原终态 SHA 的通用复查信封，预检同步验证协调器约定；原尚未启动的准备文件保留 `preparation-r1/`，新准备与只读预检、22 项控制器检查重新执行通过后才启动。不能把具体错误状态改成 passed、删除协调器断言、修改运行中的冻结文件或将未开始的准备记为失败长稳。
+
+2026-09-27 R4 联合 120 分钟的 3425.818–3430.819 秒区间新增 40 条入队失败；服务端记录 Redis AOF 2,000 ms 内未确认。上次故障窗口结束已超过 775 秒，门禁正确拒绝。进度文件在 validateInterval 之后更新，因此显示的 400 是最后合格区间累计；原始 load.log 最后区间为 440。先查原始日志和服务端时间线，不能凭摘要把失败计数遗漏，或静默在客户端重试正常窗口失败。两服务进程正常退出、Host 协作取消；没有 SOAK_FINAL、完整时长或排空/最终对账。事后 16 条 Outbox 仍待投递，只读快照不等于验收成功。
+
+已确认本机 Docker 数据 VHD 在 F 盘 SATA HDD，D 为 NVMe。相同 Redis 镜像/AOF/内存配置的两个独立路径各做 90 批 40 条写入，同一连接执行 WAITAOF 1 0 2000，全部确认成功；HDD 最大等待约 1907 ms，NVMe bind 约 1100 ms。这是短路径对照，同时改变磁盘与文件系统路径，既未复现原超时，也不证明框架修复。原延迟采样关闭，不能根据事后 aof_delayed_fsync=0 宣称过去没有延迟；可靠确认超时的具体 I/O/调度原因仍须新记录确认。
+
+正确后续是保留原失败，在新专用资源组验证可靠 Redis 的 NVMe 持久化路径，附加 Redis 延迟与容器/宿主 I/O 只读观察；确认门槛、AOF fsync、请求预算、负载和故障/一致性断言不变。不得改成 memory ACK、关闭 fsync、延长超时、扩大已结束的故障窗口、清理旧卷、迁移 Docker 全局目录或将旧路径短阶段通过冒充新环境资格。重新完整 30 分钟并复查，之后继续原七级；配置/环境变更和产品变更分开记录。
+
+原失败审查与只读 SQL：`temp/v0.7-joint-review-r4-120m/`；原始导出：`dist/release/v0.7.0-rc.2-joint-bdDSFk/`；短对照：`temp/v0.7-aof-diagnostic/comparison.json`，脚本 `compare.mjs` 仅在独立目录首次执行、拒绝覆盖旧资源。后续 R5 用 `node temp/v0.7-joint-soak-r5/status.mjs` 读取进度，`observe-storage.mjs --once` 在启动前只读核对观察器；真实运行记录仍是最终判据。短探针结束后按完整容器身份停止，仅保留数据，不能把探针结果写成正式长稳通过。
 
 ### 长稳初始化失败与正式负载分开计量
 
