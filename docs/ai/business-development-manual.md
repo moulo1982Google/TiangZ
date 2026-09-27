@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-09-28 07:18 更新：R7 完整联合 240 分钟于 00:59 通过，20/20 故障、Host 1,414,919 次 RPC 零错误、DB 正常窗口零错误，最终 SQL/Stream 对账通过。随后自动 Desktop 重启因残留 AF_UNIX 端点失败，协调器整夜保留复核点，未运行 480 分钟。07:05 已保留 socket 目录后恢复 Docker，原六个运行容器及数据核对通过；07:18 放行完整 480 分钟（预计 15:19 左右结束并对账），单次 24 小时仍未通过。维护前后 Windows 可用内存 12.43→15.44 GiB、vmmemWSL Private Bytes 14.94→5.08 GiB，两种口径不能相加。原失败保留，最新恢复入口为 `temp/v0.7-desktop-recovery-20260928/maintenance-complete.json`；新内存/关联观察位于 `temp/v0.7-memory-after-desktop-240/`，新存储观察位于 `temp/v0.7-storage-after-desktop-240/`。详情与边界见[维护结果](../design/v0.7-machine-memory-observation.md#240-分钟通过与-desktop-恢复结果)。
+
+本轮控制教训：Docker 的 Dns:null/[] 和 Mounts 数组顺序变化曾触发完整摘要误报，只有可重建原完整摘要的表示差异才接受，源路径、权限、卷、内存额度等仍严格核对。Windows 后台子进程可继承管道，使启动器 exit=0 后 close 仍等待子进程；必须独立核对真实 worker 身份和新样本，不能因此重复启动或扩大超时掩盖。690 次存储采样错误全部发生在已完成 240 分钟后的维护等待点，不能填零或计入负载。具体失败、五项反例检查与复测命令见上述记录；活动冻结驱动和产品字节没有修改。
+
 2026-09-27 22:12 已按用户授权安排完整 240 分钟之后重启 Docker Desktop：外部任务 `temp/v0.7-desktop-maintenance-240/maintenance.json` 正等待原协调器的 240 分钟复核点，当前尝试零次，受测负载继续。先归档/复核，再尝试一次重启、恢复原运行容器、核对 SQL/Stream 和内存；全部通过才放行新的完整 480 分钟，失败保留等待点。维护与新旧内存观察分代记录，维护时长不累计、缺口不伪装无压力；下一代观察目录为 `temp/v0.7-memory-after-desktop-240/`，尚未启动。八项规则检查、语法和真实 120 分钟/容器只读预检通过；尚未执行重启或完成 240 分钟。接续前先查维护状态及[具体恢复契约](../design/v0.7-machine-memory-observation.md#已安排完整-240-分钟之后重启-docker-desktop)，不得另起重启任务或越过等待点。
 
 整机观察的身份检查教训：本机 PowerShell `ConvertFrom-Json` 默认把 ISO 时间变成 DateTime，再隐式转字符串送入 Parse 会丢时区/小数秒，导致只读身份检查误报。以 `-DateKind String` 保留时间文本后重新核对，创建时间差为零，未停止或替换进程；不得放宽身份容差。原错误/正确结果及复测口径见[内存观察记录](../design/v0.7-machine-memory-observation.md)，这不是产品或冻结协调器故障。
@@ -301,6 +305,16 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 2026-09-17 SLG D1夹具隔离失败：run-cHJ8WY在D1提前退出；补齐子进程stdout/stderr日志后，run-TC9Bun确认StorageBackend初始化报publisher endpoint changed，尚未执行读取断言。原因是独立存储测试与SLG共用PG数据库，却以宿主机缓存Redis地址注册已被容器队列Redis占用的legacy Publisher。正确做法是在本轮隔离PG容器内创建authority_probe专用数据库；SLG原子批量探针仍检查SLG数据库，存储级断言单独标明范围。禁止清空Publisher注册表、放宽端点校验或手改构建哈希。复测：在Examples/packages/slg执行node tools/authoritative_acceptance.mjs build，再run --cases D1 --rounds 1 --confirm isolated-slg-authoritative-test；失败证据为temp/authoritative-acceptance/run-TC9Bun/D1-1/sql-snapshot-probe.log。修复后的结果以新报告为准。
 
 ## 失败教训与复测流程
+
+### Desktop 维护恢复必须区分产品、资源身份与观察器启动
+
+2026-09-28 完整 240 分钟后，自动重启卡在残留 `sailor-ingest.sock` 重命名；这是 Desktop 启动失败，既不撤销已完成阶段，也不允许累计后续未运行时长。保留原失败，在核对路径和进程身份后只备份已证实的运行时 socket 目录，恢复同一批容器和持久数据；不能恢复出厂设置、清卷、全局关闭 WSL 或循环重启碰运气。
+
+恢复脚本另暴露两种表示误报：Docker 将空 DNS 的 null 序列化成 []，同一 Mounts 数组在重复 inspect 中改变顺序。先用原完整 SHA 证明每个字段相同，再仅归一化这两种差异并保留原始 SHA；不忽略整段 HostConfig/Mounts，也不靠重复 inspect 直到碰巧同序。五项反例检查涵盖 DNS 服务、额度、权限、挂载源/目的地、读写标志、卷身份、缺失/重复条目，真实变化仍拒绝。
+
+后台观察器通过 Windows Start-Process 正常启动，但 Node 启动器等待管道 close，误报 15 秒超时。三秒子进程复现中父进程约 409 ms exit=0，约 3770 ms 才 close；退出与所有管道关闭不是一个事件。正确做法是把长期 worker 的 I/O 直接归到文件，分别监督短启动器和 worker，按 PID/创建时间/可执行路径/脚本 SHA 与新样本确认运行。当前恢复直接接管已正常采样的内存 worker，不重启它；仅停止保留失败后仍持有管道的已核实启动器。禁止把通用负载驱动的 close 全改为 exit，避免尚未排空的日志丢失。
+
+维护延误还会消耗旧观察器的固定寿命：本次新建只读存储观察代次，核对成功后停止原观察器，保留 1547 份旧样本；其中 690 份错误全部属于维护等待点，活动阶段为零。新观察器最多 72 小时、原协调器终态即退出，覆盖剩余 48 小时负载，不拼接维护缺口。复测命令、完整证据和内存前后口径见[维护结果](../design/v0.7-machine-memory-observation.md#240-分钟通过与-desktop-恢复结果)。不重复执行已经放行的恢复脚本。
 
 ### 正常窗口 AOF 确认失败须保留，不能按故障重试掩盖
 

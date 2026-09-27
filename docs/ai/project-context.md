@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+2026-09-28 07:18 更新：R7 完整联合 240 分钟于 00:59 通过，20/20 故障、Host 1,414,919 次 RPC 零错误、DB 正常窗口零错误，最终 SQL/Stream 对账通过。随后自动 Desktop 重启因残留 AF_UNIX 端点失败，协调器整夜保留复核点，未运行 480 分钟。07:05 已保留 socket 目录后恢复 Docker，原六个运行容器及数据核对通过；07:18 放行完整 480 分钟（预计 15:19 左右结束并对账），单次 24 小时仍未通过。维护前后 Windows 可用内存 12.43→15.44 GiB、vmmemWSL Private Bytes 14.94→5.08 GiB，两种口径不能相加。原失败保留，最新恢复入口为 `temp/v0.7-desktop-recovery-20260928/maintenance-complete.json`；新内存/关联观察位于 `temp/v0.7-memory-after-desktop-240/`，新存储观察位于 `temp/v0.7-storage-after-desktop-240/`。详情与边界见[维护结果](../design/v0.7-machine-memory-observation.md#240-分钟通过与-desktop-恢复结果)。
+
+本轮控制教训：Docker 的 Dns:null/[] 和 Mounts 数组顺序变化曾触发完整摘要误报，只有可重建原完整摘要的表示差异才接受，源路径、权限、卷、内存额度等仍严格核对。Windows 后台子进程可继承管道，使启动器 exit=0 后 close 仍等待子进程；必须独立核对真实 worker 身份和新样本，不能因此重复启动或扩大超时掩盖。690 次存储采样错误全部发生在已完成 240 分钟后的维护等待点，不能填零或计入负载。具体失败、五项反例检查与复测命令见上述记录；活动冻结驱动和产品字节没有修改。
+
 2026-09-27 22:12 已按用户授权安排完整 240 分钟之后重启 Docker Desktop：外部任务 `temp/v0.7-desktop-maintenance-240/maintenance.json` 正等待原协调器的 240 分钟复核点，当前尝试零次，受测负载继续。先归档/复核，再尝试一次重启、恢复原运行容器、核对 SQL/Stream 和内存；全部通过才放行新的完整 480 分钟，失败保留等待点。维护与新旧内存观察分代记录，维护时长不累计、缺口不伪装无压力；下一代观察目录为 `temp/v0.7-memory-after-desktop-240/`，尚未启动。八项规则检查、语法和真实 120 分钟/容器只读预检通过；尚未执行重启或完成 240 分钟。接续前先查维护状态及[具体恢复契约](../design/v0.7-machine-memory-observation.md#已安排完整-240-分钟之后重启-docker-desktop)，不得另起重启任务或越过等待点。
 
 整机观察的身份检查教训：本机 PowerShell `ConvertFrom-Json` 默认把 ISO 时间变成 DateTime，再隐式转字符串送入 Parse 会丢时区/小数秒，导致只读身份检查误报。以 `-DateKind String` 保留时间文本后重新核对，创建时间差为零，未停止或替换进程；不得放宽身份容差。原错误/正确结果及复测口径见[内存观察记录](../design/v0.7-machine-memory-observation.md)，这不是产品或冻结协调器故障。
