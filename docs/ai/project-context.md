@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+2026-09-27 21:29 整机内存诊断：三分钟七次 Windows/WSL 同步样本显示大额占用集中在约 11.3 GiB Linux 文件缓存，匿名页约 1.1 GiB；Windows 仍有约 12.2 GiB 可用，vmmemWSL 提交口径约 14.68 GiB 基本稳定。Docker 父层级有约 9.735 GiB 文件页未记入当前可见子组，并有 76 个消亡中的内存 cgroup，与历史读写缓存残留相符，不能确认具体构建或据此排除所有泄漏。Host 已完成 30/60/120 分钟末次 RSS 都约 75 MiB，连续 DBProxy 约 12 MiB；R7 240 分钟仍运行。独立每分钟整机观察入口为 `temp/v0.7-memory-diagnostic-20260927/monitor-r2.json`，不改变受测代码、故障门槛或环境。详情见[整机内存观察](../design/v0.7-machine-memory-observation.md)。
+
+取证约束：Windows 提交、工作集、压缩页、WSL Cached/AnonPages/MemAvailable 和 Docker stats 不能互相替代或重复相加；cgroup v2 stats 会减 inactive_file，父子计数也有包含关系。当前 WSL 文档默认自动回收为 dropCache，没有 `.wslconfig` 不等于关闭回收。根 cgroup 缺 memory.current 不能当零；多层 shell 参数失败的空结果不能当零，已改 stdin 传脚本获取真实值并保留失败。观察器睡眠先算一次 remaining 再决定等待，首版仅做预防性替换，未发生产品故障。短样本不能重建先前增长或证明长稳通过，不靠清缓存/重启共享 WSL 让内存数字好看；原日志、命令与复查范围见上述记录。
+
 2026-09-27 16:58 更新：DBProxy 已在 `42f2762` 完成可靠 Redis 等待预算修订，本地 `v0.7.0-rc.2` 指向该提交。入队与 Outbox 分别可配置 AOF/I/O 等待；排队、重连、写入、确认共用本地单调总期限，失败/取消丢弃原写入连接，新增七个阶段的耗时、活跃数及显式超时观测。默认 AOF 暂保留 2000 ms，I/O 3000 ms，入队总预算 4500 ms、排队上限 2000 ms，Outbox 5000 ms；SDK 默认 5000 ms 仍是独立端到端预算，不假设服务端知道远端剩余时间。
 
 Windows Rust 222、Linux Release Rust 224（多两项 Unix 信号停机测试）、TS 29 通过；两端格式/Clippy/Release 构建通过，各有 49 项外部条件测试默认跳过，另行实际执行七项 PostgreSQL/Redis 恢复契约通过。独立 Redis 的 2/3/5 秒对照每组 1200 条入队/30 个事件全部成功，另四项 backlog 回归通过；三个并发完成 p95 约 1006/1006/1012 ms，不能当作独立 AOF p95，也不足以选出统一新默认值。原始 R4 超时失败及所有旧数据保留。
