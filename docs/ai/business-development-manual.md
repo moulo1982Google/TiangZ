@@ -1263,7 +1263,7 @@ const stop = loginFlow.onSessionReplaced((message) => {
 });
 ```
 
-服务端关闭连接前会排空已经入队的通知；SDK的`RpcSocket`会保留关闭前已经收到、但尚未由游戏循环`update()`分发的单向消息。客户端仍必须持续驱动`update()`，不能只依赖网络回调。同Gate顶号使用连接代次；跨Gate故障接管使用Location gateEpoch与ActorLocation fencing。两者都不会迁移原Socket。
+`disconnectClient`的关闭请求随本Scene下一次出站排空交给宿主，排在此前`sendClient`入队的帧之后；宿主本轮先写出站帧再执行关闭，传输层关闭前再排空已交付的帧，所以“先推送通知再断开”的通知一定先送达，即使调用发生在RPC续体等Scene更新之后的时点（0.6.3起；此前关闭可能抢在通知之前，业务曾需延迟断开绕过）。关闭最多晚一次更新生效，生效前已在途的入站帧仍可能到达，业务应先使Session失效再请求关闭。SDK的`RpcSocket`会保留关闭前已经收到、但尚未由游戏循环`update()`分发的单向消息。客户端仍必须持续驱动`update()`，不能只依赖网络回调。同Gate顶号使用连接代次；跨Gate故障接管使用Location gateEpoch与ActorLocation fencing。两者都不会迁移原Socket。
 
 Gate候选排序统一复用`RankStickyScenes/SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。Login先保留Location记录的当前健康Gate；仅当它不可达时才依Rendezvous顺序探测其他Gate。恢复节点不自动回切现存玩家；绕过Login连接旧Gate也必须在旧所有者健康探测和Location CAS处被拒绝。
 
@@ -1382,7 +1382,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 ## 验证矩阵
 
-`0.3.10`框架稳定化和`0.4.0` Phase 4.0空间契约已经完成，当前版本为 `0.6.2`（2026-09-23 发布），直接进入模块化开发预发布线，尚未完成 0.6 正式发布验收。升级宿主先逐个检查模块版本范围；旧 `<0.5.0` 上限必须经消费方验证后迁移，不自动放宽其他游戏声明。随后重新生成、完整构建并重启。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议、空间模式或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
+`0.3.10`框架稳定化和`0.4.0` Phase 4.0空间契约已经完成，当前版本为 `0.6.3`（2026-09-28 发布），直接进入模块化开发预发布线，尚未完成 0.6 正式发布验收。升级宿主先逐个检查模块版本范围；旧 `<0.5.0` 上限必须经消费方验证后迁移，不自动放宽其他游戏声明。随后重新生成、完整构建并重启。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议、空间模式或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
 
 本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/cluster/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。需要在VS Code断点调试中持续Reload时使用`npm run dev:debug`：初始和后续候选都带内联sourcemap，Process/V8/Inspector连接不重启，新脚本会重新绑定TS断点。若V8正停在断点必须先Resume；当前栈继续旧代码，后续调用才使用新generation。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools把Model长期状态中的显式`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`字段和`as any`写属性视为错误；请使用稳定默认值或明确的数据结构。对象`T | null`、判别联合、显式Map/Record和普通DTO仍可正常使用。
 

@@ -210,6 +210,11 @@ type ClientFrameDelivery = "reliable" | "latest";
 
 export interface SceneUpdateResult {
   outbound: OutboundBatch[];
+  /**
+   * 本次随出站帧一起交出的连接关闭请求；宿主须先交付 outbound 再关闭，保证关闭前入队的通知先送达。
+   * Close requests handed out with this update's frames; the host delivers outbound first, so notices queued before the close arrive.
+   */
+  closes: readonly number[];
   metrics?: SceneMetricsSnapshot;
   pendingAsync: boolean;
   pendingIngress: boolean;
@@ -336,6 +341,8 @@ export abstract class EntryScene extends Scene {
   private readonly outboundControl: OutboundBatch[] = [];
   private readonly outboundReliable: OutboundBatch[] = [];
   private readonly outboundLatest: OutboundBatch[] = [];
+  /** 等待随下一次出站排空交给宿主的关闭请求（去重、保持请求顺序）。 / Close requests waiting to leave with the next outbound drain. */
+  private readonly pendingCloses = new Set<number>();
   private outboundReliableEnqueued = 0;
   private outboundLatestEnqueued = 0;
   private readonly outboundLaneDepths = {
@@ -764,6 +771,11 @@ export abstract class EntryScene extends Scene {
 
   __disposeRuntime(): void {
     this.dropLatestActorLocationFrames();
+    // 停机后不再有出站排空；仍未交出的关闭请求直接交给宿主，连接不能因此遗留。
+    // No outbound drain follows disposal; hand remaining close requests to the host directly so no connection is left open.
+    if (this.pendingCloses.size > 0 && typeof hostCloseConnection === "function") {
+      for (const connectionId of this.drainCloses()) hostCloseConnection(connectionId);
+    }
     this.__dispose();
   }
 
@@ -885,12 +897,21 @@ export abstract class EntryScene extends Scene {
   /** 在本 Scene mailbox 内处理断线；这里禁止无上限重试。 / Handles connection loss inside this Scene's mailbox; avoid unbounded retries here. */
   protected onDisconnect(_connectionId: number): MaybePromise<void> {}
 
-  /** 请求宿主关闭连接；断线业务稍后仍通过 mailbox 执行。 / Requests host-side closure; disconnect business logic runs later through the mailbox. */
+  /**
+   * 请求宿主关闭连接；断线业务稍后仍通过 mailbox 执行。关闭请求随本 Scene 下一次出站排空交给宿主，排在此前已
+   * sendClient 的帧之后，所以"先推送通知再断开"的通知一定先送达（包括在 RPC 续体等 Scene 更新之后的时点调用）。
+   * 生效最多晚一次更新；关闭生效前已在途的入站帧仍可能到达，调用方应先清理会话状态。
+   *
+   * Requests host-side closure; disconnect business logic runs later through the mailbox. The request leaves with
+   * this Scene's next outbound drain, after frames already queued by sendClient, so a notice sent before the close
+   * is always delivered, even when called after the Scene's update (for example from an RPC continuation). It takes
+   * effect at most one update later; frames already in flight may still arrive, so clear session state first.
+   */
   protected disconnectClient(connectionId: number): void {
     if (!Number.isInteger(connectionId) || connectionId <= 0) {
       throw new Error(`invalid connection id: ${connectionId}`);
     }
-    hostCloseConnection(connectionId);
+    this.pendingCloses.add(connectionId);
   }
 
   /** 为一个客户端连接编码并入队一条 protobuf 消息。 / Encodes and queues one protobuf message for one client connection. */
@@ -1109,6 +1130,14 @@ export abstract class EntryScene extends Scene {
     return control;
   }
 
+  /** 取出待交给宿主的关闭请求；没有时返回共享空数组，避免每帧分配。 / Takes pending close requests; returns a shared empty array when none. */
+  private drainCloses(): readonly number[] {
+    if (this.pendingCloses.size === 0) return NO_CLOSES;
+    const closes = [...this.pendingCloses];
+    this.pendingCloses.clear();
+    return closes;
+  }
+
   private outboundQueue(delivery: ClientFrameDelivery): OutboundBatch[] {
     if (delivery === "latest") {
       this.outboundLatestEnqueued += 1;
@@ -1155,6 +1184,7 @@ export abstract class EntryScene extends Scene {
     this.metrics.lastUpdateCostMs = nowMs() - startedAt;
     return {
       outbound: this.drainOutbound(),
+      closes: this.drainCloses(),
       metrics: includeMetrics ? this.metricsSnapshot() : undefined,
       pendingAsync: this.orderedTask !== undefined ||
         this.unorderedTasks.size > 0 ||
@@ -2236,6 +2266,7 @@ export abstract class EntryScene extends Scene {
 const hostCloseConnection = (globalThis as typeof globalThis & {
   __hostCloseConnection: (connectionId: number) => void;
 }).__hostCloseConnection;
+const NO_CLOSES: readonly number[] = Object.freeze([]);
 
 export type EntrySceneCtor = new (config: RuntimeEntrySceneConfig) => EntryScene;
 

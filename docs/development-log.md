@@ -9,6 +9,14 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-09-28：0.6.3 disconnectClient 随出站帧关闭
+
+- 目标：业务"先 `sendClient` 推送通知、再 `disconnectClient`"时通知一定先送达。苟道三国登录顶号在 smoke 中偶发收不到 `G2C_SessionReplaced`，游戏侧曾用 100 毫秒延迟断开绕过。
+- 原因：帧进入 Scene 出站队列，要等该 Scene 下一次 `completeUpdate` 才交给宿主；`disconnectClient` 直接调用宿主关闭，关闭请求在本轮 `flush_outbound` 之后就执行。调用发生在 Scene 更新之后（RPC 续体）时，关闭先于通知。Rust 三个传输后端关闭前排空的只是已交给它们的帧，本身无误。
+- 实现：`EntryScene` 记录关闭请求（去重），`completeUpdate` 与出站帧一起交出 `closes`；`ProcessRuntime` 合并各 Scene；`ProcessBootstrap` 先 `__hostPushOutboundPacked` 再逐个 `__hostCloseConnection`；`__disposeRuntime` 把未交出的关闭直接交给宿主。Rust 未改动。
+- 影响：关闭最多晚一次更新生效（空闲时按 `idle_tick_ms` 推进）。框架内只有 `disconnectClient` 一个入口；慢客户端积压断开、停机关闭全部连接在 Rust 侧，不受影响。mmorpg 示例 5 处调用均先标记/清理再断开，不依赖立即关闭，其顶号通知同样由此修复。
+- 验证：新增单元测试 4 项（3 项在修正前失败）；`public-api.lock.json` 差异为新增 `SceneUpdateResult.closes` 与 `EntryScene` 两个私有成员声明，无删除或修改。
+
 ## 2026-09-05：测试迁移遗漏守卫与配置缓存
 
 - `verify:runtime-contracts`新增同名包装检查，新增`tools/*_self_test.ts`但遗漏`tests/legacy/*.test.ts`时明确失败；共享`self_test_entry.ts`不匹配自测命名，另用独立临时目录验证缺失和补齐路径。
