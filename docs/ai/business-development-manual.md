@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-09-29 发布收尾：`52cef92` 的 Windows/Linux verify、security、starter 全绿，本地完整 verify 8/8、Rust 119/119，游戏重建宿主后全量 80/80 与 smoke 通过。0.6.4 发布仅补版本元数据，执行严格发布检查后才创建标签；以下失败记录保留作为诊断证据，不表示最终修复仍失败。
+
 ## 2026-09-29：WebSocket 排空后还须完成关闭握手
 
 - **CI 后续修正**：`2367da0` 的 Linux 完整 CI 通过，Windows 在 `websocket_peer_close_with_pending_output_is_acknowledged` 的服务端任务结果上报 `AlreadyClosed`；客户端已收到 Close。读侧或写侧 flush 可能先推进到终止状态，后续积压写入才观察到 AlreadyClosed；CI 未记录内部调度，不能断定是哪一侧触发。原补丁只在最终 `close()` 接受终止状态，漏了排空过程。修复为排空遇 `ConnectionClosed/AlreadyClosed` 直接结束写任务，不再操作已关闭的流；只有 `SendAfterClosing` 继续 flush ACK，其余错误仍返回。用例扩为 32 个独立连接，每次必须收到 Close、服务端成功结束，不能放宽断言为“任意关闭错误都通过”。本地旧版重复 40 次没有复现，CI 日志是此次失败证据；重复覆盖不宣称确定性重现。复测真实 socket、Clippy、完整矩阵并以新提交重新跑 CI。
