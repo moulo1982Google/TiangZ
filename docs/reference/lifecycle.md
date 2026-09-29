@@ -72,3 +72,9 @@ KickPlayer(player);
 停机时跨进程踢人消息采用尽力投递，不能成为 Map 保存的前置依赖；Gate 进程自身也会关闭全部客户端连接。这样 Map 和 Gate 同时收到操作系统停机信号时不会互相等待。
 
 普通网络断开不属于最终下线：Gate销毁`GateSession`但保留`GatePlayerRoute`和Map Unit；30秒内重连调用`SecondEnterMap`恢复视图。只有Gate的重连宽限扫描确认超时，才调用Map的`PlayerOffline`。Map不得创建连接超时Timer，也不得把`connectionId`或`GateSessionId`写入Unit。
+
+## WebSocket 主动关闭（2026-09-29 修正）
+
+`disconnectClient` 仍随本 Scene 的出站帧提交。Tokio WebSocket 后端先排空已交付的应用帧，再发送 WebSocket Close；关闭期间继续读取到对端 Close，迟到业务帧不再提交给游戏。读侧观察到关闭请求后，握手与剩余写入共用 3 秒预算；不确认、写不动的连接到期释放写任务。此预算约束网络关闭等待，不替代 Process 入站事件队列的背压与停机期限。
+
+旧实现直接释放带未读数据的 TCP 连接，可触发 reset：通知虽然已进入写队列，客户端仍可能在读到通知前被重置。v0.6.3 的 TS 交付顺序修复和本次传输握手修复解决的是不同层的问题。网络失联、非法帧、超时强制关闭仍不能保证通知必达；客户端应能通过会话失效响应回登录。TCP/KCP 的既有关闭路径不变。

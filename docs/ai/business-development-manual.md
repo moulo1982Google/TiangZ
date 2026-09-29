@@ -1,5 +1,13 @@
 # 2026-09-16：先选业务工程，再写模块
 
+## 2026-09-29：WebSocket 排空后还须完成关闭握手
+
+- 现象：v0.6.3 已确保 JS 出站帧先交宿主，真实顶号仍偶发缺通知；加代理或日志可能不再复现，不是修复证据。
+- 根因证据：`websocket_server_close_drains_then_handshakes_with_late_input` 使用真实 Tokio socket，在通知排队、关闭请求后补一帧客户端输入，旧实现读取第一条通知即报 Windows 10054。原传输直接 drop Socket，没有 WebSocket Close 握手，未读输入可能造成 TCP reset。
+- 修法：仅修改 Tokio WebSocket 收尾，排空 → Close → 有界读取关闭确认；关闭期间丢弃新应用输入。读写收尾共享 3 秒网络预算，超时 abort/join writer。既有入站队列背压另行处理，不能混同网络超时。普通 TCP、KCP 和公开 API 不改；需要重建重启。
+- 禁止绕过：不能加业务 sleep/100ms 延迟、改松通知断言、只跑无输入的关闭测试，或把网络故障下的必达当成保证。
+- 复测：`cargo test --locked --bin TiangZ transport_backend::epoll::tests`（5 项）；随后 `npm run verify` 及 GitHub Windows/Linux CI；游戏侧用重建后的宿主运行顶号探针与连续 5 轮 smoke。首次多批/超时夹具误丢事件接收器导致 queue stopped，修正夹具保持接收器生命周期，未放宽实现或断言。当前 5 项通过，完整验证与发布结果待补充。
+
 2026-09-18短时采样回归已通过：`sampling10-rd6WDP/report.json`为`sampling10-passed`，北京时间10:36:32开始测量，实测601201ms，10:46:54完成清理；21个有效资源样本通过原20个门槛、同PID及增长检查，26笔业务及26次原命令重放、29次对账、233次快照，最终冷重启恢复通过，游戏/代理/探针/存储全部停止。正式构建与24项工具测试通过；历史样本回放确定复现原18/20失败。本轮仅验证采样修复，未执行热更和五种故障，未启动新八小时测试，原八小时失败报告保持不变。 / The ten-minute sampling regression passed with 21 valid samples against the unchanged 20-sample threshold, same-process growth checks, 26 operations and replays, 29 reconciliations, 233 snapshots, final cold recovery and complete cleanup. The official build and all 24 tool tests passed, including replay of the original 18/20 failure. This verifies sampling only; no new eight-hour soak was started.
 
 2026-09-18八小时SLG长稳soak8h-Bkzmwd最终failed：恢复期23次点采样中，3次outbound=1、2次pending=1被静默过滤，仅18个空闲样本，结束时才触发至少20个门槛；随后资源增长检查及最终冷恢复未执行，原失败报告必须保留。修复采样器为60秒内等待两个不同指标发布周期均空闲，保存全部忙/旧快照，指标不刷新或持续忙碌则失败；固定采样时隙、运行中检查剩余容量、恢复期结束即执行数量和同PID增长门槛。禁止把最低数量改为18或复用同一快照补数。历史23个样本已冻结为回归夹具；复测为SLG正式build、node --test tools/acceptance/*.test.mjs，再node tools/soak_acceptance.mjs --profile sampling10 --confirm isolated-slg-authoritative-test。短测前8分钟每20秒采集、保持20个门槛，后2分钟收敛并冷恢复；它不替代八小时和五类故障验收。 / The completed soak failed because silent filtering left 18 of 23 samples. Preserve that failure; require two fresh idle publications within a bounded wait, check coverage early, and validate with recorded evidence plus a ten-minute real-storage regression.
