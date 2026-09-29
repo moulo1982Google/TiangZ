@@ -1,5 +1,19 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-09-29 发布收尾：`52cef92` 的 Windows/Linux verify、security、starter 全绿，本地完整 verify 8/8、Rust 119/119，游戏重建宿主后全量 80/80 与 smoke 通过。0.6.4 发布仅补版本元数据，执行严格发布检查后才创建标签；以下失败记录保留作为诊断证据，不表示最终修复仍失败。
+
+## 2026-09-29：WebSocket 排空后还须完成关闭握手
+
+- **CI 后续修正**：`2367da0` 的 Linux 完整 CI 通过，Windows 在 `websocket_peer_close_with_pending_output_is_acknowledged` 的服务端任务结果上报 `AlreadyClosed`；客户端已收到 Close。读侧或写侧 flush 可能先推进到终止状态，后续积压写入才观察到 AlreadyClosed；CI 未记录内部调度，不能断定是哪一侧触发。原补丁只在最终 `close()` 接受终止状态，漏了排空过程。修复为排空遇 `ConnectionClosed/AlreadyClosed` 直接结束写任务，不再操作已关闭的流；只有 `SendAfterClosing` 继续 flush ACK，其余错误仍返回。用例扩为 32 个独立连接，每次必须收到 Close、服务端成功结束，不能放宽断言为“任意关闭错误都通过”。本地旧版重复 40 次没有复现，CI 日志是此次失败证据；重复覆盖不宣称确定性重现。复测真实 socket、Clippy、完整矩阵并以新提交重新跑 CI。
+
+- 现象：v0.6.3 已确保 JS 出站帧先交宿主，真实顶号仍偶发缺通知；加代理或日志可能不再复现，不是修复证据。
+- 根因证据：`websocket_server_close_drains_then_handshakes_with_late_input` 使用真实 Tokio socket，在通知排队、关闭请求后补一帧客户端输入，旧实现读取第一条通知即报 Windows 10054。原传输直接 drop Socket，没有 WebSocket Close 握手，未读输入可能造成 TCP reset。
+- 修法：仅修改 Tokio WebSocket 收尾，排空 → Close → 有界读取关闭确认；关闭期间丢弃新应用输入。读写收尾共享 3 秒网络预算，超时 abort/join writer。既有入站队列背压另行处理，不能混同网络超时。普通 TCP、KCP 和公开 API 不改；需要重建重启。
+- 禁止绕过：不能加业务 sleep/100ms 延迟、改松通知断言、只跑无输入的关闭测试，或把网络故障下的必达当成保证。
+- 复测：`cargo test --locked --bin TiangZ transport_backend::epoll::tests`（6 项）与 Clippy 通过。第六项覆盖对端 Close 与积压输出并存；实现仅对 `SendAfterClosing` 继续 flush Close ACK，其余写错仍返回。该场景测试没有强制调度顺序，不能声称它在旧实现稳定失败；首项迟到输入测试才是已验证的先失败后通过证据。独立代码复查未发现新增可证实回归。
+- 初版修复的 `verify:quick` 全部通过，游戏带迟到输入的顶号探针 200/200、完整冒烟 5/5。完整 `verify` 首次四项失败已分别复测通过：两个热更测试依赖 info 完成日志，原版 v0.6.3 也因继承 `RUST_LOG=warn` 超时，设为 info 后通过；两个 Native 测试跨盘 V8 符号链接报 Windows 1314，将忽略的测试输出临时映射到与 V8 缓存同盘后通过，并恢复原目录，不改测试逻辑或系统权限。
+- 最后一次完整矩阵的全部代码测试通过，唯一失败为 `verify:no-local-traces`：本轮临时日志误放仓库根（未跟踪也被检查），包含绝对路径。日志移至既有忽略目录 `temp/` 后该门禁单独复测通过；原矩阵退出码仍记录为 1，不改写为全绿。以后日志一开始就写入 `temp/`，不要放宽扫描或删除失败证据。GitHub CI 和发布另行确认。最新重建宿主的游戏 smoke 再次 5/5；首次多批/超时夹具误丢事件接收器导致 queue stopped，已修正接收器生命周期，未放宽实现或断言。
+
 2026-09-18短时采样回归已通过：`sampling10-rd6WDP/report.json`为`sampling10-passed`，北京时间10:36:32开始测量，实测601201ms，10:46:54完成清理；21个有效资源样本通过原20个门槛、同PID及增长检查，26笔业务及26次原命令重放、29次对账、233次快照，最终冷重启恢复通过，游戏/代理/探针/存储全部停止。正式构建与24项工具测试通过；历史样本回放确定复现原18/20失败。本轮仅验证采样修复，未执行热更和五种故障，未启动新八小时测试，原八小时失败报告保持不变。 / The ten-minute sampling regression passed with 21 valid samples against the unchanged 20-sample threshold, same-process growth checks, 26 operations and replays, 29 reconciliations, 233 snapshots, final cold recovery and complete cleanup. The official build and all 24 tool tests passed, including replay of the original 18/20 failure. This verifies sampling only; no new eight-hour soak was started.
 
 2026-09-18八小时SLG长稳soak8h-Bkzmwd最终failed：恢复期23次点采样中，3次outbound=1、2次pending=1被静默过滤，仅18个空闲样本，结束时才触发至少20个门槛；随后资源增长检查及最终冷恢复未执行，原失败报告必须保留。修复采样器为60秒内等待两个不同指标发布周期均空闲，保存全部忙/旧快照，指标不刷新或持续忙碌则失败；固定采样时隙、运行中检查剩余容量、恢复期结束即执行数量和同PID增长门槛。禁止把最低数量改为18或复用同一快照补数。历史23个样本已冻结为回归夹具；复测为SLG正式build、node --test tools/acceptance/*.test.mjs，再node tools/soak_acceptance.mjs --profile sampling10 --confirm isolated-slg-authoritative-test。短测前8分钟每20秒采集、保持20个门槛，后2分钟收敛并冷恢复；它不替代八小时和五类故障验收。 / The completed soak failed because silent filtering left 18 of 23 samples. Preserve that failure; require two fresh idle publications within a bounded wait, check coverage early, and validate with recorded evidence plus a ten-minute real-storage regression.

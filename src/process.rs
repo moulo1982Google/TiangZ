@@ -715,6 +715,22 @@ impl ProcessEventReceiver {
 }
 
 impl ProcessEventSender {
+    /// 为真实传输测试提供可观察的事件队列，不启动 V8。 / Provide an observable event queue for real transport tests without V8.
+    #[cfg(test)]
+    pub(crate) fn test_channel() -> (Self, mpsc::Receiver<ProcessEvent>) {
+        let (sender, receiver) = mpsc::sync_channel(128);
+        let (wake_sender, _wake_receiver) = mpsc::sync_channel(1);
+        (
+            Self {
+                control_sender: sender.clone(),
+                data_sender: sender,
+                wake_sender,
+                stats: Arc::new(ProcessQueueStats::default()),
+            },
+            receiver,
+        )
+    }
+
     /// 内部RPC使用控制流保留队列并在队满时立即失败，调用方必须把明确错误回复给来源进程。
     /// Inner RPC uses the reserved control queue and fails immediately when full. The caller must
     /// return an explicit error to the source process instead of occupying a pending RPC waiter.
