@@ -363,13 +363,17 @@ async fn handle_websocket_connection(
         if let Err(error) = drained {
             // 对端已经 Close 时不能再写应用帧，但仍须 flush 自动排队的关闭确认。
             // A peer Close forbids application writes, but its queued acknowledgement still needs flushing.
-            if !matches!(
-                error.downcast_ref::<tokio_tungstenite::tungstenite::Error>(),
+            match error.downcast_ref::<tokio_tungstenite::tungstenite::Error>() {
+                // 读侧可能已完成握手，写侧此时只需退出，不得再次操作已关闭的流。
+                // The reader may already have completed the handshake; do not touch the closed stream again.
+                Some(
+                    tokio_tungstenite::tungstenite::Error::ConnectionClosed
+                    | tokio_tungstenite::tungstenite::Error::AlreadyClosed,
+                ) => return Ok(()),
                 Some(tokio_tungstenite::tungstenite::Error::Protocol(
-                    tokio_tungstenite::tungstenite::error::ProtocolError::SendAfterClosing
-                ))
-            ) {
-                return Err(error);
+                    tokio_tungstenite::tungstenite::error::ProtocolError::SendAfterClosing,
+                )) => {}
+                _ => return Err(error),
             }
         }
         // 排空之后发 WebSocket Close，而不是直接丢掉 TCP Socket。 / Send Close after draining rather than dropping TCP immediately.
@@ -747,28 +751,32 @@ mod tests {
     /// 对端先关闭时，积压应用帧不能阻止关闭确认。 / Pending application frames must not prevent acknowledgement of a peer close.
     #[tokio::test]
     async fn websocket_peer_close_with_pending_output_is_acknowledged() {
-        timeout(Duration::from_secs(5), async {
-            let Fixture {
-                mut client,
-                writer,
-                server,
-                events: _events,
-                ..
-            } = fixture().await;
-            client.close(None).await.unwrap();
-            for _ in 0..32 {
-                try_queue_connection_frame(&writer, Bytes::from(vec![42; 32768])).unwrap();
-            }
-            loop {
-                if matches!(client.next().await.unwrap().unwrap(), Message::Close(_)) {
-                    break;
+        // 每轮建独立连接，覆盖读写任务竞争；仍必须读到 Close 并成功回收服务端。
+        // Exercise independent read/write races, requiring a Close and successful server cleanup each time.
+        for _ in 0..32 {
+            timeout(Duration::from_secs(5), async {
+                let Fixture {
+                    mut client,
+                    writer,
+                    server,
+                    events: _events,
+                    ..
+                } = fixture().await;
+                client.close(None).await.unwrap();
+                for _ in 0..32 {
+                    try_queue_connection_frame(&writer, Bytes::from(vec![42; 32768])).unwrap();
                 }
-            }
-            server.await.unwrap().unwrap();
-            assert!(writer.sender.is_closed());
-        })
-        .await
-        .unwrap();
+                loop {
+                    if matches!(client.next().await.unwrap().unwrap(), Message::Close(_)) {
+                        break;
+                    }
+                }
+                server.await.unwrap().unwrap();
+                assert!(writer.sender.is_closed());
+            })
+            .await
+            .unwrap();
+        }
     }
 
     /// 不支持的文本帧仍按协议错误中止并回收写任务。 / Unsupported text still aborts as a protocol error and releases the writer.

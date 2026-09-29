@@ -2,6 +2,8 @@
 
 ## 2026-09-29：WebSocket 排空后还须完成关闭握手
 
+- **CI 后续修正**：`2367da0` 的 Linux 完整 CI 通过，Windows 在 `websocket_peer_close_with_pending_output_is_acknowledged` 的服务端任务结果上报 `AlreadyClosed`；客户端已收到 Close。读侧或写侧 flush 可能先推进到终止状态，后续积压写入才观察到 AlreadyClosed；CI 未记录内部调度，不能断定是哪一侧触发。原补丁只在最终 `close()` 接受终止状态，漏了排空过程。修复为排空遇 `ConnectionClosed/AlreadyClosed` 直接结束写任务，不再操作已关闭的流；只有 `SendAfterClosing` 继续 flush ACK，其余错误仍返回。用例扩为 32 个独立连接，每次必须收到 Close、服务端成功结束，不能放宽断言为“任意关闭错误都通过”。本地旧版重复 40 次没有复现，CI 日志是此次失败证据；重复覆盖不宣称确定性重现。复测真实 socket、Clippy、完整矩阵并以新提交重新跑 CI。
+
 - 现象：v0.6.3 已确保 JS 出站帧先交宿主，真实顶号仍偶发缺通知；加代理或日志可能不再复现，不是修复证据。
 - 根因证据：`websocket_server_close_drains_then_handshakes_with_late_input` 使用真实 Tokio socket，在通知排队、关闭请求后补一帧客户端输入，旧实现读取第一条通知即报 Windows 10054。原传输直接 drop Socket，没有 WebSocket Close 握手，未读输入可能造成 TCP reset。
 - 修法：仅修改 Tokio WebSocket 收尾，排空 → Close → 有界读取关闭确认；关闭期间丢弃新应用输入。读写收尾共享 3 秒网络预算，超时 abort/join writer。既有入站队列背压另行处理，不能混同网络超时。普通 TCP、KCP 和公开 API 不改；需要重建重启。
