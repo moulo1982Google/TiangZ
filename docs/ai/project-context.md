@@ -1,6 +1,6 @@
 # 2026-09-16 模块拆分后的当前事实
 
-2026-09-29 WebSocket 关闭握手修正（尚待发布）：真实 socket 回归在“通知已排队、请求关闭、客户端再输入”下复现 Windows 10054，发生在读取通知之前；不涉及游戏逻辑或 Node SDK。旧实现排空后直接 drop，没有 Close 握手。Tokio WebSocket 现先排空再 Close，关闭期丢弃迟到应用输入并读到确认，读侧观察关闭后握手/剩余写入共享 3 秒预算，超时 abort 并 join 写任务。与 v0.6.3 的 TS 队列交付顺序修复分层处理；普通 TCP/KCP 不变。5 项真实 socket 用例通过，完整矩阵待记录；禁止以加日志/代理后偶发问题未复现宣称修复，也不得退回业务延迟断开。详见生命周期文档与业务手册的失败记录。
+2026-09-29 WebSocket 关闭握手修正（尚待发布）：真实 socket 回归在“通知已排队、请求关闭、客户端再输入”下复现 Windows 10054，发生在读取通知之前；不涉及游戏逻辑或 Node SDK。旧实现排空后直接 drop，没有 Close 握手。Tokio WebSocket 现先排空再 Close，关闭期丢弃迟到应用输入并读到确认，读侧观察关闭后握手/剩余写入共享 3 秒预算，超时 abort 并 join 写任务。与 v0.6.3 的 TS 队列交付顺序修复分层处理；普通 TCP/KCP 不变。6 项真实 socket 用例通过，快速矩阵通过；完整矩阵仍有失败，原版对照与环境限制见业务手册；禁止以加日志/代理后偶发问题未复现宣称修复，也不得退回业务延迟断开。详见生命周期文档与业务手册的失败记录。
 
 2026-09-18短时采样回归已通过：`sampling10-rd6WDP/report.json`为`sampling10-passed`，北京时间10:36:32开始测量，实测601201ms，10:46:54完成清理；21个有效资源样本通过原20个门槛、同PID及增长检查，26笔业务及26次原命令重放、29次对账、233次快照，最终冷重启恢复通过，游戏/代理/探针/存储全部停止。正式构建与24项工具测试通过；历史样本回放确定复现原18/20失败。本轮仅验证采样修复，未执行热更和五种故障，未启动新八小时测试，原八小时失败报告保持不变。 / The ten-minute sampling regression passed with 21 valid samples against the unchanged 20-sample threshold, same-process growth checks, 26 operations and replays, 29 reconciliations, 233 snapshots, final cold recovery and complete cleanup. The official build and all 24 tool tests passed, including replay of the original 18/20 failure. This verifies sampling only; no new eight-hour soak was started.
 

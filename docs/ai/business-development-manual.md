@@ -6,7 +6,8 @@
 - 根因证据：`websocket_server_close_drains_then_handshakes_with_late_input` 使用真实 Tokio socket，在通知排队、关闭请求后补一帧客户端输入，旧实现读取第一条通知即报 Windows 10054。原传输直接 drop Socket，没有 WebSocket Close 握手，未读输入可能造成 TCP reset。
 - 修法：仅修改 Tokio WebSocket 收尾，排空 → Close → 有界读取关闭确认；关闭期间丢弃新应用输入。读写收尾共享 3 秒网络预算，超时 abort/join writer。既有入站队列背压另行处理，不能混同网络超时。普通 TCP、KCP 和公开 API 不改；需要重建重启。
 - 禁止绕过：不能加业务 sleep/100ms 延迟、改松通知断言、只跑无输入的关闭测试，或把网络故障下的必达当成保证。
-- 复测：`cargo test --locked --bin TiangZ transport_backend::epoll::tests`（5 项）；随后 `npm run verify` 及 GitHub Windows/Linux CI；游戏侧用重建后的宿主运行顶号探针与连续 5 轮 smoke。首次多批/超时夹具误丢事件接收器导致 queue stopped，修正夹具保持接收器生命周期，未放宽实现或断言。当前 5 项通过，完整验证与发布结果待补充。
+- 复测：`cargo test --locked --bin TiangZ transport_backend::epoll::tests`（6 项）与 Clippy 通过。第六项覆盖对端 Close 与积压输出并存；实现仅对 `SendAfterClosing` 继续 flush Close ACK，其余写错仍返回。该场景测试没有强制调度顺序，不能声称它在旧实现稳定失败；首项迟到输入测试才是已验证的先失败后通过证据。独立代码复查未发现新增可证实回归。
+- 初版修复的 `verify:quick` 全部通过，游戏带迟到输入的顶号探针 200/200、完整冒烟 5/5。完整 `verify` 首次仍有四项失败：开发热更等待 reload、故障测试等待 active pause（原版 v0.6.3 同样失败，环境继承 `RUST_LOG=warn`，正在以 info 复测），两项 Native 构建因 D/C 跨盘 V8 符号链接报 Windows 1314。保留失败日志，不能把它们登记为通过；GitHub CI 和发布另行确认。首次多批/超时夹具误丢事件接收器导致 queue stopped，已修正接收器生命周期，未放宽实现或断言。
 
 2026-09-18短时采样回归已通过：`sampling10-rd6WDP/report.json`为`sampling10-passed`，北京时间10:36:32开始测量，实测601201ms，10:46:54完成清理；21个有效资源样本通过原20个门槛、同PID及增长检查，26笔业务及26次原命令重放、29次对账、233次快照，最终冷重启恢复通过，游戏/代理/探针/存储全部停止。正式构建与24项工具测试通过；历史样本回放确定复现原18/20失败。本轮仅验证采样修复，未执行热更和五种故障，未启动新八小时测试，原八小时失败报告保持不变。 / The ten-minute sampling regression passed with 21 valid samples against the unchanged 20-sample threshold, same-process growth checks, 26 operations and replays, 29 reconciliations, 233 snapshots, final cold recovery and complete cleanup. The official build and all 24 tool tests passed, including replay of the original 18/20 failure. This verifies sampling only; no new eight-hour soak was started.
 

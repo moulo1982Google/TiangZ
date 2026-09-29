@@ -313,6 +313,7 @@ async fn handle_websocket_connection(
     let writer_shutdown_tx = shutdown_tx.clone();
     let writer_stats = Arc::clone(&stats);
     let mut writer_task: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
+        let drained: Result<()> = async {
         loop {
             let batch = tokio::select! {
                 changed = writer_shutdown.changed() => {
@@ -356,6 +357,20 @@ async fn handle_websocket_connection(
                 return Err(error.into());
             }
             writer_stats.transport_write_completed(frame_count, batch.frame_bytes);
+        }
+        Ok(())
+        }.await;
+        if let Err(error) = drained {
+            // 对端已经 Close 时不能再写应用帧，但仍须 flush 自动排队的关闭确认。
+            // A peer Close forbids application writes, but its queued acknowledgement still needs flushing.
+            if !matches!(
+                error.downcast_ref::<tokio_tungstenite::tungstenite::Error>(),
+                Some(tokio_tungstenite::tungstenite::Error::Protocol(
+                    tokio_tungstenite::tungstenite::error::ProtocolError::SendAfterClosing
+                ))
+            ) {
+                return Err(error);
+            }
         }
         // 排空之后发 WebSocket Close，而不是直接丢掉 TCP Socket。 / Send Close after draining rather than dropping TCP immediately.
         match writer.close().await {
@@ -724,6 +739,33 @@ mod tests {
             server.await.unwrap().unwrap();
             assert_eq!(writer.queued_frames.load(Ordering::Relaxed), 0);
             assert_eq!(writer.queued_bytes.load(Ordering::Relaxed), 0);
+        })
+        .await
+        .unwrap();
+    }
+
+    /// 对端先关闭时，积压应用帧不能阻止关闭确认。 / Pending application frames must not prevent acknowledgement of a peer close.
+    #[tokio::test]
+    async fn websocket_peer_close_with_pending_output_is_acknowledged() {
+        timeout(Duration::from_secs(5), async {
+            let Fixture {
+                mut client,
+                writer,
+                server,
+                events: _events,
+                ..
+            } = fixture().await;
+            client.close(None).await.unwrap();
+            for _ in 0..32 {
+                try_queue_connection_frame(&writer, Bytes::from(vec![42; 32768])).unwrap();
+            }
+            loop {
+                if matches!(client.next().await.unwrap().unwrap(), Message::Close(_)) {
+                    break;
+                }
+            }
+            server.await.unwrap().unwrap();
+            assert!(writer.sender.is_closed());
         })
         .await
         .unwrap();
