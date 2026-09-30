@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-09-30 21:22 补充：R10 的独立存储采样在第 40 次主动停库期间出现一次 `inspect`/`exec` 竞态；这是一条含四项读取失败的诊断样本，故障恢复与 AOF 数据核对仍通过。保留原错误并检查采集区间和控制时间线，不能用旧 running 字段判断读取时状态，也不能据此放宽业务超时归因。具体原因、禁止绕过方式及复核入口见下文[故障切换与诊断采样](#故障切换与诊断采样必须分开判读)和[取证记录](../design/v0.7-soak-interruption-recovery.md#r10-故障切换期间的采样缺口)；完整 24 小时尚未完成。
+
 2026-09-30 13:02 更新：累计计数的增量时间只落在两次观察之间，不能根据后一次 `activeFault=null` 判定其全部发生于健康期，也不能因为区间重叠故障就全部豁免。R9 两条 Outbox AOF 增量跨故障恢复边界约 2.08 秒；这不是实测等待时长。旧恢复读取未保存，且指标有后台缓存，事件准确时间无法复原。原最终审核拒绝本轮，已封存并在 12:50 停止自有负载；故障恢复、RPC/数据正常与证据不足须分别报告。详见[原始反例与修订](../design/v0.7-soak-interruption-recovery.md#r9-的超时归因缺口与-r10)。
 
 正确修法是保存边界/恢复读数、串行同代抓取、在线执行原完整区间归因，并把存储计数稳定加入原 60 秒健康恢复；保持 180 秒上限，最终用两节点原始观察时刻和累计计数独立复核。缺采样、迟到可见增量、计数回退或窗口跨界不能补零、扩容差、改旧报告或靠重跑丢弃。R10 已于 13:01 重新完整计时，入口 `node temp/v0.7-joint-soak-r10/status.mjs`，完整只读复核 `node temp/v0.7-timeout-boundary-20260930/check-r10.mjs`；复测 `node --test temp/v0.7-joint-soak-r10/*.test.mjs`。Windows 86/Linux 85 加 1 平台跳过、语法/实际预检通过，产品、负载和超时预算未变；无产品改动，不生成或重编。一次 Docker 信息查询超时已保留并按原期限复查成功，不能据其替代实际负载/进程证据。未 push。
@@ -319,6 +321,12 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 2026-09-17 SLG D1夹具隔离失败：run-cHJ8WY在D1提前退出；补齐子进程stdout/stderr日志后，run-TC9Bun确认StorageBackend初始化报publisher endpoint changed，尚未执行读取断言。原因是独立存储测试与SLG共用PG数据库，却以宿主机缓存Redis地址注册已被容器队列Redis占用的legacy Publisher。正确做法是在本轮隔离PG容器内创建authority_probe专用数据库；SLG原子批量探针仍检查SLG数据库，存储级断言单独标明范围。禁止清空Publisher注册表、放宽端点校验或手改构建哈希。复测：在Examples/packages/slg执行node tools/authoritative_acceptance.mjs build，再run --cases D1 --rounds 1 --confirm isolated-slg-authoritative-test；失败证据为temp/authoritative-acceptance/run-TC9Bun/D1-1/sql-snapshot-probe.log。修复后的结果以新报告为准。
 
 ## 失败教训与复测流程
+
+### 故障切换与诊断采样必须分开判读
+
+2026-09-30 R10 第 40 次故障主动停止 PostgreSQL 时，观察器已取得 running，四项后续 `docker exec` 读取却返回容器未运行。`inspect` 与读取分属不同命令，状态可能在其间变化；必须按 1 条缺失样本、4 项采集错误保留，不能当作 4 次意外宕机。用原容器身份、采样开始/耗时、停止请求/完成、恢复后的成功读取和负载数据联合判读，不能单凭 `activeFault` 或一次 running 快照作结论。
+
+本次时间线与计划内停库吻合，恢复和 AOF 前后内容均通过；采集错误没有触发重启或修改冻结脚本。诊断命令竞态的解释不等于累计超时增量获得豁免：跨界计数仍按原规则拒绝。缺失指标不能补零、删除或无限重试掩盖。证据 SHA、原始行和具体时间见[采样缺口](../design/v0.7-soak-interruption-recovery.md#r10-故障切换期间的采样缺口)；只读回放 `node temp/v0.7-timeout-boundary-20260930/check-storage-stop-race.mjs`，完整运行中复核 `node temp/v0.7-timeout-boundary-20260930/check-r10.mjs`。仅验证历史诊断与当前已完成区间，不代替最终数据对账及完整 24 小时。
 
 ### Desktop 维护恢复必须区分产品、资源身份与观察器启动
 
