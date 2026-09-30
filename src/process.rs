@@ -1120,10 +1120,9 @@ fn run_process_runtime(
     {
         let mut preflight_runtime = {
             let _guard = js_event_loop.enter();
-            create_runtime(
-                false,
-                crate::logging::typescript_min_level(&process.logging),
-            )
+            crate::host::create_preflight_runtime(crate::logging::typescript_min_level(
+                &process.logging,
+            ))
             .context("failed to create isolated Hotfix preflight V8")?
         };
         runtime_bundles
@@ -1306,6 +1305,12 @@ fn run_process_runtime(
         if prepared.is_some()
             && !pending_async
             && !pending_ingress
+            && runtime
+                .op_state()
+                .borrow()
+                .borrow::<crate::native_worker::Registry>()
+                .pending()
+                == 0
             && let Some((_, requested_at, response)) = pending_reload.take()
         {
             let next_generation = active_generation + 1;
@@ -1457,6 +1462,11 @@ fn run_process_runtime(
             "Process stopped before Hotfix reached its commit barrier".to_string(),
         ));
     }
+    runtime
+        .op_state()
+        .borrow()
+        .borrow::<crate::native_worker::Registry>()
+        .stop_admission();
     let pending_stop = call_js_stop_process(&js_event_loop, &mut runtime, &entrypoints)
         .context("failed to begin TypeScript shutdown")?;
     let stop_deadline =
@@ -1481,7 +1491,14 @@ fn run_process_runtime(
         pump_js_event_loop_once(&js_event_loop, &mut runtime)?;
         // 停机模式的Update只提交RPC队列，不运行游戏Tick。 / Shutdown updates submit RPC queues without running gameplay ticks.
         call_js_update_binary(&js_event_loop, &mut runtime, &entrypoints, false, false)?;
-        if let Some(result) = poll_js_stop_process(&mut runtime, &pending_stop)? {
+        if let Some(result) = poll_js_stop_process(&mut runtime, &pending_stop)?
+            && runtime
+                .op_state()
+                .borrow()
+                .borrow::<crate::native_worker::Registry>()
+                .pending()
+                == 0
+        {
             break result;
         }
         if Instant::now() >= stop_deadline {
@@ -1532,7 +1549,7 @@ fn prepare_hotfix_reload(
     {
         let mut preflight_runtime = {
             let _guard = js_event_loop.enter();
-            create_runtime(false, typescript_log_level)
+            crate::host::create_preflight_runtime(typescript_log_level)
                 .context("failed to create isolated Hotfix reload preflight V8")?
         };
         runtime_bundles
@@ -2034,6 +2051,11 @@ fn maybe_log_metrics(
     });
 
     health_state.set_observability_snapshot(ProcessObservabilitySnapshot {
+        native_workers: runtime
+            .op_state()
+            .borrow()
+            .borrow::<crate::native_worker::Registry>()
+            .snapshot(),
         sample_timestamp_ms: timestamp_ms as u64,
         cpu_percent,
         cpu_time_ms,

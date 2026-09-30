@@ -69,6 +69,7 @@ struct GameConfigObservabilitySnapshot {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ProcessObservabilitySnapshot {
+    pub(crate) native_workers: Vec<(String, crate::native_worker::Stats)>,
     pub(crate) sample_timestamp_ms: u64,
     pub(crate) cpu_percent: f64,
     pub(crate) cpu_time_ms: u64,
@@ -1111,6 +1112,24 @@ fn format_prometheus_metrics(process_name: &str, state: &ProcessHealthState) -> 
     .expect("formatting metric");
 
     if snapshot.sample_timestamp_ms > 0 {
+        for (name, worker) in &snapshot.native_workers {
+            let name = escape_prometheus_label(name);
+            for (metric, value) in [
+                ("pending", worker.pending as u64),
+                (
+                    "queued",
+                    worker.pending.saturating_sub(usize::from(worker.running)) as u64,
+                ),
+                ("accepting", u64::from(worker.accepting)),
+                ("completed_total", worker.completed),
+                ("rejected_total", worker.rejected),
+                ("failed_total", worker.failed),
+                ("wait_microseconds_total", worker.wait_micros),
+                ("compute_microseconds_total", worker.compute_micros),
+            ] {
+                writeln!(output, "tiangz_native_worker_{metric}{{process=\"{safe_process_name}\",worker=\"{name}\"}} {value}").expect("formatting worker metric");
+            }
+        }
         append_process_metrics_prometheus(&mut output, &safe_process_name, &snapshot);
         append_actor_mailbox_metrics_prometheus(
             &mut output,

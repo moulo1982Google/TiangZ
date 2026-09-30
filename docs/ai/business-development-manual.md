@@ -1,5 +1,17 @@
 # 2026-09-16：先选业务工程，再写模块
 
+## 2026-09-30：模块专用 Native worker
+
+真实进程生命周期复测已通过：测试专用 worker 用文件闸门保持在途，Hotfix 进入暂停但不能提交，释放后成功；shutdown 等已接收计算完成后退出。夹具首次误用 2.5 秒等待 5 秒采样的指标，正确做法是明确线程的 started/done 事件，不缩短生产采样或放宽屏障。清理前立即挂接 pending Promise 的失败处理，避免关闭连接遮蔽原始断言；`node tools/native_worker_lifecycle_self_test.mjs` 第三轮通过。
+
+交付屏障教训：真实 V8 延迟测试中，Rust Future 的 RAII 在 Tokio 已完成计算、但 V8 尚未泵结果时提前释放计数。不能把 Future 完成当作 Promise 已交付，也不能用只枚举未完成 Future 的 activity stats 绕过。改用 deno_core 的选择性 op metrics 回调：Dispatched 加计数，Completed/Error 及异步交付事件减计数；宿主泵与微任务检查点之后才检查屏障。复测 `cargo test --bin TiangZ native_worker::tests -- --test-threads=1`：计算完成而 V8 未泵时仍阻止提交，继续泵后才归零，覆盖拒绝分支。首次失败保留 `temp/native-worker-tests-r5.log`，修复后 `-r6.log` 四项通过。
+
+用户批准的 CPU 重计算可声明 `native.workers`，由生成的 `NativeWorkers.<name>.call(string)` 返回 Promise。详见 [Native worker 契约](../design/native-workers.md)。Model/Hotfix 不创建线程、不直接读 Deno；调用必须 await 并保留请求幂等身份。排空不可逆，不取消已准入任务；预检不拥有真实 worker，Hotfix 同时等待计算和 op 交付计数。`NativeWorkerBuildFingerprint` 是组合宿主实际 Native 身份，不能拿手工版本标签代替。
+
+本轮环境复测教训：继承 `RUST_LOG=warn` 时，开发/故障夹具等待的 INFO 事件不可见，出现 behavior reload/active pause 超时；记录显示原排空超时断言仍生效，不能通过放宽断言修复。复测命令为进程局部 `RUST_LOG=info npm run verify`，不修改用户环境。Native scaffold 的子 Cargo 测试原先硬编码 D 盘 target，在组合构建改为尊重 CARGO_TARGET_DIR 后暴露 V8 1314；子测试也必须使用同一独立 C 盘目录，禁止修改系统权限。首次安装 `npm ci --ignore-scripts` 缺少 Git 依赖 prepare 的 dist，须使用正常 `npm ci`；不得手改 node_modules 生成器源码。
+
+第二轮完整矩阵 7/8，Inspector 回归发现真实构建隔离缺陷：组合宿主和普通宿主都写 `$CARGO_TARGET_DIR/debug/TiangZ.exe`，Cargo fresh 可能保留另一组合的二进制，启动时 Native/Model 指纹正确拒绝。修复为组合构建及相关夹具统一使用 `$CARGO_TARGET_DIR/module-native`；不得删掉启动指纹检查或把错误二进制复制成正式宿主。保留失败日志，恢复普通输出后完整复测。
+
 2026-09-29 发布收尾：`52cef92` 的 Windows/Linux verify、security、starter 全绿，本地完整 verify 8/8、Rust 119/119，游戏重建宿主后全量 80/80 与 smoke 通过。0.6.4 发布仅补版本元数据，执行严格发布检查后才创建标签；以下失败记录保留作为诊断证据，不表示最终修复仍失败。
 
 ## 2026-09-29：WebSocket 排空后还须完成关闭握手

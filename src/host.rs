@@ -496,20 +496,42 @@ deno_core::extension!(
 
 /// 创建带 TiangZ host op 的 V8 运行时，但不加载或执行业务代码。 / Creates a V8 runtime with TiangZ host ops; it does not load or execute business code.
 pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRuntime, AnyError> {
+    create_runtime_with_workers(inspector, host_log_min_level, true)
+}
+
+/// 预检只验证候选，不启动模块计算线程。 / Preflight validates candidates without starting module compute threads.
+pub fn create_preflight_runtime(host_log_min_level: u8) -> Result<JsRuntime, AnyError> {
+    create_runtime_with_workers(false, host_log_min_level, false)
+}
+
+/// 正式宿主才拥有 Native worker；预检调用显式拒绝。 / Only the live host owns workers; preflight calls are explicitly rejected.
+fn create_runtime_with_workers(
+    inspector: bool,
+    host_log_min_level: u8,
+    workers: bool,
+) -> Result<JsRuntime, AnyError> {
     let mut extensions = vec![
         ets_runtime_host::init(),
         crate::dbproxy::init(),
         crate::event_stream::init(),
         crate::secure_random::init(),
+        crate::native_worker::native_workers::init(),
     ];
     extensions.extend(crate::module_native::extensions());
+    let workers = crate::native_worker::Registry::new(if workers {
+        crate::module_native::workers()
+    } else {
+        vec![]
+    })?;
     let mut runtime = JsRuntime::new(RuntimeOptions {
         extensions,
         inspector,
         module_loader: Some(Rc::new(FsModuleLoader)),
+        op_metrics_factory_fn: Some(workers.delivery_metrics()),
         ..Default::default()
     });
 
+    runtime.op_state().borrow_mut().put(workers);
     runtime.execute_script(
         "ets-runtime:bootstrap.js",
         r#"

@@ -48,7 +48,7 @@ if (runtime) {
   const env = { ...process.env };
   if (process.platform === "win32") for (const key of ["CC", "CXX"]) if (/^(gcc|g\+\+)(\.exe)?$/i.test(path.basename(env[key] ?? ""))) delete env[key];
   const unit = spawnSync("cargo", ["test", "--offline", "--locked", "--manifest-path", path.join(composition, "Cargo.toml"),
-    "--target-dir", path.join(engine, "temp/module-native-target"), "-p", manifest.native.crateName, "--lib"],
+    "--target-dir", path.join(env.CARGO_TARGET_DIR ? path.join(env.CARGO_TARGET_DIR, "module-native") : path.join(engine, "temp/module-native-target"), path.basename(composition)), "-p", manifest.native.crateName, "--lib"],
     { cwd: engine, env, encoding: "utf8", windowsHide: true });
   assert.equal(unit.status, 0, `${unit.error ?? ""}\n${unit.stdout}\n${unit.stderr}`);
   assert.match(unit.stdout, /1 passed/);

@@ -26,7 +26,8 @@ for (const name of ["left", "right"]) {
     engine: { minVersion: "0.6.0-alpha.0", maxVersionExclusive: "0.7.0" }, dependencies: [],
     entries: { model: "src/model/index.ts", hotfix: "src/hotfix/index.ts" },
     native: { source: "native", crate: "rust", crateName: `module_native_${name}`,
-      generatedRust: "rust/src/generated", generatedTypeScript: "src/model/generated/native" },
+      generatedRust: "rust/src/generated", generatedTypeScript: "src/model/generated/native",
+      workers: [{ name: "compute", capacity: 2, maxInputBytes: 256, maxOutputBytes: 256 }] },
   }));
   await writeFile(path.join(directory, "src/model/index.ts"),
     `import { defineGameModule } from "#tiangz/core";\ndefineGameModule({id: "org.example.${name}", version: "1.0.0"});\n`);
@@ -60,6 +61,7 @@ pub mod native_data;
 pub use generated::{extension, BOOTSTRAP};
 `);
   await writeFile(path.join(directory, "rust/src/native_data.rs"), `use deno_core::{op2, OpState};
+pub fn worker_compute(input: String) -> Result<String, String> { Ok(format!("${name}:{}", input)) }
 use deno_error::JsErrorBox;
 use crate::generated::native_data::{NativeEntityData, create_entity, get_entity_number, set_entity_number};
 #[derive(Default)]
@@ -146,7 +148,7 @@ if (process.argv.includes("--rust")) {
   const assertions = [];
   for (const name of ["left", "right"]) {
     const result = await build({ stdin: { contents:
-      `export { NativeOps } from "./NativeOps"; export { NativeCounterRef } from "./NativeCounterRef";`,
+      `export { NativeOps } from "./NativeOps"; export { NativeCounterRef } from "./NativeCounterRef"; export { NativeWorkers } from "./NativeWorkers";`,
       resolveDir: path.join(modules, name, "src/model/generated/native"), loader: "ts" },
       bundle: true, format: "iife", globalName: name, write: false });
     assertions.push(result.outputFiles[0].text);
@@ -163,23 +165,41 @@ if (process.argv.includes("--rust")) {
     check(rejected && b.value === 22); b.Dispose();
     check(Object.keys(left.NativeOps.NativeRefMetrics()).length === 0);
     check(Object.keys(right.NativeOps.NativeRefMetrics()).length === 0);
+    globalThis.workerAcceptance = (async () => {
+      const results = await Promise.all([left.NativeWorkers.compute.call('a'), right.NativeWorkers.compute.call('b')]);
+      check(results[0] === 'left:a' && results[1] === 'right:b');
+      await Promise.all([left.NativeWorkers.compute.drain(), right.NativeWorkers.compute.drain()]);
+      check(!left.NativeWorkers.compute.stats().accepting && left.NativeWorkers.compute.stats().completed === 1);
+      let rejected = false;
+      try { await right.NativeWorkers.compute.call('closed'); } catch { rejected = true; }
+      check(rejected);
+    })();
   `);
   await writeFile(path.join(output, "acceptance.js"), assertions.join("\n"));
   await writeFile(path.join(output, "acceptance.rs"), `
-    fn main() {
+    #[allow(dead_code)]
+    #[path = ${JSON.stringify(path.join(root, "src/native_worker.rs").replaceAll(path.sep, "/"))}]
+    mod native_worker;
+    #[tokio::main(flavor = "current_thread")]
+    async fn main() {
       let mut runtime = deno_core::JsRuntime::new(deno_core::RuntimeOptions {
-        extensions: vec![tiangz_module_0::extension(), tiangz_module_1::extension()],
+        extensions: vec![native_worker::native_workers::init(), tiangz_module_0::extension(), tiangz_module_1::extension()],
         ..Default::default()
       });
+      runtime.op_state().borrow_mut().put(native_worker::Registry::new(vec![
+        native_worker::WorkerSpec { name: "org.example.left::compute", capacity: 2, max_input_bytes: 256, max_output_bytes: 256, compute: tiangz_module_0::native_data::worker_compute },
+        native_worker::WorkerSpec { name: "org.example.right::compute", capacity: 2, max_input_bytes: 256, max_output_bytes: 256, compute: tiangz_module_1::native_data::worker_compute },
+      ]).unwrap());
       runtime.execute_script("left-bootstrap", tiangz_module_0::BOOTSTRAP).unwrap();
       runtime.execute_script("right-bootstrap", tiangz_module_1::BOOTSTRAP).unwrap();
       runtime.execute_script("acceptance", include_str!("acceptance.js")).unwrap();
+      runtime.run_event_loop(Default::default()).await.unwrap();
       println!("two module Native V8 runtime acceptance passed");
     }
   `);
   const manifest = path.join(output, "Cargo.toml");
   await writeFile(manifest, await readFile(manifest, "utf8") + '\n[[bin]]\nname = "module-native-acceptance"\npath = "acceptance.rs"\n');
-  run("cargo", ["run", "--offline", "--manifest-path", manifest, "--target-dir", path.join(root, "temp/module-native-target"), "--bin", "module-native-acceptance"],
+  run("cargo", ["run", "--offline", "--manifest-path", manifest, "--target-dir", path.join(process.env.CARGO_TARGET_DIR ? path.join(process.env.CARGO_TARGET_DIR, "module-native") : path.join(root, "temp/module-native-target"), catalog.graphHash), "--bin", "module-native-acceptance"],
     { ...process.env, TIANGZ_ENGINE_ROOT: root, TIANGZ_MODULE_NATIVE_BRIDGE: path.join(output, "bridge.rs") });
 }
 process.stdout.write("module Native self-test passed\n");
