@@ -1,11 +1,11 @@
 # 版本记录
 
-## 0.6.5 — 模块异步 Native worker（2026-09-30，发布准备）
+## 0.6.5 — 模块异步 Native worker（2026-09-30，标签 `v0.6.5`）
 
 - 模块可声明专用 FIFO 计算线程与输入、输出、在途容量；生成 Promise、stats、drain 接口，原同步 Native op 不变。
 - 计算不访问 V8；调用方超时不取消已接收任务。Hotfix 与停机屏障覆盖计算和 Promise 交付，预检不创建计算线程。
 - 普通宿主与不同模块组合按 graphHash 隔离构建输出，避免同名 TiangZ 二进制污染缓存。
-- 本地完整验证矩阵 8/8，实际游戏单进程验证 8 份冻结报告、并发 RPC 与业务排空通过；发布门禁与 CI 完成后打标签。详细契约见 docs/design/native-workers.md。
+- 本地严格发布矩阵 8/8、Rust 123/123；提交 528203f 的 Windows/Linux verify 与发布打包、starter、security 均通过。实际游戏单进程 8 份冻结报告、并发 RPC 与业务排空通过，真实进程活跃 worker 的热更/停机验收通过。发布元数据提交仅更新文档，不改已验收的运行时代码。详细契约见 docs/design/native-workers.md。
 
 ## 0.6.4 — WebSocket 关闭握手修正（2026-09-29，标签 `v0.6.4`）
 

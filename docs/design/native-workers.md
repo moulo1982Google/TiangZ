@@ -10,6 +10,6 @@ Runtime 拥有 worker 与在途计数；Hotfix 提交额外等待所有 Native �
 
 每个 worker 是 Process 级资源；多个 Scene 共用同名 worker 时也共用容量与不可逆 drain，业务必须明确唯一所有者。交付计数依赖 Deno op metrics 的 V8 交付事件，Rust Future 完成不能释放屏障；宿主泵与微任务检查点后才允许提交。
 
-已验证：交付修复后的 `npm run verify:release` 完整矩阵 8/8（quick 32/32），Rust 123/123；另跑新加入矩阵的 `node tools/native_worker_lifecycle_self_test.mjs`，真实进程的活跃 worker 阻止 Hotfix 提交，释放后完成；停机先完成已接收计算再退出，worker-only 模块也真实编译通过。真实游戏单进程 8 份冻结报告、8 个并发计算、其他 Scene RPC、业务 drain/stop 和 Process 正常退出通过。发布前仍须 CI。没有运行容量长稳，不将这些测试称为生产吞吐验证。
+已验证：交付修复后的 `npm run verify:release` 完整矩阵 8/8（quick 32/32），Rust 123/123；另跑新加入矩阵的 `node tools/native_worker_lifecycle_self_test.mjs`，真实进程的活跃 worker 阻止 Hotfix 提交，释放后完成；停机先完成已接收计算再退出，worker-only 模块也真实编译通过。真实游戏单进程 8 份冻结报告、8 个并发计算、其他 Scene RPC、业务 drain/stop 和 Process 正常退出通过。提交 528203f 的 Windows/Linux verify（含新增生命周期用例和发布打包）、starter、security 均通过，CI 证据见 native-workers-ci.json；发布元数据只更新文档。没有运行容量长稳，不将这些测试称为生产吞吐验证。
 
 生命周期夹具初次用 2.5 秒轮询判断 worker 准入，但宿主指标固定 5 秒采样，因此误判；清理关闭连接又暴露了夹具未立即接住 pending Promise 的问题。修正为 Rust 线程写入专用临时 started/done 标记，确认真正进入计算后才发送热更/停机；不改变生产采样间隔或屏障。三轮日志和首次失败保留在证据归档，最终输出为 native worker lifecycle passed。
