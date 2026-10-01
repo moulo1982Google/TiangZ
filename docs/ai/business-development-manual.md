@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-10-02 R2 完整结束且资源已回收：原 100 玩家冻结负载 300+900 秒、300 秒停载观察、独立 SQL 门禁和 SQL/Stream 核对均通过；3870 个事件全发布，无重复/死信/客户端错误，7740 条账本记录总额零。主测 133.48 RPC/s、0.385 核，峰值 333.32 MiB；内存增长约 95% 记在 PG 子组，停载 319.67 → 318.85 MiB，两 Rust 节点 PSS/私有页无增长。原预算/worker/PG 四分片/持久化保持，Linux 228/格式/Clippy/Release 和另行实际执行的 9 项 PG/Redis 检查通过。该轻量 DTO 最大 34 字节、无故障/仅短时，不能替代真实存档、故障或 24 小时验收，更不能宣称 R11 正常窗口 PG 排队已修复。本轮三个容器、两个专用卷、网络、五个 unit 文件回收，12 个保护容器/157 配置/4 unit/HTTP-健康复核通过；本机 23 个停止容器/46 个卷保留。WinError 206 的原后置工具失败与标准输入修法已留档并写入下文，不重跑负载。证据 `temp/v0.7-remote-2c4g-100-r2-20261001/`，完整结果见相邻 DBProxy 容量报告；后续读取归档，不重放已退役脚本，不恢复 R11，未 push。
+
+2026-10-02 00:33 改进版已进入云上独立复测，尚无完整容量通过：Linux Rust 228/格式/Clippy/Release 与另行实际执行的 9 项 PG/Redis 检查通过，服务 ELF `07c1f021...`，客户端仍为原冻结字节。成功验证及两次仅准备阶段失败的临时资源均已回收，原失败日志保留。新 `tzcap20261002r2` 先经 12 容器/157 配置/业务 HTTP 保护预检，按原 300+900 秒负载和 2C4G 额度运行，随后 300 秒停载观察；原预算/worker/协议保持，SQL 积压门禁和各服务 RSS/PSS 采样独立记录。旧失败队列加合成归零尾段的控制反例仍失败，不能用排空冒充持续容量。当前预检接近五分钟、已产生的 900 个事件全部发布，完整结论待结束；新现场为 `temp/v0.7-remote-2c4g-100-r2-20261001/`，不重跑部署、不恢复旧长稳，未 push。
+
 2026-10-02 工作区清理已完成，下一步才恢复新候选的 Linux/真实存储检查与外网复跑：删除 68 个可重建缓存目录，文件长度 169.09 GiB，删除阶段 D 盘可用空间增加 152.38 GiB（62.08 → 214.46 GiB）。100 个保留制品、22 仓库状态及 R11 的 39 个冻结文件核对通过；未提交源码、正式 0.7 worktree、R11 数据、最终二进制/manifest 和 R2 bundle 均保留。清单与复核见 `temp/v0.7-workspace-cleanup-20261001/`，不把清理或准备算作新负载通过，未 push。
 
 2026-10-01 本机旧容器收尾：用户指出只删镜像遗漏了容器，已暂停 Linux 重建及云上复跑，核对 79 个容器中 60 个 v7（57 已退出、3 个旧存储运行）。归档 56 个不再使用的构建/控制/历史长稳容器日志与 diff 后按完整 ID 移除，不使用 force/-v；3 个 R11 专用存储执行停止，保留失败负载容器及 PG 卷/Redis AOF/本机冻结证据。容器 79 → 23，可写层约 1.067 GB → 4.399 MB；剩余 4 个 v7 都已停止，46 个卷未删除。19 个非 v7 容器相对执行前的最新身份保持；battle-lab/SLG 停止事件在本次第一个移除动作之前，不能说整轮状态完全没变，也不擅自启动它们。当前本机 Docker 无运行容器；早先只删两个镜像的约 50 MB 结果属于上一阶段。证据 `temp/v0.7-local-images-cleanup-20261001/`，其中 action/manifest/最终状态分开留档。Outbox 改动已本地提交（5152b40、08aa916），Windows Rust 226/Clippy/TS 29 已通过，新 Linux 源 bundle 已准备，但 Linux/真实 PG-Redis 回归和改进版云上试验均尚未开始；不把准备算运行/通过，不恢复旧失败长稳，未 push。
@@ -339,6 +343,20 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 2026-09-17 SLG D1夹具隔离失败：run-cHJ8WY在D1提前退出；补齐子进程stdout/stderr日志后，run-TC9Bun确认StorageBackend初始化报publisher endpoint changed，尚未执行读取断言。原因是独立存储测试与SLG共用PG数据库，却以宿主机缓存Redis地址注册已被容器队列Redis占用的legacy Publisher。正确做法是在本轮隔离PG容器内创建authority_probe专用数据库；SLG原子批量探针仍检查SLG数据库，存储级断言单独标明范围。禁止清空Publisher注册表、放宽端点校验或手改构建哈希。复测：在Examples/packages/slg执行node tools/authoritative_acceptance.mjs build，再run --cases D1 --rounds 1 --confirm isolated-slg-authoritative-test；失败证据为temp/authoritative-acceptance/run-TC9Bun/D1-1/sql-snapshot-probe.log。修复后的结果以新报告为准。
 
 ## 失败教训与复测流程
+
+### SSH 脚本传输与负载结果分别判断
+
+R2 后置核对首试在本机 Python `CreateProcess` 抛 WinError 206：含 157 配置摘要的脚本整体编码进 SSH 命令参数后过长，SSH 子进程尚未存在，远端 PG/Redis 核对也未执行；之前的 helper SCP 已完成。原空输出与错误保存为 `attempt1-post-audit.*` 和 `post-audit-attempt1-failure.json`，不能按“已有文件”推断远端执行过，也不能把后置工具失败写成客户端负载失败。实际只读核验三个专用存储均停止后，使用 `ssh -T … python3 -`，源文本从标准输入传输，核对成功并在 finally 再停止自己的 PG/Redis；原负载结果和默认期限保持。
+
+大脚本使用标准输入或专用文件，shell 参数只放固定短命令；不要调产品预算、重放部署/负载、删除首试文件或修改全局 Windows 路径选项来绕过。判断连接失败时是否执行过，须先核对远端状态/所有权；CreateProcess 前的失败和已建连接中断不能混为一谈。复测是源文本解析、真实传输、3870 个 SQL/Stream event_id 与原始 payload 一致、账本总额及保护业务复核，不仅是命令返回零。已完成的现场卷已退役，接续读取 `report.json`、`post-audit.json`、`retirement.json`、`final-verification.json`，不再重跑一次性核对入口。
+
+容量用例同时检查客户端结果、运行中积压/趋势和停载排空，不能只在停载后读零；原失败序列加合成归零尾段的控制反例必须仍失败。积压采样口径要包含正在租赁的未发布事件，两个节点的共享队列 gauge 不相加；桶上界不是精确 P99，第一次读到零的采样时刻不是精确排空耗时。内存保留原父/子组 file/shmem/anon 和进程 PSS/私有页，不双计 shmem 或累计 PG RSS；进程采样退出记录未知，不补零。R2 的短时平台、34 字节以内 payload 和无故障负载，只作为这组试验的证据，不覆盖旧失败、真实游戏容量或 24 小时。
+
+### 初始化探针期限和运行时预算分别判断
+
+2026-10-02 新隔离 PG 首次 initdb 正在 `syncing data to disk`，Windows Docker exec 探针触及工具 10 秒期限，准备驱动提前停止该专用实例；未执行 Linux 产品测试或正式负载，不可定性为 DBProxy 请求超时、OOM 或容量失败。实例退出 137 来自本次有界停止，`OOMKilled=false`，不能只凭退出码认定内存故障。改为 Docker 内的 TCP healthcheck 与 180 秒初始化上限，真正 healthy 后才创建专用数据库和运行验证；产品 2 秒 AOF、PG 排队/SDK 总预算不变，不累计准备时间。第二次准备又发现 volume loop 复用了 attempt 后缀变量，命中错误 env 文件路径并在创建 PG 前失败；独立变量与新的尝试身份修正，原失败状态不改为 passed。三次尝试各用独立卷/网络/容器，最后真实 Linux 228 与另外 9 项 PG/Redis 检查通过。成功与未进入应用请求的失败准备对象均在日志/摘要保存后按所有者和完整 ID 回收，不能留下新一批过期容器。
+
+复查分别读取 `local-build-state.json`、`local-build-state-a2.json`、`local-build-state-a3.json`、`build-report.json`、各阶段 Linux 日志和 `preparation-cleanup.json`；源码 `08aa916` 与服务 ELF `07c1f021...` 分别记身份，不继承旧 `42f2762` 容量或长稳结果。周期故障/性能验证先声明趋势、稳态和停载门禁；只检查 RPC 最终状态或停载排空会漏掉持续积压。新观察门禁对修改前的真实失败序列加合成零积压尾段仍拒绝，属于控制器反例，不能称为重跑基线 SQL 或新容量通过。
 
 ### 失败证据与可重建编译缓存分别收尾
 
