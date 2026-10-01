@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-10-01 10:12 更新：R11 每 30 分钟外部只读任务已注册并实跑复核；修正后的 10:09 探测退出 0、3 次已完成故障恢复通过、内存压力未见。只在新异常或完成时请求 Windows 通知，正常时安静，同一异常去重；确认终态后禁用自己的探测任务。此任务不是 Codex 聊天自动唤醒，工作负载继续由原协调器负责，24 小时尚未完成。首次探测/通知/身份检查错误及正确修法见下文[教训](#外部定时探测必须验证实际运行和通知路径)与[证据](../design/v0.7-soak-interruption-recovery.md#每-30-分钟只读探测与本机通知)。
+
 2026-10-01 09:42 更新：30 分钟诊断完整通过；关机恢复后原完成阶段 SQL/Stream、R10 失败 SQL 与关机前一致。Desktop 自动升级到 Engine 29.8.1，旧结果保留旧环境；R11 从 09:40 开始新完整 86400 秒，原产品/负载/故障/预算不变，补采 PG 排队/操作指标，四项观察均启动。Windows 37/Linux 36 加 1 跳过、真实只读等待、语法与预检通过；正常窗口两秒超时仍判失败。R10 占用 SQL/磁盘因果未确认，不能由短时通过宣称修复或累计部分时长。详情与 SHA 见[诊断和恢复](../design/v0.7-soak-interruption-recovery.md#30-分钟诊断完成与关机后恢复)、[R11](../design/v0.7-soak-interruption-recovery.md#r11-完整-24-小时与-pg-证据补齐)及下文教训；未生成、重编、push 或发布。
 
 2026-10-01 00:29 更新：R10 完整 24 小时尝试在约 11 小时处因正常窗口两次 PG 连接排队超时失败；不能继续读旧 running 复核或累计部分时长。原始失败、对账和导出来源错误已保存，具体阻塞 SQL/磁盘因果待查。现已从零启动独立 30 分钟 PG 活动采样诊断，保持原产品、故障与所有预算；短时通过不等于修复或完整资格。详见[正常窗口排队失败](../design/v0.7-soak-interruption-recovery.md#r10-正常窗口的-pg-排队失败)及下文教训；没有生成、重编、合入远端 0.6.5、push 或发布。
@@ -325,6 +327,20 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 2026-09-17 SLG D1夹具隔离失败：run-cHJ8WY在D1提前退出；补齐子进程stdout/stderr日志后，run-TC9Bun确认StorageBackend初始化报publisher endpoint changed，尚未执行读取断言。原因是独立存储测试与SLG共用PG数据库，却以宿主机缓存Redis地址注册已被容器队列Redis占用的legacy Publisher。正确做法是在本轮隔离PG容器内创建authority_probe专用数据库；SLG原子批量探针仍检查SLG数据库，存储级断言单独标明范围。禁止清空Publisher注册表、放宽端点校验或手改构建哈希。复测：在Examples/packages/slg执行node tools/authoritative_acceptance.mjs build，再run --cases D1 --rounds 1 --confirm isolated-slg-authoritative-test；失败证据为temp/authoritative-acceptance/run-TC9Bun/D1-1/sql-snapshot-probe.log。修复后的结果以新报告为准。
 
 ## 失败教训与复测流程
+
+### 外部定时探测必须验证实际运行和通知路径
+
+2026-10-01 按要求启动 R11 每 30 分钟探测。本会话没有可调用的 Codex 自动任务接口，已向用户说明采用 Windows Task Scheduler；不得伪称已创建聊天自动唤醒。注册成功、NotifyIcon 的无显示探针通过都不等于实际定时执行和完整通知路径通过。必须查看真实退出码、源快照 SHA、下一次时间、触发间隔及实际完整通知调用；本轮修正后任务真实退出 0，完整通知比较约 10.4 秒完成，原 20 秒期限不变。通知记录只表示请求，不冒充用户已收到。
+
+首次定时运行只在 `docker info` 原 10 秒环境查询门禁处超时；负载、3 次故障恢复、正常窗口和内存检查仍通过。保留 `probe-gR2Ypb/report.json` 与原快照，随后独立只读检查及修正后定时检查在原门禁内通过。底层超时原因未记录，不能推断是产品崩溃、内存不足或已修复；不改冻结助手、扩大预算或忽略环境失败。外部探测不得重新启动工作负载或重跑一次性准备/恢复脚本。
+
+通知首版在 Node 隐藏、重定向的 Windows PowerShell 子进程中另传 `-WindowStyle Hidden`，进入脚本前无输出，完整比较亦失败；只去掉重复开关、保留 Node `windowsHide:true` 后完整调用通过。具体底层 Windows 原因未证明，不推广为所有机器的结论。子进程错误应记录本次实际期限与已有 stdout/stderr，不能把 20 秒通知超时误标成 180 秒状态检查。先保留旧配置/源码/首跑报告及 SHA，再修改外部脚本并重绑自己的摘要；不触碰 R11 的 39 份冻结输入。
+
+前置检查还遇到外层 PowerShell 展开内层变量、PS5 拒绝运行 `.ps1`、按名称导入 Security 模块产生重复类型成员。修法为结构化 argv 传入已核对固定代码和 JSON 数据，诊断显式导入 PS5 原生模块 manifest；不要用反斜杠转义 PowerShell 的 `$`，不要改全局执行策略/模块路径或添加 Bypass。保留首个 `validation.json`，独立复核通过；通知代码不执行 JSON 内容。
+
+任务身份审计首版直接比较导出的 `UserId` 字符串和当前 SID，因 Scheduler 将其规范为账户名而误报。正确做法是通过 Windows NTAccount/SecurityIdentifier 解析后精确比较 SID，同时仍要求当前用户、Interactive、Limited、30 分钟、IgnoreNew、5 分钟上限和无自动重试；不能删除身份断言或改成提权任务。首版审计源码和失败记录保留。
+
+复测：`node --test temp/v0.7-periodic-probe-20261001/policy.test.mjs`（7 项）、`node --check temp/v0.7-periodic-probe-20261001/probe.mjs`；查看 `Get-ScheduledTaskInfo -TaskName TiangZ-v07-R11-Probe-30min-20261001`、该目录 `latest.json` 和 SHA 绑定的 `registration-review.json`。一次性 validation/register/rebind/审计与通知比较脚本已有保留结果，不作周期命令重跑。证据 SHA、去重与终态规则见[定时探测](../design/v0.7-soak-interruption-recovery.md#每-30-分钟只读探测与本机通知)。
 
 ### 关机恢复、历史证据和采样寿命分别处理
 
