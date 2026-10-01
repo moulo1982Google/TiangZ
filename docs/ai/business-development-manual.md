@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-10-02 工作区清理已完成，下一步才恢复新候选的 Linux/真实存储检查与外网复跑：删除 68 个可重建缓存目录，文件长度 169.09 GiB，删除阶段 D 盘可用空间增加 152.38 GiB（62.08 → 214.46 GiB）。100 个保留制品、22 仓库状态及 R11 的 39 个冻结文件核对通过；未提交源码、正式 0.7 worktree、R11 数据、最终二进制/manifest 和 R2 bundle 均保留。清单与复核见 `temp/v0.7-workspace-cleanup-20261001/`，不把清理或准备算作新负载通过，未 push。
+
 2026-10-01 本机旧容器收尾：用户指出只删镜像遗漏了容器，已暂停 Linux 重建及云上复跑，核对 79 个容器中 60 个 v7（57 已退出、3 个旧存储运行）。归档 56 个不再使用的构建/控制/历史长稳容器日志与 diff 后按完整 ID 移除，不使用 force/-v；3 个 R11 专用存储执行停止，保留失败负载容器及 PG 卷/Redis AOF/本机冻结证据。容器 79 → 23，可写层约 1.067 GB → 4.399 MB；剩余 4 个 v7 都已停止，46 个卷未删除。19 个非 v7 容器相对执行前的最新身份保持；battle-lab/SLG 停止事件在本次第一个移除动作之前，不能说整轮状态完全没变，也不擅自启动它们。当前本机 Docker 无运行容器；早先只删两个镜像的约 50 MB 结果属于上一阶段。证据 `temp/v0.7-local-images-cleanup-20261001/`，其中 action/manifest/最终状态分开留档。Outbox 改动已本地提交（5152b40、08aa916），Windows Rust 226/Clippy/TS 29 已通过，新 Linux 源 bundle 已准备，但 Linux/真实 PG-Redis 回归和改进版云上试验均尚未开始；不把准备算运行/通过，不恢复旧失败长稳，未 push。
 
 2026-10-01 云上 2C4G/100 人基线已完成：300+900 秒客户端一致性/RPC 零错误，但 Outbox 输入约 3.24 条/s、发布 1.99 条/s，终态 1530 条未发布，不能判整链路容量通过。总 CPU 平均 0.382 核、内存峰值 347.62 MiB；20 分钟总内存增加约 153 MiB，文件/共享内存约占八成，匿名后半程约 70–72 MiB，仅父组统计不证明每进程无泄漏。12 个保护容器、157 配置摘要和业务 HTTP 复核通过，首轮资源已停止。用户要求先修后同负载复跑：当前 Outbox 每批最多 16 个独立组头，保持同组串行/死信/token，同一连接 XADD 后一次 AOF 确认再逐项 PG ACK；预算/worker/协议不变。新增批量 fixture 的 Windows sleep(0) 调度延迟已修为零延迟直接执行，保留原失败；改进版尚在重建检查，不继承旧制品资格，下一轮分子 cgroup/RSS/PSS 采样并保留 300 秒无负载观察。镜像按用户指令只删除两个无引用的 v7 Native 镜像；79 个容器/46 卷未动，不把镜像标签共享字节相加或宣称释放 CPU。详情与证据见相邻 DBProxy `docs/remote-capacity-2c4g-100-2026-10-01.md`、`docs/outbox-batch-publication.md`；本机 `temp/v0.7-remote-2c4g-100-20261001/`。不动本机 R11 失败数据，不全局 prune/drop caches，不拼时长、不放宽 AOF/超时、未 push。
@@ -337,6 +339,14 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 2026-09-17 SLG D1夹具隔离失败：run-cHJ8WY在D1提前退出；补齐子进程stdout/stderr日志后，run-TC9Bun确认StorageBackend初始化报publisher endpoint changed，尚未执行读取断言。原因是独立存储测试与SLG共用PG数据库，却以宿主机缓存Redis地址注册已被容器队列Redis占用的legacy Publisher。正确做法是在本轮隔离PG容器内创建authority_probe专用数据库；SLG原子批量探针仍检查SLG数据库，存储级断言单独标明范围。禁止清空Publisher注册表、放宽端点校验或手改构建哈希。复测：在Examples/packages/slg执行node tools/authoritative_acceptance.mjs build，再run --cases D1 --rounds 1 --confirm isolated-slg-authoritative-test；失败证据为temp/authoritative-acceptance/run-TC9Bun/D1-1/sql-snapshot-probe.log。修复后的结果以新报告为准。
 
 ## 失败教训与复测流程
+
+### 失败证据与可重建编译缓存分别收尾
+
+旧验证只收尾运行对象，未回收工作区的增量对象、重复 Native 构建中间产物和隔离 Linux 下载缓存，累计 169.09 GiB 文件长度。保留失败报告不意味着保留所有 `target/deps/build/incremental`；同时不能按目录名删除整个旧 worktree，本轮旧部署 worktree 和 rc.1 验证副本仍有未提交修改。先固定需保留的源码、Git 状态、实际二进制/符号/manifest、失败日志/数据和冻结路径，再仅删除已闲置的可重建中间产物。清单预备首次因只汇总浅层目录、补算返回形状错误而中止，均未开始删除；修正后形成完整清单才执行。PowerShell 只读联接检查也曾误用不兼容的 `Split-Path -LiteralPath/-Parent` 参数组，改为 .NET 路径解析并启用遇错即停，不能将空检查结果当作通过。
+
+递归操作必须核对绝对边界与每级 reparse 属性，枚举不跟随目录联接；不能把联接外部目标算作工作区临时数据。6 个 GN 联接的额外 unlink 遭工具策略拒绝后原样保留，不重试绕过，不触碰 F 盘 Cargo/V8 缓存。禁止全局 `git clean/reset`、删除未提交文件、注销实际开发 worktree 或为了清理重跑旧失败负载；最终二进制保留不表示被删缓存仍可直接用于增量构建，之后按原锁和源身份重建。
+
+统计分别保存文件逻辑长度、删除阶段盘可用差值及后续盘采样；压缩、硬链接和其他同机活动会使这些数字不同。新验证从创建时记录所有者、保留物和成功/失败收尾，结束后回收中间产物，避免日后靠磁盘告急再集中清理。只读复查证据为本轮 `verification.json`、`git.after-cleanup.json`、`retained-binaries.before.json`、`r11-inputs.after.json`；100 个制品摘要、22 仓库状态、39 个冻结文件及 16 个证据绑定通过。不要重跑一次性 `cleanup.ps1`；文档检查使用 `git diff --check` 与 `npm run verify:no-local-traces`。
 
 ### 测试收尾要回收容器，不能只看镜像引用
 
