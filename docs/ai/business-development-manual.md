@@ -348,6 +348,12 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 
 ## 失败教训与复测流程
 
+### 实时进度与终态报告分开读取（2026-10-02）
+
+07:50 接续只读汇总首试从运行中 `database/report.json` 访问 `ready` 抛 `KeyError: 'ready'`；负载期间该文件只是初始报告，ready/增量进度在 `progress.json`，已完成故障事实在 `events.jsonl`，最终报告只在收尾后完整。不是 DBProxy 产品故障，也没有发出停机/重启或变更冻结输入。读取实时状态应结合协调器状态、progress、原始事件和实际进程；判断已完成资格仍须核对终态 report、独立结果及列出的原始 SHA。禁止缺字段补零/写 passed、只凭旧 report 的 running 判断继续、或因只读工具失败重放/重启测试。
+
+修复后的只读入口为 `python -X utf8 temp/v0.7-cloud-fault-soak-r3-20261002/inspect-cloud-progress.py`；它流式核对证据摘要/资源记录，读取实时进度与已完成事件，保存 `latest-status-review.json`，原错误保存 `status-reader-attempt1.err`。实际复读确认 30/60/120 完整阶段与原始证据一致，当前 240 分钟第 11 次故障已恢复，保护业务探针正常。已有资格和产品/期限不变；缺失或过期观察仍不能当正常。详情见相邻 DBProxy `docs/cloud-fault-soak-2026-10-02.md`。
+
 ### 原始长时证据必须流式复核（2026-10-02）
 
 第二轮只跑约 18 分钟时，资源采样已经 5,447,411 字节 / 200 行，按原频率的 24 小时文件约 449MiB；控制组上限仅 512MiB，还要运行负载/协调器及持有报告。原 `Path.read_bytes()` 算 SHA 和 Node 整体解析 load/metrics JSONL 是控制器内存风险，不能等数小时后才发现，也不能归因于产品内存随时间泄漏。这里尚无实际 OOM；日志尺寸外推不是服务内存外推。
