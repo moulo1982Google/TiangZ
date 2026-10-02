@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-10-02 12:32 diagr2 的首个主节点强杀已在线恢复通过（1/40），负载约 6 分钟、客户端及数据不变量错误暂为零，OOM/swap 零、保护业务正常；日志 PID 映射在真实启动和重启后均已产生。当前最新只读入口为 diagr2 的 `probe-cloud.py` / `latest-probe.json`，新 30 分钟任务首次结果 0，旧任务禁用。该在线故障进展不等于完整 480m / 24h 资格，后续原门禁不变，未 push。
+
+2026-10-02 12:28 接续入口已改为新所有者 `tzfault20261002diagr2` / `temp/v0.7-cloud-fault-soak-diag-r2-20261002/`，日志制品于 12:25:58 真实就绪新的完整 480m，后续独立 960/1440m，旧时长资格零继承。旧 240m 在 09:52:49 完整通过：20 次故障、46800 唯一事件、92 次内容一致重复、SQL/Stream/300s 空载/当前代次退出零；所有报告及原始 SHA 已重核，64 文件下载归档 `935b4efb...`。09:53 首次自动部署在创建新资源之前端口普通 bind 失败，没有新版负载时长；保留失败和已完成资格，不覆盖失败状态，也不能称中间两小时在跑。当前新两个服务和负载进程 ELF、计划、42 个 payload、unit 与 guard SHA、2C4G 实际父组约束、12 容器/157 配置/4 units/HTTP 健康均独立核对，云端安全 timer 与新本机 30 分钟任务正常、旧失败任务禁用。原 2/5s 产品预算和 ELF 保持；本轮只改 Python 部署支持和文档，无 Rust/TS 重编、codegen 或 push。详见下面“停机后端口释放”和“启动状态文件就绪”教训，以及相邻 DBProxy 云上报告。
+
 2026-10-02 09:10 PG 日志候选的接续事实：DBProxy 产品源 `cceb223` 的 Windows Rust 229、TS 29、Linux Release Rust 231、两平台格式/严格 Clippy 与另行 13 项真实 PG/Redis 契约检查通过；Linux 第三轮实际可执行程序标记已确认，第二轮共用 target 的无效容量对比不能重新记为通过。保持单分片 16 写者 / 2000ms 的独立旧、新复测均超时，保留 SQL dump 与原日志，新版记录了 15 等待者、2000ms 最老等待及仅 81ms 的当前持有者；最近完成占用 36–325ms，说明本次复现存在累计排队，不能由当前 holder 年龄替代整个队列等待，也不能认定云上问题已经解决。受控真实案例同时核对 queue_timeout 与 602ms 的完整释放、PG PID 729→731 / 代次 1→2。
 
 接续服务已在云端真实安装并只读核对为 `waiting-for-qualified-boundary`，不是“新版已经部署”。旧 240m 的全部 14400 秒、至少 300 秒空载、实际退出、独立结果/报告/原始 SHA、旧控制器 PID 与代次、所有者匹配且全部资源停止必须逐项验证；旧控制器若在边界短暂开始旧 480m，其部分时长为计划性中断、资格零。新版重新完整运行 480/960/1440m，保持原 2C4G / 100 人 / 2s PG 和 AOF / 5s SDK / 四分片 / worker1 门禁；一次性部署失败留下原始日志并只停精确本轮资源，不自动重放。64MiB 观察器只做有界报告读取，128MiB 等待器将 Node 前置串行测试放在临时 256MiB 单元中，不扩大 512MiB 客户端总额。新本机每 30 分钟任务首次结果 0；12 容器、157 配置、4 业务 units 和三项 HTTP/健康检查通过。入口 `temp/v0.7-cloud-diag-handoff-20261002/{launcher-installed,staged-audit}.json` 与新候选 `payload-identity.json`，未 push。
@@ -357,6 +361,18 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 2026-09-17 SLG D1夹具隔离失败：run-cHJ8WY在D1提前退出；补齐子进程stdout/stderr日志后，run-TC9Bun确认StorageBackend初始化报publisher endpoint changed，尚未执行读取断言。原因是独立存储测试与SLG共用PG数据库，却以宿主机缓存Redis地址注册已被容器队列Redis占用的legacy Publisher。正确做法是在本轮隔离PG容器内创建authority_probe专用数据库；SLG原子批量探针仍检查SLG数据库，存储级断言单独标明范围。禁止清空Publisher注册表、放宽端点校验或手改构建哈希。复测：在Examples/packages/slg执行node tools/authoritative_acceptance.mjs build，再run --cases D1 --rounds 1 --confirm isolated-slg-authoritative-test；失败证据为temp/authoritative-acceptance/run-TC9Bun/D1-1/sql-snapshot-probe.log。修复后的结果以新报告为准。
 
 ## 失败教训与复测流程
+
+### 停机后端口释放与部署预检（2026-10-02）
+
+旧 240m 独立通过并正常停机后，09:53 首次自动接续的 `new-deploy.py` 普通 `socket.bind` 报 `EADDRINUSE`，发生在创建目录、存储和新负载之前。原代码只报栈、没有记录哪一个端口或 TCP 状态；不能事后认定被保护业务占用、旧进程没退出或确定就是某个 TIME_WAIT。后来只读检查全部七个端口没有监听者；在同一云端用独占的临时 loopback 连接真实复现：监听/进程已关闭、只有 TIME-WAIT，普通 bind 仍为 errno 98。这支持内核连接残留解释，但不补造历史失败的缺失观察。
+
+正确做法为 `tools/lib/soak_port_preflight.py`：原普通绑定方式保持，全部端口共用 180s 等待期限，绑定失败时只读 `ss`，记录端口、监听者与 TIME_WAIT；真实监听立即失败，其他绑定错误或状态采集失败也明确失败，只有无监听的暂时占用才有界重试。禁止强杀占用者、开 SO_REUSEPORT/SO_REUSEADDR 掩盖预检、改业务端口/防火墙、只 sleep 固定秒数假定释放，或删除旧失败标记重放。部署控制单元总期限单独设为 600s 覆盖 180s 端口等待/120s 存储就绪/前置测试；这不是放宽 PG/AOF/SDK 的产品期限。失败现场与旧资格 64 文件冻结、原摘要全部核对；另建 diagr2 所有者和目录，服务/客户端/故障计划/2C4G/2s/5s/SQL 门禁与实际两个产品 ELF 不变。旧控制器边界短暂进入的旧 480m 是计划性中断，旧全局 failed 不撤销完整通过的 240m，其部分时长不折算新版。
+
+复测 `python -B tools/lib/soak_port_preflight_test.py`：Windows 4 通过、2 Linux 专属跳过，实际云端 Linux 6 通过，包括真实监听保留、真实 TIME_WAIT 的有界失败、释放后继续、共享期限和状态采集失败反例；接续不足时长/空载/原始变化/未知或空退出列表/旧资源未停 8 条反例通过，新部署前 Node 44+1 平台跳过、Python 7 均在本机和云端通过。`temp/v0.7-cloud-diag-handoff-20261002/port-preflight-linux-tests.log` 保留真实 errno/状态；新 `post-install-verification.json` 核对实际服务与负载的 /proc/exe、源/计划/payload/unit/guard SHA、父组约束和保护业务。后续只读新 `probe-cloud.py`，不重放已经执行的 install/prepare/deploy。脚本可复用，机器路径和日期仅属于此次证据。
+
+### 启动状态文件就绪不能靠固定短 sleep（2026-10-02）
+
+新恢复服务先流式复核旧报告/原始 SHA，再保存第一份启动状态。安装器固定等 2s 后就读文件，曾抛 FileNotFoundError；后台实际服务继续正常运行，在 12:25:58 就绪 480m。因此读状态失败不等于部署失败，不能盲目重跑安装或重启已开始的负载。保存 `installation.err`，只读服务/状态/日志，独立核对实际 source/ELF/ready 和资源后记录 `post-install-verification.json`，本轮安装没有重放。安装器改为有界 60s 等文件并检查服务仍存活；超时保留未知/失败证据，不补造 running。新部署刚开始的 starting 状态也不是故障，必须等真实 ready，再验证完整目标时长/100 人/连接池/实际进程。恢复准备的首试还因 helper 路径多取一个 parent 在本机失败，未上传，部分候选归档 `preparation-attempt-1/`；修为从实际引擎根解析并在创建任何 payload 前检查 helper 存在，禁止去错误目录创建替代源码。
 
 ### 实时进度与终态报告分开读取（2026-10-02）
 
