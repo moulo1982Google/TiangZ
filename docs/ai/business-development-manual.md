@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-10-02 21:18 长稳当前入口为 diagr3：上一日志轮因证书续期 timer 的精确状态比较在 18:12:36 停止，最后观察 346.50 分钟、30 次故障通过，3576 个正常区间和数据不变量均零；不能计为完成 480m。保护业务及续期任务本身正常，旧断言未留失败瞬间属性差异，时间关联和独立真实 timer 已复现该检查误判。新增 `tools/lib/soak_protected_units.py` 只允许活跃 timer 正常 waiting/running 转换，保留服务/启动代次/配置 SHA 与所有数据/超时门禁，并明确记录失败差异。92 文件旧证据逐项 SHA 验证，包 `46b60c34...`；新 `tzfault20261002diagr3` 在 21:16:22 正式开始完整 480m，旧部分时长零继承。原 `cceb223` ELF、2C4G/100 人/2s/5s 不变，实际部署后核对通过，新 guard/30 分钟探测正常；预计次日 05:16:22 结束负载，再空载和复核。21:20 新轮首次主节点强杀已恢复（1/40），数据不变量/客户端错误暂为零，幂等重复回执 1 次不清零；本机探测首轮 0、下次 21:48:19。验证及禁止绕过见下文新教训；没有产品重编/codegen/push，完整新版 480m/24h 未通过。
+
 2026-10-02 12:32 diagr2 的首个主节点强杀已在线恢复通过（1/40），负载约 6 分钟、客户端及数据不变量错误暂为零，OOM/swap 零、保护业务正常；日志 PID 映射在真实启动和重启后均已产生。当前最新只读入口为 diagr2 的 `probe-cloud.py` / `latest-probe.json`，新 30 分钟任务首次结果 0，旧任务禁用。该在线故障进展不等于完整 480m / 24h 资格，后续原门禁不变，未 push。
 
 2026-10-02 12:28 接续入口已改为新所有者 `tzfault20261002diagr2` / `temp/v0.7-cloud-fault-soak-diag-r2-20261002/`，日志制品于 12:25:58 真实就绪新的完整 480m，后续独立 960/1440m，旧时长资格零继承。旧 240m 在 09:52:49 完整通过：20 次故障、46800 唯一事件、92 次内容一致重复、SQL/Stream/300s 空载/当前代次退出零；所有报告及原始 SHA 已重核，64 文件下载归档 `935b4efb...`。09:53 首次自动部署在创建新资源之前端口普通 bind 失败，没有新版负载时长；保留失败和已完成资格，不覆盖失败状态，也不能称中间两小时在跑。当前新两个服务和负载进程 ELF、计划、42 个 payload、unit 与 guard SHA、2C4G 实际父组约束、12 容器/157 配置/4 units/HTTP 健康均独立核对，云端安全 timer 与新本机 30 分钟任务正常、旧失败任务禁用。原 2/5s 产品预算和 ELF 保持；本轮只改 Python 部署支持和文档，无 Rust/TS 重编、codegen 或 push。详见下面“停机后端口释放”和“启动状态文件就绪”教训，以及相邻 DBProxy 云上报告。
@@ -361,6 +363,18 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 2026-09-17 SLG D1夹具隔离失败：run-cHJ8WY在D1提前退出；补齐子进程stdout/stderr日志后，run-TC9Bun确认StorageBackend初始化报publisher endpoint changed，尚未执行读取断言。原因是独立存储测试与SLG共用PG数据库，却以宿主机缓存Redis地址注册已被容器队列Redis占用的legacy Publisher。正确做法是在本轮隔离PG容器内创建authority_probe专用数据库；SLG原子批量探针仍检查SLG数据库，存储级断言单独标明范围。禁止清空Publisher注册表、放宽端点校验或手改构建哈希。复测：在Examples/packages/slg执行node tools/authoritative_acceptance.mjs build，再run --cases D1 --rounds 1 --confirm isolated-slg-authoritative-test；失败证据为temp/authoritative-acceptance/run-TC9Bun/D1-1/sql-snapshot-probe.log。修复后的结果以新报告为准。
 
 ## 失败教训与复测流程
+
+### 活跃 timer 的正常触发不能当作业务重启（2026-10-02）
+
+**现象与证据**：日志候选 diagr2 的 480m 在 18:12:36 停止，协调器只报告 `AssertionError: jiaolian-cert-renew.timer`；最后原始客户端周期为 20790.18 秒，30/40 次故障完成，3576 个正常区间无可用性错误，全程数据不变量/缺失或落后快照均零。该证书任务在 18:12:32 开始、18:12:36.795 正常退出，`ExecMainStatus=0`、`Result=success`，证书无需续期。之后保护服务的 PID、启动代次、配置 SHA 和三项 HTTP/健康均未变，timer 返回 waiting。92 文件冻结下载逐项核对，现场 `temp/v0.7-cloud-fault-soak-diag-r2-20261002/failed-480m-evidence/`，归档 SHA `46b60c34a98434932ba1b09a423a0b1e89dcaa4adcddc26ce1c7a37932c9a20e`；`timer-interruption-readonly.json` 保存续期时间、正常退出和当前身份。
+
+**原因与证据限度**：旧保护代码把四种 unit 的所有观察属性都要求等于启动快照，其中活跃 timer 在任务执行期间会从 waiting 变为 running，执行后再返回 waiting。使用专属 `tzfault20261002-timer-policy-test`、32MiB/5%CPU 的真实 systemd timer 复现：配置路径和 ActiveEnterTimestampMonotonic 不变，旧比较仍拒绝正常运行。原始失败没有逐字段快照，不能宣称观测到了历史具体差异；正常触发误判是事件时间及真实复现支持的定位，不归因于 DBProxy、业务故障、内存或 PG 2s 排队。
+
+**正确修法**：`tools/lib/soak_protected_units.py` 被新协调器和接续器共用，只在 baseline/current 都为 active 且 timer 子状态属于 waiting/running 时允许 SubState 转换。其他属性仍精确匹配，属性缺失或多出也拒绝；服务 MainPID/NRestarts/启动时间、timer 启动时间和 FragmentPath 不变，调用者继续核对 unit 原始 SHA、157 个配置 SHA、12 容器身份和业务健康。inactive/failed/elapsed、重启或路径变化均失败；错误现在列出 expected/observed 差异。旧现场不修改，另建 `tzfault20261002diagr3`，仅控制策略改变，原产品 ELF、负载、故障计划、2C4G、PG/AOF 2s、SDK 5s 和资格门禁保持。
+
+**禁止绕过**：不得停用或修改业务续期 timer、忽略全部 unit 状态、更新 baseline 掩盖重启、删旧失败标记重放部署、把 346 分钟拼入新阶段，或将本轮检查误报写成产品排队修复。未完成的 480m 资格为零，原旧制品已通过的 240m 独立证据仍保留。
+
+**复测**：在 `tools/lib` 运行 `python -B -m unittest -v soak_protected_units_test`，Windows/Linux 各 7 项通过；真实独立 timer 完整观察 waiting→running→waiting，新策略接受正常触发且拒绝实际停用，原比较确实失败。diagr3 接续边界 8、Node 控制 44（1 平台跳过）、SQL/容量复核 7 均通过，部署前也执行 Linux 策略 7；新完整 480m 于 21:16:22 就绪，实际 ELF、44 个 payload、unit/guard SHA、资源约束及保护业务再独立核对。证据为新现场 `actual-timer-regression.json`、`post-install-verification.json` 和旧现场 `audit-failed-prefix.mjs` 的原始复算；无 Rust/TS 重编或 codegen，长稳尚待完整结束。
 
 ### 停机后端口释放与部署预检（2026-10-02）
 
