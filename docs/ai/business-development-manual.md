@@ -370,6 +370,8 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 
 ### 负载完成不等于长稳通过，控制组 OOM 须独立定位（2026-10-03）
 
+**追加离线测量及边界**：失败 load/samples/intervals/events/初始 report 五份输入下载后均与原 SHA 匹配；Windows Node v24.20.0 独立进程流式重建 11518 个 progress、11518 个 intervals、1922 个 samples 与 80 次故障，再调用原 saveControlJson。重建后 RSS 90267648 字节，整份报告发布后进程峰值 176570368 字节（约 168MiB），JSON 文件 28283295 字节（约 27MiB）。证据在 temp/v0.7-control-oom-diagnosis-20261003/ 的 raw-hash-verification、replay-result 和重放脚本；重建报告仍为 running，仅含离线 fixture，不可作为真实退出或验收报告。该测试没有 Linux 原控制组约束、16h 网络/轮询历史和旧堆快照，不能据此唯一归因报告大小、确认内存泄漏或宣布修复。下一步仍须把 live heap/external/RSS、共享控制组和发布前后峰值纳入有期限的独立复现。
+
 **现象与证据**：diagr3 的 960m 在 21:22:27 完成客户端负载，原始 SOAK_FINAL 为 57600.40392514s，最终可见状态与观察一致性、validation 均通过；80/80 次故障恢复。21:22:37.351 写入 no-load-observation-started 后，驱动调用 save(reportFile, report)，随后内核触发 CONSTRAINT_MEMCG，512MiB 客户端父组中 Node PID 3601457 被杀，协调器收到取消并在 21:22:39 收尾。report.json 仍是初始 running 报告，progress 的 maintenanceDrained 为真；没有完整空载观察、终态报告及独立 SQL/Stream 复核。不能从初始报告缺 final 判定客户端未完成，也不能用 SOAK_FINAL 替代全阶段验收。
 
 **已确认原因与限度**：内核明确指出 oom_memcg 为客户端控制 slice，被杀者是 Node 驱动，不是两台 DBProxy 或 PG；目标 2C4G 组自身 OOM/swap 为零。Python 协调器、Node broker 和驱动共用 512MiB，不能只检查目标组就宣称所有测试进程无 OOM。失败位于完整报告发布期间，驱动仍累计 progress/samples/intervals 并整体 JSON.stringify；这是需要受限重放的分配路径，尚未测出失败前存活堆、序列化瞬时峰值及各保留对象，不能断言某个唯一分配或 V8/Node 缺陷已经定位或修复。
