@@ -370,6 +370,8 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 
 ### 负载完成不等于长稳通过，控制组 OOM 须独立定位（2026-10-03）
 
+**后续修复与验证**：同一父组内短诊断确认云端默认 V8 堆 2240MiB，未识别祖先 512MiB 限额；只证明预算配置缺口，原退出进程全部保留对象仍无堆证据。显式限制三个 Node 角色的堆、逐条落盘全部历史、分块发布完整报告并观察控制组/各进程，详见[控制内存契约](../design/v0.7-soak-control-memory.md)。完整输入和 1.5 倍采样量在原 512MiB/禁 swap 限额内重放、独立全行核对通过；不是 24h 长稳。新增用例覆盖默认大堆、各类预算/缺失证据、干净缓存与脏页、报告缺行/多行/截断/Unicode/磁盘失败/短写，以及大于堆额度的完整报告；实际进程退出观察未知 RSS 不补零。首次独立核对包装失败来自观察模块所在目录，与产品无关；补齐依赖后重新核对。67 原数据文件加 10 所有权/源码文件，77 份归档已下载逐项核 SHA。新现场先完整 30m 接入验证，再独立 960/1440m，未继承旧失败时长；按实际状态留档，禁止把准备或离线数据量写成真实运行通过。
+
 **追加离线测量及边界**：失败 load/samples/intervals/events/初始 report 五份输入下载后均与原 SHA 匹配；Windows Node v24.20.0 独立进程流式重建 11518 个 progress、11518 个 intervals、1922 个 samples 与 80 次故障，再调用原 saveControlJson。重建后 RSS 90267648 字节，整份报告发布后进程峰值 176570368 字节（约 168MiB），JSON 文件 28283295 字节（约 27MiB）。证据在 temp/v0.7-control-oom-diagnosis-20261003/ 的 raw-hash-verification、replay-result 和重放脚本；重建报告仍为 running，仅含离线 fixture，不可作为真实退出或验收报告。该测试没有 Linux 原控制组约束、16h 网络/轮询历史和旧堆快照，不能据此唯一归因报告大小、确认内存泄漏或宣布修复。下一步仍须把 live heap/external/RSS、共享控制组和发布前后峰值纳入有期限的独立复现。
 
 **现象与证据**：diagr3 的 960m 在 21:22:27 完成客户端负载，原始 SOAK_FINAL 为 57600.40392514s，最终可见状态与观察一致性、validation 均通过；80/80 次故障恢复。21:22:37.351 写入 no-load-observation-started 后，驱动调用 save(reportFile, report)，随后内核触发 CONSTRAINT_MEMCG，512MiB 客户端父组中 Node PID 3601457 被杀，协调器收到取消并在 21:22:39 收尾。report.json 仍是初始 running 报告，progress 的 maintenanceDrained 为真；没有完整空载观察、终态报告及独立 SQL/Stream 复核。不能从初始报告缺 final 判定客户端未完成，也不能用 SOAK_FINAL 替代全阶段验收。
