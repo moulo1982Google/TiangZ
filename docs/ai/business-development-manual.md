@@ -2,7 +2,7 @@
 
 2026-10-03 用户确认当前 DP（DBProxy）验收止于产品本身的完整性、故障恢复、长稳和通用性能。真实 SLG 压力测试待业务接近完成后由用户另行安排；2 万在线、300 万注册、50 区服与云 PG 档次的讨论不构成本轮容量目标。报告区分 MemoryBackend 与真实 PG/Redis，固定源码/运行制品、机器、负载、并发、时长及原失败门禁，分别记录吞吐、延迟、失败、资源、积压/排空；逻辑操作/RPC/记录条数/字节不混算，历史结果不自动转记给新候选。慢占用 WARN 保留为观察线索，正常窗口失败与数据不变量仍严格判定，不以未做生产业务压测为理由忽略。相邻 DBProxy `PERFORMANCE.md` 与云上报告已同步范围，当前长稳按原冻结计划继续。
 
-diagr3 的日志候选完整 480m 于 **2026-10-03 05:22:24 北京时间**通过独立复核：28800.45s 负载、300.17s 空载、40/40 故障、两节点实际退出零、SQL/Stream 与原始 SHA 通过，93687 个唯一事件全部发布，66 次内容一致重复保留。新完整 960m 于 05:22:26 就绪；19:32 快照约 850m、71/80 故障恢复通过、数据不变量零，960m/24h 尚未通过。接续入口仍为 `temp/v0.7-cloud-fault-soak-diag-r3-20261002/`，后续原门禁与 1440m 保持，未 push；不可重放一次性部署或拼接旧失败前缀。
+diagr3 的日志候选完整 480m 于 **2026-10-03 05:22:24 北京时间**独立通过，资格保留；后续 960m 在 **21:22:37** 的报告发布阶段发生客户端控制组 OOM，终态 failed、1440m 未启动。客户端实际负载 57600.40s、80/80 故障恢复和最终可见状态通过，9962 个正常区间错误零，但 300s 空载及完整 SQL/Stream 独立复核未完成，整轮资格零。内核杀死的是 Node 驱动 PID 3601457，所在客户端父组限额 512MiB；目标 2C4G 组 OOM/swap 零，保护业务身份/配置/健康正常。入口仍为 `temp/v0.7-cloud-fault-soak-diag-r3-20261002/`，67 原文件保留并生成 SHA 清单，30 分钟探测已于 21:48 自停。具体内存分配来源尚未受限复现；本次仅留档，不重放部署、恢复失败实例、拼接时长、增加预算或宣称已修复，未 push。
 
 2026-10-02 21:18 长稳当前入口为 diagr3：上一日志轮因证书续期 timer 的精确状态比较在 18:12:36 停止，最后观察 346.50 分钟、30 次故障通过，3576 个正常区间和数据不变量均零；不能计为完成 480m。保护业务及续期任务本身正常，旧断言未留失败瞬间属性差异，时间关联和独立真实 timer 已复现该检查误判。新增 `tools/lib/soak_protected_units.py` 只允许活跃 timer 正常 waiting/running 转换，保留服务/启动代次/配置 SHA 与所有数据/超时门禁，并明确记录失败差异。92 文件旧证据逐项 SHA 验证，包 `46b60c34...`；新 `tzfault20261002diagr3` 在 21:16:22 正式开始完整 480m，旧部分时长零继承。原 `cceb223` ELF、2C4G/100 人/2s/5s 不变，实际部署后核对通过，新 guard/30 分钟探测正常；预计次日 05:16:22 结束负载，再空载和复核。21:20 新轮首次主节点强杀已恢复（1/40），数据不变量/客户端错误暂为零，幂等重复回执 1 次不清零；本机探测首轮 0、下次 21:48:19。验证及禁止绕过见下文新教训；没有产品重编/codegen/push，完整新版 480m/24h 未通过。
 
@@ -367,6 +367,18 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 2026-09-17 SLG D1夹具隔离失败：run-cHJ8WY在D1提前退出；补齐子进程stdout/stderr日志后，run-TC9Bun确认StorageBackend初始化报publisher endpoint changed，尚未执行读取断言。原因是独立存储测试与SLG共用PG数据库，却以宿主机缓存Redis地址注册已被容器队列Redis占用的legacy Publisher。正确做法是在本轮隔离PG容器内创建authority_probe专用数据库；SLG原子批量探针仍检查SLG数据库，存储级断言单独标明范围。禁止清空Publisher注册表、放宽端点校验或手改构建哈希。复测：在Examples/packages/slg执行node tools/authoritative_acceptance.mjs build，再run --cases D1 --rounds 1 --confirm isolated-slg-authoritative-test；失败证据为temp/authoritative-acceptance/run-TC9Bun/D1-1/sql-snapshot-probe.log。修复后的结果以新报告为准。
 
 ## 失败教训与复测流程
+
+### 负载完成不等于长稳通过，控制组 OOM 须独立定位（2026-10-03）
+
+**现象与证据**：diagr3 的 960m 在 21:22:27 完成客户端负载，原始 SOAK_FINAL 为 57600.40392514s，最终可见状态与观察一致性、validation 均通过；80/80 次故障恢复。21:22:37.351 写入 no-load-observation-started 后，驱动调用 save(reportFile, report)，随后内核触发 CONSTRAINT_MEMCG，512MiB 客户端父组中 Node PID 3601457 被杀，协调器收到取消并在 21:22:39 收尾。report.json 仍是初始 running 报告，progress 的 maintenanceDrained 为真；没有完整空载观察、终态报告及独立 SQL/Stream 复核。不能从初始报告缺 final 判定客户端未完成，也不能用 SOAK_FINAL 替代全阶段验收。
+
+**已确认原因与限度**：内核明确指出 oom_memcg 为客户端控制 slice，被杀者是 Node 驱动，不是两台 DBProxy 或 PG；目标 2C4G 组自身 OOM/swap 为零。Python 协调器、Node broker 和驱动共用 512MiB，不能只检查目标组就宣称所有测试进程无 OOM。失败位于完整报告发布期间，驱动仍累计 progress/samples/intervals 并整体 JSON.stringify；这是需要受限重放的分配路径，尚未测出失败前存活堆、序列化瞬时峰值及各保留对象，不能断言某个唯一分配或 V8/Node 缺陷已经定位或修复。
+
+**正确处理与待修验证**：保留失败状态、停止本轮拥有的运行对象，不改原文件/制品/数据；本机流式复算 11518 个区间，其中 9962 个正常区间错误零，数据不变量零，单次 AOF 超时增量仍位于完整故障窗口。67 原文件共 447916733 字节逐项 SHA 已保存，原数据在云端保留；再次检查保护容器、unit/config SHA 和三项 HTTP 200/health UP。后续先以同一输入在独立限额进程重放，分别记录控制组/各进程峰值及报告发布前后内存，再验证有界驻留和报告生成；24h 数据量与异常发布也要覆盖，完整原始证据和全行门禁仍保留。修复后使用新冻结现场复跑需要的完整阶段，480m 既有独立资格不撤销，失败 960m 不继承。
+
+**禁止绕过**：不扩大控制组预算、增加 swap、裁剪日志/采样、丢弃校验行、放宽 PG/AOF/SDK/恢复门槛、修改 failed 为 passed、补造300s空载或将960m直接记作通过；不重放已执行的 prepare/install/deploy，也不只因 systemd 默认状态零值宣称某个进程实际正常退出。
+
+**复算入口与本轮范围**：既有 inspect-online-diagnostics.py 仅在内存把当前数据库路径切为 960m，保存 failed-960m-prefix-diagnostics-review；另保存 terminal-960m-inspect、oom-boundary-960m 和 failed-960m-evidence-review 时间戳文件。PG 日志仍为 10 条慢占用、queue_timeout 零，9 条在故障窗口、1 条正常窗口 536ms，不因本次控制 OOM 而改写其分类。保护检查只提取冻结 controller 的 run/protect 函数，未执行部署或顶层控制循环。本轮无产品/控制代码修改、codegen 或修复后复测；内存修法与新的长稳启动仍待完成。
 
 ### 活跃 timer 的正常触发不能当作业务重启（2026-10-02）
 
