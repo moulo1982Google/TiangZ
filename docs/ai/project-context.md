@@ -1,5 +1,7 @@
 # 2026-09-16 模块拆分后的当前事实
 
+2026-10-06 14:37 纠正旧24h内存预检范围：旧synthetic只扩samples/intervals，遗漏正式审查持有的progress等数组，不能继续当完整24h报告包络；原实际SQL/Redis及新30/960m资格保持。补全progress/intervals17276、samples2973、faults/schedule120、generations27，实际冻结发布函数输出40.89MiB报告，Python重新全解析持有+Node192MiB解析/280959编号双缓冲，并在独立512MiB真实clean-cache压限下64s通过：发布RSS71.49MiB、审查173.98MiB、采样reserve峰241.57MiB<448，max1125/暂态峰512.19MiB保留、OOM/swap零。仅内存格式/驻留证明，两套编号同源SQLite，不是本次SQL/Redis独立投递或24h资格。R7现场/预算未动；当前总量约501MiB主要clean file，不能线性推24h，实际收尾仍是最终判据，详见[收尾专题](../design/v0.7-soak-control-memory.md)及独立cache-preflight证据。
+
 2026-10-06 13:02 R7新960m已于11:03:21.549完整通过80故障/300.791s空载/正常退出/SQL及Redis全内容/容量/内存；报告SHA1f33a227...、187212唯一事件/186一致重复，v2计数4.738s、最长项1.285s、独审111.611s，实际连续node2 PSS低位下降约0.89MiB。新1440m11:03:23.820真实就绪，约2h/10故障恢复、1227正常区间零错误。控制父组512MiB已出现持续cache回收压力max143，总约501.5MiB主要file396.2MiB，anon96.2MiB、reserve峰109.36MiB低于448MiB、OOM/swap零；不能说max零/压力已停止或擅自清缓存加预算。保护及探测正常，新24h完整资格待结束，预计10月7日11:03:24负载结束后另收尾；原字节结果在R7 qualified-960m及压力记录，详见[收尾专题](../design/v0.7-soak-control-memory.md)，无产品/生成/现场改动或push。
 
 2026-10-06 08:50 R7新960m约13小时54分、70/80故障恢复；10003原始区间复算、8642正常零错误，数据不变量零，资格仍待最终收尾。正常窗口07:13:09有6条PG慢占用WARN（另8条在故障），实际COMMIT约630ms/持有608–659ms、最老等待至811ms，无queue_timeout或正常请求失败；PG提交慢点已证，底层IO/调度原因未证，不能把正常WARN归故障或冒称全部告警零。目标约0.96GiB、控制181–185MiB、OOM/swap/max零；连续node2实际PSS低位增长85KiB/原32MiB门禁，保护与探测正常。预计10:56:13结束负载，再空载/独审后才进1440m，详见[收尾专题](../design/v0.7-soak-control-memory.md)。仅留档，无现场/产品/生成变化或push，以下为历史快照。
