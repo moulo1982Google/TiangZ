@@ -155,6 +155,11 @@ export interface OutboundBatch {
 
 export interface SceneUpdateResult {
   outbound: OutboundBatch[];
+  /**
+   * 本次随出站帧交出的关闭请求；宿主须先提交 outbound 再关闭，传输失败仍可能丢帧。
+   * Close requests handed out with this update; submit outbound before closing, though transport failure can still lose frames.
+   */
+  closes: readonly number[];
   metrics?: SceneMetricsSnapshot;
   pendingAsync: boolean;
   pendingIngress: boolean;

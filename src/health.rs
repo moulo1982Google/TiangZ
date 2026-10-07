@@ -71,6 +71,7 @@ struct GameConfigObservabilitySnapshot {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ProcessObservabilitySnapshot {
+    pub(crate) native_workers: Vec<(String, crate::native_worker::Stats)>,
     pub(crate) sample_timestamp_ms: u64,
     pub(crate) cpu_percent: f64,
     pub(crate) cpu_time_ms: u64,

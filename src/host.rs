@@ -542,21 +542,43 @@ deno_core::extension!(
 
 /// 在调用者的 Tokio 上下文中创建 V8；其定时器驱动须活过 isolate，不加载业务代码。 / Creates V8 in the caller's Tokio context, whose timer driver must outlive the isolate; no business code is loaded.
 pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRuntime, AnyError> {
+    create_runtime_with_workers(inspector, host_log_min_level, true)
+}
+
+/// 预检只验证候选，不启动模块计算线程。 / Preflight validates candidates without starting module compute threads.
+pub fn create_preflight_runtime(host_log_min_level: u8) -> Result<JsRuntime, AnyError> {
+    create_runtime_with_workers(false, host_log_min_level, false)
+}
+
+/// 正式宿主才拥有 Native worker；预检调用显式拒绝。 / Only the live host owns workers; preflight calls are explicitly rejected.
+fn create_runtime_with_workers(
+    inspector: bool,
+    host_log_min_level: u8,
+    workers: bool,
+) -> Result<JsRuntime, AnyError> {
     Handle::try_current().context("V8 creation requires an entered Tokio runtime context")?;
     let mut extensions = vec![
         ets_runtime_host::init(),
         crate::dbproxy::init(),
         crate::event_stream::init(),
         crate::secure_random::init(),
+        crate::native_worker::native_workers::init(),
     ];
     extensions.extend(crate::module_native::extensions());
+    let workers = crate::native_worker::Registry::new(if workers {
+        crate::module_native::workers()
+    } else {
+        vec![]
+    })?;
     let mut runtime = JsRuntime::new(RuntimeOptions {
         extensions,
         inspector,
         module_loader: Some(Rc::new(FsModuleLoader)),
+        op_metrics_factory_fn: Some(workers.delivery_metrics()),
         ..Default::default()
     });
 
+    runtime.op_state().borrow_mut().put(workers);
     runtime.execute_script(
         "ets-runtime:bootstrap.js",
         r#"

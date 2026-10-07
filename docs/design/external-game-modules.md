@@ -1,8 +1,10 @@
 # 外置游戏模块
 
+模块可通过 `native.workers` 显式声明专用计算线程，生成字符串输入/输出的 Promise facade。同步 `.native` op 保持原 ABI；配置、容量、取消、预检、排空及身份规则见 [Native worker](native-workers.md)。
+
 > 2026-09-17：Hotfix 与 Luban 配置改为完整配对发布、帧间原子提交。`build:hotfix` / `build:game-config` 均输出联合候选；`reload` 和本机 `hotfix plan/apply/status/rollback` 操作整套，`reload-config` 仅作联合加载别名。Hotfix manifest 包含 gameConfigHash/releaseId，配置单改也改变 bundleVersion。现有 pendingAsync/pendingIngress 安全条件保留；等待期间仍推进主循环。Model/schema/冷数据变化仍重启，客户端和持久业务状态不随发布回滚。旧的两条独立在线切换说明已被取代；首次使用须重建宿主与 Model 并重启。详细流程以 docs/design/typescript-hot-reload.md 的联合发布章节为准。
 
-更新时间：2026-09-15。当前宿主版本：`0.6.2`（此前基线 `0.6.0`、`0.6.0-alpha.0`，模块声明的 `minVersion` 仍然满足）。
+更新时间：2026-09-15。当前宿主版本：`0.6.3`（此前基线 `0.6.2`、`0.6.0`、`0.6.0-alpha.0`，模块声明的 `minVersion` 仍然满足）。
 
 ## 宿主装配模式
 

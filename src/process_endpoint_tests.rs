@@ -1025,12 +1025,24 @@ async fn endpoint_drop_reclaims_active_connections_and_releases_listener() {
         let writers = fixture.writers.clone();
         let admission = fixture.admission.clone();
         drop(fixture);
-        let result = timeout(Duration::from_secs(1), client.read(&mut [0u8]))
-            .await
-            .unwrap();
+        // Drop仍须释放实际Socket；WebSocket可能在abort前写出Close或其前缀。
+        // Drop must release the real socket; WebSocket may write Close or its prefix before abort.
+        let mut terminal_bytes = Vec::new();
+        let result = timeout(
+            Duration::from_secs(1),
+            (&mut client).take(3).read_to_end(&mut terminal_bytes),
+        )
+        .await
+        .expect("endpoint drop retained the client socket");
         assert!(
-            matches!(result, Ok(0))
+            result.is_ok()
                 || matches!(result, Err(ref error) if error.kind() == std::io::ErrorKind::ConnectionReset)
+        );
+        assert!(
+            terminal_bytes.is_empty()
+                || (protocol == EndpointProtocol::WebSocket
+                    && matches!(terminal_bytes.as_slice(), [0x88] | [0x88, 0])),
+            "endpoint drop emitted unexpected data: protocol={protocol:?}, bytes={terminal_bytes:?}"
         );
         assert!(writers.lock().unwrap().is_empty());
         wait_admission(&admission, 0, 0).await;

@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+2026-10-07源码对齐终验：0.6.5关闭/Native worker整合保留0.7拆分、预算和RAII，另补成功/业务错误均按UTF-8字节限长，固定panic诊断保持分类。最终实现树044287f8，Windows发布级check8/quick35/full9、Rust279通过；Linux原整合full9/Rust282，最终Rust修复另跑全目标Clippy/Rust283和两模块V8/worker真实热更停机通过，不把旧full或专项互相冒充。API锁/codegen/204导出冻结检查通过、依赖与协议锁不变；首轮夹具、可移植路径和真实超长错误反例均保留，见[源码对齐](../design/v0.7-merge-0.6.5.md)及[失败教训](#整合旧分支时须适配当前架构和宿主abi)。后续核对未完功能、SDK/插件与发行输入，未push；以下为历史快照。
+
+2026-10-07源码对齐：正式`v0.6.5`正在独立整合到0.7，通知后关闭、WebSocket关闭握手与模块Native worker须适配0.7现有拆分、RAII和预算，不能整文件回退。worker为Process级资源，多个Scene共用容量/不可逆drain；业务须明确唯一所有者，丢弃Promise不取消计算，Hotfix等待计算与V8交付。其他五仓库没有新增上游提交，用户Examples改动保留；插件、SDK与用户指出的未完成内容分别核对。API锁/codegen、类型/关闭单测和普通Rust编译已通过，完整矩阵仍在执行，新Host不继承旧制品或DBProxy长稳资格。详细来源、首轮失败与复测见[源码对齐](../design/v0.7-merge-0.6.5.md)及[夹具适配教训](#整合旧分支时须适配当前架构和宿主abi)，未push。
+
 2026-10-07 11:12 R7真实24h终验通过并按约定停下：不能只看load结束或state.passed，已重新核实际报告SHA、preflight=false、86400.392s/120故障/300.979s空载/退出、独审结果及52冻结文件，14954正常区间零错误、281179唯一事件与所有payload/元数据一致，容量与内存通过。实际512MiB下驱动RSS峰274.91MiB/审查196.15MiB、OOM/swap零，max1724回收证据保留；旧规模夹具漏progress的教训仍有效，不因最后通过删除它。PID/owner/image核实际本轮已停止、保护业务及probe停用确认；只授DP该合成负载资格，不自动授旧套件、实际SLG、Host热更或7日部署。完整证据在R7 qualified-1440m与[收尾专题](../design/v0.7-soak-control-memory.md)，无产品/生成/版本或push变化。
 
 2026-10-06 14:37 规模夹具不能只扩两个显眼数组：旧24h报告只扩大samples/intervals，漏了真实审查使用的progress（仍11518）及faults/schedule/generations，旧包络证明不完整。应从真实序列化schema核全部增长数组、先用实际冻结流式发布，再让Python重新解析持有与Node审查并发，避免共享引用构造低估；加实际512MiB干净文件缓存压限而非仅新空组。新完整40.89MiB夹具64s通过、reserve采样峰241.57MiB<448、OOM/swap零，max1125/暂态峰512.19MiB必须保留。SQL/Redis形状双编号来自同一已核SQLite，仅内存证明；不冒充独立投递/实际24h，也不以synthetic撤销或补发旧资格。禁止漏数组取绿、改预算/强制GC/drop caches/裁剪日志。复测新root的 `temp/v0.7-control-cache-preflight-20261006-r1/start-preflight.py`，11份源字节SHA/发布及解析结果留档，R7现场/源报告/冻结helper未变，详见[收尾专题](../design/v0.7-soak-control-memory.md)，本次无产品/生成/push变化。
@@ -8,7 +12,7 @@
 
 2026-10-06 08:50 正常PG慢占用必须独立留证：R7约14h前缀8642正常区间零错误，但07:13:09正常时段六连接同时slow_hold_released，持有608–659ms、最老等待至811ms；PG真实日志四COMMIT约630ms/维护确认DELETE约606ms。不能把正常WARN硬塞故障窗口、与queue_timeout混算、看到WARN就停测，或因客户端没失败就丢掉延迟证据。先匹配实际角色/分片/PID/代次与PG语句，再对齐SQL与资源；约30s采样不能证明0.6s瞬时wait_event，CPU配额未throttle只能排除本组已记录的配额限流，不能直接归因磁盘。此次提交路径慢已证、底层原因未证，原2s/5s未调整，日志/原始前后样本留在R7 `normal-slow-holds-decoded.json`、`normal-slow-hold-samples.raw.json`、`normal-slow-hold-analysis.json`；复测只读 `inspect-online-prefix.py`。960m70/80恢复、node2连续PSS低位增85KiB且OOM/swap/max零，前缀不授最终资格，详见[收尾专题](../design/v0.7-soak-control-memory.md)，无产品/生成/现场变化或push。
 
-2026-10-05 19:28 现场核验基准的新教训：封存后本机同名辅助副本可能因read_text/写出变更LF/CRLF，不能直接拿它的当前字节当远端冻结源码。此次只读prefix首轮误报hash，逐项证明云端10个helper全匹配冻结计划，本机保护辅助副本1930字节/封存1976字节仅换行差异、AST相同；应先核计划固定SHA，再按payloadSha256严格核云端字节，辅助复制不得覆盖封存payload。不得改原manifest、忽略远端SHA或以AST等价代替原字节验证；首轮stderr/字节证明保留，修独立检查器基准后完整复算382原始区间/326正常零错误及期限/内存/保护。复测 `F:/DevTools/msys64/ucrt64/bin/python.exe -B -X utf8 temp/v0.7-cloud-audit-r7-20261005/inspect-online-prefix.py`，证据 `prefix-helper-source-inspection.raw.json`、`prefix-helper-line-ending-proof.json`、`latest-online-prefix.json`。新30m完整5故障/空载/收尾已过，新960m18:56:13.457开始、3/80故障恢复，前缀不授完整资格，详见[收尾专题](../design/v0.7-soak-control-memory.md)。只改记录/本机只读检查器，现场/产品/codegen/push均不变。
+2026-10-05 19:28 现场核验基准的新教训：封存后本机同名辅助副本可能因read_text/写出变更LF/CRLF，不能直接拿它的当前字节当远端冻结源码。此次只读prefix首轮误报hash，逐项证明云端10个helper全匹配冻结计划，本机保护辅助副本1930字节/封存1976字节仅换行差异、AST相同；应先核计划固定SHA，再按payloadSha256严格核云端字节，辅助复制不得覆盖封存payload。不得改原manifest、忽略远端SHA或以AST等价代替原字节验证；首轮stderr/字节证明保留，修独立检查器基准后完整复算382原始区间/326正常零错误及期限/内存/保护。复测 `python -B -X utf8 temp/v0.7-cloud-audit-r7-20261005/inspect-online-prefix.py`，证据 `prefix-helper-source-inspection.raw.json`、`prefix-helper-line-ending-proof.json`、`latest-online-prefix.json`。新30m完整5故障/空载/收尾已过，新960m18:56:13.457开始、3/80故障恢复，前缀不授完整资格，详见[收尾专题](../design/v0.7-soak-control-memory.md)。只改记录/本机只读检查器，现场/产品/codegen/push均不变。
 
 2026-10-05 18:25 新故障长稳已从18:21:01.992完整30m开始，R7现场/计划/真实ELF/限额/业务保护核验通过，1/5故障已恢复、错误暂零，后续独审过关才接960/1440m。新教训：只读部署身份检查也会撞计划强杀，首次MainPID零必须留原错误并核真实注入/重启时间与代次，不能笼统记部署失败、放宽存活断言或重放一次性安装。本次检查18:23:02.825确在18:23:02.098强杀至18:23:17.435新代次之间；恢复后同一轮实际进程/52文件/资源/保护重新通过，辅助脚本补失败unit/属性。复测与原证据入口 `temp/v0.7-cloud-audit-r7-20261005/verify-deployment.py`、`planned-fault-verification-boundary.json`、`post-install-verification.r1.err`、`post-install-verification.json`、`actual-load-image.json`；不要覆盖原尝试。engine修复31a8a5b，DBProxy记录3fbc982，新30分钟任务首轮0/云端guard正常，旧failed资格零、当前前缀不提供整轮资格；详见[收尾专题](../design/v0.7-soak-control-memory.md)，无生成/产品重编或push。
 
@@ -407,6 +411,16 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 2026-09-17 SLG D1夹具隔离失败：run-cHJ8WY在D1提前退出；补齐子进程stdout/stderr日志后，run-TC9Bun确认StorageBackend初始化报publisher endpoint changed，尚未执行读取断言。原因是独立存储测试与SLG共用PG数据库，却以宿主机缓存Redis地址注册已被容器队列Redis占用的legacy Publisher。正确做法是在本轮隔离PG容器内创建authority_probe专用数据库；SLG原子批量探针仍检查SLG数据库，存储级断言单独标明范围。禁止清空Publisher注册表、放宽端点校验或手改构建哈希。复测：在Examples/packages/slg执行node tools/authoritative_acceptance.mjs build，再run --cases D1 --rounds 1 --confirm isolated-slg-authoritative-test；失败证据为temp/authoritative-acceptance/run-TC9Bun/D1-1/sql-snapshot-probe.log。修复后的结果以新报告为准。
 
 ## 失败教训与复测流程
+
+### 整合旧分支时须适配当前架构和宿主ABI
+
+源码复核须主动找负路径：原Native worker的`maxOutputBytes`只约束`Ok(String)`，错误直接通过，24字节配置下27字节UTF-8错误的真实反例失败，见`native-error-bound-red.log`。正确修法是同时限制成功和业务错误，超限替换固定诊断，panic诊断保持原分类；测试边界相等、超限后的容量恢复、统计及drain。禁止把成功限长测试当错误路径覆盖、提高上限、删断言或按字符数/截断UTF-8。固定宿主诊断为常量长度，计算函数内部内存不由此限制。修复前Windowsfull9/9不算新Rust资格；新构建、真实Process、完整矩阵和Linux复测分别留档，见[源码对齐](../design/v0.7-merge-0.6.5.md)。
+
+完整矩阵首轮quick33/35：旧端点Drop夹具认为WebSocket只能直接EOF/reset，新握手可能在abort前输出Close。修正为有界读取最多3字节直到真实EOF/reset，只接受空数据或无payload Close及其取消前缀，保留原1秒期限、writer/准入归零及listener重绑；禁止放宽预算、接受任意应用数据或删除资源断言。另有原0.7两处历史文档写死Python安装路径导致本机痕迹门禁失败，改为环境提供的`python`命令，不增加扫描例外，不改封存证据。原始失败`full-verify-r1.log`保留，独立端点复测及下一轮完整矩阵分别登记。
+
+2026-10-07将正式0.6.5整合到0.7：旧关闭测试从`process/types`取得EntryScene导致加载失败，修正为拆分后的`process/EntryScene`；下一轮3/4通过，停止桥接因缺少`__hostCreateShutdownDeadline/__hostCancelDeadline`失败，补齐夹具ABI并检查停止后句柄归零。Rust测试夹具首次编译还漏导入atomic Ordering且误用不存在的`EndpointAudience::External`，应按实际生产枚举使用`Outer`，不增加伪兼容枚举。正确修法是适配旧实现/夹具到当前架构；禁止恢复大文件、删除断言、关闭传输audience校验或放宽生产预算。复测`npx vitest run tests/unit/disconnect_after_outbound.test.ts`、`cargo test --locked --bin TiangZ --features kcp native_worker::tests`及`transport_backend::epoll::tests`，完整矩阵另行登记。原失败及复测在`temp/v07-065-integration/`，移植表和当前状态见[源码对齐](../design/v0.7-merge-0.6.5.md)。
+
+Windows第一次Rust编译报V8 gn_root symlink权限1314，实际Cargo registry在F盘而私有target在D盘；仅在该私有target内创建指向实际锁定V8源码的junction，V8构建脚本验证canonical路径后复测通过。禁止修改registry源码、全局Git/Cargo设置或引用旧二进制作新源码证据。新Native worker是Process级共享资源，drain不可逆，丢弃Promise不取消计算，热更需等待计算与V8交付；Model/清单/Rust/ABI变化重建重启。详细限制见[Native worker](../design/native-workers.md)。旧0.6.5 CI及DBProxy R7长稳不转移为整合后的Host资格；插件/SDK后续对齐和用户指出的未完成部分须单独核对。
 
 ### 负载完成不等于长稳通过，控制组 OOM 须独立定位（2026-10-03）
 
@@ -1957,7 +1971,7 @@ const stop = loginFlow.onSessionReplaced((message) => {
 });
 ```
 
-服务端关闭连接前会排空已经入队的通知；SDK的`RpcSocket`会保留关闭前已经收到、但尚未由游戏循环`update()`分发的单向消息。客户端仍必须持续驱动`update()`，不能只依赖网络回调。同Gate顶号使用连接代次；跨Gate故障接管使用Location gateEpoch与ActorLocation fencing。两者都不会迁移原Socket。
+`disconnectClient`的关闭请求随本Scene下一次出站排空交给宿主，排在此前`sendClient`入队的帧之后；宿主本轮先写出站帧再执行关闭，传输层关闭前再排空已交付的帧，因此健康传输下“先推送通知再断开”保持提交顺序；断网、发送失败或期限耗尽仍可能丢帧，即使调用发生在RPC续体等Scene更新之后的时点（0.6.3起；此前关闭可能抢在通知之前，业务曾需延迟断开绕过）。关闭最多晚一次更新生效，生效前已在途的入站帧仍可能到达，业务应先使Session失效再请求关闭。SDK的`RpcSocket`会保留关闭前已经收到、但尚未由游戏循环`update()`分发的单向消息。客户端仍必须持续驱动`update()`，不能只依赖网络回调。同Gate顶号使用连接代次；跨Gate故障接管使用Location gateEpoch与ActorLocation fencing。两者都不会迁移原Socket。
 
 Gate候选排序统一复用`RankStickyScenes/SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。Login先保留Location记录的当前健康Gate；仅当它不可达时才依Rendezvous顺序探测其他Gate。恢复节点不自动回切现存玩家；绕过Login连接旧Gate也必须在旧所有者健康探测和Location CAS处被拒绝。
 
@@ -2076,7 +2090,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 ## 验证矩阵
 
-`0.3.10`框架稳定化和`0.4.0` Phase 4.0空间契约已经完成，当前版本为 `0.6.2`（2026-09-23 发布），直接进入模块化开发预发布线，尚未完成 0.6 正式发布验收。升级宿主先逐个检查模块版本范围；旧 `<0.5.0` 上限必须经消费方验证后迁移，不自动放宽其他游戏声明。随后重新生成、完整构建并重启。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议、空间模式或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
+`0.3.10`框架稳定化和`0.4.0` Phase 4.0空间契约已经完成，当前版本为 `0.6.3`（2026-09-28 发布），直接进入模块化开发预发布线，尚未完成 0.6 正式发布验收。升级宿主先逐个检查模块版本范围；旧 `<0.5.0` 上限必须经消费方验证后迁移，不自动放宽其他游戏声明。随后重新生成、完整构建并重启。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议、空间模式或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
 
 本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/cluster/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。需要在VS Code断点调试中持续Reload时使用`npm run dev:debug`：初始和后续候选都带内联sourcemap，Process/V8/Inspector连接不重启，新脚本会重新绑定TS断点。若V8正停在断点必须先Resume；当前栈继续旧代码，后续调用才使用新generation。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools把Model长期状态中的显式`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`字段和`as any`写属性视为错误；请使用稳定默认值或明确的数据结构。对象`T | null`、判别联合、显式Map/Record和普通DTO仍可正常使用。
 

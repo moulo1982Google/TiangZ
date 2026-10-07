@@ -138,6 +138,9 @@ export function installProcessBootstrap(adapters: ProcessBootstrapAdapters): voi
     if (outbound.length > 0) {
       hostPushOutboundPacked(packOutbound(outbound));
     }
+    // 关闭请求必须在出站帧交给宿主之后发出：宿主本轮先写出站帧再处理关闭，传输层关闭前再排空已交付的帧。
+    // Close requests follow the outbound frames: the host flushes frames before closes, and transports drain before closing.
+    for (const connectionId of result.closes) hostCloseConnection(connectionId);
     if (!sampleMetrics) {
       return String((result.pendingAsync ? 1 : 0) | (result.pendingIngress ? 2 : 0));
     }
@@ -215,6 +218,9 @@ export function installProcessBootstrap(adapters: ProcessBootstrapAdapters): voi
   const hostPushOutboundPacked = (globalThis as typeof globalThis & {
       __hostPushOutboundPacked: (packed: Uint8Array) => void;
     }).__hostPushOutboundPacked;
+  const hostCloseConnection = (globalThis as typeof globalThis & {
+      __hostCloseConnection: (connectionId: number) => void;
+    }).__hostCloseConnection;
 
   const host = globalThis as typeof globalThis & {
     __etsTakeReleasedControlIngress: () => number;

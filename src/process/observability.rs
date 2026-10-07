@@ -598,6 +598,11 @@ pub(super) fn maybe_log_metrics(
     });
 
     health_state.set_observability_snapshot(ProcessObservabilitySnapshot {
+        native_workers: runtime
+            .op_state()
+            .borrow()
+            .borrow::<crate::native_worker::Registry>()
+            .snapshot(),
         sample_timestamp_ms: timestamp_ms as u64,
         cpu_percent,
         cpu_time_ms,

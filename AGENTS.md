@@ -112,6 +112,7 @@ Hotfix只能通过`#tiangz/model`取得Model与Core的稳定类型，禁止深�
 - 任何架构、目录边界、数据所有权、协议语义或业务开发流程的设计变更，都必须在同一改动中同步更新[AI项目上下文](docs/ai/project-context.md)和[AI业务开发手册](docs/ai/business-development-manual.md)。不能只改代码或只更新其中一份。
 - 不修改Generated文件；修改其输入后运行codegen。
 - 不做无关重构，不改无关性能参数，不清理用户文件。
+- 模块 `native.workers` 是 Process 级固定资源；多个 Scene 共用容量与不可逆 drain，必须明确唯一所有者。丢弃 Promise 不取消计算，热更须等待计算与 V8 交付；清单、Rust 源码和 ABI 变化须重建并重启。见[Native worker](docs/design/native-workers.md)。
 - 长稳和大规模性能测试会长时间占用机器，未经用户明确许可不运行。
 
 ## 最低验证
@@ -131,5 +132,5 @@ npm run verify
 - TypeScript是默认主业务语言；性能敏感且规则稳定的领域可显式选择`../TiangZ-Examples/modules/mmorpg/rust/src/game`中的Rust模块，但修改后必须重新编译并重启Process。
 - Wasm只作为未来重计算模块的候选，例如确定性战斗核心；当前不接入。
 - Rhai只作为未来脚本后端候选；当前不为它增加兼容层。
-- 当前开发候选为 `0.7.0-rc.2`，版本和本地制品以 [候选冻结](docs/design/v0.7-release-candidate.md) 为准，尚未 push 或发布。上一正式版本为 `0.6.2`（2026-09-23）；原 `0.6.0-alpha.0` 为历史开发号。
+- 当前开发候选为 `0.7.0-rc.2`，版本和本地制品以 [候选冻结](docs/design/v0.7-release-candidate.md) 为准，尚未 push 或发布。上一正式版本为 `0.6.5`（2026-09-30）；原 `0.6.0-alpha.0` 为历史开发号。0.6.5整合后的源码须独立验证，不继承旧引擎制品或DBProxy长稳资格，见[源码对齐](docs/design/v0.7-merge-0.6.5.md)。
 - DBProxy 依赖固定候选 tag `v0.7.0-rc.1`，Cargo/npm 锁记录真实提交。当前 tag 尚未 push，本地清洁构建使用候选文档的 Git bundle 和进程内 URL 映射；获准推送依赖 tag 后，远端 CI 才可直接按正式地址获取。需要同时改两边时，把 `.cargo/config.toml.example` 复制为 `.cargo/config.toml`，它把依赖指向同级 `../TiangZ-DBProxy`；该文件不进仓库，启用后本地构建会把 `Cargo.lock` 改写成路径依赖，这种改动不要提交。DBProxy 改动合入并发 tag 后，再更新本仓库的 tag 与锁。`v0.3.10`质量门和`0.4.0`空间契约是历史里程碑；Rust AOI、NavMesh3D运行时和Cocos3D/UE/Unity/Godot演示均已落地，地图空间继续遵循[地图空间与3D坐标契约](docs/design/spatial-world.md)。模块宿主版本范围须逐个验证后迁移，不能自动放宽其他游戏声明。

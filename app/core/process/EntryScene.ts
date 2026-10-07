@@ -149,6 +149,8 @@ export abstract class EntryScene extends Scene {
   private readonly outboundControl: OutboundBatch[] = [];
   private readonly outboundReliable: OutboundBatch[] = [];
   private readonly outboundLatest: OutboundBatch[] = [];
+  /** 去重并保留请求顺序，随本 Scene 的出站帧交付关闭。 / Deduplicates close requests in order and delivers them with this Scene's outbound frames. */
+  private readonly pendingCloses = new Set<number>();
   private outboundReliableEnqueued = 0;
   private outboundLatestEnqueued = 0;
   private readonly outboundLaneDepths = {
@@ -578,6 +580,9 @@ export abstract class EntryScene extends Scene {
   }
 
   __disposeRuntime(): void {
+    if (this.pendingCloses.size > 0 && typeof hostCloseConnection === "function") {
+      for (const connectionId of this.drainCloses()) hostCloseConnection(connectionId);
+    }
     this.__dispose();
   }
 
@@ -751,12 +756,12 @@ export abstract class EntryScene extends Scene {
   /** 在本 Scene mailbox 内处理断线；这里禁止无上限重试。 / Handles connection loss inside this Scene's mailbox; avoid unbounded retries here. */
   protected onDisconnect(_connectionId: number): MaybePromise<void> {}
 
-  /** 请求宿主关闭连接；断线业务稍后仍通过 mailbox 执行。 / Requests host-side closure; disconnect business logic runs later through the mailbox. */
+  /** 关闭随下一次出站排空交付，先提交已排队通知；调用方应先清理会话，传输失败仍可能丢帧。 / Delivers close after queued outbound notices at the next drain; clear session state first, as transport failure can still lose frames. */
   protected disconnectClient(connectionId: number): void {
     if (!Number.isInteger(connectionId) || connectionId <= 0) {
       throw new Error(`invalid connection id: ${connectionId}`);
     }
-    hostCloseConnection(connectionId);
+    this.pendingCloses.add(connectionId);
   }
 
   /** 为一个客户端连接编码并入队一条 protobuf 消息。 / Encodes and queues one protobuf message for one client connection. */
@@ -954,6 +959,14 @@ export abstract class EntryScene extends Scene {
     return control;
   }
 
+  /** 空队列共用只读值，关闭请求仅交付一次。 / Shares an immutable empty value and hands each close request out once. */
+  private drainCloses(): readonly number[] {
+    if (this.pendingCloses.size === 0) return NO_CLOSES;
+    const closes = [...this.pendingCloses];
+    this.pendingCloses.clear();
+    return closes;
+  }
+
   private outboundQueue(delivery: ClientFrameDelivery): OutboundBatch[] {
     if (delivery === "latest") {
       this.outboundLatestEnqueued += 1;
@@ -1002,6 +1015,7 @@ export abstract class EntryScene extends Scene {
     this.metrics.lastUpdateCostMs = nowMs() - startedAt;
     return {
       outbound: this.drainOutbound(),
+      closes: this.drainCloses(),
       metrics: includeMetrics ? this.metricsSnapshot() : undefined,
       pendingAsync: this.orderedTask !== undefined ||
         this.unorderedTasks.size > 0 ||
@@ -2165,6 +2179,7 @@ export abstract class EntryScene extends Scene {
 const hostCloseConnection = (globalThis as typeof globalThis & {
   __hostCloseConnection: (connectionId: number) => void;
 }).__hostCloseConnection;
+const NO_CLOSES: readonly number[] = Object.freeze([]);
 
 export type EntrySceneCtor = new (config: RuntimeEntrySceneConfig) => EntryScene;
 

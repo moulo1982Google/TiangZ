@@ -27,6 +27,8 @@ import type { GlobalIdCounterSource } from "../runtime/GlobalIdLayout";
 
 export interface ProcessUpdateResult {
   outbound: OutboundBatch[];
+  /** 各 Scene 本次交出的关闭请求；须在 outbound 交给宿主之后再执行。 / Close requests from every Scene; apply only after outbound is handed to the host. */
+  closes: readonly number[];
   metrics: SceneMetricsSnapshot[];
   game: GameMetricsSnapshot;
   /** 进程内所有 Actor mailbox 的总计；不能按 Scene 重复累加。 / Process-wide totals for all Actor mailboxes; never duplicate them per Scene. */
@@ -339,6 +341,7 @@ function mergeResults(
   if (results.length === 1) {
     return {
       outbound: results[0].outbound,
+      closes: results[0].closes,
       metrics: results[0].metrics ? [results[0].metrics] : [],
       game,
       pendingAsync: results[0].pendingAsync,
@@ -347,6 +350,7 @@ function mergeResults(
   }
   const outbound: OutboundBatch[] = [];
   const metrics: SceneMetricsSnapshot[] = [];
+  let closes: number[] | undefined;
   let pendingAsync = false;
   let pendingIngress = false;
   for (const result of results) {
@@ -356,9 +360,11 @@ function mergeResults(
     for (const batch of result.outbound) {
       outbound.push(batch);
     }
+    if (result.closes.length > 0) (closes ??= []).push(...result.closes);
   }
   return {
     outbound,
+    closes: closes ?? [],
     metrics,
     game,
     pendingAsync,

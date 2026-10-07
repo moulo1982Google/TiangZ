@@ -1,5 +1,13 @@
 # 2026-09-16 模块拆分后的当前事实
 
+2026-10-07源码对齐终验：正式0.6.5关闭顺序/握手和模块Native worker已移植到0.7拆分、预算与RAII边界，并修复业务错误绕过输出字节上限的真实反例。最终实现树`044287f8`：Windows发布级check8/quick35/full9全部通过、Rust279，实际Host e58c4c25...与两份热更报告匹配；Linux整合基线full9/Rust282，随后新修复全目标Clippy/Rust283及两模块V8/worker真实热更停机专项通过，新Host bad00b6e...，两版来源分别保存，不把专项称新full9。API锁/codegen与204导出冻结检查通过，依赖/协议锁不变。源输入、首轮失败、复测、限制及后续SDK/插件/发行安排见[源码对齐](../design/v0.7-merge-0.6.5.md)。原业务资源、用户Examples修改与DBProxy R7原资格保留；不继承旧引擎制品，不push。以下整合中状态是历史快照。
+
+0.6.5整合复核新增真实框架反例：worker配置24字节输出，原`Err(String)`仍交付27字节UTF-8错误，`native-error-bound-red.log`真实失败；原因是原`and_then`仅检查成功结果。现同时约束成功与业务错误，超限替换固定诊断，不截断UTF-8、不改panic分类或业务容量；正在复测边界相等、恢复容量/失败统计/drain。Windows此前整合基线full9/9、quick35/35通过，不能把修复前的制品作为新Rust修复资格；须重建并运行新Process、完整矩阵及Linux原生复测。详见[源码对齐](../design/v0.7-merge-0.6.5.md)和[失败教训](business-development-manual.md#整合旧分支时须适配当前架构和宿主abi)。
+
+0.6.5整合专项复测：Native worker Rust4/4、WebSocket Rust6/6通过。完整首轮quick33/35，原端点Drop测试只接受EOF/reset而把新Close字节当异常，已适配有界Close/取消前缀读取并保留原1秒Socket释放、writer/准入归零和端口重绑；另修原历史文档两处Python绝对路径，门禁规则与封存证据不变。原失败保留，独立复测和下一轮完整矩阵正在执行，尚不登记整合资格。见[源码对齐](../design/v0.7-merge-0.6.5.md)及[失败教训](business-development-manual.md#整合旧分支时须适配当前架构和宿主abi)。
+
+2026-10-07源码对齐：隔离分支`integrate/v0.7-v0.6.5-20261007`整合正式`v0.6.5`（`d58ea6e`）到0.7原`f345c78`。移植通知后关闭、WebSocket握手和模块Native worker；保留EntryScene/Process/health拆分、预算、RAII与Tokio/V8上下文约束，不回退0.7版本或依赖。worker为Process级固定资源，多个Scene共用容量和不可逆drain，业务须明确唯一所有者；丢弃Promise不取消计算，热更等待计算与V8结果交付。API锁和codegen已重生成，类型/4项关闭单测/普通Rust编译检查通过，完整矩阵与真实进程验证尚在执行，不能继承旧引擎或DBProxy R7资格。其他五仓库无新增上游提交，用户Examples改动保留。移植夹具的旧导入、缺停机期限ABI及Rust枚举/atomic导入错误、Windows私有V8 junction修正均留原失败与独立复测，见[源码对齐](../design/v0.7-merge-0.6.5.md)和[失败教训](business-development-manual.md#整合旧分支时须适配当前架构和宿主abi)。未push；0.6.5未完成工作的具体范围待按实际源码核对。
+
 2026-10-07 11:12 R7新完整30/960/1440全部通过，24h11:11:59.183独审完成：120故障/300.979s空载/正常退出/全量SQL-Redis/容量/内存，17276原始区间14954正常零错误、281179唯一事件/170一致重复，原报告SHA25b87dab...源字节重核。真实512MiB收尾无OOM/swap，控制max1724保留；驱动RSS峰274.91MiB、审查196.15MiB，未加预算。所有本轮实际进程/容器停止、guard/本机探测停止，保护业务正常；旧失败不翻通过、不进入7日测试、不自动升级旧RC资格，完整报告和来源见[收尾专题](../design/v0.7-soak-control-memory.md)。仅终验/发行证据整理，无产品/生成/制品版本改动或push。
 
 2026-10-06 14:37 纠正旧24h内存预检范围：旧synthetic只扩samples/intervals，遗漏正式审查持有的progress等数组，不能继续当完整24h报告包络；原实际SQL/Redis及新30/960m资格保持。补全progress/intervals17276、samples2973、faults/schedule120、generations27，实际冻结发布函数输出40.89MiB报告，Python重新全解析持有+Node192MiB解析/280959编号双缓冲，并在独立512MiB真实clean-cache压限下64s通过：发布RSS71.49MiB、审查173.98MiB、采样reserve峰241.57MiB<448，max1125/暂态峰512.19MiB保留、OOM/swap零。仅内存格式/驻留证明，两套编号同源SQLite，不是本次SQL/Redis独立投递或24h资格。R7现场/预算未动；当前总量约501MiB主要clean file，不能线性推24h，实际收尾仍是最终判据，详见[收尾专题](../design/v0.7-soak-control-memory.md)及独立cache-preflight证据。
@@ -818,7 +826,7 @@ Numeric的`MoveSpeed`已从通用Numeric表拆到`app/model/mmorpg/numeric/Movem
 
 公共`LoginFlow.latestGatePing`保存最近一次Gate Ping的RTT、服务端Unix毫秒时间、估算时钟偏差和本地接收时间。客户端显示网络延迟必须使用RTT，不能直接用`Date.now() - serverTime`，否则客户端与服务器的时钟差会被误算成网络延迟。
 
-当前版本是`0.6.2`（2026-09-23 发布；`0.6.0` 于 2026-09-20 发布，此前为 `0.6.0-alpha.0` 开发预发布）。框架支持独立游戏模块，MMORPG 是领域示例，SLG 正在验证开发体验。模块 `<0.5.0` 宿主上限会拒绝本版本，须逐个验证后迁移并重新生成、构建和重启；不得自动放宽其他游戏声明。`v0.3.10`是框架能力的首个稳定基线。Phase 0到Phase 3.10.5的实现、专项验收以及Windows/Linux最终发布矩阵已经完成；Phase 4.0空间契约、Phase 4.1 Rust AOI和Phase 4.2.5 NavMesh3D动态障碍链已经完成。工程已有登录、选服、进入地图、2D/3D多人移动、状态广播、WebSocket/Cocos Web、KCP/Cocos Native、Pixi/H5和Godot 4.7.1验收链路，并完成Windows 3000玩家AOI正式容量回归；角色与怪物之间的动态阻挡和动态避让明确不做，尚未完成Linux/分布式空间负载、完整商业MMORPG业务和生产运维方案。
+当前开发候选是`0.7.0-rc.2`，尚未push或发布；上一正式版为`0.6.5`（2026-09-30；`0.6.4`于2026-09-29、`0.6.3`于2026-09-28发布）。框架支持独立游戏模块，MMORPG 是领域示例，SLG 正在验证开发体验。模块 `<0.5.0` 宿主上限会拒绝本版本，须逐个验证后迁移并重新生成、构建和重启；不得自动放宽其他游戏声明。`v0.3.10`是框架能力的首个稳定基线。Phase 0到Phase 3.10.5的实现、专项验收以及Windows/Linux最终发布矩阵已经完成；Phase 4.0空间契约、Phase 4.1 Rust AOI和Phase 4.2.5 NavMesh3D动态障碍链已经完成。工程已有登录、选服、进入地图、2D/3D多人移动、状态广播、WebSocket/Cocos Web、KCP/Cocos Native、Pixi/H5和Godot 4.7.1验收链路，并完成Windows 3000玩家AOI正式容量回归；角色与怪物之间的动态阻挡和动态避让明确不做，尚未完成Linux/分布式空间负载、完整商业MMORPG业务和生产运维方案。
 
 NavMesh3D的同一目标意图由Rust保留现有路径与游标，只更新较新的确认序号；目标变化、显式重置或障碍版本变化才触发重算。这个幂等性是通用导航运行时契约，业务模块仍只决定目标和行为节奏，不把具体游戏巡逻规则写入Core。
 
@@ -894,7 +902,7 @@ Actor是“拥有mailbox并能按InstanceId路由”的运行时能力，不是�
 
 Gate连接状态分成两层：`GateSession`只代表一次物理连接，断开即销毁；`GatePlayerRoute`按账号保存`UnitId -> MapHost/Map/ActorInstanceId`和当前`connectionId`，在30秒重连宽限期内继续存在。客户端每5秒调用`C2G_Ping -> G2C_Ping`，响应携带Gate生成响应时的Unix毫秒`serverTime`；Gate收到任意客户端帧都会先刷新`lastReceiveTime`，出站排队只更新`lastSendTime`，绝不能延长存活期限。Ping是无锁的普通TS RPC Handler；Session为unordered，所以它不会排在长时间EnterMap之后。会修改Route的操作按账号进入协程锁，断线和超时下线取得锁后必须重新校验连接所有权或超时条件。Gate使用一个1秒合并扫描器检查全部Route，不为每名玩家创建Timer。
 
-同账号新连接会在Gate内原子替换旧`connectionId`。旧Session会先失去账号、角色、Token和Route所有权，再收到`G2C_SessionReplaced`（错误码`10040`），最后请求关闭旧Socket；旧socket迟到的disconnect和在途Handler只会失败，不能清理新连接或Map Unit。服务端传输层在关闭前会排空已入队的下行帧，客户端`RpcSocket`也会保留关闭前已经收到但尚未由`update()`分发的单向消息，因此Cocos/Web/Pixi可以可靠显示“账号已在其他设备登录”。客户端SDK通过`LoginFlow.onSessionReplaced`暴露通知，业务回调负责清理本地场景并回到登录界面。同Gate顶号由连接代次保证；跨Gate故障接管由Location gateEpoch和Actor fencing保证，两者不能混成一个全局Session对象。
+同账号新连接会在Gate内原子替换旧`connectionId`。旧Session会先失去账号、角色、Token和Route所有权，再收到`G2C_SessionReplaced`（错误码`10040`），最后请求关闭旧Socket；旧socket迟到的disconnect和在途Handler只会失败，不能清理新连接或Map Unit。`disconnectClient`的关闭请求随本Scene出站帧一起交给宿主、排在此前入队的通知之后（0.6.3），服务端传输层在关闭前再排空已交付的下行帧，客户端`RpcSocket`也会保留关闭前已经收到但尚未由`update()`分发的单向消息，健康传输下Cocos/Web/Pixi可以显示“账号已在其他设备登录”。客户端SDK通过`LoginFlow.onSessionReplaced`暴露通知，业务回调负责清理本地场景并回到登录界面。同Gate顶号由连接代次保证；跨Gate故障接管由Location gateEpoch和Actor fencing保证，两者不能混成一个全局Session对象。
 
 重连后Gate以现有Actor路由调用`SecondEnterMap`，Map只清除旧移动意图并返回权威全量快照，不创建Unit、不重新广播AOI进入、不改绑Gate。宽限期结束后Gate才调用`PlayerOffline`；Map完成保存和Location移除后先响应Unit RPC，再由下一轮Map Timer完成AOI离开和Actor销毁，不能在PlayerUnit自己的mailbox中同步`DespawnActor`自己，否则运行时会把正常下线误判为Actor在mailbox执行期间消失。Map不拥有断线Timer，也不保存`gateSessionId`。
 
