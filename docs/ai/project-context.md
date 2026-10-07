@@ -1,5 +1,7 @@
 # 2026-09-16 模块拆分后的当前事实
 
+源码落地：真实双亲合并`c06b244`已快进原`feat/v0.7`，原工作区Rust/KCP、Model/配置重建与真实模块宿主启动停止通过；该Host SHA3d390885...，日志`temp/v07-065-integration-main/`。与隔离Windows PE、Linux ELF分别记录，生成与依赖锁无漂移，未push；细节见[源码对齐](../design/v0.7-merge-0.6.5.md)。
+
 2026-10-07源码对齐终验：正式0.6.5关闭顺序/握手和模块Native worker已移植到0.7拆分、预算与RAII边界，并修复业务错误绕过输出字节上限的真实反例。最终实现树`044287f8`：Windows发布级check8/quick35/full9全部通过、Rust279，实际Host e58c4c25...与两份热更报告匹配；Linux整合基线full9/Rust282，随后新修复全目标Clippy/Rust283及两模块V8/worker真实热更停机专项通过，新Host bad00b6e...，两版来源分别保存，不把专项称新full9。API锁/codegen与204导出冻结检查通过，依赖/协议锁不变。源输入、首轮失败、复测、限制及后续SDK/插件/发行安排见[源码对齐](../design/v0.7-merge-0.6.5.md)。原业务资源、用户Examples修改与DBProxy R7原资格保留；不继承旧引擎制品，不push。以下整合中状态是历史快照。
 
 0.6.5整合复核新增真实框架反例：worker配置24字节输出，原`Err(String)`仍交付27字节UTF-8错误，`native-error-bound-red.log`真实失败；原因是原`and_then`仅检查成功结果。现同时约束成功与业务错误，超限替换固定诊断，不截断UTF-8、不改panic分类或业务容量；正在复测边界相等、恢复容量/失败统计/drain。Windows此前整合基线full9/9、quick35/35通过，不能把修复前的制品作为新Rust修复资格；须重建并运行新Process、完整矩阵及Linux原生复测。详见[源码对齐](../design/v0.7-merge-0.6.5.md)和[失败教训](business-development-manual.md#整合旧分支时须适配当前架构和宿主abi)。

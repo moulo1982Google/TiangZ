@@ -1,5 +1,7 @@
 # 2026-09-16：先选业务工程，再写模块
 
+源码落地：双亲合并`c06b244`已快进原`feat/v0.7`，原工作区完整Rust/KCP和启动包重建、真实模块宿主启动/停止通过，Host SHA3d390885...；生成/依赖锁无漂移。原目录证据`temp/v07-065-integration-main/`与隔离矩阵分开，不把旧二进制当新Rust结果。MSVC既有链接警告保留、未push，见[源码对齐](../design/v0.7-merge-0.6.5.md)。
+
 2026-10-07源码对齐终验：0.6.5关闭/Native worker整合保留0.7拆分、预算和RAII，另补成功/业务错误均按UTF-8字节限长，固定panic诊断保持分类。最终实现树044287f8，Windows发布级check8/quick35/full9、Rust279通过；Linux原整合full9/Rust282，最终Rust修复另跑全目标Clippy/Rust283和两模块V8/worker真实热更停机通过，不把旧full或专项互相冒充。API锁/codegen/204导出冻结检查通过、依赖与协议锁不变；首轮夹具、可移植路径和真实超长错误反例均保留，见[源码对齐](../design/v0.7-merge-0.6.5.md)及[失败教训](#整合旧分支时须适配当前架构和宿主abi)。后续核对未完功能、SDK/插件与发行输入，未push；以下为历史快照。
 
 2026-10-07源码对齐：正式`v0.6.5`正在独立整合到0.7，通知后关闭、WebSocket关闭握手与模块Native worker须适配0.7现有拆分、RAII和预算，不能整文件回退。worker为Process级资源，多个Scene共用容量/不可逆drain；业务须明确唯一所有者，丢弃Promise不取消计算，Hotfix等待计算与V8交付。其他五仓库没有新增上游提交，用户Examples改动保留；插件、SDK与用户指出的未完成内容分别核对。API锁/codegen、类型/关闭单测和普通Rust编译已通过，完整矩阵仍在执行，新Host不继承旧制品或DBProxy长稳资格。详细来源、首轮失败与复测见[源码对齐](../design/v0.7-merge-0.6.5.md)及[夹具适配教训](#整合旧分支时须适配当前架构和宿主abi)，未push。
