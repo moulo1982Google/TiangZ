@@ -587,6 +587,7 @@ struct ProcessEventReceiver {
     previous_consecutive_control: usize,
     pending_control: Option<ProcessEvent>,
     pending_data: Option<ProcessEvent>,
+    async_results: Option<Arc<crate::host_wake::AsyncResultSignal>>,
 }
 
 impl ProcessEventReceiver {
@@ -607,7 +608,15 @@ impl ProcessEventReceiver {
             previous_consecutive_control: 0,
             pending_control: None,
             pending_data: None,
+            async_results: None,
         }
+    }
+
+    /// 让异步结果通知也能结束空闲等待；未设置时只有事件能结束等待。
+    /// Lets async-result notifications end an idle wait; without it only events end the wait.
+    fn with_async_results(mut self, signal: Arc<crate::host_wake::AsyncResultSignal>) -> Self {
+        self.async_results = Some(signal);
+        self
     }
 
     fn received(&mut self, event: ProcessEvent) -> ProcessEvent {
@@ -684,6 +693,15 @@ impl ProcessEventReceiver {
                     return Err(mpsc::RecvTimeoutError::Disconnected);
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
+            }
+            // 有异步结果待交付时不再等待，按“超时”返回让主循环推进一轮 JS。
+            // With an async result pending, stop waiting and report a timeout so the loop pumps JS.
+            if self
+                .async_results
+                .as_ref()
+                .is_some_and(|signal| signal.take())
+            {
+                return Err(mpsc::RecvTimeoutError::Timeout);
             }
             let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
                 return Err(mpsc::RecvTimeoutError::Timeout);
@@ -1016,6 +1034,8 @@ async fn run_runtime_config_with_backend(
     let (control_tx, control_rx) = mpsc::sync_channel::<ProcessEvent>(control_queue_capacity);
     let (data_tx, data_rx) = mpsc::sync_channel::<ProcessEvent>(data_queue_capacity);
     let (wake_tx, wake_rx) = mpsc::sync_channel::<()>(1);
+    let async_results = crate::host_wake::AsyncResultSignal::new(wake_tx.clone());
+    crate::host_wake::install(Arc::clone(&async_results));
     let (runtime_control_tx, runtime_control_rx) = mpsc::channel::<RuntimeControl>();
     let queue_stats = Arc::new(ProcessQueueStats::with_network_limits(
         event_queue_capacity,
@@ -1034,7 +1054,8 @@ async fn run_runtime_config_with_backend(
         wake_rx,
         Arc::clone(&queue_stats.control_admission),
         Arc::clone(&queue_stats.host_events),
-    );
+    )
+    .with_async_results(async_results);
     let runtime_stale_after = config
         .process
         .observability
@@ -1877,7 +1898,7 @@ fn flush_runtime_batch(
     pump_js_event_loop_once(js_event_loop, runtime)?;
 
     let sample_metrics = last_metrics_log.elapsed() >= Duration::from_secs(5);
-    let (update_result, outbound) = call_js_update_binary(
+    let (update_result, mut outbound) = call_js_update_binary(
         js_event_loop,
         runtime,
         entrypoints,
@@ -1885,8 +1906,8 @@ fn flush_runtime_batch(
         hotfix_draining,
     )?;
     let (
-        pending_async,
-        pending_ingress,
+        mut pending_async,
+        mut pending_ingress,
         metrics,
         game_metrics,
         native_data_metrics,
@@ -1936,6 +1957,24 @@ fn flush_runtime_batch(
             writers,
             health_state,
         );
+    }
+    // async Handler 在 Update 内派发，回包在 Update 返回后的微任务里才产生，会错过本轮取回包；空闲时要等下一个
+    // idle tick。有在途异步任务时补跑微任务并再执行一次 Update 取回包：不等待任何 I/O（不能让 Update 去 await，
+    // 否则宿主 block_on 会把 V8 卡到 op 完成），游戏帧与 Timer 按时间门控，等价于立即多跑一轮空循环。
+    // Async Handlers are dispatched inside Update but reply from microtasks after it returns, missing this drain
+    // and, when idle, waiting a whole idle tick. With async work in flight, run microtasks and update once more to
+    // drain replies: no I/O is awaited (Update must not await, or the host block_on pins V8 until the op finishes),
+    // and frames/Timers are time-gated, so this equals one immediate extra empty loop.
+    if pending_async {
+        runtime.v8_isolate().perform_microtask_checkpoint();
+        let (state, replies) =
+            call_js_update_binary(js_event_loop, runtime, entrypoints, false, hotfix_draining)?;
+        let state = state
+            .parse::<u8>()
+            .with_context(|| format!("TS update returned invalid compact state: {state}"))?;
+        pending_async = state & 1 != 0;
+        pending_ingress = state & 2 != 0;
+        outbound.extend(replies);
     }
     flush_outbound(outbound, writers, queue_stats)?;
     close_requested_connections(take_close_connection_requests(), writers);
@@ -2185,6 +2224,61 @@ mod tests {
         assert_eq!(stats.outbound_buffers.snapshot().rejections, 1);
         drop(receivers);
         assert_eq!(stats.outbound_buffers.snapshot().used_bytes, 0);
+    }
+
+    // 异步结果通知在队列为空时也结束空闲等待；普通（不带事件、不带标志）唤醒仍继续等到超时。
+    // An async-result notification ends an idle wait even with empty queues; a bare wake still waits for the timeout.
+    #[test]
+    fn async_result_signal_ends_idle_wait_but_bare_wake_does_not() {
+        let (_control_sender, control_receiver) = mpsc::sync_channel(1);
+        let (_data_sender, data_receiver) = mpsc::sync_channel(1);
+        let (wake_sender, wake_receiver) = mpsc::sync_channel(1);
+        let stats = Arc::new(ProcessQueueStats::default());
+        let signal = crate::host_wake::AsyncResultSignal::new(wake_sender.clone());
+        let mut receiver = ProcessEventReceiver::new(
+            control_receiver,
+            data_receiver,
+            wake_receiver,
+            Arc::clone(&stats.control_admission),
+            Arc::clone(&stats.host_events),
+        )
+        .with_async_results(Arc::clone(&signal));
+
+        let started = Instant::now();
+        wake_sender.try_send(()).unwrap();
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_millis(120)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        assert!(
+            started.elapsed() >= Duration::from_millis(100),
+            "a bare wake must not end the wait"
+        );
+
+        let notifier = Arc::clone(&signal);
+        let wake_later = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(20));
+            notifier.notify();
+        });
+        let started = Instant::now();
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_secs(10)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "the async-result signal must end the wait"
+        );
+        wake_later.join().unwrap();
+        assert!(!signal.take(), "the receiver consumes the pending flag");
+
+        signal.notify();
+        let started = Instant::now();
+        assert!(receiver.recv_timeout(Duration::from_secs(10)).is_err());
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "a notification before waiting is not lost"
+        );
     }
 
     #[tokio::test]
