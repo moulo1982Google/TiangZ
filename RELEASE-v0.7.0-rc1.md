@@ -17,4 +17,6 @@ Host、DBProxy 与 Examples 根版本为 0.7.0-rc1。Developer Core 0.16.1-rc.2�
 
 ## v0.7.0-rc1 发布准备的环境记录
 
+本次新构建宿主及 `npm run check` 8/8 已通过；协议锁、Core API 锁、版本锁严格检查通过。安全 CI 首轮发现 `source-map-js@1.2.1` 的 GHSA-68fv-2mgg-jv7q，已通过 npm 将唯一受影响的间接依赖更新为 1.2.2，未增加豁免；更新后的 npm audit 为 0 项漏洞，远端检查以最终提交为准。
+
 隔离目录首轮 check 为 7/8，模块宿主项因尚未构建 target/debug/TiangZ.exe 拒绝；不能复用旧二进制宣称通过。随后 Windows 首次构建因 Cargo 注册表位于 C 盘、target 位于 D 盘，V8 构建脚本创建跨卷目录链接时返回 Win32 1314（缺少符号链接权限）。保留两次原日志，使用与 Cargo 注册表同卷的本次专用 CARGO_TARGET_DIR 重建，不修改系统权限或依赖源码。新宿主复制回本次隔离目录后复验模块宿主；最终结果与 SHA256 记录在发布验证附件中，旧失败不改写。独立构建与复验尚未完成时不得标记通过。
