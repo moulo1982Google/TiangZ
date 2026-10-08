@@ -23,7 +23,7 @@ for (const name of ["left", "right"]) {
   for (const folder of ["src/model", "src/hotfix", "native", "rust/src"]) await mkdir(path.join(directory, folder), { recursive: true });
   await writeFile(path.join(directory, "tiangz.module.json"), JSON.stringify({
     formatVersion: 1, id: `org.example.${name}`, version: "1.0.0",
-    engine: { minVersion: "0.6.0-alpha.0", maxVersionExclusive: "0.7.0" }, dependencies: [],
+    engine: { minVersion: "0.7.0", maxVersionExclusive: "0.8.0" }, dependencies: [],
     entries: { model: "src/model/index.ts", hotfix: "src/hotfix/index.ts" },
     native: { source: "native", crate: "rust", crateName: `module_native_${name}`,
       generatedRust: "rust/src/generated", generatedTypeScript: "src/model/generated/native",

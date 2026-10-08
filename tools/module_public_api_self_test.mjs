@@ -16,7 +16,7 @@ try {
     await mkdir(path.join(directory, "src", "hotfix"), { recursive: true });
     await writeFile(path.join(directory, "tiangz.module.json"), JSON.stringify({
       formatVersion: 1, id: `org.example.${name}`, version: "1.0.0",
-      engine: { minVersion: "0.6.0-alpha.0", maxVersionExclusive: "0.7.0" },
+      engine: { minVersion: "0.7.0", maxVersionExclusive: "0.8.0" },
       dependencies: name === "provider" ? [] : [{ id: "org.example.provider", minVersion: "1.0.0", maxVersionExclusive: "2.0.0" }],
       entries: { model: "src/model/index.ts", hotfix: "src/hotfix/index.ts" },
       ...(name === "provider" ? { publicApi: "src/model/public.ts" } : {}),

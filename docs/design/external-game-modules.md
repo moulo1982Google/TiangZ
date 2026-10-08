@@ -118,8 +118,8 @@ npm run dev
   "version": "1.0.0",
   "description": "Example module",
   "engine": {
-    "minVersion": "0.6.0-alpha.0",
-    "maxVersionExclusive": "0.7.0"
+    "minVersion": "0.7.0",
+    "maxVersionExclusive": "0.8.0"
   },
   "dependencies": [],
   "capabilities": ["example.greeting"],
