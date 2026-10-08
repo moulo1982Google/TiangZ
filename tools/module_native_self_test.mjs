@@ -182,6 +182,7 @@ if (process.argv.includes("--rust")) {
     mod native_worker;
     #[tokio::main(flavor = "current_thread")]
     async fn main() {
+
       let mut runtime = deno_core::JsRuntime::new(deno_core::RuntimeOptions {
         extensions: vec![native_worker::native_workers::init(), tiangz_module_0::extension(), tiangz_module_1::extension()],
         ..Default::default()

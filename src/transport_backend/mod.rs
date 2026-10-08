@@ -1,23 +1,30 @@
 //! 将端点协议语义与所选操作系统 I/O 后端分离。 / Separates endpoint protocol semantics from the selected operating-system I/O backend.
 
+pub(crate) mod admission;
 mod epoll;
+mod handshake;
 #[cfg(feature = "kcp")]
 mod kcp;
+mod lifecycle;
 #[cfg(all(target_os = "linux", feature = "io-uring"))]
 mod uring;
+#[cfg(test)]
+mod write_tests;
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Result, bail};
 use bytes::Bytes;
 #[cfg(any(test, all(target_os = "linux", feature = "io-uring")))]
 use bytes::{Buf, BytesMut};
+use tiangz_transport::buffer_budget::{BufferBudget, BufferReservation};
 use tokio::sync::{mpsc, watch};
 
-use crate::config::{IoBackendKind, ProcessNetworkConfig, SceneConfig};
+use crate::config::{EndpointAudience, IoBackendKind, ProcessNetworkConfig, SceneConfig};
 use crate::process::{ProcessEventSender, ProcessQueueStats};
+pub(crate) use lifecycle::{EndpointTask, stop_endpoints};
 
 pub(crate) const MAX_FRAME_LEN: usize = 1024 * 1024;
 pub(crate) const CONNECTION_OUTBOUND_FRAME_CAPACITY: usize = 4096;
@@ -30,6 +37,7 @@ pub(crate) const MAX_INNER_TOKEN_LEN: usize = 1024;
 
 #[derive(Clone)]
 pub(crate) struct ConnectionWriter {
+    pub(crate) process_buffer_budget: Arc<BufferBudget>,
     pub(crate) sender: mpsc::Sender<ConnectionWriteBatch>,
     pub(crate) queued_bytes: Arc<AtomicUsize>,
     pub(crate) queued_frames: Arc<AtomicUsize>,
@@ -39,22 +47,69 @@ pub(crate) struct ConnectionWriter {
 pub(crate) struct ConnectionWriteBatch {
     pub(crate) frames: Vec<Bytes>,
     pub(crate) frame_bytes: usize,
+    reservation: Option<Arc<QueueReservation>>,
+}
+
+struct QueueReservation {
+    process_bytes: Option<BufferReservation>,
+    admitted_at: tokio::time::Instant,
+    queued_bytes: Arc<AtomicUsize>,
+    queued_frames: Arc<AtomicUsize>,
+    bytes: usize,
+    frames: usize,
+}
+
+impl Drop for QueueReservation {
+    /// 排队、写出或转发失败均只释放一次实际预留。 / Releases the actual reservation exactly once after queuing, writing or forwarding.
+    fn drop(&mut self) {
+        self.queued_bytes.fetch_sub(self.bytes, Ordering::Relaxed);
+        self.queued_frames.fetch_sub(self.frames, Ordering::Relaxed);
+    }
 }
 
 impl ConnectionWriteBatch {
+    /// 排队及 I/O 共用准入期限，期限已耗尽时不得启动立即 ready 的写操作。 / Shares admission time across queuing/I/O and refuses ready writes after expiry.
+    pub(super) async fn write_within<T>(
+        &self,
+        budget: std::time::Duration,
+        operation: impl std::future::Future<Output = Result<T>>,
+    ) -> Result<T> {
+        let admitted_at = self
+            .reservation
+            .as_ref()
+            .map(|reservation| reservation.admitted_at)
+            .unwrap_or_else(tokio::time::Instant::now);
+        let deadline = admitted_at + budget;
+        if tokio::time::Instant::now() >= deadline {
+            bail!(
+                "outbound batch expired before writing: frames={} bytes={}",
+                self.frames.len(),
+                self.frame_bytes
+            );
+        }
+        tokio::time::timeout_at(deadline, operation).await.map_err(|_| anyhow::anyhow!(
+            "outbound batch write timed out: frames={} bytes={}; connection result may be partial",
+            self.frames.len(), self.frame_bytes,
+        ))?
+    }
+
+    /// 构造尚未占用连接预算的单帧批次。 / Builds an unreserved single-frame batch.
     fn single(frame: Bytes) -> Self {
         let frame_bytes = frame.len();
         Self {
             frames: vec![frame],
             frame_bytes,
+            reservation: None,
         }
     }
 
+    /// 批次接收入队时才预留预算，构造本身不改变连接计数。 / Reserves only on admission; constructing a batch does not change connection counters.
     pub(crate) fn from_frames(frames: Vec<Bytes>) -> Self {
         let frame_bytes = frames.iter().map(Bytes::len).sum();
         Self {
             frames,
             frame_bytes,
+            reservation: None,
         }
     }
 }
@@ -63,6 +118,7 @@ pub(crate) type ConnectionWriters = Arc<Mutex<HashMap<u64, ConnectionWriter>>>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ConnectionQueueError {
+    ProcessByteLimit,
     ByteLimit,
     FrameLimit,
     Full,
@@ -72,6 +128,7 @@ pub(crate) enum ConnectionQueueError {
 impl std::fmt::Display for ConnectionQueueError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            Self::ProcessByteLimit => "process outbound byte budget is full",
             Self::ByteLimit => "connection outbound byte queue is full",
             Self::FrameLimit => "connection outbound frame queue is full",
             Self::Full => "connection outbound batch queue is full",
@@ -94,7 +151,7 @@ pub(crate) fn try_queue_connection_frame(
 /// Rolls back this batch's queue accounting and distinguishes capacity from receiver closure.
 pub(crate) fn try_queue_connection_batch(
     writer: &ConnectionWriter,
-    batch: ConnectionWriteBatch,
+    mut batch: ConnectionWriteBatch,
 ) -> std::result::Result<(), ConnectionQueueError> {
     let frame_count = batch.frames.len();
     if frame_count == 0 {
@@ -104,50 +161,67 @@ pub(crate) fn try_queue_connection_batch(
         return Err(ConnectionQueueError::Closed);
     }
     let frame_bytes = batch.frame_bytes;
-    let queued = writer
+    if writer
         .queued_bytes
-        .fetch_add(frame_bytes, std::sync::atomic::Ordering::Relaxed)
-        + frame_bytes;
-    if queued > CONNECTION_OUTBOUND_BYTE_CAPACITY {
-        writer
-            .queued_bytes
-            .fetch_sub(frame_bytes, std::sync::atomic::Ordering::Relaxed);
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |queued| {
+            queued
+                .checked_add(frame_bytes)
+                .filter(|total| *total <= CONNECTION_OUTBOUND_BYTE_CAPACITY)
+        })
+        .is_err()
+    {
         return Err(ConnectionQueueError::ByteLimit);
     }
-    let queued_frames = writer
+    let mut reservation = QueueReservation {
+        process_bytes: None,
+        admitted_at: tokio::time::Instant::now(),
+        queued_bytes: writer.queued_bytes.clone(),
+        queued_frames: writer.queued_frames.clone(),
+        bytes: frame_bytes,
+        frames: 0,
+    };
+    if writer
         .queued_frames
-        .fetch_add(frame_count, std::sync::atomic::Ordering::Relaxed)
-        + frame_count;
-    if queued_frames > CONNECTION_OUTBOUND_FRAME_CAPACITY {
-        writer
-            .queued_frames
-            .fetch_sub(frame_count, std::sync::atomic::Ordering::Relaxed);
-        writer
-            .queued_bytes
-            .fetch_sub(frame_bytes, std::sync::atomic::Ordering::Relaxed);
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |queued| {
+            queued
+                .checked_add(frame_count)
+                .filter(|total| *total <= CONNECTION_OUTBOUND_FRAME_CAPACITY)
+        })
+        .is_err()
+    {
         return Err(ConnectionQueueError::FrameLimit);
     }
-    match writer.sender.try_send(batch) {
-        Ok(()) => Ok(()),
-        Err(error) => {
-            writer
-                .queued_frames
-                .fetch_sub(frame_count, std::sync::atomic::Ordering::Relaxed);
-            writer
-                .queued_bytes
-                .fetch_sub(frame_bytes, std::sync::atomic::Ordering::Relaxed);
-            Err(match error {
-                mpsc::error::TrySendError::Full(_) => ConnectionQueueError::Full,
-                mpsc::error::TrySendError::Closed(_) => ConnectionQueueError::Closed,
-            })
-        }
-    }
+    reservation.frames = frame_count;
+    reservation.process_bytes = Some(
+        writer
+            .process_buffer_budget
+            .try_reserve(frame_bytes)
+            .ok_or(ConnectionQueueError::ProcessByteLimit)?,
+    );
+    batch.reservation = Some(Arc::new(reservation));
+    writer.sender.try_send(batch).map_err(|error| match error {
+        mpsc::error::TrySendError::Full(_) => ConnectionQueueError::Full,
+        mpsc::error::TrySendError::Closed(_) => ConnectionQueueError::Closed,
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ConnectionKind {
     External,
     Internal,
+}
+
+/// 在业务登记前限制连接用途；内部身份仍须先通过凭据握手，不能由来源 IP 推断。 / Enforces endpoint audience before registration; inner identity still requires credentials, never an IP guess.
+pub(crate) fn validate_connection_audience(
+    audience: EndpointAudience,
+    kind: ConnectionKind,
+) -> Result<()> {
+    match (audience, kind) {
+        (EndpointAudience::Mixed, _)
+        | (EndpointAudience::Inner, ConnectionKind::Internal)
+        | (EndpointAudience::Outer, ConnectionKind::External) => Ok(()),
+        _ => bail!("connection kind {kind:?} is not allowed on an {audience:?} endpoint"),
+    }
 }
 
 #[cfg(any(test, all(target_os = "linux", feature = "io-uring")))]
@@ -195,6 +269,8 @@ impl RawFrameDecoder {
 }
 
 pub(crate) struct EndpointContext {
+    pub(crate) shutdown_timeout: std::time::Duration,
+    pub(crate) write_timeout: std::time::Duration,
     pub(crate) scene_index: u32,
     pub(crate) scene: SceneConfig,
     pub(crate) event_tx: ProcessEventSender,
@@ -209,7 +285,7 @@ pub(crate) struct EndpointContext {
 /// an independent choice in `SceneConfig::protocol`.
 pub(crate) trait IoBackend: Send + Sync {
     fn name(&self) -> &'static str;
-    fn start_endpoint(&self, context: EndpointContext) -> Result<()>;
+    fn start_endpoint(&self, context: EndpointContext) -> Result<EndpointTask>;
 }
 
 pub(crate) fn create_io_backend(config: &ProcessNetworkConfig) -> Result<Arc<dyn IoBackend>> {
@@ -262,6 +338,89 @@ pub(crate) fn validate_frame_length(length: usize) -> Result<()> {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn shared_process_bytes_cover_in_flight_and_forwarded_batches_across_connections() {
+        let budget = BufferBudget::new(6);
+        let writer = || {
+            let (sender, receiver) = mpsc::channel(2);
+            let (shutdown_tx, _) = watch::channel(false);
+            (
+                ConnectionWriter {
+                    process_buffer_budget: budget.clone(),
+                    sender,
+                    shutdown_tx,
+                    queued_bytes: Arc::new(AtomicUsize::new(0)),
+                    queued_frames: Arc::new(AtomicUsize::new(0)),
+                },
+                receiver,
+            )
+        };
+        let (first, mut first_receiver) = writer();
+        let (second, second_receiver) = writer();
+        let (third, third_receiver) = writer();
+        try_queue_connection_frame(&first, Bytes::from_static(b"four")).unwrap();
+        assert_eq!(
+            try_queue_connection_frame(&second, Bytes::from_static(b"big")),
+            Err(ConnectionQueueError::ProcessByteLimit)
+        );
+        assert_eq!(second.queued_bytes.load(Ordering::Relaxed), 0);
+        assert_eq!(second.queued_frames.load(Ordering::Relaxed), 0);
+        try_queue_connection_frame(&second, Bytes::from_static(b"ok")).unwrap();
+        let in_flight = first_receiver.recv().await.unwrap();
+        assert_eq!(budget.snapshot().used_bytes, 6);
+        let forwarded = in_flight.reservation.clone();
+        drop(in_flight);
+        drop(first_receiver);
+        assert_eq!(budget.snapshot().used_bytes, 6);
+        drop(second_receiver);
+        assert_eq!(budget.snapshot().used_bytes, 4);
+        assert_eq!(
+            try_queue_connection_frame(&third, Bytes::from_static(b"big")),
+            Err(ConnectionQueueError::ProcessByteLimit)
+        );
+        drop(forwarded);
+        assert_eq!(budget.snapshot().used_bytes, 0);
+        try_queue_connection_frame(&third, Bytes::from_static(b"reused")).unwrap();
+        assert_eq!(budget.snapshot().used_bytes, 6);
+        drop(third_receiver);
+        assert_eq!(budget.snapshot().used_bytes, 0);
+        assert_eq!(budget.snapshot().rejections, 2);
+    }
+
+    #[tokio::test]
+    async fn outbound_accounting_lives_until_in_flight_batch_and_receiver_are_dropped() {
+        use std::sync::atomic::Ordering;
+        let (sender, mut receiver) = mpsc::channel(2);
+        let (shutdown_tx, _) = watch::channel(false);
+        let writer = ConnectionWriter {
+            process_buffer_budget: BufferBudget::new(64 * 1024 * 1024),
+            sender,
+            queued_bytes: Arc::new(AtomicUsize::new(0)),
+            queued_frames: Arc::new(AtomicUsize::new(0)),
+            shutdown_tx,
+        };
+        try_queue_connection_batch(
+            &writer,
+            ConnectionWriteBatch::from_frames(vec![Bytes::from_static(&[0, 1]); 2]),
+        )
+        .unwrap();
+        try_queue_connection_frame(&writer, Bytes::from_static(&[0, 1, 2])).unwrap();
+        let in_flight = receiver.recv().await.unwrap();
+        assert_eq!(writer.queued_bytes.load(Ordering::Relaxed), 7);
+        assert_eq!(writer.queued_frames.load(Ordering::Relaxed), 3);
+        drop(receiver);
+        assert_eq!(writer.queued_bytes.load(Ordering::Relaxed), 4);
+        assert_eq!(writer.queued_frames.load(Ordering::Relaxed), 2);
+        drop(in_flight);
+        assert_eq!(writer.queued_bytes.load(Ordering::Relaxed), 0);
+        assert_eq!(writer.queued_frames.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            try_queue_connection_frame(&writer, Bytes::from_static(&[0, 1])),
+            Err(ConnectionQueueError::Closed)
+        );
+        assert_eq!(writer.queued_bytes.load(Ordering::Relaxed), 0);
+    }
+
     #[test]
     fn outbound_queue_errors_preserve_existing_accounting() {
         use std::sync::atomic::Ordering;
@@ -286,6 +445,7 @@ mod tests {
             }
             let (shutdown_tx, _) = watch::channel(false);
             let writer = ConnectionWriter {
+                process_buffer_budget: BufferBudget::new(64 * 1024 * 1024),
                 sender,
                 queued_bytes: Arc::new(AtomicUsize::new(bytes)),
                 queued_frames: Arc::new(AtomicUsize::new(frames)),
@@ -297,6 +457,7 @@ mod tests {
             );
             assert_eq!(writer.queued_bytes.load(Ordering::Relaxed), bytes);
             assert_eq!(writer.queued_frames.load(Ordering::Relaxed), frames);
+            assert_eq!(writer.process_buffer_budget.snapshot().used_bytes, 0);
         }
     }
 

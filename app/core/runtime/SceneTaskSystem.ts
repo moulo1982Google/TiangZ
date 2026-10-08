@@ -1,4 +1,6 @@
 import { isPromiseLike, type MaybePromise } from "../async";
+import { RpcError } from "../protocol/RpcError";
+import { SystemErrCode } from "../protocol/SystemErrCode";
 import type { Scene } from "./entities";
 import {
   TimerSystem,
@@ -49,6 +51,8 @@ export class SceneTaskScope {
   private nextId = 1;
   private maxInFlightCount = 0;
   private watchdogTimer: TimerId | undefined;
+  private watchdogOwner: TimerSystem | undefined;
+  private onIdle: (() => void) | undefined;
   private disposed = false;
 
   constructor(private readonly scene: Scene) {}
@@ -77,11 +81,16 @@ export class SceneTaskScope {
     if (!taskName) throw new Error("spawn task name must not be empty");
     if (typeof body !== "function") throw new Error("spawn task body must be a function");
     if (this.tasks.size >= MAX_SCENE_TASK_IN_FLIGHT) {
-      throw new Error(
+      throw new RpcError(
+        SystemErrCode.SceneOverloaded,
         `scene task capacity exceeded: ${String(this.scene.Id)} limit=${MAX_SCENE_TASK_IN_FLIGHT}`,
       );
     }
 
+    return this.scene.__admitSceneTask(release => this.spawnAdmitted(taskName, body, release));
+  }
+
+  private spawnAdmitted(taskName: string, body: SpawnTaskBody, release: () => void): SpawnTaskId {
     const id = this.allocateId();
     const record: SpawnTaskRecord = {
       id,
@@ -91,8 +100,11 @@ export class SceneTaskScope {
       warned: false,
     };
     this.tasks.set(id, record);
+    // watchdog 注册失败时尚未排入任务微任务；只撤回本次准入，不能留下无法完成的计数。
+    // The body is not queued yet if watchdog registration fails; roll back only this admission.
+    try { this.scheduleWatchdog(); }
+    catch (error) { this.tasks.delete(id); throw error; }
     this.maxInFlightCount = Math.max(this.maxInFlightCount, this.tasks.size);
-    this.scheduleWatchdog();
 
     void Promise.resolve()
       .then(() => {
@@ -111,9 +123,14 @@ export class SceneTaskScope {
       })
       .finally(() => {
         this.tasks.delete(id);
-        if (this.tasks.size === 0 && this.watchdogTimer !== undefined) {
-          TimerSystem.Instance.Cancel(this.watchdogTimer, "task-scope-idle", false);
-          this.watchdogTimer = undefined;
+        // 清理 watchdog/通知 idle 可能抛错，真实任务额度必须先归还原 Host。
+        // Return the real task's quota to its original Host before fallible watchdog/idle cleanup.
+        release();
+        if (this.tasks.size === 0) {
+          const onIdle = this.onIdle;
+          this.onIdle = undefined;
+          try { this.cancelWatchdog("task-scope-idle"); }
+          finally { onIdle?.(); }
         }
       });
     return id;
@@ -138,6 +155,22 @@ export class SceneTaskScope {
         record.signal.reason = reason;
       }
     }
+    this.cancelWatchdog("owner-disposed");
+  }
+
+  /** 仅供 Host 在注销 Scene 后等待真实排空并主动释放持有引用。 / Lets the Host release its retained Scope immediately after actual drain following Scene removal. */
+  __onIdle(callback: () => void): void {
+    if (this.tasks.size === 0) callback();
+    else this.onIdle = callback;
+  }
+
+  /** 句柄只交还创建它的服务；迟到完成不得访问新 Runtime 的同号 Timer。 / Returns the handle only to its original service so late completion cannot affect a new Runtime's timer. */
+  private cancelWatchdog(reason: string): void {
+    const timer = this.watchdogTimer;
+    const owner = this.watchdogOwner;
+    this.watchdogTimer = undefined;
+    this.watchdogOwner = undefined;
+    if (timer !== undefined) owner?.Cancel(timer, reason, false);
   }
 
   private allocateId(): SpawnTaskId {
@@ -151,7 +184,7 @@ export class SceneTaskScope {
   }
 
   private scheduleWatchdog(): void {
-    if (this.watchdogTimer !== undefined) return;
+    if (this.disposed || this.watchdogTimer !== undefined) return;
     const now = Date.now();
     let delayMs = Number.POSITIVE_INFINITY;
     for (const record of this.tasks.values()) {
@@ -162,8 +195,11 @@ export class SceneTaskScope {
       );
     }
     if (!Number.isFinite(delayMs)) return;
-    this.watchdogTimer = TimerSystem.Instance.NewOnceTimer(delayMs, () => {
+    const owner = TimerSystem.Instance;
+    const timer = owner.NewOnceTimer(delayMs, () => {
       this.watchdogTimer = undefined;
+      this.watchdogOwner = undefined;
+      if (this.disposed) return;
       const checkedAt = Date.now();
       for (const record of this.tasks.values()) {
         if (record.warned || checkedAt - record.startedAt < SCENE_TASK_WARNING_MS) continue;
@@ -178,6 +214,10 @@ export class SceneTaskScope {
       }
       this.scheduleWatchdog();
     });
+    // 原服务和句柄作为同一份所有权发布，创建异常时不留下半个 owner。
+    // Publish the original service and handle together, leaving no partial owner on failure.
+    this.watchdogOwner = owner;
+    this.watchdogTimer = timer;
   }
 
   private requireAlive(): void {

@@ -1,13 +1,16 @@
 import type { MaybePromise } from "../async";
 import { Game, InitializeGameSingletons, monotonicNow } from "../runtime/Game";
 import { ProcessHost } from "../runtime/host";
+import { hostSceneOperationMetrics } from "./HostSceneTransport";
+import { RpcError } from "../protocol/RpcError";
+import { SystemErrCode } from "../protocol/SystemErrCode";
 import { SingletonRegistry } from "../runtime/Singleton";
 import { TimeSystem } from "../runtime/TimeSystem";
 import { TimerSystem } from "../runtime/TimerSystem";
 import { UpdateSystem } from "../runtime/UpdateSystem";
 import { getEntrySceneCtor, listEntrySceneTypes } from "./registry";
+import type { EntryScene } from "./EntryScene";
 import type {
-  EntryScene,
   LocalSceneRouter,
   OutboundBatch,
   ProcessRuntimeConfig,
@@ -45,6 +48,34 @@ export interface GameMetricsSnapshot {
   timers: number;
   coroutineLockWaiters: number;
   coroutineLockTimeouts: number;
+  sceneTaskInFlight: number;
+  sceneTaskCapacity: number;
+  sceneTaskMaxInFlight: number;
+  sceneTaskRejections: number;
+  actorMailboxInFlight: number;
+  actorMailboxCapacity: number;
+  actorMailboxPerActorCapacity: number;
+  actorMailboxMaxInFlight: number;
+  actorMailboxActorRejections: number;
+  actorMailboxProcessRejections: number;
+  localSceneMailboxInFlight: number;
+  localSceneMailboxCapacity: number;
+  localSceneMailboxPerSceneCapacity: number;
+  localSceneMailboxMaxInFlight: number;
+  localSceneMailboxSceneRejections: number;
+  localSceneMailboxProcessRejections: number;
+  hostSceneQueuedOperations: number;
+  hostSceneQueuedBytes: number;
+  hostScenePendingReplies: number;
+  hostSceneQueueCapacity: number;
+  hostSceneQueueByteCapacity: number;
+  hostScenePendingCapacity: number;
+  hostSceneQueueRejections: number;
+  hostSceneByteRejections: number;
+  hostScenePendingRejections: number;
+  hostSceneInvalidFrames: number;
+  hostSceneSubmitFailures: number;
+  hostSceneQueueTimeouts: number;
 }
 
 export class ProcessRuntime implements LocalSceneRouter {
@@ -115,10 +146,16 @@ export class ProcessRuntime implements LocalSceneRouter {
     return this.config.process.lifecycle?.stopTimeoutMs ?? 10_000;
   }
 
+  /** Bootstrap 在启动前安装同一 isolate 的控制确认所有者。 / Bootstrap installs the isolate's control acknowledgement owner before startup. */
+  __bindControlIngressReleases(counter: { count: number }): void { this.processHost.__bindControlIngressReleases(counter); }
+
   /** 仅在没有待处理帧和异步业务任务时开放 Hotfix 提交屏障。 / Opens the Hotfix commit barrier only when no queued frame or asynchronous business task remains. */
   get CanCommitHotfix(): boolean {
     return this.lifecycleState === "ready" &&
       this.processHost.SceneTaskInFlightCount === 0 &&
+      this.processHost.ActorMailboxPendingCount === 0 &&
+      this.processHost.LocalSceneMailboxPendingCount === 0 &&
+      TimerSystem.Instance.InFlightCount === 0 &&
       this.entryScenes.every((scene) => scene.__canCommitHotfix());
   }
 
@@ -196,12 +233,15 @@ export class ProcessRuntime implements LocalSceneRouter {
       this.entryScenes.map((scene, index) =>
         scene.__completeUpdate(startedAt[index] ?? monotonicNow(), includeMetrics)
       ),
+      this.processHost,
     );
     const result: ProcessUpdateResult = {
       ...merged,
       actorMailbox: this.processHost.MailboxMetrics(),
     };
-    return this.processHost.SceneTaskInFlightCount === 0
+    return this.processHost.SceneTaskInFlightCount === 0 &&
+      this.processHost.ActorMailboxPendingCount === 0 &&
+      this.processHost.LocalSceneMailboxPendingCount === 0 && TimerSystem.Instance.InFlightCount === 0
       ? result
       : { ...result, pendingAsync: true };
   }
@@ -230,7 +270,7 @@ export class ProcessRuntime implements LocalSceneRouter {
     return this.sceneByName(targetName).dispatchLocalCall(frame);
   }
 
-  /** 将进程内单向帧入队；后续 Handler 失败只记录日志，不阻塞发送方。 / Enqueues an in-process one-way frame and logs later handler failure without blocking the sender. */
+  /** 将进程内单向帧入队；关闭或满额同步拒绝，第一跳接受后的失败记录日志。 / Enqueues a local one-way frame; closed/full targets reject synchronously while failures after first-hop acceptance are logged. */
   sendLocalScene(_sourceName: string, targetName: string, frame: Uint8Array): MaybePromise<void> {
     const target = this.sceneByName(targetName);
     try {
@@ -241,6 +281,9 @@ export class ProcessRuntime implements LocalSceneRouter {
         });
       }
     } catch (error) {
+      // 同步准入失败必须返回调用者；它不同于已接受单向任务的执行失败。 / Synchronous admission failure belongs to the caller, unlike an accepted one-way handler failure.
+      if (error instanceof RpcError &&
+        (error.code === SystemErrCode.SceneNotFound || error.code === SystemErrCode.SceneOverloaded)) throw error;
       CoreLogger.error("local one-way message failed", { targetScene: targetName, error });
     }
     return undefined;
@@ -292,8 +335,9 @@ export class ProcessRuntime implements LocalSceneRouter {
 
 function mergeResults(
   results: SceneUpdateResult[],
+  processHost: ProcessHost,
 ): Omit<ProcessUpdateResult, "actorMailbox"> {
-  const game = gameMetricsSnapshot();
+  const game = gameMetricsSnapshot(processHost);
   if (results.length === 1) {
     return {
       outbound: results[0].outbound,
@@ -340,8 +384,12 @@ function resolveMaxEventsPerUpdate(config: ProcessRuntimeConfig["process"]["sche
   return 512;
 }
 
-function gameMetricsSnapshot(): GameMetricsSnapshot {
+function gameMetricsSnapshot(processHost: ProcessHost): GameMetricsSnapshot {
   return {
+    ...processHost.SceneTaskMetrics(),
+    ...processHost.ActorMailboxTaskMetrics(),
+    ...processHost.LocalSceneMailboxMetrics(),
+    ...hostSceneOperationMetrics(),
     fixedUpdateMs: Game.Instance.FixedUpdateMs,
     frameCount: TimeSystem.Instance.FrameCount,
     skippedFixedUpdates: Game.Instance.SkippedFixedUpdates,

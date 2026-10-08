@@ -5,18 +5,26 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::transport::{call_remote_scene, send_remote_scene};
+use crate::process::control_ingress::PublishedControls;
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
-use deno_core::convert::Uint8Array;
 use deno_core::error::AnyError;
 use deno_core::{
-    FsModuleLoader, JsBuffer, JsRuntime, ModuleSpecifier, PollEventLoopOptions, RuntimeOptions,
-    op2, v8,
+    FsModuleLoader, JsBuffer, JsRuntime, ModuleSpecifier, OpState, PollEventLoopOptions,
+    RuntimeOptions, op2, v8,
 };
 use deno_error::JsErrorBox;
-use futures_util::{StreamExt, stream};
+use event_buffer::{HostEventBuffer, HostEventPayload};
+use tiangz_transport::buffer_budget::BufferBudget;
 use tokio::runtime::Handle;
+
+mod deadlines;
+pub(crate) mod event_admission;
+pub(crate) mod event_buffer;
+pub(crate) mod scene_operations;
+
+#[cfg(test)]
+mod scene_operations_tests;
 
 const HOST_CALL_MAX_FRAME_LEN: usize = 1024 * 1024;
 const HOST_EVENT_LOOP_PUMP_BUDGET: Duration = Duration::from_millis(1);
@@ -26,16 +34,17 @@ const HOST_OUTBOUND_MAX_PACKED_LEN: usize = 64 * 1024 * 1024;
 const HOST_SCENE_MAX_ROUTES: usize = 4096;
 const HOST_SCENE_MAX_OPERATIONS: usize = 65_536;
 const HOST_SCENE_OPERATION_META_BYTES: usize = 17;
-const HOST_SCENE_MAX_IN_FLIGHT: usize = 256;
-const BACKPRESSURE_RETRY_MS: u64 = 1;
 
 thread_local! {
-    static NEXT_HOST_EVENT_BATCH: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
+    static NEXT_HOST_EVENT_BATCH: RefCell<Option<HostEventPayload>> = const { RefCell::new(None) };
     static OUTBOUND_BINARY_BATCHES: RefCell<Vec<BinaryOutboundBatch>> = const { RefCell::new(Vec::new()) };
     static CLOSE_CONNECTION_REQUESTS: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
     static HOST_SCENE_ROUTES: RefCell<Vec<HostSceneRoute>> = const { RefCell::new(Vec::new()) };
     static HOST_SCENE_RUNTIME: RefCell<Option<Handle>> = const { RefCell::new(None) };
     static HOST_SCENE_COMPLETION_SINK: RefCell<Option<HostSceneCompletionSink>> = const { RefCell::new(None) };
+    static HOST_SCENE_BUFFERS: RefCell<Option<Arc<BufferBudget>>> = const { RefCell::new(None) };
+    static HOST_SCENE_BATCHES: RefCell<Option<Arc<scene_operations::BatchAdmission>>> = const { RefCell::new(None) };
+    static HOST_EVENT_ADMISSION: RefCell<Option<Arc<event_admission::EventAdmission>>> = const { RefCell::new(None) };
 }
 
 #[derive(Debug)]
@@ -46,6 +55,7 @@ pub struct BinaryOutboundBatch {
 
 #[derive(Debug)]
 pub struct HostSceneCompletion {
+    pub(crate) backing_reservation: Option<event_admission::EventReservation>,
     pub operation_id: u32,
     pub result: std::result::Result<Vec<u8>, String>,
 }
@@ -58,6 +68,7 @@ pub struct JsEntrypoints {
     stop_process: v8::Global<v8::Function>,
     update: v8::Global<v8::Function>,
     dispatch_host_events: v8::Global<v8::Function>,
+    take_released_controls: v8::Global<v8::Function>,
     begin_hotfix: v8::Global<v8::Function>,
     commit_hotfix: v8::Global<v8::Function>,
     abort_hotfix: v8::Global<v8::Function>,
@@ -73,6 +84,7 @@ struct HostSceneRoute {
 
 #[derive(Debug)]
 struct HostSceneOperation {
+    backing_reservation: Option<event_admission::EventReservation>,
     operation_id: u32,
     route: Option<HostSceneRoute>,
     kind: u8,
@@ -90,10 +102,29 @@ struct HostSceneOperation {
 /// This is process-global state for one runtime and must be configured before
 /// any TS Scene call/send op executes. Reconfiguration while a process is live
 /// would route completions to the wrong queue and is unsupported.
-pub fn configure_host_scene_bridge(runtime: Handle, completion_sink: HostSceneCompletionSink) {
+pub(crate) fn configure_host_scene_bridge(
+    runtime: Handle,
+    completion_sink: HostSceneCompletionSink,
+    buffers: Arc<BufferBudget>,
+    batches: Arc<scene_operations::BatchAdmission>,
+    events: Arc<event_admission::EventAdmission>,
+) {
     HOST_SCENE_ROUTES.with(|slot| slot.borrow_mut().clear());
     HOST_SCENE_RUNTIME.with(|slot| *slot.borrow_mut() = Some(runtime));
     HOST_SCENE_COMPLETION_SINK.with(|slot| *slot.borrow_mut() = Some(completion_sink));
+    HOST_SCENE_BUFFERS.with(|slot| *slot.borrow_mut() = Some(buffers));
+    HOST_SCENE_BATCHES.with(|slot| *slot.borrow_mut() = Some(batches));
+    HOST_EVENT_ADMISSION.with(|slot| *slot.borrow_mut() = Some(events));
+}
+
+/// 复制前预留整包；所有切片和排队/在途引用释放后才归还。 / Reserves before copying and releases only after every queued or in-flight slice is dropped.
+fn reserve_scene_packet(packet: &[u8], budget: &Arc<BufferBudget>) -> Result<Bytes> {
+    if !(4..=HOST_OUTBOUND_MAX_PACKED_LEN).contains(&packet.len()) {
+        bail!("invalid packed scene operation length: {}", packet.len());
+    }
+    budget
+        .try_copy_bytes(packet)
+        .context("[scene-overloaded] process outbound byte budget is full")
 }
 
 #[op2(nofast)]
@@ -147,9 +178,21 @@ async fn op_host_sleep(ms: u32) {
 }
 
 #[op2]
-fn op_host_take_event_batch() -> Uint8Array {
-    let bytes = NEXT_HOST_EVENT_BATCH.with(|slot| slot.borrow_mut().take().unwrap_or_default());
-    bytes.into()
+fn op_host_take_event_batch(state: &mut OpState) -> Result<HostEventBuffer, JsErrorBox> {
+    let payload = NEXT_HOST_EVENT_BATCH.with(|slot| slot.borrow_mut().take().unwrap_or_default());
+    if !payload.reservations.is_empty() {
+        state
+            .try_borrow_mut::<PublishedControls>()
+            .ok_or_else(|| {
+                JsErrorBox::generic("control ingress owner is not installed in this isolate")
+            })?
+            .publish(payload.reservations);
+    }
+    Ok(HostEventBuffer {
+        bytes: payload.bytes,
+        stats: payload.backing_stats,
+        reservations: payload.backing_reservations,
+    })
 }
 
 #[op2]
@@ -223,10 +266,30 @@ fn op_host_register_scene_route(
 }
 
 #[op2]
-fn op_host_submit_scene_operations(#[buffer] packed: JsBuffer) -> Result<u32, JsErrorBox> {
-    let operations = decode_packed_scene_operations(Bytes::from(packed.to_vec()))
+fn op_host_submit_scene_operations(
+    #[buffer] packed: JsBuffer,
+    sampled_at_ms: f64,
+) -> Result<u32, JsErrorBox> {
+    let buffers = HOST_SCENE_BUFFERS
+        .with(|slot| slot.borrow().clone())
+        .ok_or_else(|| JsErrorBox::generic("host scene buffer budget is not configured"))?;
+    let operation_count = packed_scene_operation_count(&packed)
         .map_err(|error| JsErrorBox::generic(error.to_string()))?;
-    let operation_count = operations.len() as u32;
+    let batches = HOST_SCENE_BATCHES
+        .with(|slot| slot.borrow().clone())
+        .ok_or_else(|| JsErrorBox::generic("host scene batch admission is not configured"))?;
+    let reservation = batches.try_reserve(operation_count).ok_or_else(|| {
+        JsErrorBox::generic("[scene-overloaded] host scene batch slot capacity reached")
+    })?;
+    let packet = reserve_scene_packet(&packed, &buffers)
+        .map_err(|error| JsErrorBox::generic(error.to_string()))?;
+    let mut operations = decode_packed_scene_operations(packet)
+        .map_err(|error| JsErrorBox::generic(error.to_string()))?;
+    let events = HOST_EVENT_ADMISSION
+        .with(|slot| slot.borrow().clone())
+        .ok_or_else(|| JsErrorBox::generic("host event admission is not configured"))?;
+    reserve_scene_completions(&mut operations, &events)?;
+    let submitted_at = scene_operations::submitted_at(sampled_at_ms)?;
     let runtime = HOST_SCENE_RUNTIME
         .with(|slot| slot.borrow().clone())
         .ok_or_else(|| JsErrorBox::generic("host scene runtime is not configured"))?;
@@ -235,81 +298,42 @@ fn op_host_submit_scene_operations(#[buffer] packed: JsBuffer) -> Result<u32, Js
         .ok_or_else(|| JsErrorBox::generic("host scene completion sink is not configured"))?;
 
     runtime.spawn(async move {
-        let mut pending = stream::iter(operations)
-            .map(|operation| async move {
-                let timeout = Duration::from_millis(operation.timeout_ms.max(1) as u64);
-                match (operation.kind, operation.route) {
-                    (1, Some(route)) => Some(HostSceneCompletion {
-                        operation_id: operation.operation_id,
-                        result: call_remote_scene(
-                            route.source_name,
-                            route.target_name,
-                            route.target_ip,
-                            route.target_port,
-                            operation.frame,
-                            timeout,
-                        )
-                        .await,
-                    }),
-                    (2, Some(route)) => {
-                        let source_name = route.source_name.clone();
-                        let target_name = route.target_name.clone();
-                        if let Err(error) = send_remote_scene(
-                            route.source_name,
-                            route.target_name,
-                            route.target_ip,
-                            route.target_port,
-                            operation.frame,
-                            timeout,
-                        )
-                        .await
-                        {
-                            // 队列过载已有分阶段Counter，逐帧ERROR会在故障时放大CPU与磁盘压力。
-                            // Queue overloads already have stage counters; one ERROR per frame would
-                            // amplify CPU and disk pressure during the incident itself.
-                            if !error.starts_with("[scene-overloaded]") {
-                                tracing::error!(
-                                    target: "tiangz::scene",
-                                    source = %source_name,
-                                    target_scene = %target_name,
-                                    error = %error,
-                                    "one-way scene send failed"
-                                );
-                            }
-                        }
-                        None
-                    }
-                    (3, None) => {
-                        tokio::time::sleep(Duration::from_millis(operation.timeout_ms as u64))
-                            .await;
-                        Some(HostSceneCompletion {
-                            operation_id: operation.operation_id,
-                            result: Ok(Vec::new()),
-                        })
-                    }
-                    _ => Some(HostSceneCompletion {
-                        operation_id: operation.operation_id,
-                        result: Err("invalid host scene operation route".to_string()),
-                    }),
-                }
-            })
-            .buffer_unordered(HOST_SCENE_MAX_IN_FLIGHT);
-        while let Some(completion) = pending.next().await {
-            let Some(mut completion) = completion else {
-                continue;
-            };
-            loop {
-                match completion_sink(completion) {
-                    Ok(()) => break,
-                    Err(returned) => {
-                        completion = returned;
-                        tokio::time::sleep(Duration::from_millis(BACKPRESSURE_RETRY_MS)).await;
-                    }
-                }
-            }
-        }
+        let _reservation = reservation;
+        scene_operations::run(operations, completion_sink, submitted_at).await;
     });
-    Ok(operation_count)
+    Ok(operation_count as u32)
+}
+
+/// 全批预留成功才允许执行，失败丢弃本批所有守卫。 / Allows execution only after whole-batch reservation; rejection drops every guard in this batch.
+fn reserve_scene_completions(
+    operations: &mut [HostSceneOperation],
+    events: &event_admission::EventAdmission,
+) -> Result<(), JsErrorBox> {
+    for operation in operations.iter_mut() {
+        if operation.kind != 2 {
+            let payload = if operation.kind == 3 {
+                0
+            } else {
+                HOST_CALL_MAX_FRAME_LEN
+            };
+            let Some(reservation) = events.try_reserve(payload) else {
+                for operation in operations.iter_mut() {
+                    operation.backing_reservation = None;
+                }
+                return Err(JsErrorBox::generic(
+                    "[scene-overloaded] host event byte budget is full",
+                ));
+            };
+            operation.backing_reservation = Some(reservation);
+        }
+    }
+    Ok(())
+}
+
+/// 只返回传输共享的单调毫秒，不依赖部署墙钟。 / Returns shared transport monotonic milliseconds independently of the deployment wall clock.
+#[op2(fast)]
+fn op_host_scene_now_ms() -> f64 {
+    scene_operations::now_ms()
 }
 
 fn push_outbound_batch(connection_ids: Vec<u64>, frame: JsBuffer) -> Result<(), JsErrorBox> {
@@ -417,15 +441,26 @@ fn read_packed_u32(packet: &[u8], offset: &mut usize) -> Result<u32> {
     Ok(value)
 }
 
-fn decode_packed_scene_operations(packet: Bytes) -> Result<Vec<HostSceneOperation>> {
+/// 复制和元数据分配前校验批头，不能由伪造条数触发大 Vec。 / Validates framing before copying or metadata allocation, preventing forged counts from allocating large vectors.
+fn packed_scene_operation_count(packet: &[u8]) -> Result<usize> {
     if !(4..=HOST_OUTBOUND_MAX_PACKED_LEN).contains(&packet.len()) {
         bail!("invalid packed scene operation length: {}", packet.len());
     }
     let mut offset = 0;
-    let operation_count = read_packed_u32(&packet, &mut offset)? as usize;
+    let operation_count = read_packed_u32(packet, &mut offset)? as usize;
     if operation_count == 0 || operation_count > HOST_SCENE_MAX_OPERATIONS {
         bail!("invalid host scene operation count: {operation_count}");
     }
+    if packet.len() - 4 < operation_count * HOST_SCENE_OPERATION_META_BYTES {
+        bail!("truncated host scene operation metadata");
+    }
+    Ok(operation_count)
+}
+
+/// 解码已经预留的原包，失败释放原数据，不提交部分操作。 / Decodes an admitted packet, releasing its data on failure without submitting partial operations.
+fn decode_packed_scene_operations(packet: Bytes) -> Result<Vec<HostSceneOperation>> {
+    let operation_count = packed_scene_operation_count(&packet)?;
+    let mut offset = 4;
     let routes = HOST_SCENE_ROUTES.with(|slot| slot.borrow().clone());
     let mut operations = Vec::with_capacity(operation_count);
     for _ in 0..operation_count {
@@ -463,6 +498,7 @@ fn decode_packed_scene_operations(packet: Bytes) -> Result<Vec<HostSceneOperatio
             .filter(|end| *end <= packet.len())
             .context("truncated host scene frame")?;
         operations.push(HostSceneOperation {
+            backing_reservation: None,
             operation_id,
             route,
             kind,
@@ -489,12 +525,22 @@ deno_core::extension!(
         op_host_close_connection,
         op_host_register_scene_route,
         op_host_submit_scene_operations,
+        op_host_scene_now_ms,
+        deadlines::op_host_create_deadline,
+        deadlines::op_host_create_shutdown_deadline,
+        deadlines::op_host_wait_deadline,
+        deadlines::op_host_cancel_deadline,
         crate::telemetry::op_host_start_trace_span,
         crate::telemetry::op_host_end_trace_span
     ],
+    state = |state| {
+        state.put(deadlines::DeadlineBudget::default());
+        state.put(deadlines::ShutdownDeadlineBudget::default());
+        state.put(deadlines::DeadlineTable::default());
+    },
 );
 
-/// 创建带 TiangZ host op 的 V8 运行时，但不加载或执行业务代码。 / Creates a V8 runtime with TiangZ host ops; it does not load or execute business code.
+/// 在调用者的 Tokio 上下文中创建 V8；其定时器驱动须活过 isolate，不加载业务代码。 / Creates V8 in the caller's Tokio context, whose timer driver must outlive the isolate; no business code is loaded.
 pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRuntime, AnyError> {
     create_runtime_with_workers(inspector, host_log_min_level, true)
 }
@@ -510,6 +556,7 @@ fn create_runtime_with_workers(
     host_log_min_level: u8,
     workers: bool,
 ) -> Result<JsRuntime, AnyError> {
+    Handle::try_current().context("V8 creation requires an entered Tokio runtime context")?;
     let mut extensions = vec![
         ets_runtime_host::init(),
         crate::dbproxy::init(),
@@ -542,6 +589,12 @@ fn create_runtime_with_workers(
           }
           return value;
         };
+        const deadlineId = (value) => {
+          if (!Number.isSafeInteger(value) || value < 0) {
+            throw new RangeError("deadline id must be a non-negative safe integer");
+          }
+          return value;
+        };
         const stringify = (value) => {
           if (typeof value === "string") return value;
           if (value instanceof Error) return value.stack || value.message;
@@ -563,6 +616,10 @@ fn create_runtime_with_workers(
           );
         };
         globalThis.__hostSleep = (ms) => core.ops.op_host_sleep(u32(ms, "ms"));
+        globalThis.__hostCreateDeadline = (ms) => core.ops.op_host_create_deadline(u32(ms, "ms"));
+        globalThis.__hostCreateShutdownDeadline = (ms) => core.ops.op_host_create_shutdown_deadline(u32(ms, "ms"));
+        globalThis.__hostWaitDeadline = (id) => core.ops.op_host_wait_deadline(deadlineId(id));
+        globalThis.__hostCancelDeadline = (id) => core.ops.op_host_cancel_deadline(deadlineId(id));
         globalThis.__hostTakeEventBatch = () => core.ops.op_host_take_event_batch();
         globalThis.__hostPushOutbound = (connectionId, frame) =>
           core.ops.op_host_push_outbound(u32(connectionId, "connectionId"), frame);
@@ -576,8 +633,9 @@ fn create_runtime_with_workers(
           core.ops.op_host_register_scene_route(
             String(sourceName), String(targetName), String(targetIp), u32(targetPort, "targetPort"),
           );
-        globalThis.__hostSubmitSceneOperations = (packed) =>
-          core.ops.op_host_submit_scene_operations(packed);
+        globalThis.__hostSceneNowMs = () => core.ops.op_host_scene_now_ms();
+        globalThis.__hostSubmitSceneOperations = (packed, sampledAtMs) =>
+          core.ops.op_host_submit_scene_operations(packed, Number(sampledAtMs));
         globalThis.__hostSetPromiseHooks = (init, before, after, resolve) =>
           core.setPromiseHooks(init, before, after, resolve);
         globalThis.__hostStartTraceSpan = (name, kind, parentTraceId, parentSpanId, attributes) =>
@@ -639,6 +697,7 @@ pub fn load_js_entrypoints(runtime: &mut JsRuntime) -> Result<JsEntrypoints> {
         stop_process: get_global_function(runtime, "__etsStopProcess")?,
         update: get_global_function(runtime, "__etsUpdateBinary")?,
         dispatch_host_events: get_global_function(runtime, "__etsDispatchHostEvents")?,
+        take_released_controls: get_global_function(runtime, "__etsTakeReleasedControlIngress")?,
         begin_hotfix: get_global_function(runtime, "__etsBeginHotfix")?,
         commit_hotfix: get_global_function(runtime, "__etsCommitHotfix")?,
         abort_hotfix: get_global_function(runtime, "__etsAbortHotfix")?,
@@ -835,8 +894,18 @@ pub fn poll_js_stop_process(
 pub fn call_js_push_host_events(
     runtime: &mut JsRuntime,
     entrypoints: &JsEntrypoints,
-    packed_events: Vec<u8>,
+    packed_events: HostEventPayload,
 ) -> Result<()> {
+    // JS 未取走或异常退出也要销毁未发布批次；不能遗留在线程本地槽位。 / Drop unpublished batches even when JS never takes them or throws.
+    struct ClearPendingBatch;
+    impl Drop for ClearPendingBatch {
+        fn drop(&mut self) {
+            NEXT_HOST_EVENT_BATCH.with(|slot| {
+                slot.borrow_mut().take();
+            });
+        }
+    }
+    let _clear_pending = ClearPendingBatch;
     NEXT_HOST_EVENT_BATCH.with(|slot| {
         *slot.borrow_mut() = Some(packed_events);
     });
@@ -866,8 +935,33 @@ pub fn call_js_update_binary(
         &entrypoints.update,
         &[arg, draining_arg],
     )?;
+    release_control_ingress(runtime, entrypoints)?;
     let outbound = OUTBOUND_BINARY_BATCHES.with(|slot| slot.borrow_mut().drain(..).collect());
     Ok((metrics_json, outbound))
+}
+
+/// 同步确认只能释放本 isolate 已发布的同质数量槽，错误按既有 Process 监督退出。 / Synchronous acknowledgements release only this isolate's published count slots; invalid values fail the Process through existing supervision.
+fn release_control_ingress(runtime: &mut JsRuntime, entrypoints: &JsEntrypoints) -> Result<()> {
+    let count = {
+        deno_core::scope!(scope, runtime);
+        let function = entrypoints.take_released_controls.open(scope);
+        let receiver = v8::undefined(scope).into();
+        let result = function
+            .call(scope, receiver, &[])
+            .context("failed to acknowledge control ingress")?;
+        v8::Local::<v8::Number>::try_from(result)
+            .map_err(|_| anyhow::anyhow!("control ingress acknowledgement must be a number"))?
+            .value()
+    };
+    let state = runtime.op_state();
+    let mut state = state.borrow_mut();
+    if let Some(published) = state.try_borrow_mut::<PublishedControls>() {
+        published.release(count)
+    } else if count == 0.0 {
+        Ok(())
+    } else {
+        bail!("control ingress acknowledgement has no isolate owner")
+    }
 }
 
 /// 用有界预算推进待完成JS Promise；超过预算的任务留到下个游戏Tick，禁止在V8线程等待完整I/O。
@@ -899,7 +993,93 @@ mod tests {
     use super::*;
 
     #[test]
-    fn business_v8_gets_frozen_secure_random_bridge() {
+    fn v8_creation_without_tokio_context_returns_error_before_isolate_initialization() {
+        assert!(Handle::try_current().is_err());
+        let error = create_runtime(false, 0)
+            .err()
+            .expect("missing Tokio context must fail before creating the V8 isolate");
+        assert!(error.to_string().contains("Tokio runtime context"));
+    }
+
+    #[tokio::test]
+    async fn v8_scene_submit_rejects_over_budget_before_decoding_or_spawning() {
+        let mut runtime = create_runtime(false, 0).unwrap();
+        let budget = BufferBudget::new(3);
+        HOST_SCENE_BUFFERS.with(|slot| *slot.borrow_mut() = Some(Arc::clone(&budget)));
+        let batches = scene_operations::BatchAdmission::new();
+        HOST_SCENE_BATCHES.with(|slot| *slot.borrow_mut() = Some(Arc::clone(&batches)));
+        runtime.execute_script("test:scene-budget.js", r#"
+            let error;
+            const invalid = new Uint8Array(21); invalid[0] = 1; invalid[4] = 1; invalid[12] = 4;
+            try { globalThis.__hostSubmitSceneOperations(invalid); } catch (value) { error = value; }
+            if (!String(error).includes('[scene-overloaded] process outbound byte budget is full')) throw new Error('budget was not checked before decode/spawn: ' + error);
+        "#).unwrap();
+        assert_eq!(budget.snapshot().used_bytes, 0);
+        assert_eq!(budget.snapshot().rejections, 1);
+        assert_eq!(batches.snapshot().reserved_slots, 0);
+        let admitted = BufferBudget::new(4);
+        HOST_SCENE_BUFFERS.with(|slot| *slot.borrow_mut() = Some(Arc::clone(&admitted)));
+        runtime.execute_script("test:scene-decode.js", r#"
+            let failure;
+            try { globalThis.__hostSubmitSceneOperations(new Uint8Array(4)); } catch (value) { failure = value; }
+            if (!String(failure).includes('invalid host scene operation count')) throw new Error('invalid packet was not decoded after admission: ' + failure);
+        "#).unwrap();
+        assert_eq!(admitted.snapshot().used_bytes, 0);
+        HOST_SCENE_BUFFERS.with(|slot| *slot.borrow_mut() = None);
+        HOST_SCENE_BATCHES.with(|slot| *slot.borrow_mut() = None);
+    }
+
+    #[test]
+    fn scene_packet_budget_is_shared_by_operations_and_released_on_decode_failure() {
+        HOST_SCENE_ROUTES.with(|slot| {
+            slot.borrow_mut().push(HostSceneRoute {
+                source_name: "source".into(),
+                target_name: "target".into(),
+                target_ip: "127.0.0.1".into(),
+                target_port: 1,
+            })
+        });
+        let mut packet = 2_u32.to_le_bytes().to_vec();
+        for _ in 0..2 {
+            packet.extend_from_slice(&0_u32.to_le_bytes());
+            packet.extend_from_slice(&1_u32.to_le_bytes());
+            packet.push(2);
+            packet.extend_from_slice(&1000_u32.to_le_bytes());
+            packet.extend_from_slice(&2_u32.to_le_bytes());
+            packet.extend_from_slice(&[0x4e, 0x21]);
+        }
+        let budget = BufferBudget::new(packet.len());
+        let mut operations =
+            decode_packed_scene_operations(reserve_scene_packet(&packet, &budget).unwrap())
+                .unwrap();
+        assert_eq!(budget.snapshot().used_bytes, packet.len() as u64);
+        assert!(
+            reserve_scene_packet(&packet, &budget)
+                .unwrap_err()
+                .to_string()
+                .contains("[scene-overloaded]")
+        );
+        drop(operations.remove(0));
+        assert_eq!(budget.snapshot().used_bytes, packet.len() as u64);
+        let last = operations[0].frame.clone();
+        drop(operations);
+        assert_eq!(budget.snapshot().used_bytes, packet.len() as u64);
+        drop(last);
+        assert_eq!(budget.snapshot().used_bytes, 0);
+        assert!(
+            decode_packed_scene_operations(reserve_scene_packet(&[0; 4], &budget).unwrap())
+                .is_err()
+        );
+        assert_eq!(budget.snapshot().used_bytes, 0);
+        assert!(
+            decode_packed_scene_operations(reserve_scene_packet(&packet, &budget).unwrap()).is_ok()
+        );
+        assert_eq!(budget.snapshot().used_bytes, 0);
+        HOST_SCENE_ROUTES.with(|slot| slot.borrow_mut().clear());
+    }
+
+    #[tokio::test]
+    async fn business_v8_gets_frozen_secure_random_bridge() {
         let mut runtime = create_runtime(false, 0).unwrap();
         runtime
             .execute_script(
@@ -930,11 +1110,13 @@ mod tests {
             .enable_all()
             .build()
             .unwrap();
+        let _entered = event_loop.enter();
         let mut runtime = create_runtime(false, 0).unwrap();
         runtime.execute_script("test:shutdown.js", r#"
           for (const name of ['__etsStartProcess','__etsUpdateBinary','__etsDispatchHostEvents',
             '__etsBeginHotfix','__etsCommitHotfix','__etsAbortHotfix','__etsInstallGameConfig']) globalThis[name]=()=>'';
           globalThis.__etsStopProcess=()=>new Promise((resolve,reject)=>{globalThis.finishStop=resolve;globalThis.failStop=reject;});
+          globalThis.__etsTakeReleasedControlIngress=()=>0;
         "#).unwrap();
         let entrypoints = load_js_entrypoints(&mut runtime).unwrap();
         let pending = call_js_stop_process(&event_loop, &mut runtime, &entrypoints).unwrap();
@@ -965,8 +1147,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn dbproxy_global_ids_refuse_legacy_model_bootstrap() {
+    #[tokio::test]
+    async fn dbproxy_global_ids_refuse_legacy_model_bootstrap() {
         let mut runtime = create_runtime(false, 0).unwrap();
         let config = r#"{"process":{"identity":{"allocation":"dbproxy"}}}"#;
         validate_global_id_bootstrap(&mut runtime, "{}").unwrap();

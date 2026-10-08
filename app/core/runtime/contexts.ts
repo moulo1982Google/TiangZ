@@ -27,6 +27,11 @@ import { Logger } from "../logging/Logger";
 export class SceneContext {
   readonly logger: Logger;
 
+  /** @internal 通过原 Host 同步接受任务；不在重启后查全局服务。 / Admits through the original Host without looking up a global service after restart. */
+  __admitSceneTask<T>(accept: (release: () => void) => T): T {
+    return this.host.__admitSceneTask(accept);
+  }
+
   constructor(
     private readonly host: ProcessHost,
     public readonly self: SceneRef,

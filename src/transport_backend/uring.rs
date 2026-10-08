@@ -4,18 +4,23 @@ use std::io;
 use std::net::Shutdown;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 
+use super::admission::{ConnectionPermit, allocate_connection_id};
+use super::lifecycle::{
+    ConnectionRegistration, OwnedTask, drain_writer, next_write_batch, stopped,
+};
 use anyhow::{Context, Result, bail};
-use bytes::Bytes;
 use tokio::sync::{mpsc, watch};
+use tokio::task::JoinSet;
 use tokio_uring::buf::{BoundedBuf, Slice};
 use tokio_uring::net::{TcpListener, TcpStream};
 
 use super::{
     CONNECTION_OUTBOUND_FRAME_CAPACITY, ConnectionKind, ConnectionWriteBatch, ConnectionWriter,
-    EndpointContext, IoBackend, MAX_INNER_TOKEN_LEN, RawFrameDecoder, WRITE_BATCH_BYTE_CAPACITY,
-    try_queue_connection_frame, validate_frame_access,
+    EndpointContext, EndpointTask, IoBackend, MAX_INNER_TOKEN_LEN, RawFrameDecoder,
+    WRITE_BATCH_BYTE_CAPACITY, try_queue_connection_frame, validate_connection_audience,
+    validate_frame_access,
 };
 use crate::process::{ProcessEvent, ProcessIngressTrySendError};
 use crate::transport::{
@@ -25,6 +30,24 @@ use crate::transport::{
 pub(crate) struct UringIoBackend {
     entries: u32,
     read_buffer_bytes: usize,
+}
+
+struct SocketShutdown(Rc<TcpStream>);
+
+impl Drop for SocketShutdown {
+    /// 结束握手或 writer 的所有路径都唤醒遗留内核 I/O，不能只丢弃 Future。 / Wakes retained kernel I/O on every handshake or writer exit, not merely by dropping its Future.
+    fn drop(&mut self) {
+        let _ = self.0.shutdown(Shutdown::Both);
+    }
+}
+
+struct ListenerShutdown(socket2::Socket);
+
+impl Drop for ListenerShutdown {
+    /// 关闭监听的所有路径都唤醒未完成 accept，原 Future 仍需消费实际结果。 / Wakes a pending accept on every listener exit; its original Future still consumes the actual result.
+    fn drop(&mut self) {
+        let _ = self.0.shutdown(Shutdown::Both);
+    }
 }
 
 impl UringIoBackend {
@@ -41,66 +64,99 @@ impl IoBackend for UringIoBackend {
         "io-uring"
     }
 
-    fn start_endpoint(&self, context: EndpointContext) -> Result<()> {
+    /// 把独立 io_uring 线程的停止与 join 所有权交给 Process。 / Gives the process stop/join ownership of the dedicated io_uring thread.
+    fn start_endpoint(&self, context: EndpointContext) -> Result<EndpointTask> {
         let bind_addr = format!("{}:{}", context.scene.bind_ip(), context.scene.port);
         let listener = std::net::TcpListener::bind(&bind_addr)
             .with_context(|| format!("scene {} failed to bind {bind_addr}", context.scene.name))?;
+        let listener_shutdown = ListenerShutdown(
+            listener
+                .try_clone()
+                .context("failed to clone io-uring listener control")?
+                .into(),
+        );
         let entries = self.entries;
         let read_buffer_bytes = self.read_buffer_bytes;
         let scene_name = context.scene.name.clone();
-        let error_scene_name = scene_name.clone();
+        let endpoint_name = scene_name.clone();
         let scene_type = context.scene.scene_type.clone();
         let thread_name = format!("uring-{scene_name}");
-        std::thread::Builder::new()
+        let (shutdown, shutdown_rx) = watch::channel(false);
+        let thread = std::thread::Builder::new()
             .name(thread_name)
             .spawn(move || {
                 let mut builder = tokio_uring::builder();
                 builder.entries(entries);
-                let result = builder.start(async move {
+                builder.start(async move {
                     tracing::info!(target: "tiangz::transport",
                         "scene {scene_name} ({scene_type}) listening on {bind_addr} protocol=Tcp audience={:?} io_backend=io-uring entries={entries} read_buffer_bytes={read_buffer_bytes}",
                         context.scene.audience
                     );
                     run_scene_listener(
                         TcpListener::from_std(listener),
+                        listener_shutdown,
                         context,
                         read_buffer_bytes,
+                        shutdown_rx,
                     )
                     .await
-                });
-                if let Err(error) = result {
-                    tracing::error!(target: "tiangz::transport", scene = %error_scene_name, error = ?error, "io-uring listener stopped");
-                }
+                })
             })?;
-        Ok(())
+        // join 在阻塞池中持有实际线程；线程自身的排空期限不依赖外层任务仍被 poll。
+        // Join owns the actual thread in the blocking pool; its drain deadline is enforced inside the thread.
+        let task = tokio::task::spawn_blocking(move || {
+            thread
+                .join()
+                .map_err(|_| anyhow::anyhow!("io-uring endpoint thread panicked"))?
+        });
+        Ok(EndpointTask::new(endpoint_name, shutdown, task))
     }
 }
 
+/// LocalSet 上持有所有连接，停止后有界等待并取消剩余连接。 / Owns local connections and bounds their drain before cancelling remaining work.
 async fn run_scene_listener(
     listener: TcpListener,
+    listener_shutdown: ListenerShutdown,
     context: EndpointContext,
     read_buffer_bytes: usize,
+    mut shutdown: watch::Receiver<bool>,
 ) -> Result<()> {
+    let context = Arc::new(context);
+    let mut connections = JoinSet::new();
+    // 收割连接不能丢弃仍在内核等待的 accept，否则下一连接会落入无人消费的结果。
+    // Reaping a connection must retain the pending accept and consume its eventual socket.
+    let mut accepting = Box::pin(listener.accept());
     loop {
-        let (stream, peer) = listener.accept().await?;
-        let connection_id = context.next_connection_id.fetch_add(1, Ordering::Relaxed);
+        let (stream, peer) = tokio::select! {
+            biased;
+            _ = stopped(&mut shutdown) => break,
+            completed = connections.join_next(), if !connections.is_empty() => {
+                if let Some(Err(error)) = completed {
+                    tracing::warn!(target: "tiangz::transport", error = ?error, "io-uring connection task failed");
+                }
+                continue;
+            }
+            accepted = accepting.as_mut() => accepted?,
+        };
+        accepting.set(listener.accept());
+        let Some(permit) = context.stats.admission.accept_stream() else {
+            continue;
+        };
+        let connection_id = allocate_connection_id(&context.next_connection_id)?;
         tracing::debug!(target: "tiangz::transport",
             "{} accepted {} as conn {} backend=io-uring",
             context.scene.name, peer, connection_id
         );
-        let event_tx = context.event_tx.clone();
-        let writers = Arc::clone(&context.writers);
-        let stats = Arc::clone(&context.stats);
-        let scene_index = context.scene_index;
-        tokio_uring::spawn(async move {
+        let connection_context = context.clone();
+        let connection_shutdown = shutdown.clone();
+        connections.spawn_local(async move {
             if let Err(error) = handle_raw_connection(
-                scene_index,
+                connection_context,
                 connection_id,
                 stream,
-                event_tx,
-                writers,
-                stats,
+                connection_shutdown,
                 read_buffer_bytes,
+                permit,
             )
             .await
             {
@@ -108,24 +164,48 @@ async fn run_scene_listener(
             }
         });
     }
+    let _ = listener_shutdown.0.shutdown(Shutdown::Both);
+    tokio::time::timeout(context.shutdown_timeout, async {
+        // shutdown 唤醒 accept；若同时已接入，消费并关闭该连接，不遗弃成功的 FD。
+        // Shutdown wakes accept; consume and close any connection that won the race.
+        let _ = accepting.await;
+        while connections.join_next().await.is_some() {}
+    })
+    .await
+    .context("io-uring accept/connections exceeded process stop budget")?;
+    drop(listener);
+    Ok(())
 }
 
+/// 连接持有登记与 writer，握手和读循环可被端点停止取消。 / Owns registration/writer and allows endpoint stop to cancel handshake and reads.
 async fn handle_raw_connection(
-    scene_index: u32,
+    context: Arc<EndpointContext>,
     connection_id: u64,
     stream: TcpStream,
-    event_tx: crate::process::ProcessEventSender,
-    writers: super::ConnectionWriters,
-    stats: Arc<crate::process::ProcessQueueStats>,
+    mut shutdown: watch::Receiver<bool>,
     read_buffer_bytes: usize,
+    mut permit: ConnectionPermit,
 ) -> Result<()> {
+    let scene_index = context.scene_index;
+    let event_tx = &context.event_tx;
+    let writers = &context.writers;
     stream
         .set_nodelay(true)
         .context("failed to enable TCP_NODELAY")?;
     let stream = Rc::new(stream);
-    let Some((connection_kind, first_frame_len)) = read_raw_preamble(&stream).await? else {
+    let socket_shutdown = SocketShutdown(Rc::clone(&stream));
+    let preamble = tokio::select! {
+        biased;
+        _ = stopped(&mut shutdown) => return Ok(()),
+        preamble = tokio::time::timeout(super::handshake::HANDSHAKE_TIMEOUT, read_raw_preamble(&stream)) => {
+            preamble.context("io-uring handshake timed out")??
+        },
+    };
+    let Some((connection_kind, first_frame_len)) = preamble else {
         return Ok(());
     };
+    validate_connection_audience(context.scene.audience, connection_kind)?;
+    permit.complete_handshake();
 
     let (write_tx, write_rx) =
         mpsc::channel::<ConnectionWriteBatch>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
@@ -133,43 +213,44 @@ async fn handle_raw_connection(
     let queued_frames = Arc::new(AtomicUsize::new(0));
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let connection_writer = ConnectionWriter {
+        process_buffer_budget: context.stats.outbound_buffers.clone(),
         sender: write_tx,
         queued_bytes: Arc::clone(&queued_bytes),
         queued_frames: Arc::clone(&queued_frames),
         shutdown_tx: shutdown_tx.clone(),
     };
-    writers
-        .lock()
-        .expect("connection writer map poisoned")
-        .insert(connection_id, connection_writer.clone());
+    let _registration =
+        ConnectionRegistration::new(writers.clone(), connection_id, connection_writer.clone());
 
-    let writer_stream = Rc::clone(&stream);
-    let writer_stats = Arc::clone(&stats);
-    let writer_task = tokio_uring::spawn(async move {
-        run_writer(
-            writer_stream,
-            write_rx,
-            shutdown_rx,
-            queued_bytes,
-            queued_frames,
-            writer_stats,
-        )
-        .await
-    });
+    let writer_context = context.clone();
+    let mut reader_shutdown = shutdown_rx.clone();
+    let writer_task = OwnedTask::new(tokio_uring::spawn(drain_writer(
+        run_writer(socket_shutdown, write_rx, shutdown_rx, writer_context),
+        shutdown_tx.clone(),
+        context.shutdown_timeout,
+    )));
 
-    let read_result = run_reader(
-        scene_index,
+    let read_result = tokio::select! {
+        biased;
+        _ = stopped(&mut shutdown) => Ok(()),
+        _ = stopped(&mut reader_shutdown) => Ok(()),
+        result = run_reader(
+        &context,
         connection_id,
         connection_kind,
         first_frame_len,
         Rc::clone(&stream),
-        event_tx.clone(),
         connection_writer,
-        Arc::clone(&stats),
         read_buffer_bytes,
-    )
-    .await;
+        ) => result,
+    };
 
+    // 先释放连接持有的读引用，断线通知堵塞不能阻止超时 writer 关闭 Socket。
+    // Release the read reference so a blocked disconnect notification cannot retain a timed-out socket.
+    drop(stream);
+    if read_result.is_err() {
+        writer_task.abort();
+    }
     let _ = shutdown_tx.send(true);
     writers
         .lock()
@@ -178,6 +259,8 @@ async fn handle_raw_connection(
     event_tx
         .send(
             ProcessEvent::Disconnect {
+                backing_reservation: None,
+                control_reservation: None,
                 scene_index,
                 connection_id,
             },
@@ -186,22 +269,23 @@ async fn handle_raw_connection(
         .await
         .map_err(anyhow::Error::msg)?;
 
+    let writer_result = writer_task.await;
     read_result?;
-    writer_task.await??;
+    writer_result??;
     Ok(())
 }
 
 async fn run_reader(
-    scene_index: u32,
+    context: &EndpointContext,
     connection_id: u64,
     connection_kind: ConnectionKind,
     first_frame_len: Option<usize>,
     stream: Rc<TcpStream>,
-    event_tx: crate::process::ProcessEventSender,
     connection_writer: ConnectionWriter,
-    stats: Arc<crate::process::ProcessQueueStats>,
     read_buffer_bytes: usize,
 ) -> Result<()> {
+    let scene_index = context.scene_index;
+    let event_tx = &context.event_tx;
     let mut read_buffer = vec![0_u8; read_buffer_bytes];
     let mut decoder = RawFrameDecoder::new(read_buffer_bytes * 2, first_frame_len)?;
     loop {
@@ -220,6 +304,8 @@ async fn run_reader(
                 .then(|| inner_frame_rpc_id(&frame))
                 .flatten();
             let event = ProcessEvent::Frame {
+                backing_reservation: None,
+                control_reservation: None,
                 internal: connection_kind == ConnectionKind::Internal,
                 scene_index,
                 connection_id,
@@ -238,7 +324,7 @@ async fn run_reader(
                             target: "tiangz::transport",
                             connection_id,
                             rpc_id,
-                            "rejected inner RPC because target control ingress queue is full"
+                            "rejected inner RPC because target ingress capacity is exhausted"
                         );
                         continue;
                     }
@@ -252,51 +338,19 @@ async fn run_reader(
                 .await
                 .map_err(anyhow::Error::msg)?;
         }
-        stats.transport_read_completed(frame_count, read);
+        context.stats.transport_read_completed(frame_count, read);
     }
 }
 
 async fn run_writer(
-    stream: Rc<TcpStream>,
+    socket_shutdown: SocketShutdown,
     mut write_rx: mpsc::Receiver<ConnectionWriteBatch>,
     mut shutdown_rx: watch::Receiver<bool>,
-    queued_bytes: Arc<AtomicUsize>,
-    queued_frames: Arc<AtomicUsize>,
-    stats: Arc<crate::process::ProcessQueueStats>,
+    context: Arc<EndpointContext>,
 ) -> Result<()> {
+    let stream = &socket_shutdown.0;
     let mut packet = Vec::<u8>::with_capacity(WRITE_BATCH_BYTE_CAPACITY);
-    loop {
-        let batch = tokio::select! {
-            changed = shutdown_rx.changed() => {
-                if changed.is_err() || *shutdown_rx.borrow() {
-                    // 关闭请求不能越过已入队的通知；先排空队列，再关闭 io_uring Socket。
-                    // A close request must not overtake queued notices; drain the
-                    // queue before shutting down the io_uring socket.
-                    while let Ok(batch) = write_rx.try_recv() {
-                        let frame_count = batch.frames.len();
-                        let packet_bytes = batch.frame_bytes + frame_count * 4;
-                        packet.clear();
-                        packet.reserve(packet_bytes);
-                        for frame in &batch.frames {
-                            packet.extend_from_slice(&(frame.len() as u32).to_be_bytes());
-                            packet.extend_from_slice(frame);
-                        }
-                        let (result, returned_packet) = stream.write_all(packet).await;
-                        packet = returned_packet;
-                        queued_bytes.fetch_sub(batch.frame_bytes, Ordering::Relaxed);
-                        queued_frames.fetch_sub(frame_count, Ordering::Relaxed);
-                        result?;
-                        stats.transport_write_completed(frame_count, packet_bytes);
-                    }
-                    break;
-                }
-                continue;
-            }
-            batch = write_rx.recv() => {
-                let Some(batch) = batch else { break; };
-                batch
-            }
-        };
+    while let Some(batch) = next_write_batch(&mut write_rx, &mut shutdown_rx).await {
         let frame_count = batch.frames.len();
         let packet_bytes = batch.frame_bytes + frame_count * 4;
 
@@ -306,17 +360,19 @@ async fn run_writer(
             packet.extend_from_slice(&(frame.len() as u32).to_be_bytes());
             packet.extend_from_slice(frame);
         }
-        let (result, returned_packet) = stream.write_all(packet).await;
-        packet = returned_packet;
-        queued_bytes.fetch_sub(batch.frame_bytes, Ordering::Relaxed);
-        queued_frames.fetch_sub(frame_count, Ordering::Relaxed);
-        result?;
-        stats.transport_write_completed(frame_count, packet_bytes);
+        packet = batch
+            .write_within(context.write_timeout, async {
+                let (result, returned_packet) = stream.write_all(packet).await;
+                result?;
+                Ok(returned_packet)
+            })
+            .await?;
+        context
+            .stats
+            .transport_write_completed(frame_count, packet_bytes);
     }
-    // 只有写队列完成后才关闭连接；否则最后一条业务通知可能还在内核队列之外。
-    // Close only after the write queue is drained; otherwise the final business
-    // notice may still be outside the kernel queue.
-    let _ = stream.shutdown(Shutdown::Both);
+    // 正常路径排空后才归还关闭守卫；错误/取消也由同一所有者关闭 Socket。
+    // Normal exit drains first; the same owner also closes the socket on errors/cancellation.
     Ok(())
 }
 

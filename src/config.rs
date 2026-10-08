@@ -320,6 +320,24 @@ pub enum IoBackendKind {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessNetworkConfig {
+    /// 全部业务监听端口共享的入站连接名额，包含未完成握手。 / Accepted connection slots shared by all business listeners, including pending handshakes.
+    #[serde(default = "default_max_accepted_connections")]
+    pub max_accepted_connections: usize,
+    /// 全部流式监听端口共享的未完成握手名额。 / Pending stream handshake slots shared by all listeners.
+    #[serde(default = "default_max_pending_handshakes")]
+    pub max_pending_handshakes: usize,
+    /// 全部 ConnectionWriter payload 与主动 Inner Host 整包共享预算。 / Shared byte budget for ConnectionWriter payloads and active Inner host packets.
+    #[serde(default = "default_max_outbound_buffered_bytes")]
+    pub max_outbound_buffered_bytes: usize,
+    /// 已解码 Process 入站帧的共享逻辑字节额度，不含解码器或 V8 副本。 / Shared logical byte limit for decoded Process ingress frames, excluding decoders and V8 copies.
+    #[serde(default = "default_max_ingress_buffered_bytes")]
+    pub max_ingress_buffered_bytes: usize,
+    /// KCP C 缓存与输出引用的进程共享保守字节额度。 / Shared conservative byte budget for KCP C caches and output references.
+    #[serde(default = "default_max_kcp_buffered_bytes")]
+    pub max_kcp_buffered_bytes: usize,
+    /// 出站批次从准入到写出完成的总期限，包含排队。 / Total outbound batch budget from admission through writing, including queue wait.
+    #[serde(default = "default_connection_write_timeout_ms")]
+    pub write_timeout_ms: u64,
     #[serde(default, alias = "backend")]
     pub io_backend: IoBackendKind,
     #[serde(default = "default_uring_entries")]
@@ -332,6 +350,12 @@ impl Default for ProcessNetworkConfig {
     fn default() -> Self {
         Self {
             io_backend: IoBackendKind::default(),
+            max_accepted_connections: default_max_accepted_connections(),
+            max_pending_handshakes: default_max_pending_handshakes(),
+            max_outbound_buffered_bytes: default_max_outbound_buffered_bytes(),
+            max_ingress_buffered_bytes: default_max_ingress_buffered_bytes(),
+            max_kcp_buffered_bytes: default_max_kcp_buffered_bytes(),
+            write_timeout_ms: default_connection_write_timeout_ms(),
             uring_entries: default_uring_entries(),
             uring_read_buffer_bytes: default_uring_read_buffer_bytes(),
         }
@@ -468,14 +492,30 @@ pub struct SceneConfig {
     pub protocol: EndpointProtocol,
     #[serde(default)]
     pub audience: EndpointAudience,
-    /// 由该 MapHost 在启动时创建的静态地图配置 ID。动态地图不写入启动配置。
-    /// Static map config IDs created by this MapHost during startup. Dynamic maps are never listed here.
-    #[serde(default)]
-    pub static_map_ids: Vec<u32>,
-    /// 是否接受MapManager分配的动态地图；静态地图与动态副本仍使用同一种MapHost实现。
-    /// Whether this MapHost accepts dynamic instances assigned by MapManager.
-    #[serde(default)]
-    pub accept_dynamic_maps: bool,
+    /// 兼容旧地图部署字段；保留缺失信息，让模块检查显式双写冲突。
+    /// Legacy map deployment field; preserve absence for module-owned conflict checks.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_present"
+    )]
+    pub static_map_ids: Option<Vec<u32>>,
+    /// 兼容旧动态地图开关；缺失与显式 false 不可混为同一配置来源。
+    /// Legacy dynamic-map switch; absence and explicit false have distinct configuration origins.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_present"
+    )]
+    pub accept_dynamic_maps: Option<bool>,
+}
+
+/// 缺失字段用默认 None，显式 null 仍按原字段类型拒绝。
+/// Missing fields default to None while explicit null remains invalid for the original type.
+fn deserialize_present<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<T>, D::Error> {
+    T::deserialize(deserializer).map(Some)
 }
 
 impl SceneConfig {
@@ -580,6 +620,34 @@ fn default_fixed_update_ms() -> u64 {
 
 fn default_stop_timeout_ms() -> u64 {
     10_000
+}
+
+/// 使用独立的慢写默认值，不能因未来停机配置调整而隐式改变。 / Keeps the slow-write default independent from future shutdown-default changes.
+fn default_connection_write_timeout_ms() -> u64 {
+    10_000
+}
+
+/// 保留既有 KCP 端点的最大会话数量级，新增 Process 共享上限。 / Preserves the existing KCP session scale with a new shared process limit.
+fn default_max_accepted_connections() -> usize {
+    65_536
+}
+
+/// 慢握手具有独立额度，避免先占满所有已接受连接。 / Gives slow handshakes a separate bound before they exhaust accepted connections.
+fn default_max_pending_handshakes() -> usize {
+    1_024
+}
+
+/// 默认共享出站预算为 64 MiB，不替代每连接限制。 / Defaults the shared outbound budget to 64 MiB alongside per-connection limits.
+fn default_max_outbound_buffered_bytes() -> usize {
+    64 * 1024 * 1024
+}
+
+fn default_max_ingress_buffered_bytes() -> usize {
+    64 * 1024 * 1024
+}
+
+fn default_max_kcp_buffered_bytes() -> usize {
+    64 * 1024 * 1024
 }
 
 fn default_hotfix_reload_timeout_ms() -> u64 {
@@ -949,6 +1017,24 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
             "process network.uringReadBufferBytes must be between 4096 and {MAX_URING_READ_BUFFER_BYTES}"
         );
     }
+    if !(1..=300_000).contains(&config.process.network.write_timeout_ms) {
+        bail!("process network.writeTimeoutMs must be between 1 and 300000");
+    }
+    if !(1..=1_000_000).contains(&config.process.network.max_accepted_connections) {
+        bail!("process network.maxAcceptedConnections must be between 1 and 1000000");
+    }
+    if !(1..=1_000_000).contains(&config.process.network.max_pending_handshakes) {
+        bail!("process network.maxPendingHandshakes must be between 1 and 1000000");
+    }
+    if !(1..=1024 * 1024 * 1024).contains(&config.process.network.max_outbound_buffered_bytes) {
+        bail!("process network.maxOutboundBufferedBytes must be between 1 and 1073741824");
+    }
+    if !(1..=1024 * 1024 * 1024).contains(&config.process.network.max_ingress_buffered_bytes) {
+        bail!("process network.maxIngressBufferedBytes must be between 1 and 1073741824");
+    }
+    if !(1..=1024 * 1024 * 1024).contains(&config.process.network.max_kcp_buffered_bytes) {
+        bail!("process network.maxKcpBufferedBytes must be between 1 and 1073741824");
+    }
     if config.process.scheduling.idle_tick_ms == Some(0) {
         bail!("process scheduling.idleTickMs must be greater than 0");
     }
@@ -1229,6 +1315,48 @@ mod tests {
     use super::*;
 
     #[test]
+    fn legacy_map_projection_preserves_absence_and_explicit_defaults() {
+        let base =
+            serde_json::json!({"name":"map_1","sceneType":"MapHost","ip":"127.0.0.1","port":7301});
+        let omitted: SceneConfig = serde_json::from_value(base.clone()).unwrap();
+        let projected = serde_json::to_value(&omitted).unwrap();
+        assert!(projected.get("staticMapIds").is_none());
+        assert!(projected.get("acceptDynamicMaps").is_none());
+        let mut explicit = base.clone();
+        explicit["staticMapIds"] = serde_json::json!([]);
+        explicit["acceptDynamicMaps"] = serde_json::json!(false);
+        let defaults: SceneConfig = serde_json::from_value(explicit).unwrap();
+        let projected = serde_json::to_value(defaults).unwrap();
+        assert_eq!(projected["staticMapIds"], serde_json::json!([]));
+        assert_eq!(projected["acceptDynamicMaps"], false);
+        for (field, values) in [
+            (
+                "staticMapIds",
+                vec![
+                    serde_json::Value::Null,
+                    serde_json::json!([-1]),
+                    serde_json::json!([1.5]),
+                    serde_json::json!([4294967296_u64]),
+                ],
+            ),
+            (
+                "acceptDynamicMaps",
+                vec![
+                    serde_json::Value::Null,
+                    serde_json::json!(0),
+                    serde_json::json!("false"),
+                ],
+            ),
+        ] {
+            for value in values {
+                let mut invalid = base.clone();
+                invalid[field] = value;
+                assert!(serde_json::from_value::<SceneConfig>(invalid).is_err());
+            }
+        }
+    }
+
+    #[test]
     fn loads_shared_known_scene_files_and_dynamic_map_role() {
         let directory =
             std::env::temp_dir().join(format!("tiangz-known-scenes-{}", std::process::id()));
@@ -1251,7 +1379,7 @@ mod tests {
         .unwrap();
 
         let config = load_runtime_config(&process_path).unwrap();
-        assert!(config.scenes[0].accept_dynamic_maps);
+        assert_eq!(config.scenes[0].accept_dynamic_maps, Some(true));
         assert_eq!(config.known_scenes.len(), 2);
         assert!(
             config
@@ -1273,8 +1401,8 @@ mod tests {
             port,
             protocol: EndpointProtocol::Auto,
             audience: EndpointAudience::Mixed,
-            static_map_ids: Vec::new(),
-            accept_dynamic_maps: false,
+            static_map_ids: None,
+            accept_dynamic_maps: None,
         }
     }
 
@@ -1372,6 +1500,170 @@ mod tests {
             known_scenes: vec![],
         };
         assert!(validate_runtime_config(&config).is_err());
+    }
+
+    #[test]
+    fn validates_total_outbound_write_budget_and_legacy_default() {
+        let defaulted: ProcessConfig = serde_json::from_str(r#"{"name":"test"}"#).unwrap();
+        assert_eq!(defaulted.network.write_timeout_ms, 10_000);
+        for milliseconds in [0, 1, 10_000, 300_000, 300_001] {
+            let mut process = process(None);
+            process.network.write_timeout_ms = milliseconds;
+            let config = RuntimeConfig {
+                process,
+                scenes: vec![scene("gate", 7201)],
+                known_scenes: vec![],
+            };
+            let result = validate_runtime_config(&config);
+            if (1..=300_000).contains(&milliseconds) {
+                result.unwrap();
+            } else {
+                assert!(result.unwrap_err().to_string().contains("writeTimeoutMs"));
+            }
+        }
+        for invalid in ["-1", "1.5", "\"1000\""] {
+            assert!(
+                serde_json::from_str::<ProcessNetworkConfig>(&format!(
+                    r#"{{"writeTimeoutMs":{invalid}}}"#
+                ))
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn validates_process_admission_bounds_and_legacy_defaults() {
+        let legacy: ProcessConfig = serde_json::from_str(r#"{"name":"test"}"#).unwrap();
+        assert_eq!(legacy.network.max_accepted_connections, 65_536);
+        assert_eq!(legacy.network.max_pending_handshakes, 1_024);
+        for field in ["maxAcceptedConnections", "maxPendingHandshakes"] {
+            for limit in [0, 1, 1_000_000, 1_000_001] {
+                let mut process = process(None);
+                process.network =
+                    serde_json::from_value(serde_json::json!({ field: limit })).unwrap();
+                let config = RuntimeConfig {
+                    process,
+                    scenes: vec![scene("gate", 7201)],
+                    known_scenes: vec![],
+                };
+                let result = validate_runtime_config(&config);
+                if (1..=1_000_000).contains(&limit) {
+                    result.unwrap();
+                } else {
+                    assert!(result.unwrap_err().to_string().contains(field));
+                }
+            }
+            for invalid in ["-1", "1.5", "\"1000\""] {
+                assert!(
+                    serde_json::from_str::<ProcessNetworkConfig>(&format!(
+                        r#"{{"{field}":{invalid}}}"#
+                    ))
+                    .is_err()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn validates_shared_outbound_payload_budget_and_default() {
+        let legacy: ProcessConfig = serde_json::from_str(r#"{"name":"test"}"#).unwrap();
+        assert_eq!(legacy.network.max_outbound_buffered_bytes, 64 * 1024 * 1024);
+        for limit in [0, 1, 1024 * 1024 * 1024, 1024 * 1024 * 1024 + 1] {
+            let mut process = process(None);
+            process.network.max_outbound_buffered_bytes = limit;
+            let config = RuntimeConfig {
+                process,
+                scenes: vec![scene("gate", 7201)],
+                known_scenes: vec![],
+            };
+            let result = validate_runtime_config(&config);
+            if (1..=1024 * 1024 * 1024).contains(&limit) {
+                result.unwrap();
+            } else {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .to_string()
+                        .contains("maxOutboundBufferedBytes")
+                );
+            }
+        }
+        for invalid in ["-1", "1.5", "\"4096\""] {
+            assert!(
+                serde_json::from_str::<ProcessNetworkConfig>(&format!(
+                    r#"{{"maxOutboundBufferedBytes":{invalid}}}"#
+                ))
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn validates_shared_ingress_frame_budget_and_legacy_default() {
+        let legacy: ProcessConfig = serde_json::from_str(r#"{"name":"test"}"#).unwrap();
+        assert_eq!(legacy.network.max_ingress_buffered_bytes, 64 * 1024 * 1024);
+        for limit in [0, 1, 1024 * 1024 * 1024, 1024 * 1024 * 1024 + 1] {
+            let mut process = process(None);
+            process.network.max_ingress_buffered_bytes = limit;
+            let config = RuntimeConfig {
+                process,
+                scenes: vec![scene("gate", 7201)],
+                known_scenes: vec![],
+            };
+            let result = validate_runtime_config(&config);
+            if (1..=1024 * 1024 * 1024).contains(&limit) {
+                result.unwrap();
+            } else {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .to_string()
+                        .contains("maxIngressBufferedBytes")
+                );
+            }
+        }
+        for invalid in ["-1", "1.5", "\"4096\"", "null", "true"] {
+            assert!(
+                serde_json::from_str::<ProcessNetworkConfig>(&format!(
+                    r#"{{"maxIngressBufferedBytes":{invalid}}}"#
+                ))
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn validates_shared_kcp_cache_budget_and_legacy_default() {
+        let legacy: ProcessConfig = serde_json::from_str(r#"{"name":"test"}"#).unwrap();
+        assert_eq!(legacy.network.max_kcp_buffered_bytes, 64 * 1024 * 1024);
+        for limit in [0, 1, 1024 * 1024 * 1024, 1024 * 1024 * 1024 + 1] {
+            let mut process = process(None);
+            process.network.max_kcp_buffered_bytes = limit;
+            let config = RuntimeConfig {
+                process,
+                scenes: vec![scene("gate", 7201)],
+                known_scenes: vec![],
+            };
+            let result = validate_runtime_config(&config);
+            if (1..=1024 * 1024 * 1024).contains(&limit) {
+                result.unwrap();
+            } else {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .to_string()
+                        .contains("maxKcpBufferedBytes")
+                );
+            }
+        }
+        for invalid in ["-1", "1.5", "\"4096\"", "null", "true"] {
+            assert!(
+                serde_json::from_str::<ProcessNetworkConfig>(&format!(
+                    r#"{{"maxKcpBufferedBytes":{invalid}}}"#
+                ))
+                .is_err()
+            );
+        }
     }
 
     #[test]

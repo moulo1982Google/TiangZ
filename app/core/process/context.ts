@@ -7,7 +7,7 @@ import type { RpcDescriptor } from "../protocol/rpc";
 import { SystemErrCode } from "../protocol/SystemErrCode";
 import { nowMs, type LatencyRecorder } from "../metrics/latency";
 import type { LocalSceneRouter, RuntimeEntrySceneConfig, SceneConfig } from "./types";
-import { callRemoteScene, sendRemoteScene, sleepHost } from "./HostSceneTransport";
+import { callRemoteScene, sendRemoteScene, withHostDeadline } from "./HostSceneTransport";
 import {
   encodeActorLocationEnvelope,
   extractFrameRpcId,
@@ -62,9 +62,9 @@ export class SceneCallContext {
     options: SceneCallOptions = {},
   ): Promise<TResp> {
     const rpcId = this.reserveRpcId();
-    request.rpcId = rpcId;
-    const frame = packFrame(descriptor.requestCode, descriptor.requestCodec.encode(request));
     try {
+      request.rpcId = rpcId;
+      const frame = packFrame(descriptor.requestCode, descriptor.requestCodec.encode(request));
       const responseFrame = await this.callFrame(target, frame, options);
       return this.decodeRpcResponse(descriptor, responseFrame, rpcId);
     } finally {
@@ -80,18 +80,18 @@ export class SceneCallContext {
     options: SceneCallOptions = {},
   ): Promise<TResp> {
     const rpcId = this.reserveRpcId();
-    request.rpcId = rpcId;
-    const innerFrame = packFrame(
-      descriptor.requestCode,
-      descriptor.requestCodec.encode(request),
-    );
-    const frame = encodeActorLocationEnvelope({
-      instanceId: target.instanceId,
-      fenceToken: target.fenceToken,
-      frame: innerFrame,
-      rpcId,
-    });
     try {
+      request.rpcId = rpcId;
+      const innerFrame = packFrame(
+        descriptor.requestCode,
+        descriptor.requestCodec.encode(request),
+      );
+      const frame = encodeActorLocationEnvelope({
+        instanceId: target.instanceId,
+        fenceToken: target.fenceToken,
+        frame: innerFrame,
+        rpcId,
+      });
       const responseFrame = await this.callFrame(target.scene, frame, options);
       return this.decodeRpcResponse(descriptor, responseFrame, rpcId);
     } finally {
@@ -111,14 +111,14 @@ export class SceneCallContext {
       throw new RpcError(SystemErrCode.MalformedFrame, "actor RPC request has no rpcId");
     }
     const internalRpcId = this.reserveRpcId();
-    const innerFrame = rewriteFrameRpcId(frame, internalRpcId);
-    const envelope = encodeActorLocationEnvelope({
-      instanceId: target.instanceId,
-      fenceToken: target.fenceToken,
-      frame: innerFrame,
-      rpcId: internalRpcId,
-    });
     try {
+      const innerFrame = rewriteFrameRpcId(frame, internalRpcId);
+      const envelope = encodeActorLocationEnvelope({
+        instanceId: target.instanceId,
+        fenceToken: target.fenceToken,
+        frame: innerFrame,
+        rpcId: internalRpcId,
+      });
       const responseFrame = await this.callFrame(target.scene, envelope, options);
       if (responseFrame.length < 2 || readU16BE(responseFrame, 0) !== expectedResponseCode) {
         throw new RpcError(
@@ -195,24 +195,22 @@ export class SceneCallContext {
               options.timeoutMs ?? 5000,
             );
           }
-          const localCall = this.localRouter.callLocalScene(
+          const localCall = () => this.localRouter.callLocalScene(
             this.self.name,
             target.name,
             routedFrame,
           );
-          if (options.timeoutMs === undefined) return await localCall;
+          if (options.timeoutMs === undefined) return await localCall();
           const timeoutMs = Math.max(1, Math.min(options.timeoutMs, 0xffff_ffff));
-          return await Promise.race([
+          return await withHostDeadline(
             localCall,
-            sleepHost(timeoutMs).then(() => {
-              throw new Error(
-                `local scene call to ${target.name} timed out after ${timeoutMs}ms`,
-              );
-            }),
-          ]);
+            timeoutMs >>> 0,
+            `local scene call to ${target.name} timed out after ${timeoutMs}ms`,
+          );
         },
       );
     } catch (error) {
+      if (error instanceof RpcError && error.code === SystemErrCode.SceneOverloaded) throw error;
       const message = error instanceof Error ? error.message : String(error);
       throw new RpcError(
         message.includes("[scene-overloaded]")
@@ -276,6 +274,8 @@ export class SceneCallContext {
       }
     };
     const mapError = (error: unknown): RpcError => {
+      // 本地准入已有类型，不能因缺少 Rust 文本前缀而丢失 1011。 / Local admission is typed; missing a Rust text prefix must not erase 1011.
+      if (error instanceof RpcError && error.code === SystemErrCode.SceneOverloaded) return error;
       const text = error instanceof Error ? error.message : String(error);
       return new RpcError(
         text.includes("[scene-overloaded]")

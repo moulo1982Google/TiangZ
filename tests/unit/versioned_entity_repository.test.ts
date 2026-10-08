@@ -69,6 +69,8 @@ describe("DbProxyEntityRepository retry", () => {
 });
 
 class RetryTransport implements DbProxyTransport {
+  readonly supportsRequestTimeout = true;
+  monotonicNowMs(): number { return Date.now(); } // Deterministic Vitest clock; this double has no I/O.
   readonly requests: DbProxySnapshotWrite[] = [];
 
   constructor(

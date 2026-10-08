@@ -269,6 +269,8 @@ npm run verify:observability
 
 ## Game.Update 与定时器指标
 
+0.7 候选额外提供 Process Spawn 额度的四条 Prometheus 序列，只使用固定 `process` 标签：`tiangz_scene_tasks_in_flight`（包括已销毁 owner 的未完成任务）、`tiangz_scene_tasks_capacity`（4096）、`tiangz_scene_tasks_max_in_flight`（成功接受高水位）和 counter `tiangz_scene_tasks_rejected_total`（仅 Process 总额度拒绝，不含每 Scope 256 上限）。指标按既有观测周期发布；取消不提前减在途数，注册失败回滚且不增成功高水位。它们只描述 Spawn，不是所有 TS 任务或堆内存的指标，详见[容量验收](../design/v0.7-scene-task-capacity.md)。
+
 日志格式：
 
 ```text
@@ -331,6 +333,7 @@ MapHost 每 5 秒随 Scene 快照输出每张地图的广播状态：
 - `tiangz_native_numeric_recipient_deliveries_total{numeric_type}`：记录乘以最终收件人数后的逻辑投递次数，用于直接定位某个NumericType的AOI扇出。
 - `tiangz_native_numeric_logical_bytes_total{numeric_type}`：不含Gate外壳的Numeric条目逻辑投递字节；与唯一编码字节不是同一口径。
 - `connection_ingress.dropped_frames_after_disconnect_total`：控制队列中的Disconnect越过旧数据帧后，被EntryScene短期墓碑丢弃的残留客户端帧。少量值可出现在批量断线或压测清理阶段；持续增长则要检查客户端断线风暴和数据入口积压。
+- 0.7 候选的 `connection_ingress.dropped_responses_after_disconnect_total` 是来源断开后未再排入出站队列的迟到响应计数；它不代表业务操作未执行或事务回滚。`connected_async_sources` 为仍连接且有异步入站等待的来源索引数，包含异步单向 Handler，不是全部在途任务数；断线移除索引，真实任务仍参与热更排空。`connection_id_cache_entries` 为连接 ID 编码缓存条目数。三者沿用 Scene 固定标签，不引入连接 ID 标签，见[迟到响应契约](../design/v0.7-late-responses.md)。
 - `tiangz_aoi_candidate_relations/tiangz_aoi_visible_relations`：空间候选关系与业务过滤后的最终可见关系，均为当前值 Gauge。
 - `tiangz_aoi_lingering_relations`：仅因为已经 Enter、尚未越过 Detach 而继续保留的迟滞关系。它持续接近 `visible_relations` 时，表示地图正在承受密集人群跨 Grid 的迟滞维护压力。
 - `tiangz_aoi_rejected_relations`：被阵营、隐身、位面等业务过滤器拒绝的空间关系。它是当前拒绝数量，不是累计过滤次数。
@@ -429,6 +432,8 @@ npm run profile:ts -- --port 9231 --duration 30 --out perf/results/map_150.cpupr
 - split 模式每个 Process 都需要单独 Inspector 端口和单独 `.cpuprofile`。
 
 Process bridge 的累计计数包括 `inbound_frames`、`host_completions`、`disconnects`、`runtime_updates`、`runtime_events` 和 `max_runtime_batch`。当 Rust queue 有流量而 TS `processed` 不增长时，用这些值判断问题位于网络接收、completion 洪峰、V8 注入还是 TS mailbox；单向 Message 正常情况下不会增加 `host_completions`。
+
+Host 入站字节批次指标为 `tiangz_process_host_event_batch_limit_bytes`（固定 64 MiB）、`tiangz_process_host_event_batch_max_bytes`（含头部的实际交付高水位，含停机 completion）和 `tiangz_process_host_event_batch_splits_total`（因字节不足提前结束批次的次数）。只有 Process 固定标签，不附加 connection/operation ID。拆批数不是拒绝数；增长表示字节上限先于事件数上限生效。它们不表示仍被 TS 视图引用的所有批次数量或 RSS。
 
 `runtime_events / runtime_updates` 可近似观察实际批量度。该值过低且 CPU 偏高，通常表示 V8 update 调用太频繁；该值很高且 `ingress.queue`、客户端 p95/p99 上升，则说明批次或聚合窗口过大。调度模式和覆盖字段见“配置与协议参考”。
 

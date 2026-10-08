@@ -103,7 +103,7 @@ export type {
   SessionRpcHandler,
 } from "./process/sessionHandlers";
 export { SceneMessageHelper } from "./process/SceneMessageHelper";
-export { EntryScene } from "./process/types";
+export { EntryScene } from "./process/EntryScene";
 export type {
   CustomMetricSnapshot,
   CustomMetricKind,

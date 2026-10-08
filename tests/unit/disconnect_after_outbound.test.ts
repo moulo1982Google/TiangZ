@@ -3,16 +3,24 @@ import { expect, test, vi } from "vitest";
 // 宿主桥接函数在模块加载时读取，必须在导入 core 之前装好替身。 / Host bridge globals are read at module load; install stand-ins before importing core.
 const host = vi.hoisted(() => {
   const log: string[] = [];
+  const deadlines = new Set<number>();
+  let nextDeadline = 1;
   const bridge = globalThis as Record<string, unknown>;
   bridge.__hostPushOutboundPacked = () => { log.push("outbound"); };
   bridge.__hostCloseConnection = (connectionId: number) => { log.push(`close:${connectionId}`); };
-  return { log };
+  bridge.__hostCreateShutdownDeadline = () => {
+    const id = nextDeadline++; deadlines.add(id); return id;
+  };
+  bridge.__hostCancelDeadline = (id: number) => {
+    if (!deadlines.delete(id)) throw new Error("Unknown shutdown deadline");
+  };
+  return { log, deadlines };
 });
 vi.mock("../../app/core/persistence/PrepareGlobalIds", () => ({ PrepareGlobalIds: vi.fn(async () => undefined) }));
 
 import { ProcessRuntime } from "../../app/core/process/ProcessRuntime";
 import { installProcessBootstrap } from "../../app/core/process/ProcessBootstrap";
-import { EntryScene } from "../../app/core/process/types";
+import { EntryScene } from "../../app/core/process/EntryScene";
 import { entryScene } from "../../app/core/process/registry";
 
 const scenes = new Map<string, CloseOrderFixture>();
@@ -82,4 +90,5 @@ test("the process bridge hands frames to the host before the closes of the same 
     await bridge.__etsUpdateBinary(false);
     expect(host.log).toEqual(["outbound", "close:5"]);
   } finally { await bridge.__etsStopProcess(); }
+  expect(host.deadlines.size).toBe(0);
 });
