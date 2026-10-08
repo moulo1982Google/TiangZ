@@ -5,7 +5,7 @@ import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
 
 const declarationKinds = new Set(["entryScene", "scene", "actor", "component"]);
 const descriptorBindings = new Set(["rpcHandler", "messageHandler", "sessionRpcHandler", "sessionMessageHandler", "unitRpcHandler", "unitMessageHandler", "syncEventHandler", "vetoEventHandler"]);
-const bindingKinds = new Set(["systemFor", "hotfixFor", "entityExtensionHandler", ...descriptorBindings]);
+const bindingKinds = new Set(["systemFor", "hotfixFor", "entityExtensionHandler", "httpHandler", ...descriptorBindings]);
 
 /** 从合法模块目录生成只读导航；不执行模块、不代替类型与兼容检查。 / Build read-only navigation without executing modules or replacing validation. */
 export async function inspectGameModules(options) {
@@ -106,6 +106,7 @@ async function inspectModule(module) {
             const binding = { ...record,
               target: args[0]?.getText(source) ?? "",
               ...(descriptorBindings.has(name) ? { descriptor: args[1]?.getText(source) ?? "" } : {}),
+              ...(name === "httpHandler" ? { route: args.slice(1, 3).map(arg => arg.getText(source)).join(" ") } : {}),
             };
             bindings.push(binding);
             const target = args[0];

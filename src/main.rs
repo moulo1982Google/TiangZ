@@ -18,6 +18,7 @@ mod game_config;
 mod health;
 mod host;
 mod hotfix;
+mod http_endpoint;
 mod inspector;
 mod logging;
 mod secure_random;

@@ -2,7 +2,7 @@ import ts from "typescript";
 import { coreSymbolName } from "./core_type_symbols.mjs";
 
 const systemDecorators = new Set(["hotfixFor", "systemFor"]);
-const handlerDecorators = new Set(["messageHandler", "rpcHandler", "sessionMessageHandler", "sessionRpcHandler", "unitMessageHandler", "unitRpcHandler", "syncEventHandler", "vetoEventHandler", "entityExtensionHandler"]);
+const handlerDecorators = new Set(["messageHandler", "rpcHandler", "sessionMessageHandler", "sessionRpcHandler", "unitMessageHandler", "unitRpcHandler", "httpHandler", "syncEventHandler", "vetoEventHandler", "entityExtensionHandler"]);
 
 /** 同一行为类规则供宿主边界校验和模块构建前置检查复用。 / Share behavior-class rules between host validation and module build preflight. */
 export function hotfixClassDiagnostics(tree, typeChecker) {

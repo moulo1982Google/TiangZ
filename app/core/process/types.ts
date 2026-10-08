@@ -66,6 +66,16 @@ import {
   getSessionMessageHandlerBindings,
   getSessionRpcHandlerBindings,
 } from "./sessionHandlers";
+import {
+  decodeHttpRequest,
+  getSceneHttpHandlerBindings,
+  HttpError,
+  jsonResponse,
+  sendHttpError,
+  sendHttpResponse,
+  type HttpRequest,
+  type HttpResponse,
+} from "./httpHandlers";
 import type { ProcessLoggingConfig } from "../logging/types";
 import type { Logger } from "../logging/Logger";
 import type { RuntimeDataPackInput } from "../content/RuntimeDataPackRegistry";
@@ -85,10 +95,27 @@ export interface SceneConfig {
   port: number;
   protocol?: "auto" | "tcp" | "websocket" | "kcp";
   audience?: "mixed" | "inner" | "outer";
+  /** 可选的独立 HTTP 端口，请求进入本 Scene 的 httpHandler。 / Optional separate HTTP port whose requests enter this Scene's httpHandlers. */
+  http?: SceneHttpConfig;
   /** MapHost启动时创建的静态地图配置ID；动态副本由业务管理器运行时创建。 / Static map configs created at MapHost startup; business managers create dynamic instances at runtime. */
   staticMapIds?: number[];
   /** 是否接受MapManager分配的动态地图；false时仅承载staticMapIds。 / Whether this MapHost accepts dynamic instances assigned by MapManager. */
   acceptDynamicMaps?: boolean;
+}
+
+/**
+ * Scene HTTP 入口配置。上限、鉴权与跨域由 Rust 执行，这里只供业务读取；令牌值从不进入 V8。
+ * Scene HTTP ingress settings. Rust enforces limits, auth, and CORS; this is read-only for business
+ * code, and the token value never enters V8.
+ */
+export interface SceneHttpConfig {
+  port: number;
+  bindIp?: string;
+  maxBodyBytes?: number;
+  requestTimeoutMs?: number;
+  maxInFlight?: number;
+  authTokenEnv?: string;
+  corsAllowOrigins?: string[];
 }
 
 /**
@@ -280,6 +307,12 @@ type QueuedEvent =
       kind: "disconnect";
       connectionId: number;
       queuedAtMs: number;
+    }
+  | {
+      kind: "http";
+      requestId: number;
+      payload: Uint8Array;
+      queuedAtMs: number;
     };
 
 interface MailboxTask<T = unknown> {
@@ -417,6 +450,8 @@ export abstract class EntryScene extends Scene {
   private readonly knownMessagesByCode = new Map<number, AnyMessageDescriptor>();
   private readonly registeredRpcHandlers = new Map<number, string>();
   private readonly registeredMessageHandlers = new Map<number, string>();
+  private readonly httpRoutes = new Map<string, (request: HttpRequest) => MaybePromise<HttpResponse>>();
+  private readonly httpMethodsByPath = new Map<string, string[]>();
   private lifecycleState: "created" | "started" | "ready" | "stopping" | "stopped" = "created";
   private stopPromise: Promise<void> | undefined;
   private sessionComponent: SessionComponent | undefined;
@@ -474,6 +509,7 @@ export abstract class EntryScene extends Scene {
     this.registerSessionMessageHandlers();
     this.registerUnitRpcHandlers();
     this.registerUnitMessageHandlers();
+    this.registerHttpHandlers();
     this.registerHandlers();
   }
 
@@ -800,6 +836,16 @@ export abstract class EntryScene extends Scene {
       connectionId,
       queuedAtMs: this.latencies.enabled ? nowMs() : 0,
     }, true);
+  }
+
+  /** HTTP 请求与业务帧同走数据入口，进入 mailbox 后由 httpHandler 处理。 / HTTP requests share the data ingress with business frames and reach httpHandlers through the mailbox. */
+  pushHostHttpRequest(requestId: number, payload: Uint8Array): void {
+    this.enqueueIngress({
+      kind: "http",
+      requestId,
+      payload,
+      queuedAtMs: this.latencies.enabled ? nowMs() : 0,
+    }, false);
   }
 
   private enqueueIngress(event: QueuedEvent, control: boolean): void {
@@ -1426,6 +1472,8 @@ export abstract class EntryScene extends Scene {
       this.sessionComponent?.Remove(item.connectionId);
       return;
     }
+
+    if (item.kind === "http") return this.processHttpRequest(item.requestId, item.payload);
 
     if (this.isDisconnectedFrame(item.connectionId)) {
       this.droppedFramesAfterDisconnect += 1;
@@ -2210,6 +2258,109 @@ export abstract class EntryScene extends Scene {
       SystemErrCode.ActorLocationFenceRejected,
       `actor location fence rejected for instance ${actor.InstanceId}`,
     );
+  }
+
+  private registerHttpHandlers(): void {
+    const bindings = getSceneHttpHandlerBindings(this.constructor);
+    for (const binding of bindings) {
+      let handlerCtor = binding.handlerCtor;
+      let handler = new handlerCtor();
+      const currentHandler = () => {
+        if (handlerCtor !== binding.handlerCtor) {
+          handlerCtor = binding.handlerCtor;
+          handler = new handlerCtor();
+        }
+        return handler;
+      };
+      const route = `${binding.method} ${binding.path}`;
+      if (this.httpRoutes.has(route)) {
+        throw new Error(`duplicate HTTP handler for ${this.self.sceneType} ${route}`);
+      }
+      this.httpRoutes.set(route, (request) => currentHandler().handle(this, request));
+      const methods = this.httpMethodsByPath.get(binding.path) ?? [];
+      methods.push(binding.method);
+      this.httpMethodsByPath.set(binding.path, methods);
+    }
+    if (bindings.length > 0 && !this.self.http) {
+      this.ctx.logger.warn("scene has HTTP handlers but no http port configured", {
+        scene: this.self.name,
+        routes: bindings.length,
+      });
+    }
+  }
+
+  /**
+   * 解码并分发一个 HTTP 请求。路由不存在返回 404/405；HttpError 返回其状态；其他异常记录日志并返回 500。
+   * Decodes and dispatches one HTTP request. Missing routes answer 404/405; HttpError answers its
+   * status; any other failure is logged and answers 500.
+   */
+  private processHttpRequest(requestId: number, payload: Uint8Array): MaybePromise<void> {
+    let request: HttpRequest;
+    try {
+      request = decodeHttpRequest(payload);
+    } catch (error) {
+      this.ctx.logger.warn("invalid HTTP request payload", { httpRequestId: requestId, error });
+      this.replyHttp(requestId, undefined, () => sendHttpError(requestId, 400, "bad request"));
+      return;
+    }
+    const route = this.httpRoutes.get(`${request.method} ${request.path}`);
+    if (!route) {
+      const allowed = this.httpMethodsByPath.get(request.path);
+      this.replyHttp(requestId, request, () => allowed
+        ? sendHttpResponse(requestId, jsonResponse({ error: "method not allowed" }, 405, { allow: allowed.join(", ") }))
+        : sendHttpError(requestId, 404, "not found"));
+      return;
+    }
+    let result: MaybePromise<HttpResponse>;
+    try {
+      result = route(request);
+    } catch (error) {
+      this.failHttp(requestId, request, error);
+      return;
+    }
+    if (isPromiseLike(result)) {
+      return Promise.resolve(result).then(
+        (response) => this.finishHttp(requestId, request, response),
+        (error) => this.failHttp(requestId, request, error),
+      );
+    }
+    this.finishHttp(requestId, request, result);
+  }
+
+  private finishHttp(requestId: number, request: HttpRequest, response: HttpResponse): void {
+    try {
+      this.replyHttp(requestId, request, () => sendHttpResponse(requestId, response));
+    } catch (error) {
+      this.ctx.logger.error("HTTP handler returned an invalid response", {
+        method: request.method,
+        path: request.path,
+        error,
+      });
+      this.replyHttp(requestId, request, () => sendHttpError(requestId, 500, "internal error"));
+    }
+  }
+
+  private failHttp(requestId: number, request: HttpRequest, error: unknown): void {
+    if (error instanceof HttpError) {
+      this.replyHttp(requestId, request, () => sendHttpError(requestId, error.status, error.message));
+      return;
+    }
+    this.ctx.logger.error("HTTP handler failed", {
+      method: request.method,
+      path: request.path,
+      error,
+    });
+    this.replyHttp(requestId, request, () => sendHttpError(requestId, 500, "internal error"));
+  }
+
+  private replyHttp(requestId: number, request: HttpRequest | undefined, send: () => boolean): void {
+    if (!send()) {
+      this.ctx.logger.warn("HTTP reply dropped because the request already timed out", {
+        httpRequestId: requestId,
+        method: request?.method,
+        path: request?.path,
+      });
+    }
   }
 
   private claimRpcHandler(msgcode: number, owner: string): void {

@@ -94,6 +94,13 @@ export type { UnitMessageHandler, UnitRpcHandler } from "./process/unitHandlers"
 export { entryScene } from "./process/registry";
 export { messageHandler, rpcHandler } from "./process/sceneHandlers";
 export type { SceneMessageHandler, SceneRpcHandler } from "./process/sceneHandlers";
+export { HttpError, httpHandler, jsonResponse } from "./process/httpHandlers";
+export type {
+  HttpMethod,
+  HttpRequest,
+  HttpResponse,
+  SceneHttpHandler,
+} from "./process/httpHandlers";
 export {
   sessionMessageHandler,
   sessionRpcHandler,
@@ -118,6 +125,7 @@ export type {
   ProcessSchedulingConfig,
   RuntimeEntrySceneConfig,
   SceneConfig,
+  SceneHttpConfig,
   SceneMailboxType,
   SceneMetricsSnapshot,
 } from "./process/types";

@@ -1,5 +1,19 @@
 # 版本记录
 
+## 未发布
+
+非破坏性新增；已有配置、模块和业务代码无需修改。需求来自苟道三国登录改造（F4：生产环境用 HTTP 接口返回 Login 地址，以后工具类接口也会用到）。
+
+### 新增
+
+- Scene 配置 `http`：为 Scene 开一个独立 HTTP 端口，请求进入该 Scene 的 mailbox。Rust 负责请求体上限（默认 64 KiB）、超时（默认 10 秒，返回 504）、并发上限（默认 256，返回 503）、可选 Bearer 令牌（令牌不进入 V8）和跨域预检。
+- Stable API `httpHandler(SceneCtor, method, path)`、`HttpError`、`jsonResponse` 及类型 `HttpMethod`、`HttpRequest`、`HttpResponse`、`SceneHttpHandler`、`SceneHttpConfig`；Handler 可热更，路由精确匹配，缺失路径 404、方法不符 405。
+- 新增直接依赖 `hyper`（http1/server）、`hyper-util`、`http-body-util`；均已在依赖树中，未引入新的第三方包。
+
+### 验证
+
+- Rust：配置校验（端口冲突、上限、跨域来源、未知字段）、回复校验（状态码、宿主管理的头、大小）、真实 HTTP 转发与回复、401/413/预检/跨域来源拒绝、令牌头不转发、超时 504 与迟到回复丢弃、令牌变量缺失拒绝启动；TS：请求解码、路由注册校验、同步与异步 Handler 经 ordered mailbox 顺序执行、404/405/400/403/500 映射；`test:module-host --runtime` 在真实进程中验证 200、401、404、405 与令牌不可见。
+
 ## 0.6.2 — 2026-09-23（发布，标签 `v0.6.2`）
 
 非破坏性小版本；已有配置、模块和业务代码无需修改。版本号在 `0.6.0` 之后直接取 `0.6.2`（与配套 DBProxy `v0.6.2` 对齐），未发布 `0.6.1`。需求来自苟道三国登录改造（按环境区分认证、不可猜测的一次性凭证、开发期修改模块协议字段）。

@@ -501,6 +501,7 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
         crate::dbproxy::init(),
         crate::event_stream::init(),
         crate::secure_random::init(),
+        crate::http_endpoint::init(),
     ];
     extensions.extend(crate::module_native::extensions());
     let mut runtime = JsRuntime::new(RuntimeOptions {
@@ -595,6 +596,10 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
     runtime.execute_script(
         "ets-runtime:secure-random.js",
         crate::secure_random::BOOTSTRAP_SOURCE,
+    )?;
+    runtime.execute_script(
+        "ets-runtime:http-endpoint.js",
+        crate::http_endpoint::BOOTSTRAP_SOURCE,
     )?;
     for &(name, source) in crate::module_native::bootstraps() {
         runtime.execute_script(name.to_string(), source)?;

@@ -119,6 +119,14 @@ pub(crate) enum ProcessEvent {
         connection_id: u64,
     },
     HostSceneCompletion(HostSceneCompletion),
+    /// Scene HTTP 端口收到的一个请求；`request_id` 与连接号同一编号空间，回复经 `op_host_http_respond`。
+    /// One request from a Scene HTTP port; `request_id` shares the connection-id space and the reply
+    /// returns through `op_host_http_respond`.
+    HttpRequest {
+        scene_index: u32,
+        request_id: u64,
+        payload: Bytes,
+    },
     Shutdown,
 }
 
@@ -171,7 +179,9 @@ impl ProcessEventKind {
 impl ProcessEvent {
     fn kind(&self) -> ProcessEventKind {
         match self {
-            Self::Frame { .. } => ProcessEventKind::Frame,
+            // HTTP 请求与业务帧同属新业务入口，共用 frame 阶段计数。
+            // HTTP requests are new business ingress like frames and share the frame stage counters.
+            Self::Frame { .. } | Self::HttpRequest { .. } => ProcessEventKind::Frame,
             Self::HostSceneCompletion(_) => ProcessEventKind::Completion,
             Self::Disconnect { .. } => ProcessEventKind::Disconnect,
             Self::Shutdown => ProcessEventKind::Shutdown,
@@ -185,6 +195,7 @@ impl ProcessEvent {
             } if !internal || crate::transport::inner_frame_rpc_id(frame).is_none() => {
                 ProcessIngressClass::Data
             }
+            Self::HttpRequest { .. } => ProcessIngressClass::Data,
             Self::Frame { .. }
             | Self::Disconnect { .. }
             | Self::HostSceneCompletion(_)
@@ -826,6 +837,26 @@ impl ProcessEventSender {
     }
 }
 
+/// 测试用进程入口：返回发送端与数据队列接收端；控制队列接收端被丢弃。
+/// Test process ingress: returns the sender and the data-queue receiver; the control receiver is dropped.
+#[cfg(test)]
+pub(crate) fn test_process_event_channel(
+    capacity: usize,
+) -> (ProcessEventSender, mpsc::Receiver<ProcessEvent>) {
+    let (control_sender, _) = mpsc::sync_channel(capacity);
+    let (data_sender, data_receiver) = mpsc::sync_channel(capacity);
+    let (wake_sender, _) = mpsc::sync_channel(1);
+    (
+        ProcessEventSender {
+            control_sender,
+            data_sender,
+            wake_sender,
+            stats: Arc::new(ProcessQueueStats::new(capacity * 2)),
+        },
+        data_receiver,
+    )
+}
+
 /// 使用单 V8 业务线程和异步 I/O 宿主运行一个已配置进程。
 ///
 /// 网络端点把事件写入由 V8 线程消费的有界队列。停机时先关闭连接，
@@ -939,6 +970,16 @@ pub async fn run_runtime_config(
             stats: Arc::clone(&queue_stats),
         })?;
     }
+    let http_pending = crate::http_endpoint::HttpPendingRequests::default();
+    let http_endpoints = crate::http_endpoint::start_http_endpoints(
+        &config.scenes,
+        &crate::http_endpoint::HttpIngress {
+            event_tx: event_tx.clone(),
+            next_request_id: Arc::clone(&next_connection_id),
+            pending: http_pending.clone(),
+            health: Arc::clone(&health_state),
+        },
+    )?;
     health_state.mark_endpoints_ready();
 
     let process = config.process.clone();
@@ -951,6 +992,9 @@ pub async fn run_runtime_config(
     let host_runtime = tokio::runtime::Handle::current();
     let (runtime_exit_tx, mut runtime_exit_rx) = tokio::sync::oneshot::channel();
     let runtime_thread = thread::spawn(move || {
+        // HTTP 回复 op 在 V8 线程读取回复表，必须在本线程安装。
+        // The HTTP reply op reads the table on the V8 thread, so it is installed on this thread.
+        crate::http_endpoint::configure(http_pending);
         let result = run_process_runtime(
             project_root,
             process,
@@ -1016,6 +1060,7 @@ pub async fn run_runtime_config(
         }
     };
     health_state.mark_stopping();
+    http_endpoints.stop().await;
     shutdown_all_connections(&writers);
     let shutdown_send_error = if !runtime_exited_early {
         event_tx
@@ -2211,6 +2256,14 @@ fn push_event(
                 0,
                 &payload,
             )?;
+        }
+        ProcessEvent::HttpRequest {
+            scene_index,
+            request_id,
+            payload,
+        } => {
+            queue_stats.inbound_frames.fetch_add(1, Ordering::Relaxed);
+            push_packed_event(packed_events, 6, request_id, scene_index, &payload)?;
         }
         ProcessEvent::Shutdown => bail!("shutdown event cannot enter a host event batch"),
     }

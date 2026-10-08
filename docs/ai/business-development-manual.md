@@ -1543,7 +1543,35 @@ entity Item extends Entity {
 - **部署环境**：进程配置 `process.environment` 取 `development | test | staging | production`，缺省 `development`，未知值拒绝启动。业务在任何位置（含 Hotfix、System、Component）通过 `ProcessRuntimeInfo.Instance.Environment` 读取；框架只报告取值，不替业务决定各环境的差异（例如是否允许开发账号）。宿主不接受 `--env` 一类命令行参数，业务 V8 也读不到环境变量，不要试图从 argv 或 env 推断环境。生产配置必须显式写 `production`，由部署工具核对。
 - **安全随机数**：业务 V8 只有可预测的 `Math.random`，也没有 Web Crypto。凡是交给客户端、用于证明身份的值（登录凭证、重连凭证、邀请码、一次性令牌），必须用 `SecureRandom.Hex(n)` 或 `SecureRandom.Bytes(n)` 生成；GlobalId、时间戳、`Math.random` 都可预测，禁止替代。随机源不可用时 `SecureRandom` 抛错，不会退化；单次上限 65536 字节。
 
+## Scene HTTP 入口（未发布）
+
+用于工具、运维和简单查询接口（例如返回 Login 地址、GM 工具查询），不承载游戏玩法协议；游戏客户端仍走 TCP/WebSocket/KCP 与生成的协议描述符。需要纯 HTTP 游戏时另行设计，不要把本入口扩展成通用游戏网关。
+
+- **配置**：在 Scene 配置加 `"http": { "port": 7080 }`，端口必须独立于 Scene 的 `port`。需要鉴权时用 `authTokenEnv` 指定环境变量，由 Rust 校验 `Authorization: Bearer`，令牌不进入 V8；浏览器工具跨域访问时配置 `corsAllowOrigins`。完整字段见[配置参考](../reference/config-and-protocol.md#scene-http-入口)。
+- **写法**：一个接口一个 Hotfix Handler 文件，放在 `handlers` 目录；与 `rpcHandler` 一样不得声明字段、构造函数或 static 成员，状态放在 Scene 或其 Component。
+
+```ts
+import { httpHandler, jsonResponse, HttpError, type HttpRequest, type SceneHttpHandler } from "#tiangz/model";
+import { LoginMgrScene } from "#tiangz/module";
+
+@httpHandler(LoginMgrScene, "GET", "/login-nodes")
+export class LoginNodesHttpHandler implements SceneHttpHandler<LoginMgrScene> {
+  handle(scene: LoginMgrScene, request: HttpRequest) {
+    const realm = request.query.get("realm");
+    if (!realm) throw new HttpError(400, "realm is required");
+    return jsonResponse({ nodes: scene.LoginNodes(realm) });
+  }
+}
+```
+
+- **语义**：路由按“方法 + 路径”精确匹配，没有路径参数和通配；请求进入该 Scene 的 mailbox，ordered Scene 中异步 Handler 会阻塞后续消息，耗时的查询放到 unordered Scene 或用明确的异步结果等待。`request.json()` 解析失败抛 400；`HttpError` 返回指定状态；其他异常返回 500 且只写日志。`jsonResponse` 把 bigint 输出为十进制字符串。
+- **限制**：路由集合在第一代 Hotfix 后冻结，新增或删除接口需要重启 Process，修改已有 Handler 的实现可以热更。没有配置 `http` 的 Scene 注册了 Handler 时启动日志会告警，请求无法到达。当前不支持 HTTPS（交给 Nginx）、流式传输和 WebSocket 升级；出站 HTTP 调用（业务访问外部服务）尚未提供。
+
 ## 开发阶段与Release锁定
+
+### 本机验证日志环境（2026-10-07）
+
+`test:game-project-dev` 会等待宿主的 `Hotfix reload completed` 日志。若继承 `RUST_LOG=warn`，候选虽已提交，INFO 完成日志仍被过滤，测试会报 `behavior reload timed out`。运行此夹具时显式设置当前进程的 `RUST_LOG=info`，不修改系统配置、不放宽等待期限或删除完成断言。复测：`$env:RUST_LOG='info'; npm run test:game-project-dev`。本次首轮证据保留在 `target/http-verify-full-20261007.log`，独立复测在 `target/http-dev-retest-20261007.log`；以各次实际退出码判断结果。
 
 当前主工程、两个VS Code插件和独立DBProxy都处于持续开发阶段。开发者可以迭代`package.json`/`package-lock.json`、`Cargo.toml`/`Cargo.lock`、插件版本和协议原型；日常使用`npm install`与普通Cargo命令，不要求版本副本、Stable API快照、opcode/schema锁或依赖解析完全冻结。生成物过期检查、类型检查、边界检查和运行时Protocol Fingerprint仍然有效，因为它们分别保护代码生成一致性、架构边界和在线连接兼容性。
 

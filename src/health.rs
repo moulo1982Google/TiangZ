@@ -555,7 +555,7 @@ impl ProcessHealthState {
         self.runtime_heartbeat_age() <= self.runtime_stale_after
     }
 
-    fn is_ready(&self) -> bool {
+    pub(crate) fn is_ready(&self) -> bool {
         self.is_live()
             && self.runtime_ready.load(Ordering::Acquire)
             && self.endpoints_ready.load(Ordering::Acquire)
@@ -951,7 +951,7 @@ fn valid_operation_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }
 
-fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
+pub(crate) fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
     let mut different = left.len() ^ right.len();
     for index in 0..left.len().max(right.len()) {
         different |= usize::from(

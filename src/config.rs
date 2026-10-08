@@ -476,7 +476,48 @@ pub struct SceneConfig {
     /// Whether this MapHost accepts dynamic instances assigned by MapManager.
     #[serde(default)]
     pub accept_dynamic_maps: bool,
+    /// 可选的独立 HTTP 端口，请求进入本 Scene 的 HTTP Handler；不影响 `port` 上的游戏连接与内部通信。
+    /// Optional separate HTTP port whose requests enter this Scene's HTTP handlers; the game and
+    /// inner traffic on `port` are unaffected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http: Option<SceneHttpConfig>,
 }
+
+/// Scene 的 HTTP 入口配置。面向工具与运维接口，不承载游戏帧协议。
+/// HTTP ingress settings of a Scene. Intended for tools and operations, not the game frame protocol.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SceneHttpConfig {
+    pub port: u16,
+    /// 监听地址；省略时沿用 Scene 的 bindIp/innerIp。 / Listener address; defaults to the Scene bind address.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bind_ip: Option<String>,
+    #[serde(default = "default_http_max_body_bytes")]
+    pub max_body_bytes: usize,
+    #[serde(default = "default_http_request_timeout_ms")]
+    pub request_timeout_ms: u64,
+    #[serde(default = "default_http_max_in_flight")]
+    pub max_in_flight: usize,
+    /// 设置后每个请求必须携带 `Authorization: Bearer <令牌>`；令牌只在 Rust 读取，不进入 V8。
+    /// When set, every request must carry `Authorization: Bearer <token>`; the token is read in Rust
+    /// only and never enters V8.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_token_env: Option<String>,
+    /// 允许跨域访问的来源；`"*"` 表示任意来源。为空时不输出跨域头。
+    /// Origins allowed for cross-origin access; `"*"` allows any. Empty emits no CORS headers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cors_allow_origins: Vec<String>,
+}
+
+impl SceneHttpConfig {
+    /// 返回实际监听地址。 / Returns the effective listener address.
+    pub fn bind_ip<'a>(&'a self, scene: &'a SceneConfig) -> &'a str {
+        self.bind_ip.as_deref().unwrap_or_else(|| scene.bind_ip())
+    }
+}
+
+pub const MAX_HTTP_BODY_BYTES: usize = 1024 * 1024;
+pub const MAX_HTTP_IN_FLIGHT: usize = 4096;
 
 impl SceneConfig {
     /// 返回实际监听地址；0.0.0.0 只允许出现在这里，不能作为路由地址返回。
@@ -523,6 +564,18 @@ pub struct ProcessDebugConfig {
     pub break_on_start: bool,
     #[serde(default)]
     pub allow_remote: bool,
+}
+
+fn default_http_max_body_bytes() -> usize {
+    64 * 1024
+}
+
+fn default_http_request_timeout_ms() -> u64 {
+    10_000
+}
+
+fn default_http_max_in_flight() -> usize {
+    256
 }
 
 fn default_inspector_ip() -> String {
@@ -1157,7 +1210,25 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
                 scene.name
             );
         }
+        if let Some(http) = &scene.http {
+            validate_scene_http(scene, http)?;
+            if !bind_endpoints.insert((http.bind_ip(scene).to_string(), http.port)) {
+                bail!(
+                    "scene {} http listener {}:{} conflicts with another listener",
+                    scene.name,
+                    http.bind_ip(scene),
+                    http.port
+                );
+            }
+        }
     }
+    let listener_ports: HashSet<u16> = config
+        .scenes
+        .iter()
+        .flat_map(|scene| {
+            std::iter::once(scene.port).chain(scene.http.as_ref().map(|http| http.port))
+        })
+        .collect();
 
     let health = config
         .process
@@ -1180,7 +1251,7 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
         if health.stale_after_ms < 10_000 {
             bail!("process observability.health.staleAfterMs must be at least 10000");
         }
-        if config.scenes.iter().any(|scene| scene.port == health.port) {
+        if listener_ports.contains(&health.port) {
             bail!(
                 "process health port {} conflicts with a scene port",
                 health.port
@@ -1204,11 +1275,7 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
                 debug.inspector_ip
             );
         }
-        if config
-            .scenes
-            .iter()
-            .any(|scene| scene.port == debug.inspector_port)
-        {
+        if listener_ports.contains(&debug.inspector_port) {
             bail!(
                 "process inspector port {} conflicts with a scene port",
                 debug.inspector_port
@@ -1218,6 +1285,65 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
             bail!(
                 "process health port {} conflicts with inspector port",
                 debug.inspector_port
+            );
+        }
+    }
+    Ok(())
+}
+
+/// 校验 Scene HTTP 入口的上限与令牌变量名；令牌值在端点启动时读取。
+/// Validates Scene HTTP limits and the token variable name; the token value is read at endpoint start.
+fn validate_scene_http(scene: &SceneConfig, http: &SceneHttpConfig) -> Result<()> {
+    if http.port == 0 {
+        bail!("scene {} http.port must not be 0", scene.name);
+    }
+    if http.port == scene.port {
+        bail!(
+            "scene {} http.port must differ from its scene port",
+            scene.name
+        );
+    }
+    http.bind_ip(scene).parse::<IpAddr>().with_context(|| {
+        format!(
+            "scene {} has invalid http.bindIp: {}",
+            scene.name,
+            http.bind_ip(scene)
+        )
+    })?;
+    if !(1..=MAX_HTTP_BODY_BYTES).contains(&http.max_body_bytes) {
+        bail!(
+            "scene {} http.maxBodyBytes must be between 1 and {MAX_HTTP_BODY_BYTES}",
+            scene.name
+        );
+    }
+    if !(100..=120_000).contains(&http.request_timeout_ms) {
+        bail!(
+            "scene {} http.requestTimeoutMs must be between 100 and 120000",
+            scene.name
+        );
+    }
+    if !(1..=MAX_HTTP_IN_FLIGHT).contains(&http.max_in_flight) {
+        bail!(
+            "scene {} http.maxInFlight must be between 1 and {MAX_HTTP_IN_FLIGHT}",
+            scene.name
+        );
+    }
+    if http
+        .auth_token_env
+        .as_deref()
+        .is_some_and(|name| name.trim().is_empty())
+    {
+        bail!("scene {} http.authTokenEnv must not be empty", scene.name);
+    }
+    for origin in &http.cors_allow_origins {
+        let valid = origin == "*"
+            || ((origin.starts_with("http://") || origin.starts_with("https://"))
+                && !origin.ends_with('/')
+                && origin.bytes().all(|byte| byte.is_ascii_graphic()));
+        if !valid {
+            bail!(
+                "scene {} http.corsAllowOrigins entry {origin:?} must be \"*\" or scheme://host[:port]",
+                scene.name
             );
         }
     }
@@ -1275,6 +1401,7 @@ mod tests {
             audience: EndpointAudience::Mixed,
             static_map_ids: Vec::new(),
             accept_dynamic_maps: false,
+            http: None,
         }
     }
 
@@ -1573,6 +1700,67 @@ mod tests {
         };
         let error = validate_runtime_config(&config).unwrap_err().to_string();
         assert!(error.contains("audience=inner or audience=outer"));
+    }
+
+    fn http_scene(name: &str, port: u16, http_port: u16) -> SceneConfig {
+        let mut scene = scene(name, port);
+        scene.http = Some(
+            serde_json::from_value(serde_json::json!({ "port": http_port }))
+                .expect("minimal http config"),
+        );
+        scene
+    }
+
+    fn http_config_error(scenes: Vec<SceneConfig>, inspector_port: Option<u16>) -> String {
+        let config = RuntimeConfig {
+            process: process(inspector_port),
+            scenes,
+            known_scenes: vec![],
+        };
+        validate_runtime_config(&config).unwrap_err().to_string()
+    }
+
+    #[test]
+    fn scene_http_defaults_and_accepts_valid_listener() {
+        let scene = http_scene("tools", 7100, 7180);
+        let http = scene.http.as_ref().unwrap();
+        assert_eq!(http.max_body_bytes, 64 * 1024);
+        assert_eq!(http.request_timeout_ms, 10_000);
+        assert_eq!(http.max_in_flight, 256);
+        assert_eq!(http.bind_ip(&scene), "127.0.0.1");
+        let config = RuntimeConfig {
+            process: process(None),
+            scenes: vec![scene],
+            known_scenes: vec![],
+        };
+        validate_runtime_config(&config).unwrap();
+    }
+
+    #[test]
+    fn scene_http_rejects_port_conflicts_and_bad_limits() {
+        assert!(http_config_error(vec![http_scene("a", 7100, 7100)], None).contains("must differ"));
+        assert!(
+            http_config_error(vec![http_scene("a", 7100, 7180), scene("b", 7180)], None)
+                .contains("duplicate listener endpoint")
+        );
+        assert!(
+            http_config_error(vec![scene("b", 7180), http_scene("a", 7100, 7180)], None)
+                .contains("conflicts with another listener")
+        );
+        assert!(
+            http_config_error(vec![http_scene("a", 7100, 7180)], Some(7180))
+                .contains("inspector port")
+        );
+        let mut oversized = http_scene("a", 7100, 7180);
+        oversized.http.as_mut().unwrap().max_body_bytes = MAX_HTTP_BODY_BYTES + 1;
+        assert!(http_config_error(vec![oversized], None).contains("maxBodyBytes"));
+        let mut bad_origin = http_scene("a", 7100, 7180);
+        bad_origin.http.as_mut().unwrap().cors_allow_origins = vec!["example.com".to_string()];
+        assert!(http_config_error(vec![bad_origin], None).contains("corsAllowOrigins"));
+        let unknown = serde_json::from_value::<SceneHttpConfig>(
+            serde_json::json!({ "port": 7180, "tls": true }),
+        );
+        assert!(unknown.is_err());
     }
 
     #[test]

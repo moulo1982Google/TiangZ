@@ -25,6 +25,9 @@ deno_error = "0.7.1"
 deno_inspector_server = "0.32.0"
 futures-util = "0.3"
 getrandom = "0.3"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
 opentelemetry = { version = "0.32.0", default-features = false, features = ["trace"] }
 opentelemetry-otlp = { version = "0.32.0", default-features = false, features = ["http-proto", "reqwest-blocking-client", "reqwest-rustls", "trace"] }
 opentelemetry_sdk = { version = "0.32.1", default-features = false, features = ["trace"] }
