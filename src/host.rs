@@ -29,7 +29,7 @@ mod scene_operations_tests;
 const HOST_CALL_MAX_FRAME_LEN: usize = 1024 * 1024;
 /// 一次推进最多轮询事件循环的轮数；每轮之间让 tokio 运行已就绪任务，但从不挂起等待计时器。
 /// Max event-loop polls per pump; tokio runs ready tasks between rounds but never parks on a timer.
-const HOST_EVENT_LOOP_PUMP_ROUNDS: usize = 4;
+const HOST_EVENT_LOOP_PUMP_ROUNDS: usize = 2;
 const HOST_OUTBOUND_MAX_TARGETS: usize = 4096;
 const HOST_OUTBOUND_MAX_BATCHES: usize = 65_536;
 const HOST_OUTBOUND_MAX_PACKED_LEN: usize = 64 * 1024 * 1024;
