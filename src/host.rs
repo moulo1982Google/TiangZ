@@ -27,7 +27,9 @@ pub(crate) mod scene_operations;
 mod scene_operations_tests;
 
 const HOST_CALL_MAX_FRAME_LEN: usize = 1024 * 1024;
-const HOST_EVENT_LOOP_PUMP_BUDGET: Duration = Duration::from_millis(1);
+/// 一次推进最多轮询事件循环的轮数；每轮之间让 tokio 运行已就绪任务，但从不挂起等待计时器。
+/// Max event-loop polls per pump; tokio runs ready tasks between rounds but never parks on a timer.
+const HOST_EVENT_LOOP_PUMP_ROUNDS: usize = 4;
 const HOST_OUTBOUND_MAX_TARGETS: usize = 4096;
 const HOST_OUTBOUND_MAX_BATCHES: usize = 65_536;
 const HOST_OUTBOUND_MAX_PACKED_LEN: usize = 64 * 1024 * 1024;
@@ -964,26 +966,33 @@ fn release_control_ingress(runtime: &mut JsRuntime, entrypoints: &JsEntrypoints)
     }
 }
 
-/// 用有界预算推进待完成JS Promise；超过预算的任务留到下个游戏Tick，禁止在V8线程等待完整I/O。
-/// Advances pending JS promises within a bounded budget; unfinished work stays pending for the next game tick.
+/// 有界推进待完成 JS Promise：最多 `HOST_EVENT_LOOP_PUMP_ROUNDS` 轮，未完成的 op 留给后续轮次，绝不在 V8 线程等待。
+/// 旧实现用 1ms 超时，只要有未完成 op 就等满预算；Windows 计时精度约 15.6ms，实测每轮约 16ms，期间同进程请求只能排队。
+/// 异步结果完成后由 `host_wake` 叫醒主循环，因此不需要在这里等待。
+/// Advances pending JS promises for at most `HOST_EVENT_LOOP_PUMP_ROUNDS` polls, leaving unfinished ops for later and never
+/// waiting on the V8 thread. The old 1ms timeout waited out its budget whenever an op was pending; with Windows' ~15.6ms
+/// timer granularity that measured ~16ms per pump while other requests queued. `host_wake` wakes the loop when results land.
 pub fn pump_js_event_loop_once(
     js_event_loop: &tokio::runtime::Runtime,
     runtime: &mut JsRuntime,
 ) -> Result<()> {
     let _guard = js_event_loop.enter();
-    let result = js_event_loop.block_on(async {
-        match tokio::time::timeout(
-            HOST_EVENT_LOOP_PUMP_BUDGET,
-            runtime.run_event_loop(PollEventLoopOptions::default()),
-        )
-        .await
-        {
-            Ok(Ok(())) | Err(_) => Ok(()),
-            Ok(Err(error)) => {
-                Err(anyhow::Error::from(error).context("failed to pump JS event loop"))
+    let mut rounds = 1;
+    let result = js_event_loop
+        .block_on(std::future::poll_fn(|cx| {
+            match runtime.poll_event_loop(cx, PollEventLoopOptions::default()) {
+                std::task::Poll::Pending if rounds < HOST_EVENT_LOOP_PUMP_ROUNDS => {
+                    // 自唤醒：tokio 先运行已就绪任务（含 deno 的 op 推进任务），立即再轮询，不挂起。
+                    // Self-wake: tokio runs ready tasks (including deno's op driver) and repolls at once without parking.
+                    rounds += 1;
+                    cx.waker().wake_by_ref();
+                    std::task::Poll::Pending
+                }
+                std::task::Poll::Pending => std::task::Poll::Ready(Ok(())),
+                ready => ready,
             }
-        }
-    });
+        }))
+        .map_err(|error| anyhow::Error::from(error).context("failed to pump JS event loop"));
     runtime.v8_isolate().perform_microtask_checkpoint();
     result
 }
@@ -1188,6 +1197,38 @@ mod tests {
                 "#,
             )
             .unwrap();
+    }
+
+    // 有未完成异步 op 时一次推进不能等待计时器：旧实现等满 1ms 预算，Windows 上实测约 16ms/次。
+    // A pump must not wait on a timer while an async op is pending: the old 1ms budget measured ~16ms per pump on Windows.
+    #[test]
+    fn pump_does_not_wait_while_async_op_is_pending() {
+        let event_loop = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut runtime = {
+            let _guard = event_loop.enter();
+            create_runtime(false, 0).unwrap()
+        };
+        {
+            let _guard = event_loop.enter();
+            runtime
+                .execute_script(
+                    "test:pending-host-op.js",
+                    "globalThis.__pendingHostOp = __hostSleep(60000);",
+                )
+                .unwrap();
+        }
+        let started = std::time::Instant::now();
+        for _ in 0..50 {
+            pump_js_event_loop_once(&event_loop, &mut runtime).unwrap();
+        }
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(30),
+            "50 pumps with a pending op took {elapsed:?}"
+        );
     }
 
     #[test]

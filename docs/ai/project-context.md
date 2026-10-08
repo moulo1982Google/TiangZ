@@ -1,5 +1,7 @@
 # 2026-09-16 模块拆分后的当前事实
 
+2026-10-08（分支 `feat/async-result-wake`，未发布）：异步结果交付不再等 idle tick。DBProxy、模块 Native worker、event_stream 在结果可取后经 `host_wake` 叫醒主循环（复用容量 1 的唤醒通道，另设待交付标志，队列为空也结束等待）；推进 JS 不再设 1ms 计时器（Windows 实测每次约 16ms），改为最多 4 轮不挂起轮询；Update 报告在途 async 任务时补跑微任务并再取一次回包。叫醒不在其他线程执行 JS，mailbox、Hotfix/停机屏障、固定帧与 Timer 语义不变；需重建宿主重启。契约与验证见[异步结果唤醒](../design/async-result-wake.md)。
+
 源码落地：真实双亲合并`c06b244`已快进原`feat/v0.7`，原工作区Rust/KCP、Model/配置重建与真实模块宿主启动停止通过；该Host SHA3d390885...，日志`temp/v07-065-integration-main/`。与隔离Windows PE、Linux ELF分别记录，生成与依赖锁无漂移，未push；细节见[源码对齐](../design/v0.7-merge-0.6.5.md)。
 
 2026-10-07源码对齐终验：正式0.6.5关闭顺序/握手和模块Native worker已移植到0.7拆分、预算与RAII边界，并修复业务错误绕过输出字节上限的真实反例。最终实现树`044287f8`：Windows发布级check8/quick35/full9全部通过、Rust279，实际Host e58c4c25...与两份热更报告匹配；Linux整合基线full9/Rust282，随后新修复全目标Clippy/Rust283及两模块V8/worker真实热更停机专项通过，新Host bad00b6e...，两版来源分别保存，不把专项称新full9。API锁/codegen与204导出冻结检查通过，依赖/协议锁不变。源输入、首轮失败、复测、限制及后续SDK/插件/发行安排见[源码对齐](../design/v0.7-merge-0.6.5.md)。原业务资源、用户Examples修改与DBProxy R7原资格保留；不继承旧引擎制品，不push。以下整合中状态是历史快照。

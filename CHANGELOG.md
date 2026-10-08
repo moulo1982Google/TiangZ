@@ -1,5 +1,10 @@
 # 版本记录
 
+## 未发布 — 异步结果唤醒（分支 `feat/async-result-wake`）
+
+- 空闲/低负载 Process 中，DBProxy、模块 Native worker、event_stream 的异步结果与 async Handler 回包不再多等一个 idle tick（Windows adaptive 实测约 60ms → 约 1ms）；worker 计算期间同进程其他请求不再因推进 JS 等计时器排队约 16ms。
+- 宿主内部修改：结果可取后叫醒主循环、推进 JS 不设计时器、Update 后补取 async 回包。协议、配置、Stable API、TS 写法不变；需重建宿主并重启。契约见 docs/design/async-result-wake.md。
+
 ## 0.6.5 — 模块异步 Native worker（2026-09-30，标签 `v0.6.5`）
 
 - 模块可声明专用 FIFO 计算线程与输入、输出、在途容量；生成 Promise、stats、drain 接口，原同步 Native op 不变。
