@@ -114,6 +114,8 @@ export function installProcessBootstrap(adapters: ProcessBootstrapAdapters): voi
         processRuntime.pushHostDisconnect(sceneIndex, connectionId);
       } else if (eventType === 3 || eventType === 4) {
         completeHostSceneOperation(connectionId, eventType === 3, payload);
+      } else if (eventType === 6) {
+        processRuntime.pushHostHttpRequest(sceneIndex, connectionId, payload);
       } else {
         throw new Error(`unknown host event type: ${eventType}`);
       }

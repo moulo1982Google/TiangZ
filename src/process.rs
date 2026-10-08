@@ -141,6 +141,15 @@ pub(crate) enum ProcessEvent {
         connection_id: u64,
     },
     HostSceneCompletion(HostSceneCompletion),
+    /// Scene HTTP 端口收到的一个请求；`request_id` 由 HTTP 回复表独立分配（不占连接号），回复经 `op_host_http_respond`。
+    /// One request from a Scene HTTP port; `request_id` comes from the HTTP reply table (not the
+    /// connection-id space) and the reply returns through `op_host_http_respond`.
+    HttpRequest {
+        backing_reservation: Option<crate::host::event_admission::EventReservation>,
+        scene_index: u32,
+        request_id: u64,
+        payload: Bytes,
+    },
     Shutdown,
 }
 
@@ -203,6 +212,10 @@ impl ProcessEvent {
             | Self::Disconnect {
                 backing_reservation,
                 ..
+            }
+            | Self::HttpRequest {
+                backing_reservation,
+                ..
             } => backing_reservation.take(),
             Self::HostSceneCompletion(completion) => completion.backing_reservation.take(),
             Self::Shutdown => None,
@@ -232,7 +245,9 @@ impl ProcessEvent {
 
     fn kind(&self) -> ProcessEventKind {
         match self {
-            Self::Frame { .. } => ProcessEventKind::Frame,
+            // HTTP 请求与业务帧同属新业务入口，共用 frame 阶段计数。
+            // HTTP requests are new business ingress like frames and share the frame stage counters.
+            Self::Frame { .. } | Self::HttpRequest { .. } => ProcessEventKind::Frame,
             Self::HostSceneCompletion(_) => ProcessEventKind::Completion,
             Self::Disconnect { .. } => ProcessEventKind::Disconnect,
             Self::Shutdown => ProcessEventKind::Shutdown,
@@ -246,6 +261,7 @@ impl ProcessEvent {
             } if !internal || crate::transport::inner_frame_rpc_id(frame).is_none() => {
                 ProcessIngressClass::Data
             }
+            Self::HttpRequest { .. } => ProcessIngressClass::Data,
             Self::Frame { .. }
             | Self::Disconnect { .. }
             | Self::HostSceneCompletion(_)
@@ -719,6 +735,11 @@ impl ProcessEventSender {
             frame,
             backing_reservation,
             ..
+        }
+        | ProcessEvent::HttpRequest {
+            payload: frame,
+            backing_reservation,
+            ..
         } = &mut event
         {
             debug_assert!(backing_reservation.is_none());
@@ -761,6 +782,33 @@ impl ProcessEventSender {
         let class = ProcessIngressClass::Control;
         self.stats.queued(kind, class);
         match self.control_sender.try_send(event) {
+            Ok(()) => {
+                let _ = self.wake_sender.try_send(());
+                Ok(())
+            }
+            Err(mpsc::TrySendError::Full(_)) => {
+                self.stats.dequeue(kind, class);
+                self.stats.record_backpressure(kind, class);
+                Err(ProcessIngressTrySendError::Overloaded)
+            }
+            Err(mpsc::TrySendError::Disconnected(_)) => {
+                self.stats.dequeue(kind, class);
+                Err(ProcessIngressTrySendError::Stopped)
+            }
+        }
+    }
+
+    /// HTTP 直接准入数据队列，满额立即拒绝，不产生可取消的排队等待。 / Admits HTTP immediately without a cancellable enqueue wait.
+    pub(crate) fn try_send_http(
+        &self,
+        event: ProcessEvent,
+    ) -> std::result::Result<(), ProcessIngressTrySendError> {
+        debug_assert!(matches!(event, ProcessEvent::HttpRequest { .. }));
+        let event = self.reserve_frame(event)?;
+        let kind = event.kind();
+        let class = ProcessIngressClass::Data;
+        self.stats.queued(kind, class);
+        match self.data_sender.try_send(event) {
             Ok(()) => {
                 let _ = self.wake_sender.try_send(());
                 Ok(())
@@ -885,6 +933,26 @@ impl ProcessEventSender {
             Err(_) => unreachable!("completion event changed while entering the process queue"),
         }
     }
+}
+
+/// 测试用进程入口：返回发送端与数据队列接收端；控制队列接收端被丢弃。
+/// Test process ingress: returns the sender and the data-queue receiver; the control receiver is dropped.
+#[cfg(test)]
+pub(crate) fn test_process_event_channel(
+    capacity: usize,
+) -> (ProcessEventSender, mpsc::Receiver<ProcessEvent>) {
+    let (control_sender, _) = mpsc::sync_channel(capacity);
+    let (data_sender, data_receiver) = mpsc::sync_channel(capacity);
+    let (wake_sender, _) = mpsc::sync_channel(1);
+    (
+        ProcessEventSender {
+            control_sender,
+            data_sender,
+            wake_sender,
+            stats: Arc::new(ProcessQueueStats::new(capacity * 2)),
+        },
+        data_receiver,
+    )
 }
 
 /// 使用单 V8 业务线程和异步 I/O 宿主运行一个已配置进程。
@@ -1035,6 +1103,27 @@ async fn run_runtime_config_with_backend(
             }
         }
     }
+    let http_pending = crate::http_endpoint::HttpPendingRequests::default();
+    let mut http_endpoints = match crate::http_endpoint::start_http_endpoints(
+        &config.scenes,
+        &crate::http_endpoint::HttpIngress {
+            event_tx: event_tx.clone(),
+            pending: http_pending.clone(),
+            health: Arc::clone(&health_state),
+        },
+    ) {
+        Ok(endpoints) => endpoints,
+        Err(error) => {
+            health_state.mark_stopping();
+            if let Err(cleanup) = stop_endpoints(&mut endpoints, stop_budget).await {
+                tracing::warn!(target: "tiangz::transport", error = ?cleanup, "HTTP startup rollback failed");
+            }
+            if let Some(server) = health_server {
+                server.stop().await;
+            }
+            return Err(error).context("failed to start process HTTP endpoints");
+        }
+    };
     health_state.mark_endpoints_ready();
 
     let process = config.process.clone();
@@ -1046,7 +1135,19 @@ async fn run_runtime_config_with_backend(
     let runtime_health = Arc::clone(&health_state);
     let host_runtime = tokio::runtime::Handle::current();
     let (runtime_exit_tx, mut runtime_exit_rx) = tokio::sync::oneshot::channel();
+    // 只有配置了 HTTP 的进程才安装回复表，未配置时不输出 HTTP 指标。
+    // Only Processes with HTTP install the reply table, so others emit no HTTP metrics.
+    let runtime_http_pending = config
+        .scenes
+        .iter()
+        .any(|scene| scene.http.is_some())
+        .then(|| http_pending.clone());
     let runtime_thread = thread::spawn(move || {
+        // HTTP 回复 op 在 V8 线程读取回复表，必须在本线程安装。
+        // The HTTP reply op reads the table on the V8 thread, so it is installed on this thread.
+        if let Some(pending) = runtime_http_pending {
+            crate::http_endpoint::configure(pending);
+        }
         let result = run_process_runtime(
             project_root,
             process,
@@ -1078,6 +1179,10 @@ async fn run_runtime_config_with_backend(
                 break false;
             }
             _ = &mut runtime_exit_rx => break true,
+            error = http_endpoints.wait_failure() => {
+                supervision_error = Some(anyhow::anyhow!(error));
+                break false;
+            }
             result = endpoints.next(), if !endpoints.is_empty() => {
                 supervision_error = Some(match result {
                     Some(Err(error)) => error,
@@ -1133,6 +1238,8 @@ async fn run_runtime_config_with_backend(
     for endpoint in endpoints.iter() {
         endpoint.request_stop();
     }
+    let http_stop_deadline = tokio::time::Instant::now() + stop_budget;
+    http_endpoints.request_stop(http_stop_deadline);
     shutdown_all_connections(&writers);
     let shutdown_send_error = if !runtime_exited_early {
         event_tx
@@ -1143,10 +1250,13 @@ async fn run_runtime_config_with_backend(
     } else {
         None
     };
-    let (runtime_join, network_result) = tokio::join!(
+    let (runtime_join, network_result, http_result) = tokio::join!(
         tokio::task::spawn_blocking(move || runtime_thread.join()),
         stop_endpoints(&mut endpoints, stop_budget),
+        http_endpoints
+            .stop(http_stop_deadline.saturating_duration_since(tokio::time::Instant::now())),
     );
+    http_pending.clear();
     if let Some(server) = health_server {
         server.stop().await;
     }
@@ -1162,6 +1272,7 @@ async fn run_runtime_config_with_backend(
     }
     runtime_result?;
     network_result?;
+    http_result?;
     if let Some(error) = shutdown_send_error {
         return Err(error).context("failed to deliver shutdown to V8 runtime");
     }
@@ -1986,6 +2097,56 @@ fn flush_outbound(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn http_ingress_retains_host_budget_through_batch_and_rejects_overload() {
+        let bytes = 4;
+        let capacity = bytes + crate::host::event_admission::EVENT_OVERHEAD;
+        let stats = Arc::new(ProcessQueueStats {
+            host_events: crate::host::event_admission::EventAdmission::with_capacity(capacity),
+            ..Default::default()
+        });
+        let (data_sender, receiver) = mpsc::sync_channel(2);
+        let (control_sender, _) = mpsc::sync_channel(2);
+        let (wake_sender, _) = mpsc::sync_channel(1);
+        let sender = ProcessEventSender {
+            data_sender,
+            control_sender,
+            wake_sender,
+            stats: Arc::clone(&stats),
+        };
+        let request = || ProcessEvent::HttpRequest {
+            backing_reservation: None,
+            scene_index: 0,
+            request_id: 1,
+            payload: Bytes::from_static(b"http"),
+        };
+        sender.try_send_http(request()).unwrap();
+        assert_eq!(
+            sender.try_send_http(request()),
+            Err(ProcessIngressTrySendError::Overloaded)
+        );
+        let mut batch = HostEventBatch::new();
+        assert!(
+            batch
+                .try_push(receiver.try_recv().unwrap(), &stats)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(stats.ingress_buffers.snapshot().used_bytes, 0);
+        let payload = batch.into_payload(&stats);
+        assert_eq!(stats.host_events.snapshot().used_bytes, capacity as u64);
+        drop(payload);
+        assert_eq!(stats.host_events.snapshot().used_bytes, 0);
+        sender.try_send_http(request()).unwrap();
+        drop(receiver);
+        assert_eq!(stats.host_events.snapshot().used_bytes, 0);
+        assert_eq!(
+            sender.try_send_http(request()),
+            Err(ProcessIngressTrySendError::Stopped)
+        );
+        assert_eq!(stats.host_events.snapshot().used_bytes, 0);
+    }
 
     #[test]
     fn process_buffer_pressure_closes_rejected_recipient_without_blaming_slow_clients() {

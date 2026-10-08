@@ -2253,7 +2253,35 @@ entity Item extends Entity {
 - **部署环境**：进程配置 `process.environment` 取 `development | test | staging | production`，缺省 `development`，未知值拒绝启动。业务在任何位置（含 Hotfix、System、Component）通过 `ProcessRuntimeInfo.Instance.Environment` 读取；框架只报告取值，不替业务决定各环境的差异（例如是否允许开发账号）。宿主不接受 `--env` 一类命令行参数，业务 V8 也读不到环境变量，不要试图从 argv 或 env 推断环境。生产配置必须显式写 `production`，由部署工具核对。
 - **安全随机数**：业务 V8 只有可预测的 `Math.random`，也没有 Web Crypto。凡是交给客户端、用于证明身份的值（登录凭证、重连凭证、邀请码、一次性令牌），必须用 `SecureRandom.Hex(n)` 或 `SecureRandom.Bytes(n)` 生成；GlobalId、时间戳、`Math.random` 都可预测，禁止替代。随机源不可用时 `SecureRandom` 抛错，不会退化；单次上限 65536 字节。
 
+## Scene HTTP 入口（未发布）
+
+用于工具、运维和简单查询接口（例如返回 Login 地址、GM 工具查询），不承载游戏玩法协议；游戏客户端仍走 TCP/WebSocket/KCP 与生成的协议描述符。需要纯 HTTP 游戏时另行设计，不要把本入口扩展成通用游戏网关。
+
+- **配置**：在 Scene 配置加 `"http": { "port": 7080 }`，端口必须独立于 Scene 的 `port`。需要鉴权时用 `authTokenEnv` 指定环境变量，由 Rust 校验 `Authorization: Bearer`，令牌不进入 V8；浏览器工具跨域访问时配置 `corsAllowOrigins`。完整字段见[配置参考](../reference/config-and-protocol.md#scene-http-入口)。
+- **写法**：一个接口一个 Hotfix Handler 文件，放在 `handlers` 目录；与 `rpcHandler` 一样不得声明字段、构造函数或 static 成员，状态放在 Scene 或其 Component。
+
+```ts
+import { httpHandler, jsonResponse, HttpError, type HttpRequest, type SceneHttpHandler } from "#tiangz/model";
+import { LoginMgrScene } from "#tiangz/module";
+
+@httpHandler(LoginMgrScene, "GET", "/login-nodes")
+export class LoginNodesHttpHandler implements SceneHttpHandler<LoginMgrScene> {
+  handle(scene: LoginMgrScene, request: HttpRequest) {
+    const realm = request.query.get("realm");
+    if (!realm) throw new HttpError(400, "realm is required");
+    return jsonResponse({ nodes: scene.LoginNodes(realm) });
+  }
+}
+```
+
+- **语义**：路由按“方法 + 路径”精确匹配，没有路径参数和通配；请求进入该 Scene 的 mailbox，ordered Scene 中异步 Handler 会阻塞后续消息，耗时的查询放到 unordered Scene 或用明确的异步结果等待。`request.json()` 解析失败抛 400；`HttpError` 返回指定状态；其他异常返回 500 且只写日志。`jsonResponse` 把 bigint 输出为十进制字符串。
+- **限制**：路由集合在第一代 Hotfix 后冻结，新增或删除接口需要重启 Process，修改已有 Handler 的实现可以热更。没有配置 `http` 的 Scene 注册了 Handler 时启动日志会告警，请求无法到达。当前不支持 HTTPS（交给 Nginx）、流式传输和 WebSocket 升级；出站 HTTP 调用（业务访问外部服务）尚未提供。
+
 ## 开发阶段与Release锁定
+
+### 本机验证日志环境（2026-10-07）
+
+`test:game-project-dev` 会等待宿主的 `Hotfix reload completed` 日志。若继承 `RUST_LOG=warn`，候选虽已提交，INFO 完成日志仍被过滤，测试会报 `behavior reload timed out`。运行此夹具时显式设置当前进程的 `RUST_LOG=info`，不修改系统配置、不放宽等待期限或删除完成断言。复测：`$env:RUST_LOG='info'; npm run test:game-project-dev`。本次首轮证据保留在 `target/http-verify-full-20261007.log`，独立复测在 `target/http-dev-retest-20261007.log`；以各次实际退出码判断结果。
 
 当前主工程、两个VS Code插件和独立DBProxy都处于持续开发阶段。开发者可以迭代`package.json`/`package-lock.json`、`Cargo.toml`/`Cargo.lock`、插件版本和协议原型；日常使用`npm install`与普通Cargo命令，不要求版本副本、Stable API快照、opcode/schema锁或依赖解析完全冻结。生成物过期检查、类型检查、边界检查和运行时Protocol Fingerprint仍然有效，因为它们分别保护代码生成一致性、架构边界和在线连接兼容性。
 
@@ -2709,3 +2737,11 @@ SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools
 ## RC1 发布门禁的夹具修正（2026-10-08）
 
 远端旧功能分支的完整 Windows/Linux CI 暴露两个夹具问题。V8 deadline 回归以 65,540 个串行 Promise 轮询挤入 5 秒，与回收语义无关的调度吞吐影响结果；保留全部创建/取消次数、容量、回收断言及原 5 秒期限，改成最多 256 项一批并逐批等待，本地 exact 回归 0.77 秒通过。控制入口满额后只观察共享 reserved/rejections，不能证明 TCP 尾批已进入 TS；现要求最后一个输入 RPC 的真实拒绝响应已返回，且目标 Scene 入队数为 65,536，才开始热更。默认额度和 3 秒热更期限不变。完整三轮 hotfix fault matrix 已通过，满额场景 pause=316.5384ms。修正只在测试/夹具，不改变生产调度或配额；旧失败日志保留，最终跨平台 CI 需重新核对。
+
+### Scene HTTP 与 0.7 生命周期
+
+HTTP 使用 Scene 的独立 `http.port` 和 `httpHandler(SceneCtor, method, path)` 精确路由，面向工具接口。入站复用 0.7 Host 事件字节预算，队列或预算不足立即返回 503。调用方超时不取消已开始的业务，也不提前归还执行名额；尚未开始的过期请求不进入 Handler，Scene 销毁会清理排队请求。业务需要自行保证修改操作的幂等性。共享 Developer Tools Hotfix 检查器必须包含 `httpHandler` 状态规则，宿主锁定提交为 `198afe8f040d1fc1e17d1a3250791cb62e25109b`。出站 HTTP 尚未提供。
+
+HTTP 合入 0.7 的首次完整矩阵在 Rust 测试编译失败：`process_endpoint_tests.rs` 手工构造 `SceneConfig` 时缺少新增的 `http` 字段，quick 为 33/35。修正为 `http: None`，保持原端点断言；不能只用 `cargo check --bin` 代替全目标测试。原日志保留在 `target/http-rc1-verify-20261007.log`，完整复测另写日志，不覆盖失败证据。此前 0.6.2 基线的日志过滤与 Windows V8 构建路径失败也保留在 `target/http-verify-full-20261007.log`；本轮设置进程级 `RUST_LOG=info`，使用本机可编译的 Cargo 输出目录并把新宿主复制到测试实际读取的 `target/debug`。不能把旧宿主的通过结果算给新源码。
+
+HTTP 合入 0.7 最终完整复测通过：Windows 默认功能集 full 9/9、quick 35/35、TS 234 项、Rust 全目标 284 项。先前夹具遗漏已修正，首次失败证据保留；实际宿主身份、范围和日志见 [0.7 发布记录](../../RELEASE-v0.7.0-rc1.md#rc1-标签之后的-07-集成)。HTTP 监听失败参与 Process 监督，读体/回复共享期限，停机按既有预算排空并 join 连接；运行中业务真实结束前不得归还执行许可。

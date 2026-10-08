@@ -141,6 +141,12 @@ npm run verify:core-api
 
 ## 迁移记录
 
+### 未发布：Scene HTTP 入口
+
+以下均为非破坏性新增，已有业务无需修改。
+
+- 新增 Stable API `httpHandler(SceneCtor, method, path)`（外部 Handler 类装饰器，可热更）、`HttpError`、`jsonResponse`，以及类型 `HttpMethod`、`HttpRequest`、`HttpResponse`、`SceneHttpHandler`、`SceneHttpConfig`；`SceneConfig` 新增可选字段 `http`。对应 Scene 配置 `http`，见[配置参考](config-and-protocol.md#scene-http-入口)。
+- `public-api.lock.json` 已更新，差异为上述新增导出、`SceneConfig.http` 和宿主投递方法 `EntryScene.pushHostHttpRequest`；已有签名不变。目标为 RC1 之后的 0.7 发布。
 ### 0.6.3（2026-09-28）
 
 行为修正，已有业务无需修改。

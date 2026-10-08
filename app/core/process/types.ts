@@ -24,6 +24,19 @@ export interface SceneConfig {
   staticMapIds?: number[];
   /** @deprecated 使用 MMORPG 模块部署配置；缺失保持旧默认 false。 / Use module-owned MMORPG deployment; absence retains the legacy false default. */
   acceptDynamicMaps?: boolean;
+  /** 独立工具 HTTP 端口。 / Separate tool HTTP endpoint. */
+  http?: SceneHttpConfig;
+}
+
+export interface SceneHttpConfig {
+  port: number;
+  bindIp?: string;
+  maxBodyBytes?: number;
+  requestTimeoutMs?: number;
+  maxInFlight?: number;
+  maxConnections?: number;
+  authTokenEnv?: string;
+  corsAllowOrigins?: string[];
 }
 
 /**

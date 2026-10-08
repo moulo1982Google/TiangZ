@@ -17,7 +17,7 @@ await mkdir(path.join(source, "hotfix"));
 await writeFile(path.join(source, "model/index.ts"), "export {};\n");
 await writeFile(path.join(source, "hotfix/index.ts"), "export {};\n");
 const manifest = { formatVersion: 1, id: "org.test.install", version: "0.6.0-alpha.0",
-  engine: { minVersion: "0.6.0-alpha.0", maxVersionExclusive: "0.7.0" },
+  engine: { minVersion: "0.7.0", maxVersionExclusive: "0.8.0" },
   entries: { model: "model/index.ts", hotfix: "hotfix/index.ts" },
   dependencies: [{ id: "org.test.missing", minVersion: "0.6.0-alpha.0", maxVersionExclusive: "0.7.0" }] };
 const manifestPath = path.join(source, "tiangz.module.json");

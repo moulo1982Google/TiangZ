@@ -76,6 +76,7 @@
 - `@messageHandler(SceneType, descriptor)`：把独立 Handler class 绑定到指定 EntryScene 的单向消息。
 - `@sessionRpcHandler(SceneType, descriptor)` / `@sessionMessageHandler(...)`：绑定客户端连接消息，Handler 直接取得 Session。
 - `@unitRpcHandler(ActorUnitType, descriptor)` / `@unitMessageHandler(...)`：绑定可路由ActorUnit消息，Handler直接取得目标ActorUnit；普通Unit不能注册。
+- `@httpHandler(SceneType, method, path)`：把独立 Handler class 绑定到指定 EntryScene 的 HTTP 路由（方法 + 路径精确匹配），需要 Scene 配置 `http` 端口；配合 `jsonResponse`、`HttpError` 使用，见[配置参考](config-and-protocol.md#scene-http-入口)。
 - `@scene/@actor/@component`：注册Scene、Actor与Component元数据。Session基类声明unordered，PlayerUnit等权威Actor显式声明ordered；Actor子类继承最近的基类mailbox声明。
 - `@systemFor(ModelType)`：声明必需的Hotfix业务System；公开方法由codegen合并到Model类型，受保护的`Awake/OnDestroy`参与生命周期。System不能声明字段、构造或静态成员。
 - `@hotfixFor(ModelType)`：兼容旧版可选方法补丁；新业务默认使用`@systemFor`，因为它会校验每个generation都提供完整System。

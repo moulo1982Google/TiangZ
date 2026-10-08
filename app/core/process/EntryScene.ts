@@ -1,3 +1,8 @@
+import {
+  decodeHttpRequest, getSceneHttpHandlerBindings, HttpError, jsonResponse,
+  sendHttpError, sendHttpResponse, isHttpRequestPending, discardHttpRequest,
+  type HttpRequest, type HttpResponse,
+} from "./httpHandlers";
 import { EntrySceneConnections, packConnectionIds, type AsyncIngressSource } from "./EntrySceneConnections";
 import {
   getKnownMessageDescriptors,
@@ -81,6 +86,7 @@ import type {
 type ClientFrameDelivery = "reliable" | "latest";
 
 type QueuedEvent =
+  | { kind: "http"; controlPending: boolean; requestId: number; payload: Uint8Array; queuedAtMs: number; }
   | {
       kind: "frame";
       controlPending: boolean;
@@ -141,6 +147,8 @@ export abstract class EntryScene extends Scene {
   private readonly processHost: ProcessHost;
   protected readonly actorLocations = new ActorLocationDirectory();
   protected readonly mailbox: SceneMailboxType = "ordered";
+  private readonly httpRoutes = new Map<string, (request: HttpRequest) => MaybePromise<HttpResponse>>();
+  private readonly httpMethodsByPath = new Map<string, string[]>();
   private readonly controlIngress: (QueuedEvent | undefined)[] = [];
   private controlIngressHead = 0;
   private readonly dataIngress: (QueuedEvent | undefined)[] = [];
@@ -285,6 +293,7 @@ export abstract class EntryScene extends Scene {
     this.registerDecoratedRpcHandlers();
     this.registerDecoratedMessageHandlers();
     this.registerExternalRpcHandlers();
+    this.registerHttpHandlers();
     this.registerExternalMessageHandlers();
     this.registerSessionRpcHandlers();
     this.registerSessionMessageHandlers();
@@ -611,6 +620,10 @@ export abstract class EntryScene extends Scene {
       if (item) this.releaseControlIngress(item);
     }
     this.controlIngress.length = 0;
+    for (let index = this.dataIngressHead; index < this.dataIngress.length; index += 1) {
+      const item = this.dataIngress[index];
+      if (item?.kind === "http") discardHttpRequest(item.requestId, false);
+    }
     this.dataIngress.length = 0;
     this.controlIngressHead = this.dataIngressHead = 0;
     this.outboundControl.length = this.outboundReliable.length = this.outboundLatest.length = 0;
@@ -669,6 +682,17 @@ export abstract class EntryScene extends Scene {
       connectionId,
       queuedAtMs: this.latencies.enabled ? nowMs() : 0,
     }, true);
+  }
+
+  pushHostHttpRequest(requestId: number, payload: Uint8Array): void {
+    if (this.mailboxClosed) { discardHttpRequest(requestId, false); return; }
+    this.enqueueIngress({
+      kind: "http",
+      controlPending: false,
+      requestId,
+      payload,
+      queuedAtMs: this.latencies.enabled ? nowMs() : 0,
+    }, false);
   }
 
   private enqueueIngress(event: QueuedEvent, control: boolean): void {
@@ -1034,11 +1058,15 @@ export abstract class EntryScene extends Scene {
     ) {
       const item = this.dequeueIngress()!;
       // 将确认转交实际 mailbox 节点；回收回调不捕获整个入站帧，普通数据不创建确认。 / Transfers acknowledgement to the actual mailbox node without capturing the ingress frame or allocating a data receipt.
-      const release = item.controlPending ? this.processHost.__controlIngressAcknowledgement() : undefined;
+      const acknowledge = item.controlPending ? this.processHost.__controlIngressAcknowledgement() : undefined;
+      // mailbox 关闭时节点可能未执行就被回收；按是否已开始如实告知 HTTP 调用方（503 或 500）。
+      // A closing mailbox may recycle the node unexecuted; tell the HTTP caller truthfully (503 vs 500).
+      let started = false;
+      const release = item.kind === "http" ? () => discardHttpRequest(item.requestId, started) : acknowledge;
       item.controlPending = false;
       let result: MaybePromise<void>;
       try {
-        result = this.dispatchMailbox(() => { release?.(); return this.processIngress(item); }, release);
+        result = this.dispatchMailbox(() => { started = true; acknowledge?.(); return this.processIngress(item); }, release);
       } catch (error) {
         release?.();
         throw error;
@@ -1068,6 +1096,8 @@ export abstract class EntryScene extends Scene {
       this.unorderedTasks.size < EntryScene.MAX_UNORDERED_IN_FLIGHT
     ) {
       const item = this.dequeueIngress()!;
+      // 节点已开始执行；只有没有回复时才会以 500 结束。 / The node has started; it ends with 500 only if it never replied.
+      const release = item.kind === "http" ? () => discardHttpRequest(item.requestId, true) : undefined;
       try {
         const result = this.processIngress(item);
         if (isPromiseLike(result)) {
@@ -1077,6 +1107,7 @@ export abstract class EntryScene extends Scene {
               this.ctx.logger.error("unordered handler failed", { error });
             })
             .finally(() => {
+              release?.();
               this.unorderedTasks.delete(task);
             });
           this.unorderedTasks.add(task);
@@ -1084,8 +1115,11 @@ export abstract class EntryScene extends Scene {
             this.metrics.maxAsyncInFlight,
             this.unorderedTasks.size,
           );
+        } else {
+          release?.();
         }
       } catch (error) {
+        release?.();
         this.ctx.logger.error("unordered handler failed", { error });
       }
       processed += 1;
@@ -1315,6 +1349,7 @@ export abstract class EntryScene extends Scene {
   }
 
   private processIngress(item: QueuedEvent): MaybePromise<void> {
+    if (item.kind === "http") return this.processHttpRequest(item.requestId, item.payload);
     this.releaseControlIngress(item);
     if (this.latencies.enabled) {
       this.latencies.record("ingress.queue", nowMs() - item.queuedAtMs);
@@ -2153,6 +2188,110 @@ export abstract class EntryScene extends Scene {
       SystemErrCode.ActorLocationFenceRejected,
       `actor location fence rejected for instance ${actor.InstanceId}`,
     );
+  }
+
+  private registerHttpHandlers(): void {
+    const bindings = getSceneHttpHandlerBindings(this.constructor);
+    for (const binding of bindings) {
+      let handlerCtor = binding.handlerCtor;
+      let handler = new handlerCtor();
+      const currentHandler = () => {
+        if (handlerCtor !== binding.handlerCtor) {
+          handlerCtor = binding.handlerCtor;
+          handler = new handlerCtor();
+        }
+        return handler;
+      };
+      const route = `${binding.method} ${binding.path}`;
+      if (this.httpRoutes.has(route)) {
+        throw new Error(`duplicate HTTP handler for ${this.self.sceneType} ${route}`);
+      }
+      this.httpRoutes.set(route, (request) => currentHandler().handle(this, request));
+      const methods = this.httpMethodsByPath.get(binding.path) ?? [];
+      methods.push(binding.method);
+      this.httpMethodsByPath.set(binding.path, methods);
+    }
+    if (bindings.length > 0 && !this.self.http) {
+      this.ctx.logger.warn("scene has HTTP handlers but no http port configured", {
+        scene: this.self.name,
+        routes: bindings.length,
+      });
+    }
+  }
+
+  /**
+   * 解码并分发一个 HTTP 请求。路由不存在返回 404/405；HttpError 返回其状态；其他异常记录日志并返回 500。
+   * Decodes and dispatches one HTTP request. Missing routes answer 404/405; HttpError answers its
+   * status; any other failure is logged and answers 500.
+   */
+  private processHttpRequest(requestId: number, payload: Uint8Array): MaybePromise<void> {
+    if (!isHttpRequestPending(requestId)) { discardHttpRequest(requestId, false); return; }
+    let request: HttpRequest;
+    try {
+      request = decodeHttpRequest(payload);
+    } catch (error) {
+      this.ctx.logger.warn("invalid HTTP request payload", { httpRequestId: requestId, error });
+      this.replyHttp(requestId, undefined, () => sendHttpError(requestId, 400, "bad request"));
+      return;
+    }
+    const route = this.httpRoutes.get(`${request.method} ${request.path}`);
+    if (!route) {
+      const allowed = this.httpMethodsByPath.get(request.path);
+      this.replyHttp(requestId, request, () => allowed
+        ? sendHttpResponse(requestId, jsonResponse({ error: "method not allowed" }, 405, { allow: allowed.join(", ") }))
+        : sendHttpError(requestId, 404, "not found"));
+      return;
+    }
+    let result: MaybePromise<HttpResponse>;
+    try {
+      result = route(request);
+    } catch (error) {
+      this.failHttp(requestId, request, error);
+      return;
+    }
+    if (isPromiseLike(result)) {
+      return Promise.resolve(result).then(
+        (response) => this.finishHttp(requestId, request, response),
+        (error) => this.failHttp(requestId, request, error),
+      );
+    }
+    this.finishHttp(requestId, request, result);
+  }
+
+  private finishHttp(requestId: number, request: HttpRequest, response: HttpResponse): void {
+    try {
+      this.replyHttp(requestId, request, () => sendHttpResponse(requestId, response));
+    } catch (error) {
+      this.ctx.logger.error("HTTP handler returned an invalid response", {
+        method: request.method,
+        path: request.path,
+        error,
+      });
+      this.replyHttp(requestId, request, () => sendHttpError(requestId, 500, "internal error"));
+    }
+  }
+
+  private failHttp(requestId: number, request: HttpRequest, error: unknown): void {
+    if (error instanceof HttpError) {
+      this.finishHttp(requestId, request, jsonResponse({ error: error.message }, error.status));
+      return;
+    }
+    this.ctx.logger.error("HTTP handler failed", {
+      method: request.method,
+      path: request.path,
+      error,
+    });
+    this.replyHttp(requestId, request, () => sendHttpError(requestId, 500, "internal error"));
+  }
+
+  private replyHttp(requestId: number, request: HttpRequest | undefined, send: () => boolean): void {
+    if (!send()) {
+      this.ctx.logger.warn("HTTP reply dropped because the request already timed out", {
+        httpRequestId: requestId,
+        method: request?.method,
+        path: request?.path,
+      });
+    }
   }
 
   private claimRpcHandler(msgcode: number, owner: string): void {

@@ -91,6 +91,7 @@ fn endpoint_with_network(
         audience,
         static_map_ids: None,
         accept_dynamic_maps: None,
+        http: None,
     };
     let task = create_io_backend(network)
         .unwrap()

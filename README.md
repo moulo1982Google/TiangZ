@@ -1,4 +1,4 @@
-> 本轮发布：`v0.7.0-rc1`，从 `feat/v0.7` 合入主线的预发行版本。历史 RC 标签、测试资格和制品保持原身份；本次发布后验证计划见 [RELEASE-v0.7.0-rc1.md](RELEASE-v0.7.0-rc1.md)。
+> 本轮发布：`v0.7.0` 正式版，在 v0.7.0-rc1 之上加入 Scene HTTP 与 outerIp 域名。历史 RC 标签、测试资格和制品保持原身份；本次发布说明见 [RELEASE-v0.7.0.md](RELEASE-v0.7.0.md)。以后的缺陷按 0.7.x 小版本修补。
 
 # TiangZ
 [![verify](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml)
@@ -7,7 +7,7 @@
 [![tag](https://img.shields.io/github/v/tag/moulo1982Google/TiangZ?label=tag&sort=semver)](https://github.com/moulo1982Google/TiangZ/tags)
 [![license](https://img.shields.io/github/license/moulo1982Google/TiangZ?label=license)](LICENSE)
 
-TiangZ 是 Rust Runtime + TypeScript 的模块化游戏服务端框架。当前版本为 `0.7.0-rc1`，本次为预发行版本；上一正式版 `v0.6.5` 于 2026-09-30 发布。
+TiangZ 是 Rust Runtime + TypeScript 的模块化游戏服务端框架。当前版本为 `0.7.0`（正式版）；上一正式版 `v0.6.5` 于 2026-09-30 发布。
 
 MMORPG 不再是内置宿主：服务端模块、协议、配置、Native 游戏数据与六个客户端都在同级 TiangZ-Examples。TiangZ-ModuleGame 和 TiangZ-WoW335 显式依赖该 MMORPG 模块；SLG 不需要安装它。
 

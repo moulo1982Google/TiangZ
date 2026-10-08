@@ -1,5 +1,35 @@
 # 版本记录
 
+## 0.7.0 — 2026-10-08（正式版，标签 `v0.7.0`）
+
+在 `v0.7.0-rc1` 之上加入下列 Scene HTTP 与 outerIp 域名，直接发布为正式版（异步结果唤醒因 CI 发现断连问题未包含，见下）（不再发 rc2 的 GitHub 发布；已推送的底层仓库 `v0.7.0-rc2` 标签保留）。依赖改为固定标签：DBProxy `v0.7.0`（0.7.0，无代码改动）、Developer Tools `v0.16.1`（Core 0.16.1，含 HTTP Handler 热更规则，替代原先固定的 198afe8f 提交）、Native Language `v0.17.1`（Core 0.17.1，无代码改动）。两个工具仓库已有自己 2026-07 的旧 `v0.7.0` 标签，因此用各自版本号作标签。随包 AI 插件 0.3.0 用 Developer Core 0.16.1 重新构建 MCP。以后的缺陷按 0.7.x 小版本修补。
+
+注意：宿主为正式版 0.7.0 后，引擎范围上限写 `0.7.0` 的模块（如 `[0.6.x, 0.7.0)`）不再被接受（预发行 0.7.0-rc* 按 semver 小于 0.7.0，所以以前能过）。需要在 0.7 上运行的模块请把范围改为 `[0.7.0, 0.8.0)` 等。本仓库测试夹具已同样调整。
+
+非破坏性新增；已有配置、模块和业务代码无需修改。需求来自苟道三国登录改造（F4：生产环境用 HTTP 接口返回 Login 地址，以后工具类接口也会用到）。
+
+### 新增
+
+- Scene 配置 `http`：为 Scene 开一个独立 HTTP 端口，请求进入该 Scene 的 mailbox。Rust 负责请求体上限（默认 64 KiB）、读体与回复共享期限（默认 10 秒，分别返回 408/504）、并发上限（默认 256，返回 503）、可选 Bearer 令牌（令牌不进入 V8）和跨域预检。
+- Stable API `httpHandler(SceneCtor, method, path)`、`HttpError`、`jsonResponse` 及类型 `HttpMethod`、`HttpRequest`、`HttpResponse`、`SceneHttpHandler`、`SceneHttpConfig`；Handler 可热更，路由精确匹配，缺失路径 404、方法不符 405。
+- 新增直接依赖 `hyper`（http1/server）、`hyper-util`、`http-body-util`；均已在依赖树中，未引入新的第三方包。
+- 连接准入与请求号隔离（评审修正）：新增 `http.maxConnections`（默认 max(1024, maxInFlight)，上限 16384），在创建连接任务前准入，名额覆盖连接整个生命周期，满额新连接立即关闭；回复写出连续 10 秒无进展断开，每连接读缓冲软上限 64 KiB。HTTP 请求号改由 HTTP 入口独立分配并在 u32 内回绕、跳过在途号，不再消耗游戏连接号（此前持续 HTTP 流量会耗尽连接号并使游戏端口停止接入）。
+- 状态码与可观测性（评审修正）：503 只表示请求未执行、可安全重试；入队后结果未知（超时、停机）改为 504，排队节点被丢弃时如实返回 503，Handler 执行后无回复返回 500；停机时已入队请求继续等待真实结果直到排空期限前。新增 `tiangz_http_requests_in_flight`、`tiangz_http_requests_detached`、`tiangz_http_oldest_detached_seconds` 指标，busy 且名额被已离开调用方占用时限频告警；非回环地址未配置令牌时启动告警；单个连接任务 panic 只关闭该连接，不再停止进程。内部 op `op_host_http_discard` 增加 `executed` 参数（Stable API 不变）。
+
+### 修正
+
+- Scene `outerIp` 允许填写域名（需求来自苟道三国登录批 6B：正式网页由 Nginx 以域名证书终止 https/wss）。`outerIp` 只发给客户端、进程不监听，原先却要求能解析为 IP，填域名会启动失败。现在接受 IP 字面量或 DNS 主机名（标签为字母、数字、连字符，每段 1–63 字符，总长不超过 253，不以连字符开头或结尾，顶级标签不全为数字）；仍拒绝协议、端口、路径、空白和末尾点。`innerIp`、`bindIp` 仍必须是 IP。新增配置测试覆盖接受与拒绝情形；需重建宿主并重启。
+
+### 验证
+
+- Rust：配置校验（端口冲突、上限、跨域来源、未知字段）、回复校验（状态码、宿主管理的头、大小）、真实 HTTP 转发与回复、401/413/预检/跨域来源拒绝、令牌头不转发、超时 504 与迟到回复丢弃、令牌变量缺失拒绝启动；TS：请求解码、路由注册校验、同步与异步 Handler 经 ordered mailbox 顺序执行、404/405/400/403/500 映射；`test:module-host --runtime` 在真实进程中验证 200、401、404、405 与令牌不可见。
+
+- 0.7 集成复测：Windows 默认功能集 full 9/9、quick 35/35、TS 234 项、Rust 全目标 284 项通过；新增读体超时、执行许可保留、入站预算、监听监督和停机回收覆盖。初次夹具编译失败及复测证据见 `RELEASE-v0.7.0-rc1.md`。
+
+### 未包含：异步结果唤醒
+
+- 异步结果唤醒（DBProxy/Native worker/event_stream 结果到达后立即叫醒主循环）曾合入 0.7 集成线，但发布 PR 的 Windows/Linux CI 在 `test:hotfix-faults` 的控制入口满额场景 4 次失败 3 次：一条 Inner 连接在 65,536 个挂起 RPC 放行后被 host 断开（夹具报 `control ingress producer closed unexpectedly`）。rc1 与 HTTP 集成提交 43db49b5 的 CI 没有出现。推测是唤醒后每次少量回包各自成批，单连接出站队列（按批计数）在慢机器上先满，被当成慢连接关闭；未取得 host 日志，尚未确认。为不带已知断连风险发布，0.7.0 用 `git revert` 撤回该合并及其测试修正，修好后进 0.7.x。
+
 ## 0.6.5 — 模块异步 Native worker（2026-09-30，标签 `v0.6.5`）
 
 - 模块可声明专用 FIFO 计算线程与输入、输出、在途容量；生成 Promise、stats、drain 接口，原同步 Native op 不变。

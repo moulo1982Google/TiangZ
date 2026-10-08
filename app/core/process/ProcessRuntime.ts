@@ -211,6 +211,11 @@ export class ProcessRuntime implements LocalSceneRouter {
     this.sceneAt(sceneIndex).pushHostControlFrame(connectionId, frame);
   }
 
+  /** 将 Scene HTTP 端口的请求放入目标 Scene mailbox。 / Enqueues a request from a Scene HTTP port into the addressed Scene mailbox. */
+  pushHostHttpRequest(sceneIndex: number, requestId: number, payload: Uint8Array): void {
+    this.sceneAt(sceneIndex).pushHostHttpRequest(requestId, payload);
+  }
+
   /** 让断线通知排在该 Scene 已接收帧之后，避免越过先前消息。 / Orders a disconnect notification after frames already accepted for that Scene. */
   pushHostDisconnect(sceneIndex: number, connectionId: number): void {
     this.sceneAt(sceneIndex).pushHostDisconnect(connectionId);

@@ -135,10 +135,44 @@ pub(super) fn format_prometheus_metrics(process_name: &str, state: &ProcessHealt
     if let Some(dbproxy) = &snapshot.dbproxy {
         append_dbproxy_client_metrics_prometheus(&mut output, &safe_process_name, dbproxy);
     }
+    if let Some(http) = &snapshot.http {
+        append_http_metrics_prometheus(&mut output, &safe_process_name, http);
+    }
     append_hotfix_metrics_prometheus(&mut output, &safe_process_name, &hotfix);
     append_game_config_metrics_prometheus(&mut output, &safe_process_name, &game_config);
 
     output
+}
+
+/// Scene HTTP 执行许可占用；detached 持续不为 0 说明有 Handler 迟迟不结束并永久占用名额。
+/// Scene HTTP permit usage; a persistently non-zero detached count means handlers that never settle hold slots.
+fn append_http_metrics_prometheus(
+    output: &mut String,
+    process_name: &str,
+    http: &crate::http_endpoint::HttpPendingSnapshot,
+) {
+    for (name, help, value) in [
+        (
+            "tiangz_http_requests_in_flight",
+            "Scene HTTP requests holding an execution permit (queued or running)",
+            http.in_flight as f64,
+        ),
+        (
+            "tiangz_http_requests_detached",
+            "Scene HTTP requests still holding a permit after their caller timed out, disconnected or stopped",
+            http.detached as f64,
+        ),
+        (
+            "tiangz_http_oldest_detached_seconds",
+            "Age of the oldest detached Scene HTTP request",
+            http.oldest_detached_ms as f64 / 1000.0,
+        ),
+    ] {
+        writeln!(output, "# HELP {name} {help}").expect("formatting metric help");
+        writeln!(output, "# TYPE {name} gauge").expect("formatting metric type");
+        writeln!(output, "{name}{{process=\"{process_name}\"}} {value}")
+            .expect("formatting metric");
+    }
 }
 
 fn append_dbproxy_client_metrics_prometheus(

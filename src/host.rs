@@ -562,6 +562,7 @@ fn create_runtime_with_workers(
         crate::dbproxy::init(),
         crate::event_stream::init(),
         crate::secure_random::init(),
+        crate::http_endpoint::init(),
         crate::native_worker::native_workers::init(),
     ];
     extensions.extend(crate::module_native::extensions());
@@ -675,6 +676,10 @@ fn create_runtime_with_workers(
     runtime.execute_script(
         "ets-runtime:secure-random.js",
         crate::secure_random::BOOTSTRAP_SOURCE,
+    )?;
+    runtime.execute_script(
+        "ets-runtime:http-endpoint.js",
+        crate::http_endpoint::BOOTSTRAP_SOURCE,
     )?;
     for &(name, source) in crate::module_native::bootstraps() {
         runtime.execute_script(name.to_string(), source)?;

@@ -72,6 +72,12 @@ impl HostEventBatch {
                 Ok(frame) => (3, completion.operation_id as u64, 0, frame),
                 Err(error) => (4, completion.operation_id as u64, 0, error.as_bytes()),
             },
+            ProcessEvent::HttpRequest {
+                scene_index,
+                request_id,
+                payload,
+                ..
+            } => (6, *request_id, *scene_index, payload),
             ProcessEvent::Shutdown => bail!("shutdown event cannot enter a host event batch"),
         };
         let connection_id = u32::try_from(connection_id).context("connection id exceeds uint32")?;
@@ -99,6 +105,9 @@ impl HostEventBatch {
         if matches!(
             &event,
             ProcessEvent::Frame {
+                backing_reservation: None,
+                ..
+            } | ProcessEvent::HttpRequest {
                 backing_reservation: None,
                 ..
             } | ProcessEvent::Disconnect {

@@ -25,3 +25,7 @@ Host、DBProxy 与 Examples 根版本为 0.7.0-rc1。Developer Core 0.16.1-rc.2�
 ## RC1 发布门禁的夹具修正（2026-10-08）
 
 远端旧功能分支的完整 Windows/Linux CI 暴露两个夹具问题。V8 deadline 回归以 65,540 个串行 Promise 轮询挤入 5 秒，与回收语义无关的调度吞吐影响结果；保留全部创建/取消次数、容量、回收断言及原 5 秒期限，改成最多 256 项一批并逐批等待，本地 exact 回归 0.77 秒通过。控制入口满额后只观察共享 reserved/rejections，不能证明 TCP 尾批已进入 TS；现要求最后一个输入 RPC 的真实拒绝响应已返回，且目标 Scene 入队数为 65,536，才开始热更。默认额度和 3 秒热更期限不变。完整三轮 hotfix fault matrix 已通过，满额场景 pause=316.5384ms。修正只在测试/夹具，不改变生产调度或配额；旧失败日志保留，最终跨平台 CI 需重新核对。
+
+## RC1 标签之后的 0.7 集成
+
+Scene 独立 HTTP 端口及 `httpHandler` 工具接口正在发布分支集成，包含请求体限制、鉴权、超时、并发准入和停机清理。该增量不属于已发布的 `v0.7.0-rc1` 标签；保留原标签，随下一次 0.7 发布。Developer Tools 配套提交为 `198afe8f040d1fc1e17d1a3250791cb62e25109b`，用于统一 HTTP Handler 的 Hotfix 检查。2026-10-07 Windows 默认 Cargo 功能集的最终完整 `npm run verify` 为 9/9，quick 为 35/35；包含 234 项 TS 测试、284 项 Rust 全目标测试、真实 HTTP 请求、三轮热更故障演练和两项 Native 运行验收。codegen、Core API 锁、格式和 Clippy 均通过。实际宿主 SHA-256：`41f5fc34115c9b95281295c6f10711951d9d3ebfdc35c5859c815b82249e255a`。复测日志：`target/http-rc1-verify-retest-20261007.log`，报告：`target/http-rc1-final-{full,quick}.json`。首轮为 full 8/9、quick 33/35，原因是端点测试夹具遗漏 `SceneConfig.http`；修正为 `None` 后按原参数完整复测，首轮日志与报告另存保留。未执行 Linux、KCP 专项或长期压力测试，本记录不替代后续跨平台发布门禁。

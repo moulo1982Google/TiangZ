@@ -354,3 +354,31 @@ async fn process_endpoint_failure_withdraws_real_readiness_and_reclaims_all_list
         }
     }
 }
+
+/// HTTP 绑定失败也必须回收之前成功的游戏端点和健康端口。 / HTTP bind failure must reclaim preceding game and health listeners.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn process_http_start_failure_reclaims_preceding_listeners() {
+    let fixture = runtime_fixture(false);
+    let (mut config, ports) = process_config();
+    let occupied = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    config.scenes[0].http = Some(
+        serde_json::from_value(json!({
+            "port": occupied.local_addr().unwrap().port(), "bindIp": "127.0.0.1"
+        }))
+        .unwrap(),
+    );
+    let error = timeout(
+        Duration::from_secs(3),
+        run_runtime_config(fixture.path(), &fixture.path().join("process.json"), config),
+    )
+    .await
+    .unwrap()
+    .unwrap_err();
+    assert!(
+        format!("{error:#}").contains("failed to start process HTTP endpoints"),
+        "{error:#}"
+    );
+    for port in ports {
+        let _rebound = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+    }
+}

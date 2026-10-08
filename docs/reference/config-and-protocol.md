@@ -230,15 +230,45 @@ Rust Core使用强类型`NativeDataObservabilityConfig`负责字段默认值、�
 | `sceneType` | string | `@entryScene()` 注册类型 |
 | `innerIp` | string | 服务间通信地址；旧配置的 `ip` 仍可读取，但新配置应使用 `innerIp` |
 | `bindIp` | string? | 本机监听地址；省略时使用 `innerIp`。外网由 Nginx 代理时填写 `127.0.0.1`；只有服务直接暴露公网端口时才考虑 `0.0.0.0` |
-| `outerIp` | string? | 客户端连接地址；LoginMgr/Login/Gate 返回该地址，省略时使用 `innerIp` |
+| `outerIp` | string? | 客户端连接地址，IP 或域名（0.7 RC1 之后，供 Nginx 等以域名证书终止 TLS）；不含协议、端口和路径，进程不监听它。LoginMgr/Login/Gate 返回该地址，省略时使用 `innerIp` |
 | `outerPort` | u16? | 客户端连接端口；省略时使用 `port`。Nginx 或云 NAT 场景下通常与 `port` 不同 |
 | `port` | u16 | TiangZ 实际监听及内网通信端口；可以和 `outerPort` 不同 |
 | `protocol` | `auto`、`tcp`、`websocket`、`kcp`? | Endpoint 传输协议；默认 `auto`，KCP 需使用 `--features kcp` 构建 |
 | `audience` | `mixed`、`inner`、`outer`? | Endpoint 面向的连接类型；默认 `mixed`，KCP 必须显式选择 `inner` 或 `outer` |
 | `staticMapIds` | `u32[]`? | 仅MapHost使用；启动时通过统一CreateMap创建的静态地图配置ID |
 | `acceptDynamicMaps` | bool? | 仅MapHost使用；是否注册到MapManager并接受动态实例，默认false |
+| `http` | object? | 可选的独立 HTTP 端口，请求进入本 Scene 的 `httpHandler`；不影响 `port` 上的游戏连接与内部通信，见下方“Scene HTTP 入口” |
 
-同一进程内 Scene name 和 endpoint 必须唯一。Inspector 和健康检查端口都不能与任何 Scene 端口冲突。
+同一进程内 Scene name 和 endpoint 必须唯一。Inspector 和健康检查端口都不能与任何 Scene 端口或 HTTP 端口冲突。
+
+### Scene HTTP 入口
+
+面向工具、运维和简单查询接口（例如返回 Login 地址），不承载游戏帧协议，也不是纯 HTTP 游戏的通用网关。
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `port` | u16 | HTTP 监听端口，必须与本 Scene 的 `port` 以及其他监听不同 |
+| `bindIp` | string? | 监听地址；省略时使用 Scene 的 `bindIp`/`innerIp` |
+| `maxBodyBytes` | usize? | 请求体上限，默认 65536，最大 1048576；超出返回 413 |
+| `requestTimeoutMs` | u64? | 读取请求体与等待 Handler 回复共享的期限，默认 10000，范围 100..120000；读体超时返回 408 并关闭连接，Handler 等待超时返回 504，迟到的回复被丢弃 |
+| `maxInFlight` | usize? | 同时在处理和排队的请求上限，默认 256，最大 4096；超出返回 503 |
+| `maxConnections` | usize? | 同时存活的连接上限（含 keep-alive 空闲和未发完请求头的连接），默认取 1024 与 `maxInFlight` 中较大者，范围 `maxInFlight`..16384；满额时新连接被立即关闭，不创建处理任务 |
+| `authTokenEnv` | string? | 设置后每个请求必须带 `Authorization: Bearer <令牌>`，否则返回 401。令牌从该环境变量读取，变量缺失时拒绝启动；令牌只在 Rust 比对，转发给 TS 的请求不含 Authorization 头 |
+| `corsAllowOrigins` | string[]? | 允许跨域的来源，`"*"` 或 `scheme://host[:port]`；为空时不输出跨域头。`OPTIONS` 预检由宿主直接回答，不进入 TS |
+
+```json
+{
+  "name": "login_mgr",
+  "sceneType": "LoginMgr",
+  "innerIp": "127.0.0.1",
+  "port": 7000,
+  "http": { "port": 7080, "corsAllowOrigins": ["*"] }
+}
+```
+
+处理流程：Rust（hyper，HTTP/1.1）读取请求并完成鉴权、限长和并发检查，然后把请求作为数据入口事件放进目标 Scene 的 mailbox，与协议消息遵循相同的 ordered/unordered 语义；进程队列或宿主事件字节预算不足时立即返回 503。TS 按“方法 + 路径”精确匹配 `httpHandler`；找不到路径返回 404，路径存在但方法不对返回 405 和 `Allow` 头。Handler 抛出 `HttpError` 时返回其状态码，其他异常记录日志并返回 500，不向调用方泄露异常内容。所有响应默认带 `Cache-Control: no-store`。当前不支持 HTTPS（由 Nginx 等反向代理终止）、路径参数、流式请求/响应和 WebSocket 升级。进程未就绪（启动中、停机中，或业务线程心跳超过 `staleAfterMs`）时直接返回 503，不进入 TS；停机时先停止接收新请求；已进入 Scene 的请求继续等待真实结果（在 `lifecycle.stopTimeoutMs` 排空期限前留出写回时间），连接按该期限有界排空。已经开始的业务不会因调用方超时或断开而取消，并发名额保留到业务真实完成；排队期间已过期的请求不执行 Handler。
+
+状态码约定，供调用方决定能否重试：503 表示请求没有执行（未就绪、busy、队列满、停机拒绝，或排队节点被丢弃，响应体分别为 `not ready`、`busy`、`overloaded`、`stopping`、`not executed`），可以安全重试；504 表示等待结束时结果未知（`handler timeout` 或 `result unknown`），Handler 可能已经执行，非幂等接口不能直接重试，应由业务提供幂等键或查询接口；Handler 执行后没有交回回复时返回 500。监听在非回环地址且未设置 `authTokenEnv` 时，启动日志会告警；返回 Login 地址这类公开接口可以忽略，工具与运维接口应配置令牌。单个连接任务 panic 只记录错误并关闭该连接，不会停止进程。每条连接都有期限：请求头（含 keep-alive 空闲）10 秒内必须发完，回复写出连续 10 秒无进展即断开，请求头远超 64 KiB 时返回 431；连接名额随连接关闭释放。HTTP 请求号由 HTTP 入口独立分配并在 u32 内回绕，不占用游戏连接号。
 
 监听地址、服务间地址和客户端地址是三个不同概念，不能把 `0.0.0.0` 写入 `knownScenes`、MapHost Endpoint 或登录响应。云服务器的公网 IP 通常是云厂商的 EIP/NAT，不会出现在虚机的 `ip addr` 中，因此必须通过部署配置显式填写，不要在 Runtime 中自动猜测公网 IP。
 

@@ -1,5 +1,9 @@
 # 2026-09-16 模块拆分后的当前事实
 
+本机 HTTP 合入验证（2026-10-07）：开发热更夹具依赖 INFO 完成日志，继承 `RUST_LOG=warn` 会误报等待超时。复测须显式 `RUST_LOG=info`，保留首次失败，不删除断言；见业务开发手册“本机验证日志环境”。
+
+2026-10-08：异步结果唤醒未随 0.7.0 发布。发布 PR 的 CI 在热更故障矩阵控制入口满额场景 4 次失败 3 次（Inner 连接在大批回包时被断开），已从 0.7.0 撤回，修复后进 0.7.x；原分支见另一会话的 `release/v0.7.0-rc1` 克隆。
+
 源码落地：真实双亲合并`c06b244`已快进原`feat/v0.7`，原工作区Rust/KCP、Model/配置重建与真实模块宿主启动停止通过；该Host SHA3d390885...，日志`temp/v07-065-integration-main/`。与隔离Windows PE、Linux ELF分别记录，生成与依赖锁无漂移，未push；细节见[源码对齐](../design/v0.7-merge-0.6.5.md)。
 
 2026-10-07源码对齐终验：正式0.6.5关闭顺序/握手和模块Native worker已移植到0.7拆分、预算与RAII边界，并修复业务错误绕过输出字节上限的真实反例。最终实现树`044287f8`：Windows发布级check8/quick35/full9全部通过、Rust279，实际Host e58c4c25...与两份热更报告匹配；Linux整合基线full9/Rust282，随后新修复全目标Clippy/Rust283及两模块V8/worker真实热更停机专项通过，新Host bad00b6e...，两版来源分别保存，不把专项称新full9。API锁/codegen与204导出冻结检查通过，依赖/协议锁不变。源输入、首轮失败、复测、限制及后续SDK/插件/发行安排见[源码对齐](../design/v0.7-merge-0.6.5.md)。原业务资源、用户Examples修改与DBProxy R7原资格保留；不继承旧引擎制品，不push。以下整合中状态是历史快照。
@@ -770,6 +774,8 @@ TiangZ的内核不是“MMORPG内核”，而是先用MMORPG验证的通用运�
 
 进程部署环境与安全随机数（0.6.2）：`process.environment`（`development | test | staging | production`，缺省 `development`）由 Rust 在解析配置时校验，投影给 Core 的进程级只读单例 `ProcessRuntimeInfo`，并出现在 `/runtime-identity`；Core 不解释环境，业务自行决定差异。宿主通过 `getrandom` 提供操作系统随机源，启动脚本在业务 V8 中挂一个冻结的 `__hostSecureRandom.fill`，Stable 包装为 `SecureRandom`；业务 V8 没有 Web Crypto，`Math.random`、GlobalId 与时间戳都可预测，身份凭证必须用 `SecureRandom`。模块协议工具提供开发期 `--dev-regen-schema-lock`，发布门禁下拒绝，见业务开发手册“开发阶段与Release锁定”。
 
+Scene HTTP 入口（未发布）：Scene 配置可选 `http` 声明一个独立端口，用于工具、运维和简单查询接口，不承载游戏帧协议。Rust（`src/http_endpoint.rs`，hyper HTTP/1.1）负责解析、请求体上限、`Authorization: Bearer` 令牌比对（令牌只在 Rust，转发给 TS 前移除该头）、并发上限、跨域预检和超时；请求编码为 `ProcessEvent::HttpRequest`（宿主事件类型 6，编号与连接号同一空间），走数据入口进入目标 Scene mailbox，遵循 ordered/unordered 语义。TS 由外部 Handler 类 `httpHandler(SceneCtor, method, path)` 精确匹配路由，结果经冻结桥 `__hostHttp.respond` 交回 Rust；超时返回 504 并丢弃迟到回复，队列满或并发满返回 503，停机时等待中的请求返回 503。HTTP Handler 与其他外部 Handler 一样可热更实现、路由集合在第一代后冻结。HTTP 已适配 0.7 的 EntryScene 拆分、Host 事件字节预算与入站唤醒；超时请求若尚未执行则丢弃，已经执行的 Handler 保留并发名额直到真实结束。出站 HTTP（业务访问外部服务）尚未提供。共享 Hotfix 检查器依赖固定到 Developer Tools 提交 `198afe8f040d1fc1e17d1a3250791cb62e25109b`，包含 `httpHandler` 状态规则。此功能在 RC1 标签之后加入，随后续 0.7 发布。
+
 模块静态内容复用TiangZ现有Luban能力，不再建立一套面向来源数据库的配置系统。`tiangz.module.json.gameConfig`可声明模块根内的Luban工程、target及生成代码/数据目录；`tools/codegen_module_game_config.mjs`使用Core固定的Luban版本、严格validation、确定性聚合和SHA-256指纹生成模块自己的`Tables`。Core只验证声明路径与输出边界，不认识任何表或字段。来源游戏数据库、Excel或其他工具先转换成模块Luban源数据，运行时包再承载编译结果；所有者模块必须用生成类型解码并投影到中立Profile，禁止把导入JSON直接强转成运行时对象。schema与数据目前均按冷发布处理，改变后要重新生成、构建并重启Process；它不继承Core内置`GameConfig`的热表Reload。通用自测使用不含MMORPG概念的卡牌表证明该生成器不依赖首个游戏。
 
 外部协议适配器在完成自己的协议校验后，可以通过中立的`TriggerNpcInteraction`入口发布“NPC内容交互已发生”事实。Core只校验玩家、Unit、AOI和距离，并把`NpcContentInteractionTrigger`分发给内容规则；触发值和表现动作是稳定内容契约，不包含外部协议opcode、SmartAI枚举、地图号或具体游戏领域状态。这样协议差异留在适配器，内容包与TiangZ运行时仍可复用同一套NPC表现能力。
@@ -874,7 +880,7 @@ EntryScene是可配置、可寻址的顶层业务边界，例如`LoginMgr`、`Ma
 
 Scene配置把三个地址语义分开：`bindIp`是本机监听地址，`innerIp`是Process之间的内网路由地址，`outerIp/outerPort`是客户端连接地址。旧配置中的`ip`仍兼容读取为`innerIp`，但新配置不得把含义混用。
 
-云服务器的公网EIP/NAT可能不会出现在虚机`ip addr`中，因此公网地址由部署配置显式填写。`0.0.0.0`只能作为`bindIp`，不能写入`knownScenes`，不能放进Location/MapHost Endpoint，也不能返回给客户端。服务间RPC和Actor路由使用`innerIp`；外网演示由前端写死LoginMgr公网地址，LoginMgr返回Login的`outerIp/outerPort`，Login返回Gate的`outerIp/outerPort`。同一入口在`scenes`与共享`knownScenes`重复出现时，外网字段可以只填写一处；两处都填写时必须一致。
+云服务器的公网EIP/NAT可能不会出现在虚机`ip addr`中，因此公网地址由部署配置显式填写。`0.0.0.0`只能作为`bindIp`，不能写入`knownScenes`，不能放进Location/MapHost Endpoint，也不能返回给客户端。服务间RPC和Actor路由使用`innerIp`；外网演示由前端写死LoginMgr公网地址，LoginMgr返回Login的`outerIp/outerPort`，Login返回Gate的`outerIp/outerPort`。同一入口在`scenes`与共享`knownScenes`重复出现时，外网字段可以只填写一处；两处都填写时必须一致。`outerIp`只发给客户端、进程不监听，0.7 RC1之后可以填写IP或DNS主机名（例如Nginx以域名证书终止TLS后转发到内网ws）；不能带协议、端口或路径，`innerIp`与`bindIp`仍必须是IP。
 
 外网测试机的安全边界是“公网HTTPS/WSS端口属于Nginx，TiangZ只属于回环地址”。`external-multiprocess`中的LoginMgr、MapManager、两个Login、两个Gate、两个静态MapHost、一个动态副本MapHost和Location各自运行在独立Process/V8中；LoginMgr、Login和Gate使用`bindIp=127.0.0.1`，实际监听`27000/27001/27002/27201/27202`，Nginx在`443/17000/17001/17002/17201/17202`终止TLS后转发到回环端口。MapManager、MapHost、Location和DBProxy不经过Nginx。静态MapHost使用`acceptDynamicMaps=false`，`dungeon_1`使用`acceptDynamicMaps=true`承载Map 200。证书只存在于服务器`/etc/letsencrypt`，不得进入仓库或业务配置。
 
@@ -1667,3 +1673,7 @@ SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools
 ## RC1 发布门禁的夹具修正（2026-10-08）
 
 远端旧功能分支的完整 Windows/Linux CI 暴露两个夹具问题。V8 deadline 回归以 65,540 个串行 Promise 轮询挤入 5 秒，与回收语义无关的调度吞吐影响结果；保留全部创建/取消次数、容量、回收断言及原 5 秒期限，改成最多 256 项一批并逐批等待，本地 exact 回归 0.77 秒通过。控制入口满额后只观察共享 reserved/rejections，不能证明 TCP 尾批已进入 TS；现要求最后一个输入 RPC 的真实拒绝响应已返回，且目标 Scene 入队数为 65,536，才开始热更。默认额度和 3 秒热更期限不变。完整三轮 hotfix fault matrix 已通过，满额场景 pause=316.5384ms。修正只在测试/夹具，不改变生产调度或配额；旧失败日志保留，最终跨平台 CI 需重新核对。
+
+HTTP 合入 0.7 的首次完整矩阵在 Rust 测试编译失败：`process_endpoint_tests.rs` 手工构造 `SceneConfig` 时缺少新增的 `http` 字段，quick 为 33/35。修正为 `http: None`，保持原端点断言；不能只用 `cargo check --bin` 代替全目标测试。原日志保留在 `target/http-rc1-verify-20261007.log`，完整复测另写日志，不覆盖失败证据。此前 0.6.2 基线的日志过滤与 Windows V8 构建路径失败也保留在 `target/http-verify-full-20261007.log`；本轮设置进程级 `RUST_LOG=info`，使用本机可编译的 Cargo 输出目录并把新宿主复制到测试实际读取的 `target/debug`。不能把旧宿主的通过结果算给新源码。
+
+HTTP 合入 0.7 最终完整复测通过：Windows 默认功能集 full 9/9、quick 35/35、TS 234 项、Rust 全目标 284 项。先前夹具遗漏已修正，首次失败证据保留；实际宿主身份、范围和日志见 [0.7 发布记录](../../RELEASE-v0.7.0-rc1.md#rc1-标签之后的-07-集成)。HTTP 监听失败参与 Process 监督，读体/回复共享期限，停机按既有预算排空并 join 连接；运行中业务真实结束前不得归还执行许可。
