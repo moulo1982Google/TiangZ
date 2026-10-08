@@ -877,7 +877,7 @@ EntryScene是可配置、可寻址的顶层业务边界，例如`LoginMgr`、`Ma
 
 Scene配置把三个地址语义分开：`bindIp`是本机监听地址，`innerIp`是Process之间的内网路由地址，`outerIp/outerPort`是客户端连接地址。旧配置中的`ip`仍兼容读取为`innerIp`，但新配置不得把含义混用。
 
-云服务器的公网EIP/NAT可能不会出现在虚机`ip addr`中，因此公网地址由部署配置显式填写。`0.0.0.0`只能作为`bindIp`，不能写入`knownScenes`，不能放进Location/MapHost Endpoint，也不能返回给客户端。服务间RPC和Actor路由使用`innerIp`；外网演示由前端写死LoginMgr公网地址，LoginMgr返回Login的`outerIp/outerPort`，Login返回Gate的`outerIp/outerPort`。同一入口在`scenes`与共享`knownScenes`重复出现时，外网字段可以只填写一处；两处都填写时必须一致。
+云服务器的公网EIP/NAT可能不会出现在虚机`ip addr`中，因此公网地址由部署配置显式填写。`0.0.0.0`只能作为`bindIp`，不能写入`knownScenes`，不能放进Location/MapHost Endpoint，也不能返回给客户端。服务间RPC和Actor路由使用`innerIp`；外网演示由前端写死LoginMgr公网地址，LoginMgr返回Login的`outerIp/outerPort`，Login返回Gate的`outerIp/outerPort`。同一入口在`scenes`与共享`knownScenes`重复出现时，外网字段可以只填写一处；两处都填写时必须一致。`outerIp`只发给客户端、进程不监听，0.7 RC1之后可以填写IP或DNS主机名（例如Nginx以域名证书终止TLS后转发到内网ws）；不能带协议、端口或路径，`innerIp`与`bindIp`仍必须是IP。
 
 外网测试机的安全边界是“公网HTTPS/WSS端口属于Nginx，TiangZ只属于回环地址”。`external-multiprocess`中的LoginMgr、MapManager、两个Login、两个Gate、两个静态MapHost、一个动态副本MapHost和Location各自运行在独立Process/V8中；LoginMgr、Login和Gate使用`bindIp=127.0.0.1`，实际监听`27000/27001/27002/27201/27202`，Nginx在`443/17000/17001/17002/17201/17202`终止TLS后转发到回环端口。MapManager、MapHost、Location和DBProxy不经过Nginx。静态MapHost使用`acceptDynamicMaps=false`，`dungeon_1`使用`acceptDynamicMaps=true`承载Map 200。证书只存在于服务器`/etc/letsencrypt`，不得进入仓库或业务配置。
 

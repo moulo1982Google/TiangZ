@@ -988,6 +988,34 @@ fn merge_scene_client_endpoint(
     Ok(())
 }
 
+/// 客户端连接主机：IP 字面量，或由字母、数字、连字符标签组成的 DNS 主机名（最长 253，标签 1..=63，
+/// 不以连字符开头或结尾，顶级标签不能全为数字）。不接受协议、端口、路径或空白。
+/// Client-facing host: an IP literal, or a DNS host name of letter/digit/hyphen labels (at most 253
+/// characters, labels 1..=63, no leading or trailing hyphen, non-numeric top-level label). Schemes,
+/// ports, paths and whitespace are rejected.
+fn is_client_host(value: &str) -> bool {
+    if value.parse::<IpAddr>().is_ok() {
+        return true;
+    }
+    if value.is_empty() || value.len() > 253 {
+        return false;
+    }
+    let labels: Vec<&str> = value.split('.').collect();
+    let valid_labels = labels.iter().all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    });
+    valid_labels
+        && labels
+            .last()
+            .is_some_and(|top| !top.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
 fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     if config.process.name.trim().is_empty() {
         bail!("process.name must not be empty");
@@ -1253,10 +1281,16 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
                 scene.bind_ip()
             )
         })?;
-        if let Some(outer_ip) = &scene.outer_ip {
-            outer_ip.parse::<IpAddr>().with_context(|| {
-                format!("scene {} has invalid outerIp: {}", scene.name, outer_ip)
-            })?;
+        // outerIp 只是发给客户端的连接地址，进程不监听它；允许 IP 或域名（如 TLS 由 Nginx 终止）。
+        // outerIp is only advertised to clients and never bound; an IP or a DNS name (e.g. Nginx TLS) is valid.
+        if let Some(outer_ip) = &scene.outer_ip
+            && !is_client_host(outer_ip)
+        {
+            bail!(
+                "scene {} has invalid outerIp: {} (expected an IP address or a DNS host name without scheme, port or path)",
+                scene.name,
+                outer_ip
+            );
         }
         if scene.outer_port == Some(0) {
             bail!("scene {} outerPort must not be 0", scene.name);
@@ -1972,6 +2006,54 @@ mod tests {
         assert_eq!(serialized["outerIp"], "203.0.113.10");
         assert_eq!(serialized["outerPort"], 17_201);
         assert!(serialized.get("ip").is_none());
+    }
+
+    #[test]
+    fn outer_ip_accepts_ip_or_dns_name_but_not_urls() {
+        let config_with = |outer_ip: &str| -> RuntimeConfig {
+            serde_json::from_value(serde_json::json!({
+                "process": { "name": "cloud-gate" },
+                "scenes": [{
+                    "name": "gate_1", "sceneType": "Gate", "innerIp": "192.0.2.5",
+                    "bindIp": "0.0.0.0", "outerIp": outer_ip, "outerPort": 443, "port": 7201
+                }]
+            }))
+            .unwrap()
+        };
+        for valid in [
+            "203.0.113.10",
+            "2001:db8::1",
+            "game.example.com",
+            "gate-1.realm-2.example.com",
+            "localhost",
+        ] {
+            assert!(
+                validate_runtime_config(&config_with(valid)).is_ok(),
+                "{valid}"
+            );
+        }
+        let too_long = format!("{}.com", "a".repeat(250));
+        let long_label = format!("{}.example.com", "a".repeat(64));
+        for invalid in [
+            "",
+            "wss://game.example.com",
+            "game.example.com:443",
+            "game.example.com/ws",
+            "game example.com",
+            "-game.example.com",
+            "game-.example.com",
+            "game..example.com",
+            "game.example.com.",
+            "1.2.3",
+            "game_1.example.com",
+            too_long.as_str(),
+            long_label.as_str(),
+        ] {
+            let error = validate_runtime_config(&config_with(invalid))
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("invalid outerIp"), "{invalid}: {error}");
+        }
     }
 
     #[test]
