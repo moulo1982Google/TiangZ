@@ -1,4 +1,4 @@
-> 本轮发布：`v0.7.0` 正式版，在 v0.7.0-rc1 之上加入 Scene HTTP、outerIp 域名与异步结果唤醒。历史 RC 标签、测试资格和制品保持原身份；本次发布说明见 [RELEASE-v0.7.0.md](RELEASE-v0.7.0.md)。以后的缺陷按 0.7.x 小版本修补。
+> 本轮发布：`v0.7.0` 正式版，在 v0.7.0-rc1 之上加入 Scene HTTP 与 outerIp 域名。历史 RC 标签、测试资格和制品保持原身份；本次发布说明见 [RELEASE-v0.7.0.md](RELEASE-v0.7.0.md)。以后的缺陷按 0.7.x 小版本修补。
 
 # TiangZ
 [![verify](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml)

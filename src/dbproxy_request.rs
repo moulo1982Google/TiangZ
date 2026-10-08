@@ -11,7 +11,7 @@ use tokio::{
     time::{Instant, timeout_at},
 };
 
-struct OwnedRequest(JoinHandle<()>);
+struct OwnedRequest<T>(JoinHandle<Result<T, ClientError>>);
 
 static CLOCK_ORIGIN: OnceLock<std::time::Instant> = OnceLock::new();
 
@@ -57,7 +57,7 @@ pub(super) fn deadline(
     Ok(ceiling.min(Instant::from_std(requested)))
 }
 
-impl Drop for OwnedRequest {
+impl<T> Drop for OwnedRequest<T> {
     /// 调用方取消或期限结束时请求中止，已提交的业务副作用不因此回滚。 / Aborts work on caller cancellation or expiry without claiming committed effects were rolled back.
     fn drop(&mut self) {
         self.0.abort();
@@ -76,27 +76,13 @@ where
     Fut: Future<Output = Result<T, ClientError>> + Send + 'static,
 {
     check_deadline(deadline)?;
-    // Host 任务先把结果放进 oneshot，再叫醒 Process 主循环；V8 侧等 oneshot，保证主循环醒来时结果一定可取。
-    // 任务 panic 或被中止时发送端被丢弃，仍报告宿主任务终止；调用方取消时 `_request` 析构中止任务，语义不变。
-    // The host task stores the result in a oneshot before waking the Process loop; V8 awaits the oneshot so the
-    // result is always observable when the loop wakes. A panicking/aborted task drops the sender and still reports
-    // termination; caller cancellation drops `_request` and aborts the task as before.
-    let (sender, receiver) = tokio::sync::oneshot::channel();
-    let _request = OwnedRequest(runtime.spawn(async move {
-        // 析构逆序：发送端先于通知析构，panic 时也先让 V8 侧看到终止再叫醒。
-        // Reverse drop order: the sender drops before the notifier, so even a panic is observable before the wake.
-        let _wake = crate::host_wake::NotifyOnDrop;
-        let sender = sender;
-        let result = async {
-            check_deadline(deadline)?;
-            timeout_at(deadline, operation(deadline))
-                .await
-                .map_err(|_| ClientError::RequestTimeout)?
-        }
-        .await;
-        let _ = sender.send(result);
+    let mut request = OwnedRequest(runtime.spawn(async move {
+        check_deadline(deadline)?;
+        timeout_at(deadline, operation(deadline))
+            .await
+            .map_err(|_| ClientError::RequestTimeout)?
     }));
-    timeout_at(deadline, receiver)
+    timeout_at(deadline, &mut request.0)
         .await
         .map_err(|_| ClientError::RequestTimeout)?
         .map_err(|_| ClientError::UnexpectedResponse("DBProxy host task terminated"))?

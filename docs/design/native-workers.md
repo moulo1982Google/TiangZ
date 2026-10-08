@@ -8,8 +8,6 @@ Runtime 拥有 worker 与在途计数；Hotfix 提交额外等待所有 Native �
 
 模块名、worker 清单、Rust 源码进入已有 Native 构建指纹。worker 名称不能改变在线 Hotfix 身份。drain 只关闭指定 worker 的准入，不退出整个进程，但会影响同一 Process 中使用它的所有 Scene。独立多进程扩容仍通过 Scene RPC，框架不含战斗规则。
 
-2026-10-08：worker 交出结果后会叫醒空闲的 Process 主循环，结果不再等到下一个 idle tick（见[异步结果唤醒](async-result-wake.md)）。计算函数运行在专用线程，不能读写 V8 线程的实体存储：实体存储是线程局部变量，在 worker 线程访问不会报错，而是看到一份空数据。输入须在 V8 线程用同步 op 序列化成字符串，await 回来后再在 V8 线程写回；写回前数据可能已被其他 Handler、固定帧或实体销毁改变，需检查句柄代次或版本，或只用于输入一次、结果一次的自包含计算。ordered mailbox 下等待期间该 Actor 的后续消息排队，V8 不阻塞但该 Actor 变慢。
-
 每个 worker 是 Process 级资源；多个 Scene 共用同名 worker 时也共用容量与不可逆 drain，业务必须明确唯一所有者。交付计数依赖 Deno op metrics 的 V8 交付事件，Rust Future 完成不能释放屏障；宿主泵与微任务检查点后才允许提交。
 
 下段验证属于0.6.5上游提交的历史证据，不证明整合后的0.7制品已通过。0.7保留拆分后的Process、健康指标与连接RAII边界，独立验证结果见[源码对齐](v0.7-merge-0.6.5.md)。

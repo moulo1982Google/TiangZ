@@ -2,7 +2,7 @@
 
 ## 0.7.0 — 2026-10-08（正式版，标签 `v0.7.0`）
 
-在 `v0.7.0-rc1` 之上加入下列 Scene HTTP、outerIp 域名与异步结果唤醒，直接发布为正式版（不再发 rc2 的 GitHub 发布；已推送的底层仓库 `v0.7.0-rc2` 标签保留）。依赖改为固定标签：DBProxy `v0.7.0`（0.7.0，无代码改动）、Developer Tools `v0.16.1`（Core 0.16.1，含 HTTP Handler 热更规则，替代原先固定的 198afe8f 提交）、Native Language `v0.17.1`（Core 0.17.1，无代码改动）。两个工具仓库已有自己 2026-07 的旧 `v0.7.0` 标签，因此用各自版本号作标签。随包 AI 插件 0.3.0 用 Developer Core 0.16.1 重新构建 MCP。以后的缺陷按 0.7.x 小版本修补。
+在 `v0.7.0-rc1` 之上加入下列 Scene HTTP 与 outerIp 域名，直接发布为正式版（异步结果唤醒因 CI 发现断连问题未包含，见下）（不再发 rc2 的 GitHub 发布；已推送的底层仓库 `v0.7.0-rc2` 标签保留）。依赖改为固定标签：DBProxy `v0.7.0`（0.7.0，无代码改动）、Developer Tools `v0.16.1`（Core 0.16.1，含 HTTP Handler 热更规则，替代原先固定的 198afe8f 提交）、Native Language `v0.17.1`（Core 0.17.1，无代码改动）。两个工具仓库已有自己 2026-07 的旧 `v0.7.0` 标签，因此用各自版本号作标签。随包 AI 插件 0.3.0 用 Developer Core 0.16.1 重新构建 MCP。以后的缺陷按 0.7.x 小版本修补。
 
 注意：宿主为正式版 0.7.0 后，引擎范围上限写 `0.7.0` 的模块（如 `[0.6.x, 0.7.0)`）不再被接受（预发行 0.7.0-rc* 按 semver 小于 0.7.0，所以以前能过）。需要在 0.7 上运行的模块请把范围改为 `[0.7.0, 0.8.0)` 等。本仓库测试夹具已同样调整。
 
@@ -26,12 +26,9 @@
 
 - 0.7 集成复测：Windows 默认功能集 full 9/9、quick 35/35、TS 234 项、Rust 全目标 284 项通过；新增读体超时、执行许可保留、入站预算、监听监督和停机回收覆盖。初次夹具编译失败及复测证据见 `RELEASE-v0.7.0-rc1.md`。
 
-### 修正：异步结果唤醒
+### 未包含：异步结果唤醒
 
-- 空闲/低负载 Process 中，DBProxy、模块 Native worker、event_stream 的异步结果与 async Handler 回包不再多等一个 idle tick（Windows adaptive 实测约 60ms → 约 1ms）；worker 计算期间同进程其他请求不再因推进 JS 等计时器排队约 16ms。
-- 宿主内部修改：结果可取后叫醒主循环、推进 JS 不设计时器、Update 后补取 async 回包。协议、配置、Stable API、TS 写法不变；需重建宿主并重启。契约见 docs/design/async-result-wake.md。
-- 合入 0.7 集成线后完整矩阵首轮 full 8/9：`test:module-native-runtime` 生成的验收工程用 `#[path]` 单独引入 `native_worker.rs`，缺少它新调用的 `host_wake`，编译报 E0433。测试生成代码同时引入 `host_wake.rs` 后该项通过；产品代码未改。
-
+- 异步结果唤醒（DBProxy/Native worker/event_stream 结果到达后立即叫醒主循环）曾合入 0.7 集成线，但发布 PR 的 Windows/Linux CI 在 `test:hotfix-faults` 的控制入口满额场景 4 次失败 3 次：一条 Inner 连接在 65,536 个挂起 RPC 放行后被 host 断开（夹具报 `control ingress producer closed unexpectedly`）。rc1 与 HTTP 集成提交 43db49b5 的 CI 没有出现。推测是唤醒后每次少量回包各自成批，单连接出站队列（按批计数）在慢机器上先满，被当成慢连接关闭；未取得 host 日志，尚未确认。为不带已知断连风险发布，0.7.0 用 `git revert` 撤回该合并及其测试修正，修好后进 0.7.x。
 
 ## 0.6.5 — 模块异步 Native worker（2026-09-30，标签 `v0.6.5`）
 

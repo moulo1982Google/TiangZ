@@ -83,14 +83,8 @@ fn bridge() -> Result<Bridge, JsErrorBox> {
 impl Bridge {
     async fn execute(&self, ack: Option<String>) -> Result<Vec<Delivery>, JsErrorBox> {
         let owned = self.clone();
-        // 先把结果放进 oneshot 再叫醒 Process 主循环，空闲进程无需等到下一个 idle tick；任务丢弃发送端时仍报告 worker 停止。
-        // Store the result in a oneshot before waking the Process loop so an idle process need not wait a tick; a dropped sender still reports a stopped worker.
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        self.runtime.spawn(async move {
-            // 析构逆序：发送端先于通知析构，panic 时也先可见再叫醒。 / Reverse drop order keeps "observable, then wake" even on panic.
-            let _wake = crate::host_wake::NotifyOnDrop;
-            let sender = sender;
-            let result = async {
+        self.runtime
+            .spawn(async move {
                 let mut state = owned
                     .state
                     .try_lock()
@@ -173,11 +167,7 @@ impl Bridge {
                         ))
                     }
                 }
-            }
-            .await;
-            let _ = sender.send(result);
-        });
-        receiver
+            })
             .await
             .map_err(|_| JsErrorBox::generic("eventStream worker stopped"))?
     }

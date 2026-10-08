@@ -2,7 +2,7 @@
 
 本机 HTTP 合入验证（2026-10-07）：开发热更夹具依赖 INFO 完成日志，继承 `RUST_LOG=warn` 会误报等待超时。复测须显式 `RUST_LOG=info`，保留首次失败，不删除断言；见业务开发手册“本机验证日志环境”。
 
-2026-10-08（随 `v0.7.0` 正式版发布；与 Scene HTTP、outerIp 域名一起在 0.7 集成线合入）：异步结果交付不再等 idle tick。DBProxy、模块 Native worker、event_stream 在结果可取后经 `host_wake` 叫醒主循环（复用容量 1 的唤醒通道，另设待交付标志，队列为空也结束等待）；推进 JS 不再设 1ms 计时器（Windows 实测每次约 16ms），改为最多 2 轮不挂起轮询；Update 报告在途 async 任务时补跑微任务并再取一次回包。叫醒不在其他线程执行 JS，mailbox、Hotfix/停机屏障、固定帧与 Timer 语义不变；需重建宿主重启。契约与验证见[异步结果唤醒](../design/async-result-wake.md)。
+2026-10-08：异步结果唤醒未随 0.7.0 发布。发布 PR 的 CI 在热更故障矩阵控制入口满额场景 4 次失败 3 次（Inner 连接在大批回包时被断开），已从 0.7.0 撤回，修复后进 0.7.x；原分支见另一会话的 `release/v0.7.0-rc1` 克隆。
 
 源码落地：真实双亲合并`c06b244`已快进原`feat/v0.7`，原工作区Rust/KCP、Model/配置重建与真实模块宿主启动停止通过；该Host SHA3d390885...，日志`temp/v07-065-integration-main/`。与隔离Windows PE、Linux ELF分别记录，生成与依赖锁无漂移，未push；细节见[源码对齐](../design/v0.7-merge-0.6.5.md)。
 

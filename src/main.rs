@@ -17,7 +17,6 @@ mod event_stream;
 mod game_config;
 mod health;
 mod host;
-mod host_wake;
 mod hotfix;
 mod http_endpoint;
 mod inspector;
