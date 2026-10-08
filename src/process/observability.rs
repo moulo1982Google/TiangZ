@@ -681,6 +681,7 @@ pub(super) fn maybe_log_metrics(
             .as_ref()
             .map(|snapshot| snapshot.idle_closes)
             .unwrap_or_default(),
+        http: crate::http_endpoint::pending_snapshot(),
         remote_transport_overload_stages: remote_transport
             .as_ref()
             .map(|snapshot| {

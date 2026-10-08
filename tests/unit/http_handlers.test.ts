@@ -74,14 +74,20 @@ interface Reply {
 let replies: Map<number, Reply>;
 let delivered: boolean;
 const expiredRequests = new Set<number>();
-const discardedRequests = new Set<number>();
+/** 请求号 → 丢弃时声明的 executed。 / Request id → the executed flag declared on discard. */
+const discardedRequests = new Map<number, boolean>();
 
 beforeEach(() => {
   replies = new Map();
   delivered = true;
   (globalThis as { __hostHttp?: unknown }).__hostHttp = {
     isPending: (requestId: number) => !expiredRequests.has(requestId),
-    discard: (requestId: number) => { discardedRequests.add(requestId); },
+    // 与 Rust 回复表一致：已回复或已丢弃的请求再次丢弃为空操作。 / Mirrors the Rust table: discarding a settled request is a no-op.
+    discard(requestId: number, executed: boolean): boolean {
+      if (replies.has(requestId) || discardedRequests.has(requestId)) return false;
+      discardedRequests.set(requestId, executed);
+      return true;
+    },
     respond(requestId: number, status: number, headersJson: string, body: Uint8Array): boolean {
       // 与 Rust op 一致：非法状态码抛 TypeError，请求保持等待。 / Mirrors the Rust op: invalid status throws.
       if (status < 200 || status > 599) throw new TypeError(`HTTP status ${status} must be between 200 and 599`);
@@ -225,11 +231,12 @@ test("expired queued requests never execute and disposal releases queued admissi
     runtime.pushHostHttpRequest(0, 31, encodeRequest("GET", "/status"));
     await settle(runtime);
     expect(replies.has(30)).toBe(false);
-    expect(discardedRequests.has(30)).toBe(true);
+    expect(discardedRequests.get(30)).toBe(false);
     expect(replies.get(31)?.body).toBe('{"hits":"1","name":null}');
     runtime.pushHostHttpRequest(0, 32, encodeRequest("GET", "/status"));
     await runtime.stop();
-    expect(discardedRequests.has(32)).toBe(true);
+    // 关闭时仍在排队的请求从未执行，调用方应得到可重试的 503。 / Still-queued requests at close never ran, so callers get a retryable 503.
+    expect(discardedRequests.get(32)).toBe(false);
   });
 });
 
@@ -248,7 +255,9 @@ test("an executing request retains admission after caller timeout until its real
     finishHeldRequest!();
     await settle(runtime);
     expect(replies.get(40)?.status).toBe(200);
-    expect(discardedRequests.has(40)).toBe(true);
+    // 真实完成即交回回复并释放名额；随后的回收为空操作，不会被当成“已执行无回复”。
+    // Real completion replies and releases the slot; the later release is a no-op, not "executed without reply".
+    expect(discardedRequests.has(40)).toBe(false);
   });
 });
 void HeldHandler;

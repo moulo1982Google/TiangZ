@@ -198,7 +198,7 @@ function decodeQueryComponent(value: string): string {
 interface HostHttpBridge {
   respond(requestId: number, status: number, headersJson: string, body: Uint8Array): boolean;
   isPending(requestId: number): boolean;
-  discard(requestId: number): void;
+  discard(requestId: number, executed: boolean): boolean;
 }
 
 /** 仅在开始业务前检查调用方是否仍等待。 / Checks caller interest only before starting business work. */
@@ -206,9 +206,15 @@ export function isHttpRequestPending(requestId: number): boolean {
   return hostHttp().isPending(requestId);
 }
 
-/** 丢弃未执行节点或释放已完成请求，不能取消正在运行的业务。 / Discards unstarted work or releases completed work, never cancels running business. */
-export function discardHttpRequest(requestId: number): void {
-  hostHttp().discard(requestId);
+/**
+ * 结束没有回复的请求并释放名额，不能取消正在运行的业务；已回复的请求为空操作。
+ * `executed` 必须如实：未执行时调用方得到 503（可重试），已执行却没回复时得到 500。
+ * Ends a request that has no reply and releases its slot, never cancelling running business; a no-op
+ * once replied. `executed` must be truthful: callers get 503 (retryable) when never executed and 500
+ * when executed without a reply.
+ */
+export function discardHttpRequest(requestId: number, executed: boolean): void {
+  hostHttp().discard(requestId, executed);
 }
 
 /**

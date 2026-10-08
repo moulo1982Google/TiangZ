@@ -43,6 +43,10 @@ const MAX_RESPONSE_HEADERS: usize = 64;
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// 写出连续无进展的期限。 / Bound on a write making no progress.
 const WRITE_STALL_TIMEOUT: Duration = Duration::from_secs(10);
+/// 停机等待结果时，在排空期限前留给写回 504 的时间。 / Time kept before the drain deadline to write a 504 while stopping.
+const SHUTDOWN_REPLY_MARGIN: Duration = Duration::from_millis(200);
+/// busy 时“名额被已离开调用方占用”告警的最小间隔。 / Minimum interval between busy-with-detached warnings.
+const BUSY_WARNING_INTERVAL: Duration = Duration::from_secs(10);
 /// 每连接读缓冲软上限（hyper 可多读一次），请求头远超时返回 431；与 maxConnections 一起限定连接内存。
 /// Soft per-connection read buffer cap (hyper may overshoot by one read); far larger heads get 431.
 /// Together with maxConnections it bounds connection memory.
@@ -95,8 +99,28 @@ impl PendingTable {
 }
 
 struct PendingRequest {
+    scene_index: u32,
     sender: Option<oneshot::Sender<HttpReply>>,
+    /// 调用方离开（超时、断开或停机）但业务仍占许可的起点。 / When the caller left while business still holds the permit.
+    detached_at: Option<std::time::Instant>,
     _permit: OwnedSemaphorePermit,
+}
+
+impl PendingRequest {
+    fn detach(&mut self) {
+        if self.sender.take().is_some() {
+            self.detached_at = Some(std::time::Instant::now());
+        }
+    }
+}
+
+/// 回复表观测：占用执行许可的请求、其中调用方已离开的数量与最久时长。
+/// Reply-table observation: requests holding permits, how many lost their caller, and the oldest age.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct HttpPendingSnapshot {
+    pub(crate) in_flight: u64,
+    pub(crate) detached: u64,
+    pub(crate) oldest_detached_ms: u64,
 }
 
 /// 入队前取消释放整个登记；成功入队后取消只关闭回复，不能取消业务或归还许可。
@@ -111,10 +135,12 @@ impl Drop for ResponseWaiter {
     fn drop(&mut self) {
         if self.submitted {
             if let Some(entry) = self.pending.lock().entries.get_mut(&self.request_id) {
-                entry.sender.take();
+                entry.detach();
             }
         } else {
-            self.pending.discard(self.request_id);
+            // 未入队时调用方已在本函数返回路径上，直接撤销登记，不发送回复。
+            // Before enqueue the caller is on this return path, so just revoke the registration.
+            self.pending.lock().entries.remove(&self.request_id);
         }
     }
 }
@@ -124,6 +150,7 @@ impl HttpPendingRequests {
     /// Allocates an id and registers under one lock, so it never collides with a live request.
     fn register(
         &self,
+        scene_index: u32,
         permit: OwnedSemaphorePermit,
     ) -> (u64, oneshot::Receiver<HttpReply>, ResponseWaiter) {
         let (sender, receiver) = oneshot::channel();
@@ -132,7 +159,9 @@ impl HttpPendingRequests {
         table.entries.insert(
             request_id,
             PendingRequest {
+                scene_index,
                 sender: Some(sender),
+                detached_at: None,
                 _permit: permit,
             },
         );
@@ -157,10 +186,24 @@ impl HttpPendingRequests {
             .is_some_and(|sender| !sender.is_closed())
     }
 
-    /// 仅用于保证不会执行的排队工作；不得用于取消运行中的 Handler。
-    /// Only for queued work guaranteed never to execute, not for cancelling a running handler.
-    fn discard(&self, request_id: u64) -> bool {
-        self.lock().entries.remove(&request_id).is_some()
+    /// 结束一个没有回复的登记并释放许可；不能取消运行中的 Handler。调用方仍在等待时如实告知结果：
+    /// 未执行返回 503（可安全重试），已执行却没有回复返回 500。
+    /// Ends a registration that produced no reply and releases its permit; never cancels a running
+    /// handler. A still-waiting caller learns the truth: 503 when never executed (safe to retry), 500
+    /// when executed without a reply.
+    fn discard(&self, request_id: u64, executed: bool) -> bool {
+        let Some(entry) = self.lock().entries.remove(&request_id) else {
+            return false;
+        };
+        if let Some(sender) = entry.sender {
+            let reply = if executed {
+                error_reply(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
+            } else {
+                error_reply(StatusCode::SERVICE_UNAVAILABLE, "not executed")
+            };
+            let _ = sender.send(reply);
+        }
+        true
     }
 
     /// 交付回复；请求已超时或已停机时返回 false，回复被丢弃。
@@ -177,8 +220,32 @@ impl HttpPendingRequests {
     /// 监听停止只关闭回复，不提前释放仍可能执行的业务。 / Listener shutdown closes replies without releasing execution permits.
     fn close_response_senders(&self) {
         for entry in self.lock().entries.values_mut() {
-            entry.sender.take();
+            entry.detach();
         }
+    }
+
+    fn snapshot(&self) -> HttpPendingSnapshot {
+        let table = self.lock();
+        let now = std::time::Instant::now();
+        let mut snapshot = HttpPendingSnapshot {
+            in_flight: table.entries.len() as u64,
+            ..Default::default()
+        };
+        for detached_at in table.entries.values().filter_map(|entry| entry.detached_at) {
+            snapshot.detached += 1;
+            let age = now.saturating_duration_since(detached_at).as_millis() as u64;
+            snapshot.oldest_detached_ms = snapshot.oldest_detached_ms.max(age);
+        }
+        snapshot
+    }
+
+    /// 某 Scene 中调用方已离开却仍占许可的请求数。 / Requests of one Scene still holding permits after their caller left.
+    fn detached_in_scene(&self, scene_index: u32) -> usize {
+        self.lock()
+            .entries
+            .values()
+            .filter(|entry| entry.scene_index == scene_index && entry.detached_at.is_some())
+            .count()
     }
 
     /// 仅在 Runtime 已终止、事件不可能再执行后调用。 / Call only after runtime termination makes further execution impossible.
@@ -202,6 +269,12 @@ pub(crate) fn configure(pending: HttpPendingRequests) {
     HTTP_PENDING.with(|slot| *slot.borrow_mut() = Some(pending));
 }
 
+/// 供 V8 线程的观测采样读取；进程未配置 HTTP 时为 None，不输出指标。
+/// Read by observability sampling on the V8 thread; None (no metrics) when the Process has no HTTP.
+pub(crate) fn pending_snapshot() -> Option<HttpPendingSnapshot> {
+    HTTP_PENDING.with(|slot| slot.borrow().as_ref().map(HttpPendingRequests::snapshot))
+}
+
 fn configured_pending() -> Result<HttpPendingRequests, JsErrorBox> {
     HTTP_PENDING
         .with(|slot| slot.borrow().clone())
@@ -214,10 +287,12 @@ fn op_host_http_is_pending(request_id: u32) -> Result<bool, JsErrorBox> {
     Ok(configured_pending()?.is_pending(request_id as u64))
 }
 
-/// 终结未执行节点，重复调用返回 false。 / Settles an unexecuted node; repeated calls return false.
+/// 终结没有回复的节点；`executed` 区分未执行（503）与已执行无回复（500）。重复调用返回 false。
+/// Settles a node without a reply; `executed` separates never-run (503) from ran-without-reply (500).
+/// Repeated calls return false.
 #[op2(fast)]
-fn op_host_http_discard(request_id: u32) -> Result<bool, JsErrorBox> {
-    Ok(configured_pending()?.discard(request_id as u64))
+fn op_host_http_discard(request_id: u32, executed: bool) -> Result<bool, JsErrorBox> {
+    Ok(configured_pending()?.discard(request_id as u64, executed))
 }
 
 /// 交回一个 HTTP 请求的结果。输入非法时抛错且请求保持等待，TS 可以改发 500；
@@ -317,7 +392,7 @@ Object.defineProperty(globalThis, "__hostHttp", {
   value: Object.freeze({
     respond: (requestId, status, headersJson, body) => respondOp(requestId, status, headersJson, body),
     isPending: (requestId) => isPendingOp(requestId),
-    discard: (requestId) => discardOp(requestId),
+    discard: (requestId, executed) => discardOp(requestId, executed === true),
   }),
   writable: false,
   configurable: false,
@@ -408,6 +483,7 @@ struct EndpointState {
     /// Live-connection permits, taken after accept and before spawning, released when the task ends.
     connections: Arc<Semaphore>,
     write_stall_timeout: Duration,
+    last_busy_warning: Mutex<Option<std::time::Instant>>,
     shutdown: watch::Receiver<Option<tokio::time::Instant>>,
 }
 
@@ -452,6 +528,17 @@ fn start_http_endpoints_with_env(
             }
             None => None,
         };
+        // 公开接口（如返回 Login 地址）可以不鉴权，因此只告警不拒绝；工具与运维接口应配置令牌。
+        // Public endpoints (such as returning the Login address) may be anonymous, so warn instead of
+        // refusing; tool and operations endpoints should configure a token.
+        if expected_authorization.is_none() && !is_loopback_bind(config.bind_ip(scene)) {
+            tracing::warn!(
+                target: "tiangz::http",
+                scene = %scene.name,
+                bind_ip = config.bind_ip(scene),
+                "scene http endpoint accepts unauthenticated requests on a non-loopback address; set http.authTokenEnv unless the routes are meant to be public"
+            );
+        }
         let address = format!("{}:{}", config.bind_ip(scene), config.port);
         let listener = std::net::TcpListener::bind(&address)
             .with_context(|| format!("scene {} failed to bind http {address}", scene.name))?;
@@ -473,6 +560,7 @@ fn start_http_endpoints_with_env(
             in_flight: Arc::new(Semaphore::new(config.max_in_flight)),
             connections: Arc::new(Semaphore::new(config.max_connections())),
             write_stall_timeout: WRITE_STALL_TIMEOUT,
+            last_busy_warning: Mutex::new(None),
             shutdown: shutdown.subscribe(),
         });
         prepared.push((listener, state));
@@ -489,6 +577,13 @@ fn start_http_endpoints_with_env(
     })
 }
 
+/// 配置校验已保证地址可解析；解析失败按非回环处理。 / Validation guarantees a parsable address; failures count as non-loopback.
+fn is_loopback_bind(bind_ip: &str) -> bool {
+    bind_ip
+        .parse::<std::net::IpAddr>()
+        .is_ok_and(|ip| ip.is_loopback())
+}
+
 async fn run_listener(
     listener: TcpListener,
     state: Arc<EndpointState>,
@@ -503,7 +598,12 @@ async fn run_listener(
             biased;
             deadline = wait_for_shutdown(&mut shutdown) => break Ok(deadline),
             result = connections.join_next(), if !connections.is_empty() => {
-                if let Some(Err(error)) = result { break Err(format!("connection task failed: {error}")); }
+                // 单个连接 panic 只结束该连接，其许可与登记随 unwind 释放；运维端口不应因此停掉整个进程。
+                // A connection panic ends only that connection and unwinding releases its permits and
+                // registration; an operations port must not stop the whole process for it.
+                if let Some(Err(error)) = result {
+                    tracing::error!(target: "tiangz::http", scene = %state.scene_name, %error, "http connection task failed");
+                }
             },
             accepted = listener.accept() => match accepted {
                 Ok((stream, peer)) => {
@@ -712,18 +812,12 @@ async fn handle_request(
     state: &EndpointState,
 ) -> Response<Full<Bytes>> {
     let allowed_origin = allowed_origin(&state.config, request.headers());
-    let mut shutdown = state.shutdown.clone();
-    let mut response = if request.method() == Method::OPTIONS
-        && !state.config.cors_allow_origins.is_empty()
-    {
-        preflight_response(request.headers(), allowed_origin.is_some())
-    } else {
-        tokio::select! {
-            biased;
-            _ = wait_for_shutdown(&mut shutdown) => error_response(StatusCode::SERVICE_UNAVAILABLE, "stopping"),
-            response = dispatch_request(request, peer, state) => response,
-        }
-    };
+    let mut response =
+        if request.method() == Method::OPTIONS && !state.config.cors_allow_origins.is_empty() {
+            preflight_response(request.headers(), allowed_origin.is_some())
+        } else {
+            dispatch_request(request, peer, state).await
+        };
     let headers = response.headers_mut();
     if let Some(origin) = allowed_origin {
         headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, origin);
@@ -769,6 +863,7 @@ async fn dispatch_request(
         return error_response(StatusCode::SERVICE_UNAVAILABLE, "not ready");
     }
     let Ok(permit) = Arc::clone(&state.in_flight).try_acquire_owned() else {
+        warn_busy_with_detached(state);
         return error_response(StatusCode::SERVICE_UNAVAILABLE, "busy");
     };
     let deadline =
@@ -784,7 +879,14 @@ async fn dispatch_request(
         return error_response(StatusCode::PAYLOAD_TOO_LARGE, "body too large");
     }
     let (parts, body) = request.into_parts();
-    let body = match tokio::time::timeout_at(deadline, Limited::new(body, limit).collect()).await {
+    let mut shutdown = state.shutdown.clone();
+    let collect = tokio::time::timeout_at(deadline, Limited::new(body, limit).collect());
+    let collected = tokio::select! {
+        biased;
+        _ = wait_for_shutdown(&mut shutdown) => return error_response(StatusCode::SERVICE_UNAVAILABLE, "stopping"),
+        collected = collect => collected,
+    };
+    let body = match collected {
         Ok(Ok(collected)) => collected.to_bytes(),
         Ok(Err(error)) if error.is::<http_body_util::LengthLimitError>() => {
             return error_response(StatusCode::PAYLOAD_TOO_LARGE, "body too large");
@@ -809,8 +911,12 @@ async fn dispatch_request(
     forward_to_scene(state, payload, permit, deadline).await
 }
 
-/// 超时只停止等待；许可转入执行表，直到 TS 完成或丢弃节点。
-/// Timeout only stops waiting; the execution table holds admission until TS completes or discards.
+/// 状态码约定：入队前拒绝为 503（未执行，可重试）；入队后由回复表给出真实结果（含丢弃时的 503/500）；
+/// 等待因期限或停机结束而结果未知时为 504。超时只停止等待，许可留在执行表直到 TS 完成或丢弃节点。
+/// Status contract: rejection before enqueue is 503 (never executed, retryable); after enqueue the reply
+/// table reports the real outcome (including 503/500 on discard); a wait that ends by deadline or
+/// shutdown with an unknown outcome is 504. Timeout only stops waiting; the permit stays in the table
+/// until TS completes or discards the node.
 async fn forward_to_scene(
     state: &EndpointState,
     payload: Bytes,
@@ -818,10 +924,12 @@ async fn forward_to_scene(
     deadline: tokio::time::Instant,
 ) -> Response<Full<Bytes>> {
     let ingress = &state.ingress;
-    if tokio::time::Instant::now() >= deadline {
-        return error_response(StatusCode::GATEWAY_TIMEOUT, "request timeout");
+    let mut shutdown = state.shutdown.clone();
+    if tokio::time::Instant::now() >= deadline || shutdown.borrow().is_some() {
+        return error_response(StatusCode::SERVICE_UNAVAILABLE, "not executed");
     }
-    let (request_id, receiver, mut waiter) = ingress.pending.register(permit);
+    let (request_id, mut receiver, mut waiter) =
+        ingress.pending.register(state.scene_index, permit);
     let event = ProcessEvent::HttpRequest {
         scene_index: state.scene_index,
         request_id,
@@ -833,9 +941,26 @@ async fn forward_to_scene(
         return error_response(StatusCode::SERVICE_UNAVAILABLE, "overloaded");
     }
     waiter.submitted = true;
-    match tokio::time::timeout_at(deadline, receiver).await {
+    let mut stopping = false;
+    let outcome = tokio::select! {
+        biased;
+        outcome = tokio::time::timeout_at(deadline, &mut receiver) => outcome,
+        stop_deadline = wait_for_shutdown(&mut shutdown) => {
+            // 停机时继续等待真实结果（TS 可能完成或丢弃节点），但要在连接被强制排空前留出写回时间。
+            // While stopping keep waiting for the real outcome (TS may finish or discard the node), but
+            // leave time to write the reply before connections are forcibly drained.
+            stopping = true;
+            let respond_by = stop_deadline
+                .checked_sub(SHUTDOWN_REPLY_MARGIN)
+                .unwrap_or(stop_deadline)
+                .min(deadline);
+            tokio::time::timeout_at(respond_by, &mut receiver).await
+        }
+    };
+    match outcome {
         Ok(Ok(reply)) => reply_response(reply),
-        Ok(Err(_)) => error_response(StatusCode::SERVICE_UNAVAILABLE, "stopping"),
+        Ok(Err(_)) => error_response(StatusCode::GATEWAY_TIMEOUT, "result unknown"),
+        Err(_) if stopping => error_response(StatusCode::GATEWAY_TIMEOUT, "result unknown"),
         Err(_) => {
             tracing::warn!(
                 target: "tiangz::http",
@@ -846,6 +971,33 @@ async fn forward_to_scene(
             );
             error_response(StatusCode::GATEWAY_TIMEOUT, "handler timeout")
         }
+    }
+}
+
+/// 名额被调用方已离开的请求占用时限频告警；这些请求只能等 Handler 真实结束或进程重启才归还名额。
+/// Rate-limited warning when permits are held by requests whose caller left; they return only when
+/// the handler really finishes or the process restarts.
+fn warn_busy_with_detached(state: &EndpointState) {
+    let now = std::time::Instant::now();
+    {
+        let mut last = state
+            .last_busy_warning
+            .lock()
+            .expect("http busy warning poisoned");
+        if last.is_some_and(|last| now.duration_since(last) < BUSY_WARNING_INTERVAL) {
+            return;
+        }
+        *last = Some(now);
+    }
+    let detached = state.ingress.pending.detached_in_scene(state.scene_index);
+    if detached > 0 {
+        tracing::warn!(
+            target: "tiangz::http",
+            scene = %state.scene_name,
+            detached,
+            max_in_flight = state.config.max_in_flight,
+            "http busy: permits held by handlers whose callers already left; check for handlers that never settle"
+        );
     }
 }
 
@@ -938,14 +1090,20 @@ fn reply_response(reply: HttpReply) -> Response<Full<Bytes>> {
 }
 
 fn error_response(status: StatusCode, error: &str) -> Response<Full<Bytes>> {
+    reply_response(error_reply(status, error))
+}
+
+/// 宿主生成的 `{"error": ...}` 回复，与 TS `sendHttpError` 格式一致。 / Host-made `{"error": ...}` reply, same shape as TS `sendHttpError`.
+fn error_reply(status: StatusCode, error: &str) -> HttpReply {
     let body = serde_json::to_vec(&serde_json::json!({ "error": error })).unwrap_or_default();
-    let mut response = Response::new(Full::new(Bytes::from(body)));
-    *response.status_mut() = status;
-    response.headers_mut().insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("application/json; charset=utf-8"),
-    );
-    response
+    HttpReply {
+        status,
+        headers: vec![(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json; charset=utf-8"),
+        )],
+        body: Bytes::from(body),
+    }
 }
 
 #[cfg(test)]
@@ -972,12 +1130,13 @@ mod tests {
         let pending = HttpPendingRequests::default();
         let permits = Arc::new(Semaphore::new(1));
         let (id, mut receiver, _waiter) =
-            pending.register(permits.clone().try_acquire_owned().unwrap());
+            pending.register(0, permits.clone().try_acquire_owned().unwrap());
         let reply = || build_reply(200, "[]", b"").unwrap();
         assert!(pending.complete(id, reply()));
         assert!(!pending.complete(id, reply()));
         assert_eq!(receiver.try_recv().unwrap().status, StatusCode::OK);
-        let (_, receiver, _waiter) = pending.register(permits.clone().try_acquire_owned().unwrap());
+        let (_, receiver, _waiter) =
+            pending.register(0, permits.clone().try_acquire_owned().unwrap());
         pending.clear();
         assert!(receiver.blocking_recv().is_err());
         assert_eq!(permits.available_permits(), 1);
@@ -987,7 +1146,8 @@ mod tests {
     fn waiter_cancellation_preserves_only_submitted_execution() {
         let pending = HttpPendingRequests::default();
         let permits = Arc::new(Semaphore::new(1));
-        let (id, receiver, waiter) = pending.register(permits.clone().try_acquire_owned().unwrap());
+        let (id, receiver, waiter) =
+            pending.register(0, permits.clone().try_acquire_owned().unwrap());
         assert!(pending.is_pending(id));
         drop(waiter);
         assert_eq!(permits.available_permits(), 1);
@@ -995,7 +1155,7 @@ mod tests {
         assert_eq!(pending.len(), 0);
 
         let (id, receiver, mut waiter) =
-            pending.register(permits.clone().try_acquire_owned().unwrap());
+            pending.register(0, permits.clone().try_acquire_owned().unwrap());
         waiter.submitted = true;
         drop(receiver);
         assert!(
@@ -1006,7 +1166,7 @@ mod tests {
         assert_eq!(permits.available_permits(), 0);
         assert!(!pending.complete(id, build_reply(200, "[]", b"late").unwrap()));
         assert_eq!(permits.available_permits(), 1);
-        assert!(!pending.discard(id));
+        assert!(!pending.discard(id, false));
     }
 
     #[test]
@@ -1014,13 +1174,13 @@ mod tests {
         let pending = HttpPendingRequests::default();
         let permits = Arc::new(Semaphore::new(3));
         let permit = || permits.clone().try_acquire_owned().unwrap();
-        let (first, _first_receiver, _first_waiter) = pending.register(permit());
+        let (first, _first_receiver, _first_waiter) = pending.register(0, permit());
         assert_eq!(first, 1);
         pending.lock().last_id = u32::MAX - 1;
-        let (last, _last_receiver, _last_waiter) = pending.register(permit());
+        let (last, _last_receiver, _last_waiter) = pending.register(0, permit());
         assert_eq!(last, u64::from(u32::MAX));
         // 回绕后跳过仍在途的 1，不重号也不报耗尽。 / After wrapping, live id 1 is skipped instead of reused or exhausted.
-        let (wrapped, _wrapped_receiver, _wrapped_waiter) = pending.register(permit());
+        let (wrapped, _wrapped_receiver, _wrapped_waiter) = pending.register(0, permit());
         assert_eq!(wrapped, 2);
         assert_eq!(pending.len(), 3);
     }
@@ -1030,9 +1190,9 @@ mod tests {
         let pending = HttpPendingRequests::default();
         let permits = Arc::new(Semaphore::new(2));
         let (first_id, first, mut first_waiter) =
-            pending.register(permits.clone().try_acquire_owned().unwrap());
+            pending.register(0, permits.clone().try_acquire_owned().unwrap());
         let (_, second, mut second_waiter) =
-            pending.register(permits.clone().try_acquire_owned().unwrap());
+            pending.register(0, permits.clone().try_acquire_owned().unwrap());
         first_waiter.submitted = true;
         second_waiter.submitted = true;
         pending.close_response_senders();
@@ -1040,8 +1200,8 @@ mod tests {
         assert!(second.blocking_recv().is_err());
         assert!(!pending.is_pending(first_id));
         assert_eq!(permits.available_permits(), 0);
-        assert!(pending.discard(first_id));
-        assert!(!pending.discard(first_id));
+        assert!(pending.discard(first_id, false));
+        assert!(!pending.discard(first_id, false));
         assert_eq!(permits.available_permits(), 1);
         pending.clear();
         assert_eq!(permits.available_permits(), 2);
@@ -1061,7 +1221,7 @@ mod tests {
             .unwrap();
         // 新表从 1 开始分配，脚本中的编号与之对应。 / A fresh table allocates from 1, matching the ids in the scripts.
         let (id, mut receiver, mut waiter) =
-            pending.register(permits.clone().try_acquire_owned().unwrap());
+            pending.register(0, permits.clone().try_acquire_owned().unwrap());
         assert_eq!(id, 1);
         waiter.submitted = true;
         runtime.execute_script("invalid-http-reply", r#"
@@ -1083,7 +1243,7 @@ mod tests {
         assert_eq!(permits.available_permits(), 1);
 
         let (id, receiver, mut waiter) =
-            pending.register(permits.clone().try_acquire_owned().unwrap());
+            pending.register(0, permits.clone().try_acquire_owned().unwrap());
         assert_eq!(id, 2);
         waiter.submitted = true;
         drop(receiver);
@@ -1175,6 +1335,7 @@ mod tests {
             in_flight: Arc::new(Semaphore::new(1)),
             connections: Arc::new(Semaphore::new(4)),
             write_stall_timeout: WRITE_STALL_TIMEOUT,
+            last_busy_warning: Mutex::new(None),
             shutdown,
         })
     }
@@ -1216,7 +1377,7 @@ mod tests {
         assert!(task.await.unwrap_err().is_cancelled());
         assert!(!state.ingress.pending.is_pending(request_id));
         assert_eq!(state.in_flight.available_permits(), 0);
-        assert!(state.ingress.pending.discard(request_id));
+        assert!(state.ingress.pending.discard(request_id, false));
         assert_eq!(state.in_flight.available_permits(), 1);
     }
 
@@ -1463,7 +1624,14 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(String::from_utf8_lossy(&bytes).starts_with("HTTP/1.1 503"));
+        // 已入队却没有结果的请求结果未知，返回 504 而不是可重试的 503。
+        // A queued request without an outcome is unknown, so it gets 504 rather than a retryable 503.
+        let active_response = String::from_utf8_lossy(&bytes).into_owned();
+        assert!(
+            active_response.starts_with("HTTP/1.1 504")
+                && active_response.contains("result unknown"),
+            "{active_response}"
+        );
         let mut bytes = Vec::new();
         // EOF 或 reset 都表示 Socket 已关闭；允许 Hyper 先写错误响应。
         // EOF or reset both prove closure; Hyper may write an error response first.
@@ -1479,6 +1647,79 @@ mod tests {
                 .complete(request_id, build_reply(200, "[]", b"").unwrap())
         );
         assert_eq!(state.in_flight.available_permits(), 1);
+    }
+
+    /// 停机期间 TS 丢弃未执行节点时，调用方得到真实的 503 而不是 504。
+    /// When TS discards an unexecuted node during shutdown, the caller gets the true 503, not 504.
+    #[tokio::test]
+    async fn shutdown_waits_for_real_outcome_of_queued_request() {
+        let port = free_port();
+        let (ingress, receiver) = test_ingress();
+        let endpoints = start_http_endpoints(
+            &[scene_with_http(port, serde_json::json!({ "port": 1 }))],
+            &ingress,
+        )
+        .unwrap();
+        let mut active = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        active
+            .write_all(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        let ProcessEvent::HttpRequest { request_id, .. } = next_event(&receiver).await else {
+            panic!("expected HTTP event");
+        };
+        endpoints.request_stop(tokio::time::Instant::now() + Duration::from_secs(5));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(ingress.pending.discard(request_id, false));
+        let mut bytes = Vec::new();
+        tokio::time::timeout(Duration::from_secs(2), active.read_to_end(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap();
+        let response = String::from_utf8_lossy(&bytes);
+        assert!(
+            response.starts_with("HTTP/1.1 503") && response.contains("not executed"),
+            "{response}"
+        );
+        endpoints.stop(Duration::from_secs(2)).await.unwrap();
+    }
+
+    #[test]
+    fn discard_reports_whether_the_handler_ran_and_tracks_detached_requests() {
+        let pending = HttpPendingRequests::default();
+        let permits = Arc::new(Semaphore::new(4));
+        let permit = || permits.clone().try_acquire_owned().unwrap();
+        for (executed, status) in [
+            (false, StatusCode::SERVICE_UNAVAILABLE),
+            (true, StatusCode::INTERNAL_SERVER_ERROR),
+        ] {
+            let (id, mut receiver, mut waiter) = pending.register(0, permit());
+            waiter.submitted = true;
+            assert!(pending.discard(id, executed));
+            assert_eq!(receiver.try_recv().unwrap().status, status);
+            drop(waiter);
+        }
+        assert_eq!(permits.available_permits(), 4);
+
+        let (_, _, live_waiter) = pending.register(1, permit());
+        let (detached_id, detached_receiver, mut detached_waiter) = pending.register(1, permit());
+        detached_waiter.submitted = true;
+        drop(detached_receiver);
+        drop(detached_waiter);
+        let (_, _, mut other_waiter) = pending.register(2, permit());
+        other_waiter.submitted = true;
+        drop(other_waiter);
+        std::thread::sleep(Duration::from_millis(5));
+        let snapshot = pending.snapshot();
+        assert_eq!((snapshot.in_flight, snapshot.detached), (3, 2));
+        assert!(snapshot.oldest_detached_ms >= 5, "{snapshot:?}");
+        assert_eq!(pending.detached_in_scene(1), 1);
+        assert_eq!(pending.detached_in_scene(2), 1);
+        // 已离开的调用方不再收到回复，但许可直到丢弃才归还。 / A departed caller gets no reply, but the permit returns only on discard.
+        assert!(pending.discard(detached_id, true));
+        assert_eq!(pending.snapshot().detached, 1);
+        drop(live_waiter);
+        assert_eq!(pending.snapshot().in_flight, 1);
     }
 
     #[test]

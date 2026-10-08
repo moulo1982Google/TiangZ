@@ -1135,11 +1135,19 @@ async fn run_runtime_config_with_backend(
     let runtime_health = Arc::clone(&health_state);
     let host_runtime = tokio::runtime::Handle::current();
     let (runtime_exit_tx, mut runtime_exit_rx) = tokio::sync::oneshot::channel();
-    let runtime_http_pending = http_pending.clone();
+    // 只有配置了 HTTP 的进程才安装回复表，未配置时不输出 HTTP 指标。
+    // Only Processes with HTTP install the reply table, so others emit no HTTP metrics.
+    let runtime_http_pending = config
+        .scenes
+        .iter()
+        .any(|scene| scene.http.is_some())
+        .then(|| http_pending.clone());
     let runtime_thread = thread::spawn(move || {
         // HTTP 回复 op 在 V8 线程读取回复表，必须在本线程安装。
         // The HTTP reply op reads the table on the V8 thread, so it is installed on this thread.
-        crate::http_endpoint::configure(runtime_http_pending);
+        if let Some(pending) = runtime_http_pending {
+            crate::http_endpoint::configure(pending);
+        }
         let result = run_process_runtime(
             project_root,
             process,

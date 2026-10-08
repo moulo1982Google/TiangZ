@@ -622,7 +622,7 @@ export abstract class EntryScene extends Scene {
     this.controlIngress.length = 0;
     for (let index = this.dataIngressHead; index < this.dataIngress.length; index += 1) {
       const item = this.dataIngress[index];
-      if (item?.kind === "http") discardHttpRequest(item.requestId);
+      if (item?.kind === "http") discardHttpRequest(item.requestId, false);
     }
     this.dataIngress.length = 0;
     this.controlIngressHead = this.dataIngressHead = 0;
@@ -685,7 +685,7 @@ export abstract class EntryScene extends Scene {
   }
 
   pushHostHttpRequest(requestId: number, payload: Uint8Array): void {
-    if (this.mailboxClosed) { discardHttpRequest(requestId); return; }
+    if (this.mailboxClosed) { discardHttpRequest(requestId, false); return; }
     this.enqueueIngress({
       kind: "http",
       controlPending: false,
@@ -1059,11 +1059,14 @@ export abstract class EntryScene extends Scene {
       const item = this.dequeueIngress()!;
       // 将确认转交实际 mailbox 节点；回收回调不捕获整个入站帧，普通数据不创建确认。 / Transfers acknowledgement to the actual mailbox node without capturing the ingress frame or allocating a data receipt.
       const acknowledge = item.controlPending ? this.processHost.__controlIngressAcknowledgement() : undefined;
-      const release = item.kind === "http" ? () => discardHttpRequest(item.requestId) : acknowledge;
+      // mailbox 关闭时节点可能未执行就被回收；按是否已开始如实告知 HTTP 调用方（503 或 500）。
+      // A closing mailbox may recycle the node unexecuted; tell the HTTP caller truthfully (503 vs 500).
+      let started = false;
+      const release = item.kind === "http" ? () => discardHttpRequest(item.requestId, started) : acknowledge;
       item.controlPending = false;
       let result: MaybePromise<void>;
       try {
-        result = this.dispatchMailbox(() => { acknowledge?.(); return this.processIngress(item); }, release);
+        result = this.dispatchMailbox(() => { started = true; acknowledge?.(); return this.processIngress(item); }, release);
       } catch (error) {
         release?.();
         throw error;
@@ -1093,7 +1096,8 @@ export abstract class EntryScene extends Scene {
       this.unorderedTasks.size < EntryScene.MAX_UNORDERED_IN_FLIGHT
     ) {
       const item = this.dequeueIngress()!;
-      const release = item.kind === "http" ? () => discardHttpRequest(item.requestId) : undefined;
+      // 节点已开始执行；只有没有回复时才会以 500 结束。 / The node has started; it ends with 500 only if it never replied.
+      const release = item.kind === "http" ? () => discardHttpRequest(item.requestId, true) : undefined;
       try {
         const result = this.processIngress(item);
         if (isPromiseLike(result)) {
@@ -2221,7 +2225,7 @@ export abstract class EntryScene extends Scene {
    * status; any other failure is logged and answers 500.
    */
   private processHttpRequest(requestId: number, payload: Uint8Array): MaybePromise<void> {
-    if (!isHttpRequestPending(requestId)) { discardHttpRequest(requestId); return; }
+    if (!isHttpRequestPending(requestId)) { discardHttpRequest(requestId, false); return; }
     let request: HttpRequest;
     try {
       request = decodeHttpRequest(payload);

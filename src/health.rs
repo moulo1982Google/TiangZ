@@ -133,6 +133,8 @@ pub(crate) struct ProcessObservabilitySnapshot {
     pub(crate) game: Option<GameObservabilitySnapshot>,
     pub(crate) native_data: Option<NativeDataObservabilitySnapshot>,
     pub(crate) dbproxy: Option<DbProxyClientObservabilitySnapshot>,
+    /// 仅配置了 Scene HTTP 的进程才有。 / Present only when the Process configures Scene HTTP.
+    pub(crate) http: Option<crate::http_endpoint::HttpPendingSnapshot>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1754,6 +1756,34 @@ mod tests {
             series[0].split_whitespace().next(),
             series[1].split_whitespace().next()
         );
+    }
+
+    #[test]
+    fn http_permit_metrics_appear_only_when_http_is_configured() {
+        let state = ProcessHealthState::starting(Duration::from_secs(15));
+        state.set_observability_snapshot(ProcessObservabilitySnapshot {
+            sample_timestamp_ms: 1,
+            ..ProcessObservabilitySnapshot::default()
+        });
+        assert!(!format_prometheus_metrics("login-1", &state).contains("tiangz_http_"));
+        state.set_observability_snapshot(ProcessObservabilitySnapshot {
+            sample_timestamp_ms: 1,
+            http: Some(crate::http_endpoint::HttpPendingSnapshot {
+                in_flight: 5,
+                detached: 2,
+                oldest_detached_ms: 1500,
+            }),
+            ..ProcessObservabilitySnapshot::default()
+        });
+        let body = format_prometheus_metrics("login-1", &state);
+        for line in [
+            "# TYPE tiangz_http_requests_detached gauge",
+            "tiangz_http_requests_in_flight{process=\"login-1\"} 5",
+            "tiangz_http_requests_detached{process=\"login-1\"} 2",
+            "tiangz_http_oldest_detached_seconds{process=\"login-1\"} 1.5",
+        ] {
+            assert!(body.contains(line), "missing {line}\n{body}");
+        }
     }
 
     #[test]

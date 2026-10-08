@@ -266,7 +266,9 @@ Rust Core使用强类型`NativeDataObservabilityConfig`负责字段默认值、�
 }
 ```
 
-处理流程：Rust（hyper，HTTP/1.1）读取请求并完成鉴权、限长和并发检查，然后把请求作为数据入口事件放进目标 Scene 的 mailbox，与协议消息遵循相同的 ordered/unordered 语义；进程队列或宿主事件字节预算不足时立即返回 503。TS 按“方法 + 路径”精确匹配 `httpHandler`；找不到路径返回 404，路径存在但方法不对返回 405 和 `Allow` 头。Handler 抛出 `HttpError` 时返回其状态码，其他异常记录日志并返回 500，不向调用方泄露异常内容。所有响应默认带 `Cache-Control: no-store`。当前不支持 HTTPS（由 Nginx 等反向代理终止）、路径参数、流式请求/响应和 WebSocket 升级。进程未就绪（启动中、停机中，或业务线程心跳超过 `staleAfterMs`）时直接返回 503，不进入 TS；停机时先停止接收，等待中的请求返回 503，连接按 `lifecycle.stopTimeoutMs` 有界排空。已经开始的业务不会因调用方超时或断开而取消，并发名额保留到业务真实完成；排队期间已过期的请求不执行 Handler。每条连接都有期限：请求头（含 keep-alive 空闲）10 秒内必须发完，回复写出连续 10 秒无进展即断开，请求头远超 64 KiB 时返回 431；连接名额随连接关闭释放。HTTP 请求号由 HTTP 入口独立分配并在 u32 内回绕，不占用游戏连接号。
+处理流程：Rust（hyper，HTTP/1.1）读取请求并完成鉴权、限长和并发检查，然后把请求作为数据入口事件放进目标 Scene 的 mailbox，与协议消息遵循相同的 ordered/unordered 语义；进程队列或宿主事件字节预算不足时立即返回 503。TS 按“方法 + 路径”精确匹配 `httpHandler`；找不到路径返回 404，路径存在但方法不对返回 405 和 `Allow` 头。Handler 抛出 `HttpError` 时返回其状态码，其他异常记录日志并返回 500，不向调用方泄露异常内容。所有响应默认带 `Cache-Control: no-store`。当前不支持 HTTPS（由 Nginx 等反向代理终止）、路径参数、流式请求/响应和 WebSocket 升级。进程未就绪（启动中、停机中，或业务线程心跳超过 `staleAfterMs`）时直接返回 503，不进入 TS；停机时先停止接收新请求；已进入 Scene 的请求继续等待真实结果（在 `lifecycle.stopTimeoutMs` 排空期限前留出写回时间），连接按该期限有界排空。已经开始的业务不会因调用方超时或断开而取消，并发名额保留到业务真实完成；排队期间已过期的请求不执行 Handler。
+
+状态码约定，供调用方决定能否重试：503 表示请求没有执行（未就绪、busy、队列满、停机拒绝，或排队节点被丢弃，响应体分别为 `not ready`、`busy`、`overloaded`、`stopping`、`not executed`），可以安全重试；504 表示等待结束时结果未知（`handler timeout` 或 `result unknown`），Handler 可能已经执行，非幂等接口不能直接重试，应由业务提供幂等键或查询接口；Handler 执行后没有交回回复时返回 500。监听在非回环地址且未设置 `authTokenEnv` 时，启动日志会告警；返回 Login 地址这类公开接口可以忽略，工具与运维接口应配置令牌。单个连接任务 panic 只记录错误并关闭该连接，不会停止进程。每条连接都有期限：请求头（含 keep-alive 空闲）10 秒内必须发完，回复写出连续 10 秒无进展即断开，请求头远超 64 KiB 时返回 431；连接名额随连接关闭释放。HTTP 请求号由 HTTP 入口独立分配并在 u32 内回绕，不占用游戏连接号。
 
 监听地址、服务间地址和客户端地址是三个不同概念，不能把 `0.0.0.0` 写入 `knownScenes`、MapHost Endpoint 或登录响应。云服务器的公网 IP 通常是云厂商的 EIP/NAT，不会出现在虚机的 `ip addr` 中，因此必须通过部署配置显式填写，不要在 Runtime 中自动猜测公网 IP。
 

@@ -91,6 +91,7 @@ docker compose down -v --remove-orphans
 - `tiangz_transport_inner_timed_out_calls`：跨进程 RPC 超时
 - `tiangz_transport_inner_timeouts_by_route_total`：按 msgcode、source、target、traffic 和 queue stage 细分的超时
 - `tiangz_transport_inner_disconnected_calls`：连接断开丢弃数
+- `tiangz_http_requests_in_flight`、`tiangz_http_requests_detached`、`tiangz_http_oldest_detached_seconds`：仅配置了 Scene `http` 的进程输出。前者是占用执行名额（排队或执行中）的 HTTP 请求数；detached 是调用方已超时、断开或停机但业务仍占名额的请求数，及其中最久的时长。detached 持续不为 0 且时长增长，说明有 Handler 的 Promise 一直不结束，名额只能等它结束或重启进程才归还；此时 busy 拒绝也会按 Scene 限频打印告警。
 - `tiangz_scene_*`：按进程/Scene 聚合的处理与错误计数
 - `tiangz_native_live_units`：Rust Arena 中在线 Unit 数
 - `tiangz_native_encoded_bytes_total`：Native snapshot 下发累计字节

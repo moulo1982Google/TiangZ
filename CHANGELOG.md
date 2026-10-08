@@ -10,6 +10,7 @@
 - Stable API `httpHandler(SceneCtor, method, path)`、`HttpError`、`jsonResponse` 及类型 `HttpMethod`、`HttpRequest`、`HttpResponse`、`SceneHttpHandler`、`SceneHttpConfig`；Handler 可热更，路由精确匹配，缺失路径 404、方法不符 405。
 - 新增直接依赖 `hyper`（http1/server）、`hyper-util`、`http-body-util`；均已在依赖树中，未引入新的第三方包。
 - 连接准入与请求号隔离（评审修正）：新增 `http.maxConnections`（默认 max(1024, maxInFlight)，上限 16384），在创建连接任务前准入，名额覆盖连接整个生命周期，满额新连接立即关闭；回复写出连续 10 秒无进展断开，每连接读缓冲软上限 64 KiB。HTTP 请求号改由 HTTP 入口独立分配并在 u32 内回绕、跳过在途号，不再消耗游戏连接号（此前持续 HTTP 流量会耗尽连接号并使游戏端口停止接入）。
+- 状态码与可观测性（评审修正）：503 只表示请求未执行、可安全重试；入队后结果未知（超时、停机）改为 504，排队节点被丢弃时如实返回 503，Handler 执行后无回复返回 500；停机时已入队请求继续等待真实结果直到排空期限前。新增 `tiangz_http_requests_in_flight`、`tiangz_http_requests_detached`、`tiangz_http_oldest_detached_seconds` 指标，busy 且名额被已离开调用方占用时限频告警；非回环地址未配置令牌时启动告警；单个连接任务 panic 只关闭该连接，不再停止进程。内部 op `op_host_http_discard` 增加 `executed` 参数（Stable API 不变）。
 
 ### 验证
 
