@@ -180,6 +180,10 @@ if (process.argv.includes("--rust")) {
     #[allow(dead_code)]
     #[path = ${JSON.stringify(path.join(root, "src/native_worker.rs").replaceAll(path.sep, "/"))}]
     mod native_worker;
+    // native_worker 完成任务时通过 crate::host_wake 叫醒主循环。 / native_worker wakes the loop through crate::host_wake.
+    #[allow(dead_code)]
+    #[path = ${JSON.stringify(path.join(root, "src/host_wake.rs").replaceAll(path.sep, "/"))}]
+    mod host_wake;
     #[tokio::main(flavor = "current_thread")]
     async fn main() {
 
