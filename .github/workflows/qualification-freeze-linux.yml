@@ -1,0 +1,119 @@
+{
+  "name": "Independent public RC Linux frozen qualification",
+  "on": {
+    "push": {
+      "branches": [
+        "test/v0.7.0-rc1-freeze-linux-20261008a"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "concurrency": {
+    "group": "rc1-independent-linux-freeze-20261008a",
+    "cancel-in-progress": false
+  },
+  "jobs": {
+    "freeze": {
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 120,
+      "env": {
+        "TIANGZ_LOCK_VERSIONS": "1",
+        "CARGO_BUILD_JOBS": "4",
+        "CARGO_NET_GIT_FETCH_WITH_CLI": "true",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_CONFIG_COUNT": "4",
+        "GIT_CONFIG_KEY_0": "user.name",
+        "GIT_CONFIG_VALUE_0": "xin.zheng",
+        "GIT_CONFIG_KEY_1": "user.email",
+        "GIT_CONFIG_VALUE_1": "xin.zheng@ability10.com",
+        "GIT_CONFIG_KEY_2": "url.https://github.com/.insteadOf",
+        "GIT_CONFIG_VALUE_2": "ssh://git@github.com/",
+        "GIT_CONFIG_KEY_3": "protocol.file.allow",
+        "GIT_CONFIG_VALUE_3": "never"
+      },
+      "steps": [
+        {
+          "name": "Initialize isolated control evidence",
+          "shell": "bash",
+          "env": {
+            "GIT_CONFIG_GLOBAL": "${{ runner.temp }}/freeze-gitconfig",
+            "QUALIFICATION_DIR": "${{ runner.temp }}/freeze-linux-${{ github.run_id }}-${{ github.run_attempt }}"
+          },
+          "run": "set -euo pipefail\nmkdir \"$QUALIFICATION_DIR\"\n: > \"$GIT_CONFIG_GLOBAL\"\nprintf '%s\\n' \"GIT_CONFIG_GLOBAL=$GIT_CONFIG_GLOBAL\" \"QUALIFICATION_DIR=$QUALIFICATION_DIR\" >> \"$GITHUB_ENV\"\nprintf '%s\\n' \"workflow_head=$GITHUB_SHA\" \"source_sha=bf25dddf06906816f2957bb4bf719013918511b9\" \"source_tree=bf50b0f1dbce8c4bf04538b45d9349e17d0e268e\" \"run_id=$GITHUB_RUN_ID\" \"run_attempt=$GITHUB_RUN_ATTEMPT\" \"TIANGZ_LOCK_VERSIONS=$TIANGZ_LOCK_VERSIONS\" \"CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS\" > \"$QUALIFICATION_DIR/invocation.txt\"\ndate --utc --iso-8601=ns >> \"$QUALIFICATION_DIR/invocation.txt\"\nuname -a > \"$QUALIFICATION_DIR/os.txt\"\ndf -B1 > \"$QUALIFICATION_DIR/disk-before.txt\""
+        },
+        {
+          "name": "Checkout immutable public product source",
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "bf25dddf06906816f2957bb4bf719013918511b9",
+            "fetch-depth": 1,
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-node@v4",
+          "with": {
+            "node-version": 24,
+            "cache": "npm"
+          }
+        },
+        {
+          "uses": "dtolnay/rust-toolchain@master",
+          "with": {
+            "toolchain": "1.97.1",
+            "components": "rustfmt, clippy"
+          }
+        },
+        {
+          "name": "Check source and version lock identities",
+          "shell": "bash",
+          "run": "set -euo pipefail\nnode --version > \"$QUALIFICATION_DIR/tool-versions.txt\"\nnpm --version >> \"$QUALIFICATION_DIR/tool-versions.txt\"\ncargo --version >> \"$QUALIFICATION_DIR/tool-versions.txt\"\nrustc -vV >> \"$QUALIFICATION_DIR/tool-versions.txt\"\nnode --input-type=module <<'NODE'\nimport fs from 'node:fs';\nimport path from 'node:path';\nimport assert from 'node:assert/strict';\nimport {execFileSync} from 'node:child_process';\nimport {createHash} from 'node:crypto';\nconst git=args=>execFileSync('git',['-c','user.name=xin.zheng','-c','user.email=xin.zheng@ability10.com',...args],{encoding:'utf8'}).trim();\nassert.equal(git(['rev-parse','HEAD']),\"bf25dddf06906816f2957bb4bf719013918511b9\");\nassert.equal(git(['rev-parse','HEAD^{tree}']),\"bf50b0f1dbce8c4bf04538b45d9349e17d0e268e\");\nassert.equal(git(['status','--porcelain=v1']),'');\nassert.equal(process.env.TIANGZ_LOCK_VERSIONS,'1');\nassert.equal(process.env.CARGO_BUILD_JOBS,'4');\nassert(!fs.existsSync('.cargo/config.toml'));\nconst lock=JSON.parse(fs.readFileSync('package-lock.json'));\nconst dependencies={\n  '@tiangz/dbproxy-sdk':'8d0f3433092dd45a3b2787b37c16cdde2b8a67b5',\n  '@tiangz/developer-tools-core':'06ba89429276c75be1ea7e45df2fbcf6c4b07050',\n  '@tiangz/native-language-core':'4fd26bd4f18a7508cb3f57001dcb270addec985b'};\nfor(const [name,sha]of Object.entries(dependencies))assert(lock.packages['node_modules/'+name].resolved.endsWith('#'+sha));\nassert(fs.readFileSync('Cargo.lock','utf8').includes('git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?tag=v0.7.0-rc1#'+dependencies['@tiangz/dbproxy-sdk']));\nconst files=['package.json','package-lock.json','Cargo.toml','Cargo.lock','tools/verify_release.mjs','tools/run_test_matrix.mjs','tools/release/package_release.mjs'];\nconst hashes=Object.fromEntries(files.map(file=>[file,createHash('sha256').update(fs.readFileSync(file)).digest('hex')]));\nconst before=path.join(process.env.QUALIFICATION_DIR,'source-before.json');\nif(fs.existsSync(before))assert.deepEqual(hashes,JSON.parse(fs.readFileSync(before)).files);\nelse fs.writeFileSync(before,JSON.stringify({source_sha:git(['rev-parse','HEAD']),tree:git(['rev-parse','HEAD^{tree}']),files:hashes},null,2)+'\\n');\nconsole.log('EXACT_PUBLISHED_RC_SOURCE_AND_LOCKS_CHECKED');\nNODE"
+        },
+        {
+          "name": "Install frozen consumer dependencies",
+          "shell": "bash",
+          "run": "set -euo pipefail\nnpm ci --no-audit --no-fund > \"$QUALIFICATION_DIR/npm-ci.stdout.log\" 2> \"$QUALIFICATION_DIR/npm-ci.stderr.log\"\nnode --input-type=module <<'NODE'\nimport fs from 'node:fs';\nimport path from 'node:path';\nimport assert from 'node:assert/strict';\nimport {execFileSync} from 'node:child_process';\nimport {createHash} from 'node:crypto';\nconst git=args=>execFileSync('git',['-c','user.name=xin.zheng','-c','user.email=xin.zheng@ability10.com',...args],{encoding:'utf8'}).trim();\nassert.equal(git(['rev-parse','HEAD']),\"bf25dddf06906816f2957bb4bf719013918511b9\");\nassert.equal(git(['rev-parse','HEAD^{tree}']),\"bf50b0f1dbce8c4bf04538b45d9349e17d0e268e\");\nassert.equal(git(['status','--porcelain=v1']),'');\nassert.equal(process.env.TIANGZ_LOCK_VERSIONS,'1');\nassert.equal(process.env.CARGO_BUILD_JOBS,'4');\nassert(!fs.existsSync('.cargo/config.toml'));\nconst lock=JSON.parse(fs.readFileSync('package-lock.json'));\nconst dependencies={\n  '@tiangz/dbproxy-sdk':'8d0f3433092dd45a3b2787b37c16cdde2b8a67b5',\n  '@tiangz/developer-tools-core':'06ba89429276c75be1ea7e45df2fbcf6c4b07050',\n  '@tiangz/native-language-core':'4fd26bd4f18a7508cb3f57001dcb270addec985b'};\nfor(const [name,sha]of Object.entries(dependencies))assert(lock.packages['node_modules/'+name].resolved.endsWith('#'+sha));\nassert(fs.readFileSync('Cargo.lock','utf8').includes('git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?tag=v0.7.0-rc1#'+dependencies['@tiangz/dbproxy-sdk']));\nconst files=['package.json','package-lock.json','Cargo.toml','Cargo.lock','tools/verify_release.mjs','tools/run_test_matrix.mjs','tools/release/package_release.mjs'];\nconst hashes=Object.fromEntries(files.map(file=>[file,createHash('sha256').update(fs.readFileSync(file)).digest('hex')]));\nconst before=path.join(process.env.QUALIFICATION_DIR,'source-before.json');\nif(fs.existsSync(before))assert.deepEqual(hashes,JSON.parse(fs.readFileSync(before)).files);\nelse fs.writeFileSync(before,JSON.stringify({source_sha:git(['rev-parse','HEAD']),tree:git(['rev-parse','HEAD^{tree}']),files:hashes},null,2)+'\\n');\nconsole.log('EXACT_PUBLISHED_RC_SOURCE_AND_LOCKS_CHECKED');\nNODE"
+        },
+        {
+          "name": "Execute full frozen release chain",
+          "shell": "bash",
+          "run": "node --input-type=module <<'NODE'\nimport fs from 'node:fs';\nimport path from 'node:path';\nimport {spawn} from 'node:child_process';\nconst directory=process.env.QUALIFICATION_DIR;\nconst script=\"verify:release\";\nconst out=fs.openSync(path.join(directory,script.replaceAll(':','-')+'.stdout.log'),'wx');\nconst err=fs.openSync(path.join(directory,script.replaceAll(':','-')+'.stderr.log'),'wx');\nconst startedAt=new Date().toISOString();\nconst child=spawn('npm',['run',script],{stdio:['ignore','pipe','pipe'],env:process.env});\nchild.stdout.on('data',chunk=>{fs.writeSync(out,chunk);process.stdout.write(chunk);});\nchild.stderr.on('data',chunk=>{fs.writeSync(err,chunk);process.stderr.write(chunk);});\nconst result=await new Promise(resolve=>{child.once('error',error=>resolve({exit_code:null,error:error.message}));child.once('close',(code,signal)=>resolve({exit_code:code,signal}));});\nfs.fsyncSync(out);fs.fsyncSync(err);fs.closeSync(out);fs.closeSync(err);\nfs.writeFileSync(path.join(directory,script.replaceAll(':','-')+'.result.json'),JSON.stringify({script,started_at:startedAt,finished_at:new Date().toISOString(),...result},null,2)+'\\n');\nprocess.exitCode=result.exit_code??1;\nNODE"
+        },
+        {
+          "name": "Strictly check complete matrix receipts",
+          "shell": "bash",
+          "run": "node --input-type=module <<'NODE'\nimport fs from 'node:fs';\nimport path from 'node:path';\nimport assert from 'node:assert/strict';\nconst counts={full:9,quick:35,check:8};\nconst reports={};\nfor(const [name,count]of Object.entries(counts)) {\n  const r=JSON.parse(fs.readFileSync('dist/test-results/'+name+'.json'));\n  assert.equal(r.passed,count);assert.equal(r.failed,0);assert.equal(r.skipped,0);assert.equal(r.timedOut,0);\n  assert.equal(r.timeoutScale,1);assert.deepEqual(r.cargoFeatures,[]);assert(!r.interrupted);\n  reports[name]=r;\n}\nfs.writeFileSync(path.join(process.env.QUALIFICATION_DIR,'frozen-matrices.json'),JSON.stringify(reports,null,2)+'\\n');\nconsole.log('LINUX_FROZEN_FULL_9_QUICK_35_CHECK_8_PASSED');\nNODE\nnode --input-type=module <<'NODE'\nimport fs from 'node:fs';\nimport path from 'node:path';\nimport assert from 'node:assert/strict';\nimport {execFileSync} from 'node:child_process';\nimport {createHash} from 'node:crypto';\nconst git=args=>execFileSync('git',['-c','user.name=xin.zheng','-c','user.email=xin.zheng@ability10.com',...args],{encoding:'utf8'}).trim();\nassert.equal(git(['rev-parse','HEAD']),\"bf25dddf06906816f2957bb4bf719013918511b9\");\nassert.equal(git(['rev-parse','HEAD^{tree}']),\"bf50b0f1dbce8c4bf04538b45d9349e17d0e268e\");\nassert.equal(git(['status','--porcelain=v1']),'');\nassert.equal(process.env.TIANGZ_LOCK_VERSIONS,'1');\nassert.equal(process.env.CARGO_BUILD_JOBS,'4');\nassert(!fs.existsSync('.cargo/config.toml'));\nconst lock=JSON.parse(fs.readFileSync('package-lock.json'));\nconst dependencies={\n  '@tiangz/dbproxy-sdk':'8d0f3433092dd45a3b2787b37c16cdde2b8a67b5',\n  '@tiangz/developer-tools-core':'06ba89429276c75be1ea7e45df2fbcf6c4b07050',\n  '@tiangz/native-language-core':'4fd26bd4f18a7508cb3f57001dcb270addec985b'};\nfor(const [name,sha]of Object.entries(dependencies))assert(lock.packages['node_modules/'+name].resolved.endsWith('#'+sha));\nassert(fs.readFileSync('Cargo.lock','utf8').includes('git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?tag=v0.7.0-rc1#'+dependencies['@tiangz/dbproxy-sdk']));\nconst files=['package.json','package-lock.json','Cargo.toml','Cargo.lock','tools/verify_release.mjs','tools/run_test_matrix.mjs','tools/release/package_release.mjs'];\nconst hashes=Object.fromEntries(files.map(file=>[file,createHash('sha256').update(fs.readFileSync(file)).digest('hex')]));\nconst before=path.join(process.env.QUALIFICATION_DIR,'source-before.json');\nif(fs.existsSync(before))assert.deepEqual(hashes,JSON.parse(fs.readFileSync(before)).files);\nelse fs.writeFileSync(before,JSON.stringify({source_sha:git(['rev-parse','HEAD']),tree:git(['rev-parse','HEAD^{tree}']),files:hashes},null,2)+'\\n');\nconsole.log('EXACT_PUBLISHED_RC_SOURCE_AND_LOCKS_CHECKED');\nNODE"
+        },
+        {
+          "name": "Build and smoke a new local release package",
+          "shell": "bash",
+          "run": "node --input-type=module <<'NODE'\nimport fs from 'node:fs';\nimport path from 'node:path';\nimport {spawn} from 'node:child_process';\nconst directory=process.env.QUALIFICATION_DIR;\nconst script=\"release:package\";\nconst out=fs.openSync(path.join(directory,script.replaceAll(':','-')+'.stdout.log'),'wx');\nconst err=fs.openSync(path.join(directory,script.replaceAll(':','-')+'.stderr.log'),'wx');\nconst startedAt=new Date().toISOString();\nconst child=spawn('npm',['run',script],{stdio:['ignore','pipe','pipe'],env:process.env});\nchild.stdout.on('data',chunk=>{fs.writeSync(out,chunk);process.stdout.write(chunk);});\nchild.stderr.on('data',chunk=>{fs.writeSync(err,chunk);process.stderr.write(chunk);});\nconst result=await new Promise(resolve=>{child.once('error',error=>resolve({exit_code:null,error:error.message}));child.once('close',(code,signal)=>resolve({exit_code:code,signal}));});\nfs.fsyncSync(out);fs.fsyncSync(err);fs.closeSync(out);fs.closeSync(err);\nfs.writeFileSync(path.join(directory,script.replaceAll(':','-')+'.result.json'),JSON.stringify({script,started_at:startedAt,finished_at:new Date().toISOString(),...result},null,2)+'\\n');\nprocess.exitCode=result.exit_code??1;\nNODE"
+        },
+        {
+          "name": "Verify new package provenance and checksums",
+          "shell": "bash",
+          "run": "node --input-type=module <<'NODE'\nimport fs from 'node:fs';\nimport path from 'node:path';\nimport assert from 'node:assert/strict';\nimport {execFileSync} from 'node:child_process';\nimport {createHash} from 'node:crypto';\nconst git=args=>execFileSync('git',['-c','user.name=xin.zheng','-c','user.email=xin.zheng@ability10.com',...args],{encoding:'utf8'}).trim();\nassert.equal(git(['rev-parse','HEAD']),\"bf25dddf06906816f2957bb4bf719013918511b9\");\nassert.equal(git(['rev-parse','HEAD^{tree}']),\"bf50b0f1dbce8c4bf04538b45d9349e17d0e268e\");\nassert.equal(git(['status','--porcelain=v1']),'');\nassert.equal(process.env.TIANGZ_LOCK_VERSIONS,'1');\nassert.equal(process.env.CARGO_BUILD_JOBS,'4');\nassert(!fs.existsSync('.cargo/config.toml'));\nconst lock=JSON.parse(fs.readFileSync('package-lock.json'));\nconst dependencies={\n  '@tiangz/dbproxy-sdk':'8d0f3433092dd45a3b2787b37c16cdde2b8a67b5',\n  '@tiangz/developer-tools-core':'06ba89429276c75be1ea7e45df2fbcf6c4b07050',\n  '@tiangz/native-language-core':'4fd26bd4f18a7508cb3f57001dcb270addec985b'};\nfor(const [name,sha]of Object.entries(dependencies))assert(lock.packages['node_modules/'+name].resolved.endsWith('#'+sha));\nassert(fs.readFileSync('Cargo.lock','utf8').includes('git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?tag=v0.7.0-rc1#'+dependencies['@tiangz/dbproxy-sdk']));\nconst files=['package.json','package-lock.json','Cargo.toml','Cargo.lock','tools/verify_release.mjs','tools/run_test_matrix.mjs','tools/release/package_release.mjs'];\nconst hashes=Object.fromEntries(files.map(file=>[file,createHash('sha256').update(fs.readFileSync(file)).digest('hex')]));\nconst before=path.join(process.env.QUALIFICATION_DIR,'source-before.json');\nif(fs.existsSync(before))assert.deepEqual(hashes,JSON.parse(fs.readFileSync(before)).files);\nelse fs.writeFileSync(before,JSON.stringify({source_sha:git(['rev-parse','HEAD']),tree:git(['rev-parse','HEAD^{tree}']),files:hashes},null,2)+'\\n');\nconsole.log('EXACT_PUBLISHED_RC_SOURCE_AND_LOCKS_CHECKED');\nNODE\nnode --input-type=module <<'NODE'\nimport fs from 'node:fs';\nimport path from 'node:path';\nimport assert from 'node:assert/strict';\nimport {createHash} from 'node:crypto';\nconst packages=fs.readdirSync('dist/release',{withFileTypes:true}).filter(e=>e.isDirectory()&&!e.name.startsWith('.'));\nassert.equal(packages.length,1);\nconst root=path.resolve('dist/release',packages[0].name);\nconst version=JSON.parse(fs.readFileSync(path.join(root,'VERSION.json')));\nassert.equal(version.version,'0.7.0-rc1');assert.equal(version.profile,'release');assert.equal(version.platform,'linux');\nconst checksums=fs.readFileSync(path.join(root,'SHA256SUMS'),'utf8');assert(checksums.endsWith('\\n'));\nconst files=checksums.trimEnd().split('\\n').map(line=>{\n  const m=/^([a-f0-9]{64})  (.+)$/.exec(line);assert(m);\n  const file=path.resolve(root,m[2]);assert(file.startsWith(root+path.sep));\n  const sha=createHash('sha256').update(fs.readFileSync(file)).digest('hex');assert.equal(sha,m[1]);\n  return {path:m[2],sha256:sha,bytes:fs.statSync(file).size};\n});\nfs.writeFileSync(path.join(process.env.QUALIFICATION_DIR,'result.json'),JSON.stringify({schema:1,status:'LINUX_INDEPENDENT_FROZEN_CHAIN_AND_FRESH_PACKAGE_CHECKED',source_sha:\"bf25dddf06906816f2957bb4bf719013918511b9\",workflow_head:process.env.GITHUB_SHA,run_id:process.env.GITHUB_RUN_ID,run_attempt:process.env.GITHUB_RUN_ATTEMPT,checked_at:new Date().toISOString(),package_version:version,files,full_suite_acceptance_complete:false},null,2)+'\\n');\nconsole.log('LINUX_INDEPENDENT_FROZEN_CHAIN_AND_FRESH_PACKAGE_CHECKED');\nNODE"
+        },
+        {
+          "name": "Preserve failure and completion evidence",
+          "if": "always()",
+          "shell": "bash",
+          "run": "set -euo pipefail\nmkdir -p \"$QUALIFICATION_DIR/reports\"\nif [ -d dist/test-results ]; then cp -a dist/test-results/. \"$QUALIFICATION_DIR/reports/\"; fi\nif [ -d temp/test-logs ]; then cp -a temp/test-logs \"$QUALIFICATION_DIR/\"; fi\ngit -c user.name=xin.zheng -c user.email=xin.zheng@ability10.com status --porcelain=v1 > \"$QUALIFICATION_DIR/source-final-status.txt\"\ndf -B1 > \"$QUALIFICATION_DIR/disk-after.txt\"\nfind \"$QUALIFICATION_DIR\" -type f ! -name evidence-SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > \"$QUALIFICATION_DIR/evidence-SHA256SUMS\""
+        },
+        {
+          "name": "Upload independent evidence and new package",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "freeze-linux-20261008a-${{ github.run_id }}-${{ github.run_attempt }}",
+            "path": "${{ env.QUALIFICATION_DIR }}\ndist/release/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    }
+  }
+}
