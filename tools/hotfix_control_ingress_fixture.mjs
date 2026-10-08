@@ -48,7 +48,7 @@ export async function handleControlIngress(scene: CounterScene, mode: number): P
 
 async function innerProducer(port, protocol, token) {
   const socket = net.connect({ host: "127.0.0.1", port });
-  const pending = new Set(), completed = new Set();
+  const pending = new Set(), completed = new Set(), settled = new Set();
   let buffered = Buffer.alloc(0), failure, sequence = 0, successes = 0, overloads = 0, closing = false;
   const check = () => { if (failure) throw failure; };
   socket.on("error", error => { failure ??= error; });
@@ -73,6 +73,7 @@ async function innerProducer(port, protocol, token) {
           assert.ok(!completed.has(response.count), "business request executed twice"); completed.add(response.count);
         }
         assert.ok(pending.delete(id), `unknown or duplicate response ${id}`);
+        settled.add(id);
       }
     } catch (error) { failure ??= error; socket.destroy(); }
   });
@@ -93,10 +94,11 @@ async function innerProducer(port, protocol, token) {
         packet.writeUInt32BE(2 + body.length); packet.writeUInt16BE(protocol.requestCode, 4); packet.set(body, 6);
         pending.add(id); packets.push(packet);
       }
-      await write(Buffer.concat(packets)); check();
+      await write(Buffer.concat(packets)); check(); return sequence;
     },
+    settled(id) { check(); return settled.has(id); },
     status() { check(); return { sent: sequence, pending: pending.size, successes, overloads }; },
-    close() { closing = true; socket.destroy(); pending.clear(); completed.clear(); },
+    close() { closing = true; socket.destroy(); pending.clear(); completed.clear(); settled.clear(); },
   };
 }
 
@@ -110,6 +112,8 @@ export async function runControlIngressFault({ port, healthPort, protocol, token
       assert.equal(matching.length, 1); result[name] = Number(matching[0].split(" ").at(-1));
     }
     result.backingStore = {};
+    const queued = lines.filter(line => line.startsWith('tiangz_scene_ingress_queue_length{') && line.includes('scene="control-ingress-target"'));
+    assert.equal(queued.length, 1); result.targetQueued = Number(queued[0].split(' ').at(-1));
     for (const name of ["bytes", "max_bytes", "buffers", "created_total"]) {
       const matching = lines.filter(line => line.startsWith(`tiangz_process_host_backing_store_${name}{`));
       assert.equal(matching.length, 1);
@@ -136,8 +140,11 @@ export async function runControlIngressFault({ port, healthPort, protocol, token
     await until(async () => (current = await metrics()).reserved === 65536, "default control quota fills across Native and real TS", 3000);
     assert.equal(current.capacity, 65536); assert.equal(current.max_reserved, 65536);
     assert.equal(producer.status().successes, 0, "held handlers cannot finish before Worker release");
-    await producer.send(1);
+    const barrier = await producer.send(1);
     await until(async () => (await metrics()).rejections_total > before.rejections_total, "extra Inner RPC receives quota overload");
+    // 最后一个 TCP 请求已拒绝且全部保留项已到 TS，才暂停；否则在途尾批会触发另一项 deferred 限额。
+    // Pause only after the final TCP request is rejected and every reserved item reaches TS; an in-flight tail otherwise hits the separate deferred limit.
+    await until(async () => producer.settled(barrier) && (await metrics()).targetQueued === 65536, "all control input reaches TS before hotfix pause");
     const op = begin(); await op.paused();
     await workerControl.call(81);
     assert.equal((await held).count, 1, "Host completion must pass even when control slots are full");

@@ -441,11 +441,16 @@ mod tests {
                 for (const id of full) __hostCancelDeadline(id);
                 for (const id of held) { __hostCancelDeadline(id); __hostCancelDeadline(id); }
                 await Promise.all(waits);
-                for (let i = 0; i < 65540; i++) {
-                  const id = __hostCreateDeadline(30000);
-                  const wait = __hostWaitDeadline(id);
-                  __hostCancelDeadline(id);
-                  await wait.catch(() => {});
+                // 保留全部创建/取消次数，以有界批次验证回收，不把每次事件循环调度当吞吐门槛。
+                // Keep every create/cancel cycle; bounded batches test reclamation without a per-poll throughput gate.
+                for (let base = 0; base < 65540; base += 256) {
+                  const batch = [];
+                  for (let i = base; i < Math.min(base + 256, 65540); i++) {
+                    const id = __hostCreateDeadline(30000);
+                    batch.push(__hostWaitDeadline(id).catch(() => {}));
+                    __hostCancelDeadline(id);
+                  }
+                  await Promise.all(batch);
                 }
                 globalThis.deadlineFinished = true;
               })().catch(error => { globalThis.deadlineFailure = String(error); });
