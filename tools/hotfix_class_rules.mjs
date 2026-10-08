@@ -1,36 +1,21 @@
+import path from "node:path";
 import ts from "typescript";
-import { coreSymbolName } from "./core_type_symbols.mjs";
+import * as developerTools from "@tiangz/developer-tools-core";
 
-const systemDecorators = new Set(["hotfixFor", "systemFor"]);
-const handlerDecorators = new Set(["messageHandler", "rpcHandler", "sessionMessageHandler", "sessionRpcHandler", "unitMessageHandler", "unitRpcHandler", "httpHandler", "syncEventHandler", "vetoEventHandler", "entityExtensionHandler"]);
+const root = path.resolve(import.meta.dirname, "..");
+const options = { typescript: ts, projectRoot: root, coreRoot: path.join(root, "app/core") };
+if (typeof developerTools.hotfixClassDiagnostics !== "function" || typeof developerTools.restrictedHotfixDecoratorKind !== "function") {
+  throw new Error("Developer Tools 缺少共享 Hotfix 契约检查；请安装当前联合验证的 @tiangz/developer-tools-core（ruleset >= 2）。");
+}
 
-/** 同一行为类规则供宿主边界校验和模块构建前置检查复用。 / Share behavior-class rules between host validation and module build preflight. */
+/** 仅适配宿主既有的 1-based 位置，成员禁令由共享库维护。 / Adapt existing host locations; the shared library owns the restrictions. */
 export function hotfixClassDiagnostics(tree, typeChecker) {
-  const diagnostics = [];
-  visit(tree);
-  return diagnostics;
-  function visit(node) {
-    if (ts.isClassDeclaration(node)) {
-      const kind = restrictedDecoratorKind(node, typeChecker);
-      if (kind) for (const member of node.members) {
-        if (ts.isConstructorDeclaration(member) || ts.isPropertyDeclaration(member) || ts.isClassStaticBlockDeclaration(member)
-          || member.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.StaticKeyword)) {
-          const position = tree.getLineAndCharacterOfPosition(member.getStart(tree));
-          diagnostics.push({ code: "tiangz.hotfix.instance-state", file: tree.fileName, line: position.line + 1, column: position.character + 1,
-            message: `${kind}类只能声明实例方法/accessor，不能声明字段、构造函数或static成员；将状态放回对应 Model 的 Scene/Entity/Component。` });
-        }
-      }
-    }
-    ts.forEachChild(node, visit);
-  }
+  return developerTools.hotfixClassDiagnostics(tree, typeChecker, options).map(item => ({
+    code: item.code, severity: item.severity, file: tree.fileName,
+    line: item.location.line + 1, column: item.location.character + 1, message: item.message,
+  }));
 }
 
 export function restrictedDecoratorKind(node, typeChecker) {
-  for (const decorator of ts.getDecorators(node) ?? []) {
-    if (!ts.isCallExpression(decorator.expression)) continue;
-    const name = coreSymbolName(decorator.expression.expression, typeChecker);
-    if (systemDecorators.has(name)) return "System";
-    if (handlerDecorators.has(name)) return "Handler";
-  }
-  return undefined;
+  return developerTools.restrictedHotfixDecoratorKind(node, typeChecker, options);
 }

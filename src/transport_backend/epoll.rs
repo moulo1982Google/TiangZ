@@ -2,7 +2,7 @@
 
 use std::io::IoSlice;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
@@ -10,18 +10,24 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch};
-use tokio_tungstenite::{accept_async, tungstenite::Message};
+use tokio::task::JoinSet;
+use tokio::time::timeout;
+use tokio_tungstenite::tungstenite::Message;
+
+use super::admission::{ConnectionPermit, allocate_connection_id};
+use super::handshake::{AcceptedConnection, AcceptedTcp, AcceptedWebSocket, accept_connection};
+use super::lifecycle::{
+    ConnectionRegistration, OwnedTask, drain_writer, next_write_batch, stopped,
+};
 
 use super::{
     CONNECTION_OUTBOUND_FRAME_CAPACITY, ConnectionKind, ConnectionWriteBatch, ConnectionWriter,
-    EndpointContext, IoBackend, MAX_FRAME_LEN, MAX_INNER_TOKEN_LEN, try_queue_connection_frame,
+    EndpointContext, EndpointTask, IoBackend, MAX_FRAME_LEN, try_queue_connection_frame,
     validate_frame_access,
 };
 use crate::config::EndpointProtocol;
 use crate::process::{ProcessEvent, ProcessIngressTrySendError};
-use crate::transport::{
-    INNER_HANDSHAKE_MAGIC, build_target_ingress_overload, inner_frame_rpc_id, inner_token,
-};
+use crate::transport::{build_target_ingress_overload, inner_frame_rpc_id};
 
 pub(crate) struct EpollIoBackend;
 
@@ -30,7 +36,8 @@ impl IoBackend for EpollIoBackend {
         "epoll"
     }
 
-    fn start_endpoint(&self, context: EndpointContext) -> Result<()> {
+    /// 绑定端点后返回其所有权，启动失败由 Process 回滚。 / Returns endpoint ownership after binding so the process can roll back startup.
+    fn start_endpoint(&self, context: EndpointContext) -> Result<EndpointTask> {
         if context.scene.protocol == EndpointProtocol::Kcp {
             #[cfg(feature = "kcp")]
             return super::kcp::start_kcp_endpoint(context);
@@ -51,38 +58,51 @@ impl IoBackend for EpollIoBackend {
             context.scene.audience,
             self.name()
         );
-        tokio::spawn(async move {
-            if let Err(error) = run_scene_listener(listener, context).await {
-                tracing::error!(target: "tiangz::transport", error = ?error, "scene listener stopped");
-            }
-        });
-        Ok(())
+        let (shutdown, shutdown_rx) = watch::channel(false);
+        let scene_name = context.scene.name.clone();
+        let task = tokio::spawn(run_scene_listener(listener, context, shutdown_rx));
+        Ok(EndpointTask::new(scene_name, shutdown, task))
     }
 }
 
-async fn run_scene_listener(listener: TcpListener, context: EndpointContext) -> Result<()> {
+/// 端点持有所有连接任务；停止准入后等待连接排空，异常退出则取消子任务。 / Owns all connections, drains after stopping admission and cancels children on failure.
+async fn run_scene_listener(
+    listener: TcpListener,
+    context: EndpointContext,
+    mut shutdown: watch::Receiver<bool>,
+) -> Result<()> {
+    let context = Arc::new(context);
+    let mut connections = JoinSet::new();
     loop {
-        let (stream, peer) = listener.accept().await?;
-        let connection_id = context.next_connection_id.fetch_add(1, Ordering::Relaxed);
+        let (stream, peer) = tokio::select! {
+            biased;
+            _ = stopped(&mut shutdown) => break,
+            completed = connections.join_next(), if !connections.is_empty() => {
+                if let Some(Err(error)) = completed {
+                    tracing::warn!(target: "tiangz::transport", error = ?error, "connection task failed");
+                }
+                continue;
+            }
+            accepted = listener.accept() => accepted?,
+        };
+        let Some(permit) = context.stats.admission.accept_stream() else {
+            continue;
+        };
+        let connection_id = allocate_connection_id(&context.next_connection_id)?;
         tracing::debug!(target: "tiangz::transport",
             "{} accepted {} as conn {} backend=epoll",
             context.scene.name, peer, connection_id
         );
 
-        let event_tx = context.event_tx.clone();
-        let writers = Arc::clone(&context.writers);
-        let stats = Arc::clone(&context.stats);
-        let protocol = context.scene.protocol;
-        let scene_index = context.scene_index;
-        tokio::spawn(async move {
+        let connection_context = context.clone();
+        let connection_shutdown = shutdown.clone();
+        connections.spawn(async move {
             if let Err(error) = handle_connection(
-                scene_index,
+                connection_context,
                 connection_id,
-                protocol,
                 stream,
-                event_tx,
-                writers,
-                stats,
+                connection_shutdown,
+                permit,
             )
             .await
             {
@@ -90,123 +110,106 @@ async fn run_scene_listener(listener: TcpListener, context: EndpointContext) -> 
             }
         });
     }
+    drop(listener);
+    tokio::time::timeout(context.shutdown_timeout, async {
+        while connections.join_next().await.is_some() {}
+    })
+    .await
+    .context("endpoint connections exceeded process stop budget")?;
+    Ok(())
 }
 
+/// 握手属于端点生命周期，未完成握手不得阻止停机。 / Keeps handshakes within endpoint lifetime so incomplete peers cannot prevent shutdown.
 async fn handle_connection(
-    scene_index: u32,
+    context: Arc<EndpointContext>,
     connection_id: u64,
-    protocol: EndpointProtocol,
     stream: TcpStream,
-    event_tx: crate::process::ProcessEventSender,
-    writers: super::ConnectionWriters,
-    stats: Arc<crate::process::ProcessQueueStats>,
+    mut shutdown: watch::Receiver<bool>,
+    mut permit: ConnectionPermit,
 ) -> Result<()> {
     stream
         .set_nodelay(true)
         .context("failed to enable TCP_NODELAY")?;
-    let is_websocket = match protocol {
-        EndpointProtocol::Tcp => false,
-        EndpointProtocol::WebSocket => true,
-        EndpointProtocol::Auto => {
-            let mut probe = [0_u8; 3];
-            stream.peek(&mut probe).await? >= 3 && probe == *b"GET"
-        }
-        EndpointProtocol::Kcp => bail!("KCP requires a UDP listener and is not implemented yet"),
+    let accepted = tokio::select! {
+        biased;
+        _ = stopped(&mut shutdown) => return Ok(()),
+        accepted = accept_connection(stream, context.scene.protocol, context.scene.audience) => accepted?,
     };
-    if is_websocket {
-        handle_websocket_connection(scene_index, connection_id, stream, event_tx, writers, stats)
-            .await
-    } else {
-        handle_raw_tcp_connection(scene_index, connection_id, stream, event_tx, writers, stats)
-            .await
+    permit.complete_handshake();
+    match accepted {
+        Some(AcceptedConnection::WebSocket(websocket)) => {
+            handle_websocket_connection(context, connection_id, *websocket, shutdown).await
+        }
+        Some(AcceptedConnection::Tcp(connection)) => {
+            handle_raw_tcp_connection(context, connection_id, connection, shutdown).await
+        }
+        None => Ok(()),
     }
 }
 
+/// 原生连接持有 writer 与登记，端点停止走正常排空，任务取消走 RAII。 / Owns the native writer/registration, drains on endpoint stop and uses RAII on cancellation.
 async fn handle_raw_tcp_connection(
-    scene_index: u32,
+    context: Arc<EndpointContext>,
     connection_id: u64,
-    stream: TcpStream,
-    event_tx: crate::process::ProcessEventSender,
-    writers: super::ConnectionWriters,
-    stats: Arc<crate::process::ProcessQueueStats>,
+    connection: AcceptedTcp,
+    mut endpoint_shutdown: watch::Receiver<bool>,
 ) -> Result<()> {
-    let (mut reader, mut writer) = stream.into_split();
-    let Some((connection_kind, mut first_frame_len)) = read_raw_preamble(&mut reader).await? else {
-        return Ok(());
-    };
+    let scene_index = context.scene_index;
+    let event_tx = &context.event_tx;
+    let writers = &context.writers;
+    let stats = &context.stats;
+    let AcceptedTcp {
+        mut reader,
+        mut writer,
+        kind: connection_kind,
+        mut first_frame_len,
+    } = connection;
     let (write_tx, mut write_rx) =
         mpsc::channel::<ConnectionWriteBatch>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
     let queued_bytes = Arc::new(AtomicUsize::new(0));
-    let writer_queued_bytes = Arc::clone(&queued_bytes);
     let queued_frames = Arc::new(AtomicUsize::new(0));
-    let writer_queued_frames = Arc::clone(&queued_frames);
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let connection_writer = ConnectionWriter {
+        process_buffer_budget: stats.outbound_buffers.clone(),
         sender: write_tx,
         queued_bytes,
         queued_frames,
         shutdown_tx: shutdown_tx.clone(),
     };
-    writers
-        .lock()
-        .expect("connection writer map poisoned")
-        .insert(connection_id, connection_writer.clone());
+    let _registration =
+        ConnectionRegistration::new(writers.clone(), connection_id, connection_writer.clone());
 
     let mut writer_shutdown = shutdown_rx.clone();
     let writer_shutdown_tx = shutdown_tx.clone();
-    let writer_stats = Arc::clone(&stats);
-    let writer_task = tokio::spawn(async move {
-        loop {
-            let batch = tokio::select! {
-                changed = writer_shutdown.changed() => {
-                    if changed.is_err() || *writer_shutdown.borrow() {
-                        // 关闭请求不能抢在已入队的通知之前；这里排空快照后再释放Socket。
-                        // A close request must not overtake queued notices; drain
-                        // the queue before releasing the socket.
-                        while let Ok(batch) = write_rx.try_recv() {
-                            let frame_count = batch.frames.len();
-                            let packet_bytes = batch.frame_bytes + frame_count * 4;
-                            write_raw_frames_vectored(&mut writer, &batch.frames).await?;
-                            writer_queued_bytes.fetch_sub(batch.frame_bytes, Ordering::Relaxed);
-                            writer_queued_frames.fetch_sub(frame_count, Ordering::Relaxed);
-                            writer_stats.transport_write_completed(frame_count, packet_bytes);
-                        }
-                        break;
-                    }
-                    continue;
-                }
-                batch = write_rx.recv() => {
-                    let Some(batch) = batch else { break; };
-                    batch
-                }
-            };
-            let frame_count = batch.frames.len();
-            let packet_bytes = batch.frame_bytes + frame_count * 4;
-            // 已经取出的批次必须完整写出；关闭信号只影响下一批，避免丢失最后一条业务通知。
-            // Once a batch is taken, write it completely; shutdown only affects
-            // the next batch so the final business notice cannot be dropped.
-            let result = write_raw_frames_vectored(&mut writer, &batch.frames).await;
-            writer_queued_bytes.fetch_sub(batch.frame_bytes, Ordering::Relaxed);
-            writer_queued_frames.fetch_sub(frame_count, Ordering::Relaxed);
-            if let Err(error) = result {
-                let _ = writer_shutdown_tx.send(true);
-                return Err(error);
+    let writer_stats = Arc::clone(stats);
+    let write_timeout = context.write_timeout;
+    let writer_task = OwnedTask::new(tokio::spawn(drain_writer(
+        async move {
+            while let Some(batch) = next_write_batch(&mut write_rx, &mut writer_shutdown).await {
+                let frame_count = batch.frames.len();
+                let packet_bytes = batch.frame_bytes + frame_count * 4;
+                batch
+                    .write_within(
+                        write_timeout,
+                        write_raw_frames_vectored(&mut writer, &batch.frames),
+                    )
+                    .await?;
+                writer_stats.transport_write_completed(frame_count, packet_bytes);
             }
-            writer_stats.transport_write_completed(frame_count, packet_bytes);
-        }
-        Result::<()>::Ok(())
-    });
+            Result::<()>::Ok(())
+        },
+        writer_shutdown_tx,
+        context.shutdown_timeout,
+    )));
 
     let mut reader_shutdown = shutdown_rx;
-    let read_result: Result<()> = async {
+    let read_result: Result<()> = tokio::select! {
+        biased;
+        _ = stopped(&mut endpoint_shutdown) => Ok(()),
+        _ = stopped(&mut reader_shutdown) => Ok(()),
+        result = async {
         loop {
-            let frame = tokio::select! {
-                changed = reader_shutdown.changed() => {
-                    if changed.is_err() || *reader_shutdown.borrow() { break; }
-                    continue;
-                }
-                frame = read_raw_frame(&mut reader, &mut first_frame_len) => frame?,
-            };
+            let frame = read_raw_frame(&mut reader, &mut first_frame_len).await?;
             let Some(frame) = frame else {
                 break;
             };
@@ -216,6 +219,8 @@ async fn handle_raw_tcp_connection(
                 .then(|| inner_frame_rpc_id(&frame))
                 .flatten();
             let event = ProcessEvent::Frame {
+                backing_reservation: None,
+                control_reservation: None,
                 internal: connection_kind == ConnectionKind::Internal,
                 scene_index,
                 connection_id,
@@ -234,7 +239,7 @@ async fn handle_raw_tcp_connection(
                             target: "tiangz::transport",
                             connection_id,
                             rpc_id,
-                            "rejected inner RPC because target control ingress queue is full"
+                            "rejected inner RPC because target ingress capacity is exhausted"
                         );
                         continue;
                     }
@@ -249,22 +254,18 @@ async fn handle_raw_tcp_connection(
                 .map_err(anyhow::Error::msg)?;
         }
         Ok(())
-    }
-    .await;
+        } => result,
+    };
 
+    // 断线通知等待业务准入时不继续占有读半边 Socket。 / Releases the read half before disconnect notification waits for ingress.
+    drop(reader);
     // 错误也必须移除writer并通知断线；恶意/损坏连接不再等待发送排空。
     // Errors must remove the writer and notify disconnect; corrupt peers skip outbound draining.
     if read_result.is_err() {
         writer_task.abort();
     }
-    let finish_result = finish_connection(
-        scene_index,
-        connection_id,
-        &event_tx,
-        &writers,
-        &shutdown_tx,
-    )
-    .await;
+    let finish_result =
+        finish_connection(scene_index, connection_id, event_tx, writers, &shutdown_tx).await;
     if finish_result.is_err() {
         writer_task.abort();
     }
@@ -275,98 +276,106 @@ async fn handle_raw_tcp_connection(
     Ok(())
 }
 
+/// WebSocket 连接与 writer 共享端点的停止与取消所有权。 / Shares endpoint stop/cancellation ownership with the WebSocket writer.
 async fn handle_websocket_connection(
-    scene_index: u32,
+    context: Arc<EndpointContext>,
     connection_id: u64,
-    stream: TcpStream,
-    event_tx: crate::process::ProcessEventSender,
-    writers: super::ConnectionWriters,
-    stats: Arc<crate::process::ProcessQueueStats>,
+    websocket: AcceptedWebSocket,
+    mut endpoint_shutdown: watch::Receiver<bool>,
 ) -> Result<()> {
-    let websocket = accept_async(stream).await?;
+    let scene_index = context.scene_index;
+    let event_tx = &context.event_tx;
+    let writers = &context.writers;
+    let stats = &context.stats;
     let (mut writer, mut reader) = websocket.split();
     let (write_tx, mut write_rx) =
         mpsc::channel::<ConnectionWriteBatch>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
     let queued_bytes = Arc::new(AtomicUsize::new(0));
-    let writer_queued_bytes = Arc::clone(&queued_bytes);
     let queued_frames = Arc::new(AtomicUsize::new(0));
-    let writer_queued_frames = Arc::clone(&queued_frames);
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    writers
-        .lock()
-        .expect("connection writer map poisoned")
-        .insert(
-            connection_id,
-            ConnectionWriter {
-                sender: write_tx,
-                queued_bytes,
-                queued_frames,
-                shutdown_tx: shutdown_tx.clone(),
-            },
-        );
+    let _registration = ConnectionRegistration::new(
+        writers.clone(),
+        connection_id,
+        ConnectionWriter {
+            process_buffer_budget: stats.outbound_buffers.clone(),
+            sender: write_tx,
+            queued_bytes,
+            queued_frames,
+            shutdown_tx: shutdown_tx.clone(),
+        },
+    );
 
     let mut writer_shutdown = shutdown_rx.clone();
     let writer_shutdown_tx = shutdown_tx.clone();
-    let writer_stats = Arc::clone(&stats);
-    let writer_task = tokio::spawn(async move {
-        loop {
-            let batch = tokio::select! {
-                changed = writer_shutdown.changed() => {
-                    if changed.is_err() || *writer_shutdown.borrow() {
-                        // 关闭前排空已经入队的WebSocket消息，保证顶号/踢人通知可见。
-                        // Drain queued WebSocket messages before close so
-                        // takeover/kick notices remain visible to the client.
-                        while let Ok(batch) = write_rx.try_recv() {
-                            let frame_count = batch.frames.len();
+    let writer_stats = Arc::clone(stats);
+    let write_timeout = context.write_timeout;
+    let writer_task = OwnedTask::new(tokio::spawn(drain_writer(
+        async move {
+            let drained: Result<()> = async {
+                while let Some(batch) = next_write_batch(&mut write_rx, &mut writer_shutdown).await
+                {
+                    let frame_count = batch.frames.len();
+                    batch
+                        .write_within(write_timeout, async {
                             for frame in &batch.frames {
                                 writer.feed(Message::Binary(frame.clone())).await?;
                             }
                             writer.flush().await?;
-                            writer_queued_bytes.fetch_sub(batch.frame_bytes, Ordering::Relaxed);
-                            writer_queued_frames.fetch_sub(frame_count, Ordering::Relaxed);
-                            writer_stats.transport_write_completed(frame_count, batch.frame_bytes);
-                        }
-                        break;
-                    }
-                    continue;
+                            Ok(())
+                        })
+                        .await?;
+                    writer_stats.transport_write_completed(frame_count, batch.frame_bytes);
                 }
-                batch = write_rx.recv() => {
-                    let Some(batch) = batch else { break; };
-                    batch
-                }
-            };
-            let frame_count = batch.frames.len();
-            // 已经取出的批次必须完整写出；关闭信号只影响下一批。
-            // Once taken, the batch is written completely; shutdown only
-            // affects the next batch.
-            let result = async {
-                for frame in &batch.frames {
-                    writer.feed(Message::Binary(frame.clone())).await?;
-                }
-                writer.flush().await
+                Ok(())
             }
             .await;
-            writer_queued_bytes.fetch_sub(batch.frame_bytes, Ordering::Relaxed);
-            writer_queued_frames.fetch_sub(frame_count, Ordering::Relaxed);
-            if let Err(error) = result {
-                let _ = writer_shutdown_tx.send(true);
-                return Err(error.into());
+            if let Err(error) = drained {
+                match error.downcast_ref::<tokio_tungstenite::tungstenite::Error>() {
+                    Some(
+                        tokio_tungstenite::tungstenite::Error::ConnectionClosed
+                        | tokio_tungstenite::tungstenite::Error::AlreadyClosed,
+                    ) => return Ok(()),
+                    Some(tokio_tungstenite::tungstenite::Error::Protocol(
+                        tokio_tungstenite::tungstenite::error::ProtocolError::SendAfterClosing,
+                    )) => {}
+                    _ => return Err(error),
+                }
             }
-            writer_stats.transport_write_completed(frame_count, batch.frame_bytes);
-        }
-        Result::<()>::Ok(())
-    });
+            // 保留0.7排空总预算与RAII记账，排空后发关闭帧。 / Retains the 0.7 total drain budget and RAII accounting, then sends Close.
+            match writer.close().await {
+                Ok(())
+                | Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed)
+                | Err(tokio_tungstenite::tungstenite::Error::AlreadyClosed) => Ok(()),
+                Err(error) => Err(error.into()),
+            }
+        },
+        writer_shutdown_tx,
+        context.shutdown_timeout,
+    )));
 
     let mut reader_shutdown = shutdown_rx;
-    let read_result: Result<()> = async {
-        loop {
-            let message = tokio::select! {
-                changed = reader_shutdown.changed() => {
-                    if changed.is_err() || *reader_shutdown.borrow() { break; }
-                    continue;
+    let read_result: Result<()> = tokio::select! {
+        biased;
+        _ = stopped(&mut endpoint_shutdown) => {
+            let _ = shutdown_tx.send(true);
+            let _ = timeout(context.shutdown_timeout, async {
+                while let Some(Ok(message)) = reader.next().await {
+                    if matches!(message, Message::Close(_)) { break; }
                 }
-                message = reader.next() => message,
-            };
+            }).await;
+            Ok(())
+        },
+        _ = stopped(&mut reader_shutdown) => {
+            let _ = timeout(context.shutdown_timeout, async {
+                while let Some(Ok(message)) = reader.next().await {
+                    if matches!(message, Message::Close(_)) { break; }
+                }
+            }).await;
+            Ok(())
+        },
+        result = async {
+        loop {
+            let message = reader.next().await;
             let Some(message) = message else {
                 break;
             };
@@ -380,6 +389,8 @@ async fn handle_websocket_connection(
                     event_tx
                         .send(
                             ProcessEvent::Frame {
+                                backing_reservation: None,
+                                control_reservation: None,
                                 internal: false,
                                 scene_index,
                                 connection_id,
@@ -397,22 +408,18 @@ async fn handle_websocket_connection(
             }
         }
         Ok(())
-    }
-    .await;
+        } => result,
+    };
 
+    // writer 已由预算约束，读半边无需在断线通知排队时继续持有。 / The writer has its own budget; disconnect queue wait need not retain the read half.
+    drop(reader);
     // 协议校验和读取失败同样走统一清理，防止孤儿发送任务留住Socket。
     // Protocol/read failures also run cleanup so orphaned writers cannot retain sockets.
     if read_result.is_err() {
         writer_task.abort();
     }
-    let finish_result = finish_connection(
-        scene_index,
-        connection_id,
-        &event_tx,
-        &writers,
-        &shutdown_tx,
-    )
-    .await;
+    let finish_result =
+        finish_connection(scene_index, connection_id, event_tx, writers, &shutdown_tx).await;
     if finish_result.is_err() {
         writer_task.abort();
     }
@@ -438,6 +445,8 @@ async fn finish_connection(
     event_tx
         .send(
             ProcessEvent::Disconnect {
+                backing_reservation: None,
+                control_reservation: None,
                 scene_index,
                 connection_id,
             },
@@ -447,8 +456,8 @@ async fn finish_connection(
         .map_err(anyhow::Error::msg)
 }
 
-async fn write_raw_frames_vectored(
-    writer: &mut tokio::net::tcp::OwnedWriteHalf,
+pub(super) async fn write_raw_frames_vectored(
+    writer: &mut (impl tokio::io::AsyncWrite + Unpin),
     frames: &[Bytes],
 ) -> Result<()> {
     let prefixes: Vec<[u8; 4]> = frames
@@ -491,26 +500,255 @@ async fn read_raw_frame(
     Ok(Some(frame))
 }
 
-async fn read_raw_preamble(
-    reader: &mut tokio::net::tcp::OwnedReadHalf,
-) -> Result<Option<(ConnectionKind, Option<usize>)>> {
-    let prefix = match reader.read_u32().await {
-        Ok(prefix) => prefix,
-        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(error) => return Err(error.into()),
-    };
-    if prefix != INNER_HANDSHAKE_MAGIC {
-        return Ok(Some((ConnectionKind::External, Some(prefix as usize))));
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{EndpointAudience, EndpointProtocol};
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    type Client = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<TcpStream>>;
+    struct Fixture {
+        client: Client,
+        writer: super::super::ConnectionWriter,
+        writers: super::super::ConnectionWriters,
+        server: tokio::task::JoinHandle<Result<()>>,
+        events: std::sync::mpsc::Receiver<ProcessEvent>,
     }
 
-    let token_len = reader.read_u16().await? as usize;
-    if token_len == 0 || token_len > MAX_INNER_TOKEN_LEN {
-        bail!("invalid inner handshake token length: {token_len}");
+    /// 随机端口的真实 WebSocket 对，不依赖游戏配置或 V8。 / A real WebSocket pair on an ephemeral port, independent of game config and V8.
+    async fn fixture() -> Fixture {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (event_tx, events) = crate::process::ProcessEventSender::test_channel();
+        let writers = super::super::ConnectionWriters::default();
+        let server_writers = Arc::clone(&writers);
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let Some(AcceptedConnection::WebSocket(websocket)) =
+                accept_connection(stream, EndpointProtocol::WebSocket, EndpointAudience::Outer)
+                    .await
+                    .unwrap()
+            else {
+                panic!("expected WebSocket handshake");
+            };
+            let scene = serde_json::from_value(serde_json::json!({
+                "name": "close-test", "sceneType": "Test", "innerIp": "127.0.0.1", "port": 0,
+            }))
+            .unwrap();
+            let context = Arc::new(EndpointContext {
+                shutdown_timeout: Duration::from_secs(3),
+                write_timeout: Duration::from_secs(3),
+                scene_index: 0,
+                scene,
+                event_tx,
+                writers: server_writers,
+                next_connection_id: Arc::new(std::sync::atomic::AtomicU64::new(2)),
+                stats: Arc::new(crate::process::ProcessQueueStats::default()),
+            });
+            let (_endpoint_tx, endpoint_rx) = watch::channel(false);
+            handle_websocket_connection(context, 1, *websocket, endpoint_rx).await
+        });
+        let (client, _) = tokio_tungstenite::connect_async(format!("ws://{address}"))
+            .await
+            .unwrap();
+        let writer = loop {
+            if let Some(writer) = writers.lock().unwrap().get(&1).cloned() {
+                break writer;
+            }
+            tokio::task::yield_now().await;
+        };
+
+        Fixture {
+            client,
+            writer,
+            writers,
+            server,
+            events,
+        }
     }
-    let mut token = vec![0_u8; token_len];
-    reader.read_exact(&mut token).await?;
-    if token != inner_token().as_bytes() {
-        bail!("invalid inner handshake token");
+
+    /// 顶号通知后仍有旧输入时，通知及关闭帧都必须有序送达。 / Deliver the notice then the close frame even with late client input.
+    #[tokio::test]
+    async fn websocket_server_close_drains_then_handshakes_with_late_input() {
+        timeout(Duration::from_secs(5), async {
+            let Fixture {
+                mut client,
+                writer,
+                writers,
+                server,
+                events,
+            } = fixture().await;
+            let notice = Bytes::from_static(&[0x27, 0x11, 1]);
+            try_queue_connection_frame(&writer, notice.clone()).unwrap();
+            writer.shutdown_tx.send(true).unwrap();
+            client
+                .send(Message::Binary(Bytes::from_static(&[0x27, 0x12, 2])))
+                .await
+                .unwrap();
+            assert_eq!(
+                client.next().await.unwrap().unwrap(),
+                Message::Binary(notice)
+            );
+            assert!(matches!(
+                client.next().await.unwrap().unwrap(),
+                Message::Close(_)
+            ));
+            client.flush().await.unwrap();
+            server.await.unwrap().unwrap();
+            assert!(writers.lock().unwrap().is_empty());
+            assert!(events.try_iter().any(|event| matches!(
+                event,
+                ProcessEvent::Disconnect {
+                    connection_id: 1,
+                    ..
+                }
+            )));
+        })
+        .await
+        .expect("WebSocket close must be bounded");
     }
-    Ok(Some((ConnectionKind::Internal, None)))
+    /// 不回复关闭握手的客户端也必须按固定预算释放。 / Release a peer that never acknowledges Close within the fixed budget.
+    #[tokio::test]
+    async fn websocket_close_nonresponsive_peer_is_bounded() {
+        timeout(Duration::from_secs(5), async {
+            let Fixture {
+                mut client,
+                writer,
+                writers,
+                server,
+                events: _events,
+                ..
+            } = fixture().await;
+            writer.shutdown_tx.send(true).unwrap();
+            assert!(matches!(
+                client.next().await.unwrap().unwrap(),
+                Message::Close(_)
+            ));
+            // 不再 poll/flush 客户端，故意不发送自动排队的关闭确认。 / Do not poll/flush the automatically queued acknowledgement.
+            server.await.unwrap().unwrap();
+            assert!(writers.lock().unwrap().is_empty());
+            assert!(writer.sender.is_closed());
+        })
+        .await
+        .expect("unresponsive peer must not retain transport tasks");
+    }
+
+    /// 对端主动关闭仍得到关闭确认且只产生一次断连。 / A peer-initiated close is acknowledged with one disconnect event.
+    #[tokio::test]
+    async fn websocket_peer_close_is_acknowledged() {
+        timeout(Duration::from_secs(5), async {
+            let Fixture {
+                mut client,
+                writers,
+                server,
+                events,
+                ..
+            } = fixture().await;
+            client.close(None).await.unwrap();
+            assert!(matches!(
+                client.next().await.unwrap().unwrap(),
+                Message::Close(_)
+            ));
+            server.await.unwrap().unwrap();
+            assert!(writers.lock().unwrap().is_empty());
+            assert_eq!(
+                events
+                    .try_iter()
+                    .filter(|e| matches!(e, ProcessEvent::Disconnect { .. }))
+                    .count(),
+                1
+            );
+        })
+        .await
+        .unwrap();
+    }
+
+    /// 多批通知必须全部先于关闭帧，不能只保证最后一个批次。 / Every queued batch must precede Close, not just the final batch.
+    #[tokio::test]
+    async fn websocket_close_drains_multiple_batches() {
+        timeout(Duration::from_secs(5), async {
+            let Fixture {
+                mut client,
+                writer,
+                server,
+                events: _events,
+                ..
+            } = fixture().await;
+            for i in 0..32 {
+                try_queue_connection_frame(&writer, Bytes::from(vec![42; 1024 + i])).unwrap();
+            }
+            writer.shutdown_tx.send(true).unwrap();
+            for i in 0..32 {
+                assert_eq!(
+                    client.next().await.unwrap().unwrap(),
+                    Message::Binary(Bytes::from(vec![42; 1024 + i]))
+                );
+            }
+            assert!(matches!(
+                client.next().await.unwrap().unwrap(),
+                Message::Close(_)
+            ));
+            client.flush().await.unwrap();
+            server.await.unwrap().unwrap();
+            assert_eq!(writer.queued_frames.load(Ordering::Relaxed), 0);
+            assert_eq!(writer.queued_bytes.load(Ordering::Relaxed), 0);
+        })
+        .await
+        .unwrap();
+    }
+
+    /// 对端先关闭时，积压应用帧不能阻止关闭确认。 / Pending application frames must not prevent acknowledgement of a peer close.
+    #[tokio::test]
+    async fn websocket_peer_close_with_pending_output_is_acknowledged() {
+        // 每轮建独立连接，覆盖读写任务竞争；仍必须读到 Close 并成功回收服务端。
+        // Exercise independent read/write races, requiring a Close and successful server cleanup each time.
+        for _ in 0..32 {
+            timeout(Duration::from_secs(5), async {
+                let Fixture {
+                    mut client,
+                    writer,
+                    server,
+                    events: _events,
+                    ..
+                } = fixture().await;
+                client.close(None).await.unwrap();
+                for _ in 0..32 {
+                    try_queue_connection_frame(&writer, Bytes::from(vec![42; 32768])).unwrap();
+                }
+                loop {
+                    if matches!(client.next().await.unwrap().unwrap(), Message::Close(_)) {
+                        break;
+                    }
+                }
+                server.await.unwrap().unwrap();
+                assert!(writer.sender.is_closed());
+            })
+            .await
+            .unwrap();
+        }
+    }
+
+    /// 不支持的文本帧仍按协议错误中止并回收写任务。 / Unsupported text still aborts as a protocol error and releases the writer.
+    #[tokio::test]
+    async fn websocket_invalid_input_cleans_up_writer() {
+        timeout(Duration::from_secs(5), async {
+            let Fixture {
+                mut client,
+                writer,
+                writers,
+                server,
+                events: _events,
+                ..
+            } = fixture().await;
+            client.send(Message::Text("invalid".into())).await.unwrap();
+            let error = server.await.unwrap().unwrap_err();
+            assert!(error.to_string().contains("text frames are not supported"));
+            assert!(writers.lock().unwrap().is_empty());
+            assert!(writer.sender.is_closed());
+        })
+        .await
+        .unwrap();
+    }
 }

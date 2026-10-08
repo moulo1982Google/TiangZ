@@ -1,4 +1,4 @@
-import type { EntrySceneCtor } from "./types";
+import type { EntrySceneCtor } from "./EntryScene";
 
 const sceneTypes = new Map<string, EntrySceneCtor>();
 

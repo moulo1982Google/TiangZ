@@ -3,7 +3,33 @@ import { test } from "node:test";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import ts from "typescript";
 import { generateSystemDeclarations } from "./system_declarations.mjs";
+
+test("inline module import types resolve from the generated Model declaration", async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "tiangz-inline-system-types-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const model = path.join(root, "model"), outputRoot = path.join(model, "generated/systems");
+  await mkdir(model);
+  const publicFile = path.join(model, "public.ts");
+  await writeFile(publicFile, 'export class Counter {}\nexport interface Payload { value: number; }\nexport const defaults: Payload = { value: 1 };\n');
+  const system = path.join(root, "CounterSystem.ts");
+  await writeFile(system, `@systemFor(Counter) export class CounterSystem extends Counter {
+    Apply<T extends import('#tiangz/module').Payload>(value: T, tag: "#tiangz/module"): Promise<import("#tiangz/module").Payload[]> { return Promise.resolve([value]); }
+    Inspect(value: typeof import("#tiangz/module").defaults): import("#tiangz/module").Payload { return value; }
+    get Value(): import("#tiangz/module").Payload { return { value: 1 }; }
+    set Value(value: import("#tiangz/module").Payload) {}
+  }`);
+  const options = { root, files: [system], modelRoots: [model], outputRoot, publicFile };
+  await generateSystemDeclarations(options);
+  const file = path.join(outputRoot, "CounterSystem.d.ts");
+  const declaration = await readFile(file, "utf8");
+  assert.match(declaration, /tag: "#tiangz\/module"/);
+  const program = ts.createProgram([file, publicFile], { noEmit: true, strict: true, skipLibCheck: false, types: [],
+    target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler });
+  assert.deepEqual(ts.getPreEmitDiagnostics(program).map(item => ts.flattenDiagnosticMessageText(item.messageText, "\n")), []);
+  await generateSystemDeclarations({ ...options, check: true });
+});
 
 test("external Systems get declarations without requiring unrelated shared domain systems", async t => {
   const root = await mkdtemp(path.join(os.tmpdir(), "tiangz-systems-"));

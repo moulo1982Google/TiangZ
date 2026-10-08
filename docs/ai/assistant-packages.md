@@ -1,5 +1,9 @@
 # Codex、Claude 与 Cindy 技能交付
 
+2026-09-26 KCP 预算轮：分发提交 `ea6f292`，版本 0.2.0、40 条规则及四工具/六建议保持。Cindy SHA256 `fa7ba5cccae77ab51c2df418393053122643121dfcd2c27bb6f468d7bc411018`，实际归档 CRC/7 文件哈希/提取后工具/两份技能校验通过，证据 `temp/v0.7-ai-kcp-{build,check,distribute,distribution-check,artifact-check}.log` 与 artifact-identity.json。规则明确 KCP 的独立范围、ACK 峰值和 callback 终止义务；客户端/Forge/工作区已装技能未覆盖。
+
+2026-09-26 入站预算轮：分发提交 `d83df86`，清单仍 0.2.0，Cindy 仍为 40 条规则、四工具/六类建议。已从唯一源同步独立入站与出站所有权及明确排除范围；Cindy SHA256 为 `02a7b9750505768bbbd0975b7b85b6cad1fcfd47dde4e2cf7786bba43b5726d0`。`temp/v0.7-ai-ingress-{build,check,distribute,distribution-check,artifact-check}.log` 和 artifact-identity.json 保存 CRC、7 文件哈希、提取后工具及两份技能校验通过的证据。无 Forge/客户端安装或工作区已装技能覆盖。下方旧哈希仅对应各自阶段。
+
 ## 唯一维护入口
 
 2026-09-17 起，版本化源码放在本仓库 `tools/ai-assistants/`：
@@ -42,6 +46,27 @@ Compress-Archive -LiteralPath dist/ai-assistants/claude/tiangz-game-backend -Des
 格式参考：[Codex Skills 官方入口](https://developers.openai.com/codex/skills)、[Claude Code Skills](https://code.claude.com/docs/en/skills)。Cindy 以当前宿主 ghost_forge_guide 为准；没有新增已停用的 skill.items，也没有猜测 Manual 首发版本号。
 
 ## 当前验证记录
+
+主动 Inner 预算轮已同步复制前准入、最后切片释放、writer 排队共用期限与排除响应/入站/KCP 缓存的边界。Cindy 仍为 40 条规则、清单 0.2.0；实际归档 SHA256 `8897a980c63e7302a08b706a1ef8337bba4ca6607d6258dba198eb36c4b83ccb`。CRC、7 文件哈希、与生成输入一致、归档提取后的四工具/六建议及两个技能校验通过，日志 `temp/v0.7-ai-inner-{build,check,distribute,distribution-check,artifact-check}.log`，身份 `temp/v0.7-ai-inner-artifact-identity.json`。AI Plugins 本地提交 `eda1965`；这仍是制品验收，没有替换工作区已装技能或运行客户端安装。
+
+模块实时检查轮已同步受信任工作区、已保存 Host 声明、未保存 TS overlay 与明确不可用边界；不把实时检查当成生成锁/完整 build。Cindy 仍为 40 条规则、清单 0.2.0。本轮实际归档 SHA256 `e946e577af1c9ca80989009fdbfc880ee6bc8cf8417ec51c8a4384f08a5155c8`；CRC、7 文件清单哈希、与生成输入逐字节一致、提取后四工具/六建议及两个技能校验均通过。证据为 `temp/v0.7-ai-live-{build,check,distribute,distribution-check,artifact-check}.log` 和 `temp/v0.7-ai-live-artifact-identity.json`。工作区已装技能与客户端安装状态没有改变。
+
+0.7 开发 worktree 更新（AI 清单仍为 0.2.0，发行号独立冻结）：技能/随包契约补入操作预算、在途回调、可选逻辑目录与独立版本身份；G2/G3 轮继续补充共享 Program 检查、模块部署、资源预算范围及只读容量/消费幂等。Cindy 环境工具停止把旧 0.6.0/main 作为当前版本；返回 `versionStatus: not-probed`、空工作版本和应核对的清单。四个只读工具与六类领域建议保持，当前规则为 40 条。
+
+G2/G3 轮已实际生成和分发至 AI Plugins 0.7 worktree，7 个受清单记录文件 SHA256、Cindy 归档 CRC 和归档内容与源码一致性通过。提取实际归档后四工具/六建议检查通过，Codex/Claude 两个技能经独立 venv quick_validate 通过；日志 `temp/v0.7-ai-g2-{build,check,distribute,distribution-check,artifact-check}.log`，身份 `temp/v0.7-ai-g2-artifact-identity.json`。没有改工作区已装技能、Forge 或客户端安装状态。
+
+分发须显式指定目标 worktree，避免把开发分支内容写回原仓库：
+
+```powershell
+node tools/ai-assistants/build.mjs
+node tools/ai-assistants/check.mjs
+python tools/ai-assistants/distribute.py --repository ../TiangZ-AI-Plugins-0.7
+python tools/ai-assistants/distribute.py --repository ../TiangZ-AI-Plugins-0.7 --check
+```
+
+分发脚本在写入前核对两个插件清单与 Cindy 版本，保存 SHA256 身份清单，并按既有归档结构生成确定性 `.cindy`（根目录 ghost.json/main.js）。当前环境没有 Cindy Forge 工具：已从实际归档提取内容，用 `check.mjs --root <提取夹具>` 执行四个工具与六类建议，并校验 CRC/逐文件哈希；这是本地制品验证，不能冒充 Forge 校验、客户端安装或新会话效果。已有插件清单、MCP 配置、工作区技能与用户插件缓存没有自动覆盖。
+
+技能 quick_validate 已在独立临时 venv 通过。当前 python 来自 MSYS2 UCRT，venv 的解释器在 bin 下；不是通常的 Scripts 路径。该环境缺少 PyYAML，默认 C 扩展构建失败，设置进程级 `PYYAML_FORCE_LIBYAML=0` 安装纯 Python 依赖后通过，不改整机 Python/编译器。原失败与依赖记录保留在 `temp/v0.7-skill-validation-*`，后续先查询解释器和 venv 布局再运行，不能据路径差异宣称 Python 未安装。
 
 0.2.0：便携生成、一致性检查、规则 ID 唯一性、四个工具/六类建议的沙箱接口测试通过。Cindy Forge 返回 `action: updated`，启用状态保留；安装后真实调用 list_design_rules 返回 32 条规则，包含时间禁令、C/S协议、DB故障不降级、原事务重试和原子热更。
 

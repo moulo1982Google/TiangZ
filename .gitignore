@@ -2,6 +2,7 @@
 /perf/map_probe_load/target/
 /node_modules/
 /tools/node_modules/
+/tools/lib/__pycache__/
 /dist/
 /codegen.manifest.json.tmp*
 /codegen.manifest.json.lock/

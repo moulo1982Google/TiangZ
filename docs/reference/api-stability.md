@@ -4,6 +4,12 @@ TiangZ从`0.3.10-alpha.0`开始建立可执行的公共API边界。目标不是�
 
 ## 版本身份
 
+### 2026-09-27：0.7 候选冻结
+
+正式生成锁仍有 204 个 Stable 导出，未删除导出。`HostDbProxyTransport` 增加请求期限能力查询、单调时钟及可选 `DbProxyRequestOptions`；`ProcessNetworkConfig` 增加连接、握手、收发/KCP 字节和写超时的可选上限；`TimerSystem` 增加只读 `InFlightCount`。可达声明图同时记录了连接状态拆分、mailbox/Host 期限及持久化预算相关内部形状。`npm run core-api:update-lock` 生成签名 `6eaf9bd13d5a2ef488225bc213ea3234d1ad66857a25f6b9a65e0c87dd502e4f`；不得继续用 0.6 旧锁宣称冻结。
+
+升级须重建 Rust、Model 和模块组合宿主并重启 Process，重新生成客户端/Native/模块输出并核对模块版本范围。旧可选参数调用保持类型兼容；过载、排队期限、停机与请求结果未知的行为必须按 0.7 的有界契约处理，超时不能当作“服务端一定未执行”或释放实际仍在运行的所有者。新旧 Model/协议/Native 指纹的包不能混做行为热更。
+
 ### 2026-09-17：Hotfix 与配置联合加载迁移
 
 首次升级须重新构建 Rust 宿主、Model 与完整启动包，并重启 Process。旧的未配对 Hotfix/配置制品不可直接交给新 Runtime。
@@ -49,7 +55,7 @@ Phase 3.10.1、3.10.2等是工作项，不使用四段版本号。客户端协�
 
 Phase 4历史上使用`0.4.x`版本线。`0.4.0`包含一次明确记录的空间协议破坏性升级；此后普通协议演进仍必须兼容schema lock，不能把`0.x`版本当作随意改写既有字段的理由。
 
-当前版本为 `0.6.2`（2026-09-23 发布；`0.6.0` 于 2026-09-20 发布），从 0.4.x 直接转入模块化线，不代表存在 0.5 正式发布，也不代表 0.6 正式发布验收完成。外置模块必须逐个验证宿主版本范围；原 `<0.5.0` 上限不能接受本版本。升级需要重新生成、完整构建并重启，版本号不能代替协议或 Model 兼容指纹。见[版本记录](../../CHANGELOG.md)。
+当前开发候选为 `0.7.0-rc.2`，尚未push或发布；上一正式版为 `0.6.5`（2026-09-30），从 0.4.x 直接转入模块化线，不代表存在 0.5 正式发布，也不把正式tag的发布记录当作完整商业游戏或长期生产运行资格。外置模块必须逐个验证宿主版本范围；原 `<0.5.0` 上限不能接受本版本。升级需要重新生成、完整构建并重启，版本号不能代替协议或 Model 兼容指纹。见[版本记录](../../CHANGELOG.md)。
 
 ## 四类代码边界
 
@@ -140,7 +146,13 @@ npm run verify:core-api
 以下均为非破坏性新增，已有业务无需修改。
 
 - 新增 Stable API `httpHandler(SceneCtor, method, path)`（外部 Handler 类装饰器，可热更）、`HttpError`、`jsonResponse`，以及类型 `HttpMethod`、`HttpRequest`、`HttpResponse`、`SceneHttpHandler`、`SceneHttpConfig`；`SceneConfig` 新增可选字段 `http`。对应 Scene 配置 `http`，见[配置参考](config-and-protocol.md#scene-http-入口)。
-- `public-api.lock.json` 已更新，差异仅为上述新增导出与 `SceneConfig.http`。
+- `public-api.lock.json` 已更新，差异为上述新增导出、`SceneConfig.http` 和宿主投递方法 `EntryScene.pushHostHttpRequest`；已有签名不变。目标为 RC1 之后的 0.7 发布。
+### 0.6.3（2026-09-28）
+
+行为修正，已有业务无需修改。
+
+- `EntryScene.disconnectClient` 的签名不变，关闭时机改为：请求记录在本 Scene，随下一次出站排空交给宿主，且排在此前 `sendClient` 入队的帧之后；此前它立即交给宿主，若在 Scene 更新之后（例如 RPC 续体中）先推送再断开，关闭可能抢在通知之前，通知被丢。关闭最多晚一次更新生效；业务若需要"立即不再处理该连接"，应先使 Session 失效（与以前相同，在途入站帧本来就可能到达）。进程停机时未交出的关闭请求在释放 Scene 时直接交给宿主。
+- `SceneUpdateResult` 新增只读字段 `closes`（本次交出的关闭请求），`ProcessUpdateResult` 同步新增；宿主桥接先交付 outbound 再执行 closes。`public-api.lock.json` 已更新，差异为新增字段 `SceneUpdateResult.closes` 与 `EntryScene` 两个私有成员声明（`pendingCloses`、`drainCloses`），无删除或修改。
 
 ### 0.6.2（2026-09-23）
 

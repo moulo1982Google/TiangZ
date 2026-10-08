@@ -1,5 +1,396 @@
 # 2026-09-16：先选业务工程，再写模块
 
+源码落地：双亲合并`c06b244`已快进原`feat/v0.7`，原工作区完整Rust/KCP和启动包重建、真实模块宿主启动/停止通过，Host SHA3d390885...；生成/依赖锁无漂移。原目录证据`temp/v07-065-integration-main/`与隔离矩阵分开，不把旧二进制当新Rust结果。MSVC既有链接警告保留、未push，见[源码对齐](../design/v0.7-merge-0.6.5.md)。
+
+2026-10-07源码对齐终验：0.6.5关闭/Native worker整合保留0.7拆分、预算和RAII，另补成功/业务错误均按UTF-8字节限长，固定panic诊断保持分类。最终实现树044287f8，Windows发布级check8/quick35/full9、Rust279通过；Linux原整合full9/Rust282，最终Rust修复另跑全目标Clippy/Rust283和两模块V8/worker真实热更停机通过，不把旧full或专项互相冒充。API锁/codegen/204导出冻结检查通过、依赖与协议锁不变；首轮夹具、可移植路径和真实超长错误反例均保留，见[源码对齐](../design/v0.7-merge-0.6.5.md)及[失败教训](#整合旧分支时须适配当前架构和宿主abi)。后续核对未完功能、SDK/插件与发行输入，未push；以下为历史快照。
+
+2026-10-07源码对齐：正式`v0.6.5`正在独立整合到0.7，通知后关闭、WebSocket关闭握手与模块Native worker须适配0.7现有拆分、RAII和预算，不能整文件回退。worker为Process级资源，多个Scene共用容量/不可逆drain；业务须明确唯一所有者，丢弃Promise不取消计算，Hotfix等待计算与V8交付。其他五仓库没有新增上游提交，用户Examples改动保留；插件、SDK与用户指出的未完成内容分别核对。API锁/codegen、类型/关闭单测和普通Rust编译已通过，完整矩阵仍在执行，新Host不继承旧制品或DBProxy长稳资格。详细来源、首轮失败与复测见[源码对齐](../design/v0.7-merge-0.6.5.md)及[夹具适配教训](#整合旧分支时须适配当前架构和宿主abi)，未push。
+
+2026-10-07 11:12 R7真实24h终验通过并按约定停下：不能只看load结束或state.passed，已重新核实际报告SHA、preflight=false、86400.392s/120故障/300.979s空载/退出、独审结果及52冻结文件，14954正常区间零错误、281179唯一事件与所有payload/元数据一致，容量与内存通过。实际512MiB下驱动RSS峰274.91MiB/审查196.15MiB、OOM/swap零，max1724回收证据保留；旧规模夹具漏progress的教训仍有效，不因最后通过删除它。PID/owner/image核实际本轮已停止、保护业务及probe停用确认；只授DP该合成负载资格，不自动授旧套件、实际SLG、Host热更或7日部署。完整证据在R7 qualified-1440m与[收尾专题](../design/v0.7-soak-control-memory.md)，无产品/生成/版本或push变化。
+
+2026-10-06 14:37 规模夹具不能只扩两个显眼数组：旧24h报告只扩大samples/intervals，漏了真实审查使用的progress（仍11518）及faults/schedule/generations，旧包络证明不完整。应从真实序列化schema核全部增长数组、先用实际冻结流式发布，再让Python重新解析持有与Node审查并发，避免共享引用构造低估；加实际512MiB干净文件缓存压限而非仅新空组。新完整40.89MiB夹具64s通过、reserve采样峰241.57MiB<448、OOM/swap零，max1125/暂态峰512.19MiB必须保留。SQL/Redis形状双编号来自同一已核SQLite，仅内存证明；不冒充独立投递/实际24h，也不以synthetic撤销或补发旧资格。禁止漏数组取绿、改预算/强制GC/drop caches/裁剪日志。复测新root的 `temp/v0.7-control-cache-preflight-20261006-r1/start-preflight.py`，11份源字节SHA/发布及解析结果留档，R7现场/源报告/冻结helper未变，详见[收尾专题](../design/v0.7-soak-control-memory.md)，本次无产品/生成/push变化。
+
+2026-10-06 13:02 控制缓存触限与OOM须分开报告：R7新960m真实完整通过80故障/300s空载/全量收尾后，1440m已从11:03:23.820启动；前缀1423原始区间/1227正常零错误、10/120恢复。新阶段512MiB控制父组max持续增至143，总501.5MiB/file396.2MiB/anon96.2MiB，1414资源行reserve峰109.36MiB低于448MiB、OOM/swap零。max是回收压力，不可说max零或压力已停，也不可当OOM；前缀正常错误零不证明未来回收无耗时影响。应保留完整max/anon/file/dirty/实际PID与正常区间证据，禁止清原证据/drop caches/加预算或改冻结运行代码取绿。只读复测 `probe-cloud.py`、`inspect-online-prefix-1440.py`，原960m检查器保留；证据R7 `qualified-960m/downloaded-manifest.json`、`latest-completed-stage-review.raw.json`、`latest-control-cache-pressure.raw.json`，详见[收尾专题](../design/v0.7-soak-control-memory.md)。本次仅记录与独立检查器，无产品/生成/期限或push变化。
+
+2026-10-06 08:50 正常PG慢占用必须独立留证：R7约14h前缀8642正常区间零错误，但07:13:09正常时段六连接同时slow_hold_released，持有608–659ms、最老等待至811ms；PG真实日志四COMMIT约630ms/维护确认DELETE约606ms。不能把正常WARN硬塞故障窗口、与queue_timeout混算、看到WARN就停测，或因客户端没失败就丢掉延迟证据。先匹配实际角色/分片/PID/代次与PG语句，再对齐SQL与资源；约30s采样不能证明0.6s瞬时wait_event，CPU配额未throttle只能排除本组已记录的配额限流，不能直接归因磁盘。此次提交路径慢已证、底层原因未证，原2s/5s未调整，日志/原始前后样本留在R7 `normal-slow-holds-decoded.json`、`normal-slow-hold-samples.raw.json`、`normal-slow-hold-analysis.json`；复测只读 `inspect-online-prefix.py`。960m70/80恢复、node2连续PSS低位增85KiB且OOM/swap/max零，前缀不授最终资格，详见[收尾专题](../design/v0.7-soak-control-memory.md)，无产品/生成/现场变化或push。
+
+2026-10-05 19:28 现场核验基准的新教训：封存后本机同名辅助副本可能因read_text/写出变更LF/CRLF，不能直接拿它的当前字节当远端冻结源码。此次只读prefix首轮误报hash，逐项证明云端10个helper全匹配冻结计划，本机保护辅助副本1930字节/封存1976字节仅换行差异、AST相同；应先核计划固定SHA，再按payloadSha256严格核云端字节，辅助复制不得覆盖封存payload。不得改原manifest、忽略远端SHA或以AST等价代替原字节验证；首轮stderr/字节证明保留，修独立检查器基准后完整复算382原始区间/326正常零错误及期限/内存/保护。复测 `python -B -X utf8 temp/v0.7-cloud-audit-r7-20261005/inspect-online-prefix.py`，证据 `prefix-helper-source-inspection.raw.json`、`prefix-helper-line-ending-proof.json`、`latest-online-prefix.json`。新30m完整5故障/空载/收尾已过，新960m18:56:13.457开始、3/80故障恢复，前缀不授完整资格，详见[收尾专题](../design/v0.7-soak-control-memory.md)。只改记录/本机只读检查器，现场/产品/codegen/push均不变。
+
+2026-10-05 18:25 新故障长稳已从18:21:01.992完整30m开始，R7现场/计划/真实ELF/限额/业务保护核验通过，1/5故障已恢复、错误暂零，后续独审过关才接960/1440m。新教训：只读部署身份检查也会撞计划强杀，首次MainPID零必须留原错误并核真实注入/重启时间与代次，不能笼统记部署失败、放宽存活断言或重放一次性安装。本次检查18:23:02.825确在18:23:02.098强杀至18:23:17.435新代次之间；恢复后同一轮实际进程/52文件/资源/保护重新通过，辅助脚本补失败unit/属性。复测与原证据入口 `temp/v0.7-cloud-audit-r7-20261005/verify-deployment.py`、`planned-fault-verification-boundary.json`、`post-install-verification.r1.err`、`post-install-verification.json`、`actual-load-image.json`；不要覆盖原尝试。engine修复31a8a5b，DBProxy记录3fbc982，新30分钟任务首轮0/云端guard正常，旧failed资格零、当前前缀不提供整轮资格；详见[收尾专题](../design/v0.7-soak-control-memory.md)，无生成/产品重编或push。
+
+2026-10-05 18:17 扩大规模收尾预检已完成：实际24h对应SQL/准备Redis全280959唯一事件、86一致重复及元数据/payload逐条匹配；Python持有重新解析后的扩大报告（避免数组共享引用低估真实驻留）与Node共同在512MiB预算下完成155.94s，NodeRSS175.28MiB、其控制组观测峰值249.47MiB，OOM/swap/max零。准备事件和synthetic报告只证明收尾规模/内存，不是实际24h资格；不得以模拟数组或较小报告替代这一层。复测入口为engine `temp/v0.7-audit-bounded-r7-20261005/start-scale-memory.py` 及其云端结果；一次性启动不可重放，应另建预检目录。原字节21份SHA已核、诊断停止/业务保护通过，旧failed不翻通过，下一步封存新完整阶段，详见[收尾专题](../design/v0.7-soak-control-memory.md)。
+
+2026-10-05 18:13 新收尾规则与教训：完整分项必须用一个REPEATABLE READ READ ONLY会话，记录所有结果帧的同一快照/隔离/只读身份；缺项/重复/乱序/快照改变/超时/未完成提交一律拒绝。v2明确每项5s、计数会话60s、独立Node审查600s，不偷换旧整条5s，不改产品2/5s或服务资源。真实PG9反例及两个连接的并发提交证明一致性；并发夹具首轮硬编码语句数量误判，在写入前停止，保留stderr，修为按玩家结果帧定位后完整复测。禁止删校验、仅在没有并发时比较快照号或覆盖首轮失败。复测：`node --test tools/lib/soak_reconciliation.test.mjs` 9通过、`npm.cmd run verify:quick` 35通过；实际24h对应规模冷计数5.292/4.988s、每项至多1.247s、真实16h全SQL/Redis内容收尾113.60s通过。原失败资格零、扩大报告和24h规模全内容内存门禁正在执行，新长稳未启动，证据及脚本在[收尾专题](../design/v0.7-soak-control-memory.md)，无生成/产品改动或push。
+
+2026-10-05 15:53 追加首次条件教训：24h对应规模首冷5.135s取消，后续同量过线不能当修复；事务work_mem对照后另建R3，首冷5.523s仍取消，未把该参数改动留入正式工具，源码恢复d6b281f6...。真实16h完整收尾/9反例通过和目标24h规模拒绝分别记录；内存规模夹具未运行，新长稳未启动。下一步全量审计若分项/分块必须保持同一一致快照、完整覆盖和明确总期限，“每项5s”不能偷换“整条5s”；禁止预热/等待状态变化后覆盖首次错误或调参数取绿。诊断已按完整owner身份停止、保护业务正常，证据/复测入口见[收尾专题](../design/v0.7-soak-control-memory.md)，未提交/push。
+
+2026-10-05 收尾正式最小改法已接入且quick35/35、真实16h数据完整冷SQL/Redis收尾和9种PG反例通过，但24h对应1.5倍SQL夹具首冷5.135s仍被五秒取消；不能用较小数据通过替代目标规模预检。新教训：nsenter隔离Redis时，业务localhost检查必须经已验证的宿主namespace执行，不能删除检查；扩大实际schema数据先检查全部FK及操作注册表，依父子顺序填充，缺注册被拒/回滚是夹具错误，不关闭约束。首次错误、正确修法、禁止绕过和复测证据已写[收尾专题](../design/v0.7-soak-control-memory.md)。新长稳未启动，旧failed资格零，无产品/SDK变更或push。
+
+2026-10-05 13:43 新收尾教训：真实R5C数据首次SQL5.157s超时，热查询1.240s；文件冷缓存计划显示全量账本索引回表导致主要耗时。重启PG不证明OS文件缓存为冷，上一轮预检漏了该条件。仅审计SQL的账本物化输入原型保持整条5s、同一快照/完整分组和原断言，冷运行3.461/3.429s、全部计数一致；不改全局PG参数或预热后取绿。分成多条SQL必须同一可重复读快照，且“每条5s”不等价于当前“整条5s”，不能偷换预算。正式工具修改、冷热/目标24h规模及完整SQL/Stream收尾预检仍待执行；旧960m资格零、24h未启动。诊断已停止，保护业务正常；详见[收尾专题](../design/v0.7-soak-control-memory.md)中的现象/实证根因/正确修法/禁止绕过/复测证据，无codegen、重编或push。
+
+2026-10-05 09:27 R5C 完整960m、80故障及300.74s空载已经结束，独立全量计数SQL仍被五秒statement_timeout取消，协调器failed并停止本轮资源；1440m未启动，960m资格零，新30m资格保留。原PG日志确认jit=off与部署的合并扫描源码SHA，上一轮修法已经执行；本次具体计划/扫描/I/O/并行/checkpoint耗时待证，禁止沿用旧根因或把客户端通过当完整SQL/Stream通过。只读复算正常9969区间错误零、容量和Rust内存门禁通过；控制组峰值512MiB、max事件54、OOM/swap零，必须保留缓存压力记录。先用本轮实际数据隔离复现首次查询和完整收尾，保持各期限、资源与全量内容断言，不修改原数据或跳过失败来取绿。现象、已证原因、待证边界、禁止绕过及复测入口已写入[收尾专题](../design/v0.7-soak-control-memory.md)；本次仅取证和文档留档，无产品/codegen/重编/push，下文为历史记录。
+
+2026-10-04 16:50 收尾修复的当前长稳现场为 `temp/v0.7-cloud-audit-r5c-20261004/` / `tzfault20261004auditr5c`，16:47:19新完整30m开始；全部五故障/300s空载/SQL和Stream逐条核对通过后自动接完整960/1440m，当前未获得新完整资格。修复代码73083c8、产品原ELF和2C4G/100人/512MiB/2s/5s保持。新52文件/实际节点/units/限额和保护业务已核，Linux控制60项、Python19项通过，本机30分钟任务首次0且只绑定新owner/root/计划SHA，真实旧目录反例拒绝；旧任务/过期timer停用、诊断容器停止。详见[收尾专题](../design/v0.7-soak-control-memory.md)，不改旧失败、继承时长、重放一次性安装或把诊断预检算作24h，未push。
+
+2026-10-04 原证据SHA不能对本机重写的JSON计算：r5b部署前发现24505字节LF被 `write_text` 变成25419字节CRLF，语义一样但SHA不同，正确拒绝且没有目标资源/负载。保存原始字节再核云端SHA，另封存r5c候选；禁止放宽哈希、只比较解析对象或改原证据。跨现场迁移还要核ROOT、owner、target/control slice，不能只替换容器名。来源原字节、等价/CRLF差异证明与失败bootstrap留在[收尾专题](../design/v0.7-soak-control-memory.md)，不把失败启动算成长稳运行。
+
+2026-10-04 16:37 收尾修复已完成真实隔离验证：PG分区汇总生成5208个JIT函数造成明显编译开销，原SQL首次5s超时；只在对账事务内关闭JIT、合并扫描，原5s不变，重启PG后1.192s，九种真实SQL语义反例保持原结果。Outbox的首尾六点均值易受30周期批量交易采样相位影响；先核完整时序及真实事件发布耗时，再冻结900s/至少12样本的时间窗规则，保留峰值100/斜率0.05/均值增长32/空载门禁，补最老健康待发布60s和持续/中段增长反例。真实512MiB下完整报告+SQL/Redis逐条内容收尾107.30s通过，35步quick通过；原失败不翻为passed、诊断资格零。禁止加期限/资源、删尾样本或仅用fake Docker宣称真实收尾已预检。证据、命令和后续新候选边界见[控制收尾专题](../design/v0.7-soak-control-memory.md)。
+
+2026-10-04 新收尾教训：memory-r4负载960m/80故障/300s空载完成后，独立全量SQL超过验收工具自己的5s查询期限，15:46终态failed、1440m未启动；没有OOM，不误记为DP请求2s或SDK5s预算缺陷。预检只用fake Docker验证内存/输出，漏了真实查询耗时。应在重跑前审计所有尚未执行门禁；本次对原1650正常SQL样本复算发现尾6份Outbox均值36.5超过32，空载已清零但误判/持续积压仍未定，不能删样本、加期限或改门槛取绿。原负载/内存可分别留作证据，失败时长不继承、最终SQL/Stream未完成就不报整轮通过。原始错误、SHA清单、只读复算命令和隔离真实数据量定位方案见[控制收尾专题](../design/v0.7-soak-control-memory.md)。以下01:27等是历史快照，不能据其重新启动旧实例。
+
+2026-10-04 01:27 当前外网960m约106分钟、10次故障恢复；原始客户端1272个区间逐行复算并对照保存证据，1077个正常区间错误零。四条PG慢占用/一次AOF超时在故障窗口，数据不变量/OOM/swap零，保护业务重新核对正常。控制组内存增长按anon/file分拆及10分钟窗口检查，近期主要是文件缓存；不能仅凭总量上涨判定泄漏，也不能凭堆约9MiB低位认定长期增长已修复。新30m已通过，当前前缀不提供完整960m/24h资格，详见[控制内存专题](../design/v0.7-soak-control-memory.md)。
+
+2026-10-04 新增[2000 人单服连续 30 天前置条件](../design/v0.7-30-day-soak-prerequisites.md)，将预判写成负载、容量、生命周期、长期时间/编号、维护、测试工具与最终数据门禁。先审计完整部署到收尾链路并预检，不等故障后才发现 70h/4 天寿命或全量事件驻留限制；固定量级分配夹具不代替 30 天证据。TimerSystem 取消节点的静态引用保留尚未复现/修复，不能误记成 DP 当前故障；DBProxy 回执删除仍是设计，安全退休语义未冻结前禁止任意 TTL。未来业务压测另行安排，不追加当前 DP 验收、不启动新长稳或修改运行现场。
+
+2026-10-04 当前 memory-r4 新完整 30m 已于 2026-10-03 23:41:15 北京时间独立通过五次故障、300s 空载、真实退出、SQL/Stream 全内容及原始 SHA 复核；完整 960m 在 23:41:17 就绪，继续原门禁，尚无新960m/24h资格。主动补查末尾对账的并发完整报告驻留和全量事件编号输出，在独立原 512MiB 限额下以 40.40MiB 报告、30万条40字节模拟编号完成预检，组峰值 226.72MiB、OOM/swap零；模拟输入/假Docker不算真实SQL/Redis或长稳。证据为同一现场 `qualified-30m-and-review-boundaries.json`、`preflight-review-memory/result.json`，冻结运行计划和制品保持。具体反例与复测边界见下文控制组OOM教训和[专题](../design/v0.7-soak-control-memory.md)。
+
+2026-10-03 23:14 当前长稳入口为 `temp/v0.7-cloud-control-memory-r4-20261003/` / `tzfault20261003memr4`。控制内存修复已在 23:06:05 北京时间开始新完整 30m，五类故障、300s 空载和独立对账通过后自动进入完整 960/1440m；首个主节点强杀恢复通过，错误和 OOM 暂零，新阶段资格仍待实际完成。旧已通过 480m 保留、旧失败 960m 时长不继承。新本机探测曾串读旧目录，已保留原始错误、修正并绑定 owner/root/plan SHA；23:14 任务结果 0，保护业务和云端 guard 正常。详细教训、复测入口和边界见下文[控制组 OOM](#负载完成不等于长稳通过控制组-oom-须独立定位2026-10-03)与[控制内存契约](../design/v0.7-soak-control-memory.md)。以下旧现场状态保留为历史快照，禁止据旧目录重放安装。
+
+2026-10-03 用户确认当前 DP（DBProxy）验收止于产品本身的完整性、故障恢复、长稳和通用性能。真实 SLG 压力测试待业务接近完成后由用户另行安排；2 万在线、300 万注册、50 区服与云 PG 档次的讨论不构成本轮容量目标。报告区分 MemoryBackend 与真实 PG/Redis，固定源码/运行制品、机器、负载、并发、时长及原失败门禁，分别记录吞吐、延迟、失败、资源、积压/排空；逻辑操作/RPC/记录条数/字节不混算，历史结果不自动转记给新候选。慢占用 WARN 保留为观察线索，正常窗口失败与数据不变量仍严格判定，不以未做生产业务压测为理由忽略。相邻 DBProxy `PERFORMANCE.md` 与云上报告已同步范围，当前长稳按原冻结计划继续。
+
+diagr3 的日志候选完整 480m 于 **2026-10-03 05:22:24 北京时间**独立通过，资格保留；后续 960m 在 **21:22:37** 的报告发布阶段发生客户端控制组 OOM，终态 failed、1440m 未启动。客户端实际负载 57600.40s、80/80 故障恢复和最终可见状态通过，9962 个正常区间错误零，但 300s 空载及完整 SQL/Stream 独立复核未完成，整轮资格零。内核杀死的是 Node 驱动 PID 3601457，所在客户端父组限额 512MiB；目标 2C4G 组 OOM/swap 零，保护业务身份/配置/健康正常。入口仍为 `temp/v0.7-cloud-fault-soak-diag-r3-20261002/`，67 原文件保留并生成 SHA 清单，30 分钟探测已于 21:48 自停。具体内存分配来源尚未受限复现；本次仅留档，不重放部署、恢复失败实例、拼接时长、增加预算或宣称已修复，未 push。
+
+2026-10-02 21:18 长稳当前入口为 diagr3：上一日志轮因证书续期 timer 的精确状态比较在 18:12:36 停止，最后观察 346.50 分钟、30 次故障通过，3576 个正常区间和数据不变量均零；不能计为完成 480m。保护业务及续期任务本身正常，旧断言未留失败瞬间属性差异，时间关联和独立真实 timer 已复现该检查误判。新增 `tools/lib/soak_protected_units.py` 只允许活跃 timer 正常 waiting/running 转换，保留服务/启动代次/配置 SHA 与所有数据/超时门禁，并明确记录失败差异。92 文件旧证据逐项 SHA 验证，包 `46b60c34...`；新 `tzfault20261002diagr3` 在 21:16:22 正式开始完整 480m，旧部分时长零继承。原 `cceb223` ELF、2C4G/100 人/2s/5s 不变，实际部署后核对通过，新 guard/30 分钟探测正常；预计次日 05:16:22 结束负载，再空载和复核。21:20 新轮首次主节点强杀已恢复（1/40），数据不变量/客户端错误暂为零，幂等重复回执 1 次不清零；本机探测首轮 0、下次 21:48:19。验证及禁止绕过见下文新教训；没有产品重编/codegen/push，完整新版 480m/24h 未通过。
+
+2026-10-02 12:32 diagr2 的首个主节点强杀已在线恢复通过（1/40），负载约 6 分钟、客户端及数据不变量错误暂为零，OOM/swap 零、保护业务正常；日志 PID 映射在真实启动和重启后均已产生。当前最新只读入口为 diagr2 的 `probe-cloud.py` / `latest-probe.json`，新 30 分钟任务首次结果 0，旧任务禁用。该在线故障进展不等于完整 480m / 24h 资格，后续原门禁不变，未 push。
+
+2026-10-02 12:28 接续入口已改为新所有者 `tzfault20261002diagr2` / `temp/v0.7-cloud-fault-soak-diag-r2-20261002/`，日志制品于 12:25:58 真实就绪新的完整 480m，后续独立 960/1440m，旧时长资格零继承。旧 240m 在 09:52:49 完整通过：20 次故障、46800 唯一事件、92 次内容一致重复、SQL/Stream/300s 空载/当前代次退出零；所有报告及原始 SHA 已重核，64 文件下载归档 `935b4efb...`。09:53 首次自动部署在创建新资源之前端口普通 bind 失败，没有新版负载时长；保留失败和已完成资格，不覆盖失败状态，也不能称中间两小时在跑。当前新两个服务和负载进程 ELF、计划、42 个 payload、unit 与 guard SHA、2C4G 实际父组约束、12 容器/157 配置/4 units/HTTP 健康均独立核对，云端安全 timer 与新本机 30 分钟任务正常、旧失败任务禁用。原 2/5s 产品预算和 ELF 保持；本轮只改 Python 部署支持和文档，无 Rust/TS 重编、codegen 或 push。详见下面“停机后端口释放”和“启动状态文件就绪”教训，以及相邻 DBProxy 云上报告。
+
+2026-10-02 09:10 PG 日志候选的接续事实：DBProxy 产品源 `cceb223` 的 Windows Rust 229、TS 29、Linux Release Rust 231、两平台格式/严格 Clippy 与另行 13 项真实 PG/Redis 契约检查通过；Linux 第三轮实际可执行程序标记已确认，第二轮共用 target 的无效容量对比不能重新记为通过。保持单分片 16 写者 / 2000ms 的独立旧、新复测均超时，保留 SQL dump 与原日志，新版记录了 15 等待者、2000ms 最老等待及仅 81ms 的当前持有者；最近完成占用 36–325ms，说明本次复现存在累计排队，不能由当前 holder 年龄替代整个队列等待，也不能认定云上问题已经解决。受控真实案例同时核对 queue_timeout 与 602ms 的完整释放、PG PID 729→731 / 代次 1→2。
+
+接续服务已在云端真实安装并只读核对为 `waiting-for-qualified-boundary`，不是“新版已经部署”。旧 240m 的全部 14400 秒、至少 300 秒空载、实际退出、独立结果/报告/原始 SHA、旧控制器 PID 与代次、所有者匹配且全部资源停止必须逐项验证；旧控制器若在边界短暂开始旧 480m，其部分时长为计划性中断、资格零。新版重新完整运行 480/960/1440m，保持原 2C4G / 100 人 / 2s PG 和 AOF / 5s SDK / 四分片 / worker1 门禁；一次性部署失败留下原始日志并只停精确本轮资源，不自动重放。64MiB 观察器只做有界报告读取，128MiB 等待器将 Node 前置串行测试放在临时 256MiB 单元中，不扩大 512MiB 客户端总额。新本机每 30 分钟任务首次结果 0；12 容器、157 配置、4 业务 units 和三项 HTTP/健康检查通过。入口 `temp/v0.7-cloud-diag-handoff-20261002/{launcher-installed,staged-audit}.json` 与新候选 `payload-identity.json`，未 push。
+
+准备清单的追加教训：从旧计划继承控制配置时，不能只更新 `db.workload.buildReportSha256` 而保留顶层旧 `linuxBuildReportSha256` / `localBuildFinalStateSha256`。本轮上传前的只读核对发现两层不一致，旧准备件移入 `pre-provenance-correction/` 保留，修改准备生成器后重新生成并逐项校验 42 个 payload、源码、构建报告和最终本机构建状态 SHA；同一报告的两层摘要必须相等。Node 控制 44 通过 / 1 平台跳过、Python 7、边界资格反例 7、有界 reader 3 均复测通过。禁止仅改描述或跳过摘要检查，再拿旧清单作为新程序证据。复测使用新候选 `prepare.py`（一次性，已完成，不重放）、`node --test --test-concurrency=1 '*.test.mjs'`、`python -m unittest -v review_test` 和接续目录 `test-boundary.py` / `test-report-subset.py`；安装后读 `staged-audit.json`，不要再执行 installer。
+
+2026-10-02 真实存储与跨版本构建追加教训：测试驱动必须按用例显式传 `DBPROXY_CACHE_REDIS_URL`；不能依赖未配置机器的默认缓存地址，首轮遗漏导致 NotPresent，补齐独立测试地址后修复 ACK/丢失 COMMIT/取消三例通过。单分片 16 写者的既有默认预算案例保留原并发和 2000ms；其失败是失败，不能把减负、拉长预算或只有最终排空称为健康通过。旧/新对比曾共用 Cargo target：旧版编译覆盖同名集成测试 ELF，回到候选目录 Cargo 只报 0.06s Finished，实际 panic 行号仍为旧源码且最终 `PG_DIAGNOSTICS_TRACE` 字符串不存在，源码 HEAD/锁 SHA/命令退出码不能证明运行了新程序。这一轮对比资格撤销并保留 `revalidation-needed.json`、原始日志/SQL dump，第三轮旧版使用独立可回收 target 卷、候选源输入重新触发编译，运行标记和最终 server/driver 功能标记均须核对；不是绕过 Clippy/测试，也不手改依赖锁。队列采样新增同连接修复 ACK 后，64 次写 + 64 次 ACK 有 128 次锁获取，修正断言而非删除额外观测。外部 64MiB 边界观察器不能随长稳时间把完整报告数组装进内存；只选择已冻结驱动两空格 pretty JSON 的六个字段，逐行/单字段上限，非规范或缺项显式失败，并继续流式校验完整文件 SHA。真实 pinned 30m 报告与完整解析结果一致；33,800,146 字节忽略数组的跟踪内存峰值 166,110 字节，3 条 reader 与 7 条不足时长、原始篡改、未知退出、旧资源仍运行等反例通过。不增加控制器/观察器额度或弱化资格门槛。现场分别为 `temp/v0.7-pg-diagnostics-build-{r2,r3}-20261002/`、`v0.7-cloud-diag-handoff-20261002/`，旧 240m 未改、未 push。
+
+2026-10-02 PG 排队日志补齐的失败教训与复测：原通用 latency.measure 只记录范围时间，不识别 StorageError，因此真实锁等待超时没有增加 `postgres_connection_wait` 的 timeouts；必须在实际期限耗尽的入口显式计数，涵盖共享连接的修复 ACK，取消与 SQL/重连错误不能混入。只按外部 PG 活跃数或排队峰值不能识别占用者，新诊断按实际连接共享，固定最多 128 个等待者元数据和 8 条释放历史，并区分积压批次、修复读取与普通请求；队列告警不能耗掉随后完整持有时长的释放告警配额，两个类别独立限流。负载首 16 错误样本会在早期故障耗尽，改最近 64 条轮换并周期写出，淘汰仅影响样本，不减少永久错误总计。实现首试 root 工具无 serde 直接依赖导致编译失败，使用已有 serde_json 的有界 Value，不为日志无谓增加依赖或手改锁；持有者测试首试检查历史第 0 项命中启动配置的 unclassified，改验证真实释放的最后项，保留历史及原预算断言。复测执行 `cargo test --workspace --all-targets --locked`、Clippy `-D warnings`、TS SDK 29；Linux release 与真实 PG PID/SQL 持有者/重连/取消及耐久回归必须独立报告。本机已有 battle-lab 正常运行，因此新构建保护所有原容器实际 PID/启动时间/挂载身份，不能沿用旧脚本“原容器全部停止”的假设，也不能停该业务来让构建通过。云上切换只能在旧 240m 的完整资格通过后进行，旧制品通过不等于新制品通过；检查实际正常退出、原始 SHA 与资源全部回收后再启新阶段，不改当前冻结控制代码、不继承旧 480m 的部分计时，保护教练/绯红资源，失败原始证据保留，未 push。
+
+2026-10-02 02:07 当前故障第三轮 `tzfault20261002r3` 已于 02:01:28 就绪，首个主节点故障在线通过，完整阶段尚未结束。第二轮发现原始资源日志的整文件 SHA / 整体 JSONL 复核会占用 512MiB 控制组，在四类故障通过后计划性停机，未发生 OOM 或产品错误，74 文件与正常停机/存储停止证据冻结、资格零、旧探测禁用。第三轮用流式记录/有界恢复边界/分块 SHA，全部原始证据、错误门禁、产品源与预算保持；601MiB 合成文件 SHA 正确、Python 跟踪峰值约 2.13MiB，Node 各平台 44 通过 / 1 跳过、Python 7 通过。新现场 `temp/v0.7-cloud-fault-soak-r3-20261002/`，云端独立安全监测和本机 30 分钟只读任务已运行，保护业务保持。相邻 DBProxy 云上报告和下面新教训为接续入口；旧两轮不恢复/拼时长，旧 PG 2 秒问题仍未修复，无产品/codegen/重编/push，24 小时仍未合格。
+
+2026-10-02 01:45 云上 DBProxy 故障长稳进行中：复用 `08aa916` / ELF `07c1f021...` 和原冻结 100 人客户端、2C4G 与全部产品期限，从完整 30 分钟逐级至 24 小时，逐阶段独立复核并加 300 秒空载观察。首轮控制脚本多行 SQL JSON / 停机元数据与清理报告失败，61 文件冻结、专用资源停止、资格零；新 `tzfault20261002r2` 于 01:37:59 就绪，首次主节点故障在线通过，尚无完整阶段终态。控制测试本机与云端各 41 通过 / 1 平台跳过，JSON framing / SQL 门禁 7 项通过；独立云端安全监测和本机每 30 分钟只读探测已启动，保护业务未动。新现场 `temp/v0.7-cloud-fault-soak-r2-20261002/`，旧失败现场保留，详见相邻 DBProxy `docs/cloud-fault-soak-2026-10-02.md` 和下文教训；不重放部署，不恢复 R11，没有产品/codegen/重编/push，旧正常窗口 PG 排队问题仍未解决，轻量 DTO / DBProxy 云端试验不替代 Host 或完整游戏/24 小时资格。
+
+2026-10-02 R2 完整结束且资源已回收：原 100 玩家冻结负载 300+900 秒、300 秒停载观察、独立 SQL 门禁和 SQL/Stream 核对均通过；3870 个事件全发布，无重复/死信/客户端错误，7740 条账本记录总额零。主测 133.48 RPC/s、0.385 核，峰值 333.32 MiB；内存增长约 95% 记在 PG 子组，停载 319.67 → 318.85 MiB，两 Rust 节点 PSS/私有页无增长。原预算/worker/PG 四分片/持久化保持，Linux 228/格式/Clippy/Release 和另行实际执行的 9 项 PG/Redis 检查通过。该轻量 DTO 最大 34 字节、无故障/仅短时，不能替代真实存档、故障或 24 小时验收，更不能宣称 R11 正常窗口 PG 排队已修复。本轮三个容器、两个专用卷、网络、五个 unit 文件回收，12 个保护容器/157 配置/4 unit/HTTP-健康复核通过；本机 23 个停止容器/46 个卷保留。WinError 206 的原后置工具失败与标准输入修法已留档并写入下文，不重跑负载。证据 `temp/v0.7-remote-2c4g-100-r2-20261001/`，完整结果见相邻 DBProxy 容量报告；后续读取归档，不重放已退役脚本，不恢复 R11，未 push。
+
+2026-10-02 00:33 改进版已进入云上独立复测，尚无完整容量通过：Linux Rust 228/格式/Clippy/Release 与另行实际执行的 9 项 PG/Redis 检查通过，服务 ELF `07c1f021...`，客户端仍为原冻结字节。成功验证及两次仅准备阶段失败的临时资源均已回收，原失败日志保留。新 `tzcap20261002r2` 先经 12 容器/157 配置/业务 HTTP 保护预检，按原 300+900 秒负载和 2C4G 额度运行，随后 300 秒停载观察；原预算/worker/协议保持，SQL 积压门禁和各服务 RSS/PSS 采样独立记录。旧失败队列加合成归零尾段的控制反例仍失败，不能用排空冒充持续容量。当前预检接近五分钟、已产生的 900 个事件全部发布，完整结论待结束；新现场为 `temp/v0.7-remote-2c4g-100-r2-20261001/`，不重跑部署、不恢复旧长稳，未 push。
+
+2026-10-02 工作区清理已完成，下一步才恢复新候选的 Linux/真实存储检查与外网复跑：删除 68 个可重建缓存目录，文件长度 169.09 GiB，删除阶段 D 盘可用空间增加 152.38 GiB（62.08 → 214.46 GiB）。100 个保留制品、22 仓库状态及 R11 的 39 个冻结文件核对通过；未提交源码、正式 0.7 worktree、R11 数据、最终二进制/manifest 和 R2 bundle 均保留。清单与复核见 `temp/v0.7-workspace-cleanup-20261001/`，不把清理或准备算作新负载通过，未 push。
+
+2026-10-01 本机旧容器收尾：用户指出只删镜像遗漏了容器，已暂停 Linux 重建及云上复跑，核对 79 个容器中 60 个 v7（57 已退出、3 个旧存储运行）。归档 56 个不再使用的构建/控制/历史长稳容器日志与 diff 后按完整 ID 移除，不使用 force/-v；3 个 R11 专用存储执行停止，保留失败负载容器及 PG 卷/Redis AOF/本机冻结证据。容器 79 → 23，可写层约 1.067 GB → 4.399 MB；剩余 4 个 v7 都已停止，46 个卷未删除。19 个非 v7 容器相对执行前的最新身份保持；battle-lab/SLG 停止事件在本次第一个移除动作之前，不能说整轮状态完全没变，也不擅自启动它们。当前本机 Docker 无运行容器；早先只删两个镜像的约 50 MB 结果属于上一阶段。证据 `temp/v0.7-local-images-cleanup-20261001/`，其中 action/manifest/最终状态分开留档。Outbox 改动已本地提交（5152b40、08aa916），Windows Rust 226/Clippy/TS 29 已通过，新 Linux 源 bundle 已准备，但 Linux/真实 PG-Redis 回归和改进版云上试验均尚未开始；不把准备算运行/通过，不恢复旧失败长稳，未 push。
+
+2026-10-01 云上 2C4G/100 人基线已完成：300+900 秒客户端一致性/RPC 零错误，但 Outbox 输入约 3.24 条/s、发布 1.99 条/s，终态 1530 条未发布，不能判整链路容量通过。总 CPU 平均 0.382 核、内存峰值 347.62 MiB；20 分钟总内存增加约 153 MiB，文件/共享内存约占八成，匿名后半程约 70–72 MiB，仅父组统计不证明每进程无泄漏。12 个保护容器、157 配置摘要和业务 HTTP 复核通过，首轮资源已停止。用户要求先修后同负载复跑：当前 Outbox 每批最多 16 个独立组头，保持同组串行/死信/token，同一连接 XADD 后一次 AOF 确认再逐项 PG ACK；预算/worker/协议不变。新增批量 fixture 的 Windows sleep(0) 调度延迟已修为零延迟直接执行，保留原失败；改进版尚在重建检查，不继承旧制品资格，下一轮分子 cgroup/RSS/PSS 采样并保留 300 秒无负载观察。镜像按用户指令只删除两个无引用的 v7 Native 镜像；79 个容器/46 卷未动，不把镜像标签共享字节相加或宣称释放 CPU。详情与证据见相邻 DBProxy `docs/remote-capacity-2c4g-100-2026-10-01.md`、`docs/outbox-batch-publication.md`；本机 `temp/v0.7-remote-2c4g-100-20261001/`。不动本机 R11 失败数据，不全局 prune/drop caches，不拼时长、不放宽 AOF/超时、未 push。
+
+2026-10-01 22:49 远端资源退役：用户授权清理火山云旧长稳，并明确保护教练直聘与绯红之境。已按容器完整 ID、Compose 所有者、全部挂载引用和网络成员核验后，停止/禁用旧测试服务与定时器，移除三个容器、两个专用测试卷、一个网络及旧部署/备份/日志。保护的 12 个容器、5 个数据卷与服务配置/启动身份保留，页面与健康检查通过；磁盘释放 3.127 GiB，可用内存同期增加约 0.844 GiB。1/3/24 小时原日志/manifest 已本机校验留存；远端清理不涉及本机 R11 失败库、冻结证据或 26 条待发布 Outbox，不启动新长稳。复核首轮在任何删除前因 Docker Mounts 顺序变化误报，须以完整挂载记录排序比较，不能删掉挂载保护；另一误报来自把已删除测试 unit 的反向 RequiredBy 当作 Docker 配置变更，只允许两条明确旧边消失，仍严格检查进程、配置摘要和正向依赖。不能全局 prune、按“已退出”清理 seed/匿名卷或重启共享 Docker。现象、证据与只读复测见[退役记录](../design/v0.7-soak-interruption-recovery.md#远端旧长稳退役与共享业务保留)；未修改产品、codegen、重编、push 或发布。
+
+2026-10-01 分析补充：R11 失败前副节点请求 PG 在途 4、等待 28，正常完整指标区间有 694 次等待落在 (1, 2] 秒。后台批量落盘/repair 权威读取仍共用请求分片；PG 显式排队超时漏计指标，一般错误只留开头 16 个样本，属于代码确认的改进点。具体持锁者及 HDD/checkpoint 因果未证明，保留两秒配置和全部失败现场，后续先补有界证据、隔离后台连接，再按单节点负载与五秒客户端总预算验证。详见下文[分片排队教训](#分片排队必须区分持锁sql-点样本和指标漏计)和[R11 分析](../design/v0.7-soak-interruption-recovery.md#r11-排队结构与观测缺口分析)。本次只分析和更新文档，未实现修法、重启长稳或 push。
+
+2026-10-01 21:56 更新：R11 已于 19:17 失败，新的 24 小时仍未通过。正常窗口 1 次交易错误对应副节点 PG 排队 2000 ms 超时；49 次恢复、9 次 AOF 原内容和 6928 个已接受区间复核通过，不能删除第 6929 个拒绝行。PG 错误采集均在故障窗口内；WAL 等待/检查点相关线索不能证明具体因果。失败后 SQL 内部一致、已发布事件交付一致，但 26 条未发布，缺最终客户端与维护排空，不能伪装通过。定时探测已记录终态并禁用自身，当前指针取消旧预计结束时间；现有索引/库继续保留，不自动重启失败负载。证据及后续诊断边界见[R11 失败](../design/v0.7-soak-interruption-recovery.md#r11-正常窗口再次-pg-排队超时)及下文教训；产品和预算未改，未 push。
+
+2026-10-01 10:12 更新：R11 每 30 分钟外部只读任务已注册并实跑复核；修正后的 10:09 探测退出 0、3 次已完成故障恢复通过、内存压力未见。只在新异常或完成时请求 Windows 通知，正常时安静，同一异常去重；确认终态后禁用自己的探测任务。此任务不是 Codex 聊天自动唤醒，工作负载继续由原协调器负责，24 小时尚未完成。首次探测/通知/身份检查错误及正确修法见下文[教训](#外部定时探测必须验证实际运行和通知路径)与[证据](../design/v0.7-soak-interruption-recovery.md#每-30-分钟只读探测与本机通知)。
+
+2026-10-01 09:42 更新：30 分钟诊断完整通过；关机恢复后原完成阶段 SQL/Stream、R10 失败 SQL 与关机前一致。Desktop 自动升级到 Engine 29.8.1，旧结果保留旧环境；R11 从 09:40 开始新完整 86400 秒，原产品/负载/故障/预算不变，补采 PG 排队/操作指标，四项观察均启动。Windows 37/Linux 36 加 1 跳过、真实只读等待、语法与预检通过；正常窗口两秒超时仍判失败。R10 占用 SQL/磁盘因果未确认，不能由短时通过宣称修复或累计部分时长。详情与 SHA 见[诊断和恢复](../design/v0.7-soak-interruption-recovery.md#30-分钟诊断完成与关机后恢复)、[R11](../design/v0.7-soak-interruption-recovery.md#r11-完整-24-小时与-pg-证据补齐)及下文教训；未生成、重编、push 或发布。
+
+2026-10-01 00:29 更新：R10 完整 24 小时尝试在约 11 小时处因正常窗口两次 PG 连接排队超时失败；不能继续读旧 running 复核或累计部分时长。原始失败、对账和导出来源错误已保存，具体阻塞 SQL/磁盘因果待查。现已从零启动独立 30 分钟 PG 活动采样诊断，保持原产品、故障与所有预算；短时通过不等于修复或完整资格。详见[正常窗口排队失败](../design/v0.7-soak-interruption-recovery.md#r10-正常窗口的-pg-排队失败)及下文教训；没有生成、重编、合入远端 0.6.5、push 或发布。
+
+2026-09-30 21:22 补充：R10 的独立存储采样在第 40 次主动停库期间出现一次 `inspect`/`exec` 竞态；这是一条含四项读取失败的诊断样本，故障恢复与 AOF 数据核对仍通过。保留原错误并检查采集区间和控制时间线，不能用旧 running 字段判断读取时状态，也不能据此放宽业务超时归因。具体原因、禁止绕过方式及复核入口见下文[故障切换与诊断采样](#故障切换与诊断采样必须分开判读)和[取证记录](../design/v0.7-soak-interruption-recovery.md#r10-故障切换期间的采样缺口)；完整 24 小时尚未完成。
+
+2026-09-30 13:02 更新：累计计数的增量时间只落在两次观察之间，不能根据后一次 `activeFault=null` 判定其全部发生于健康期，也不能因为区间重叠故障就全部豁免。R9 两条 Outbox AOF 增量跨故障恢复边界约 2.08 秒；这不是实测等待时长。旧恢复读取未保存，且指标有后台缓存，事件准确时间无法复原。原最终审核拒绝本轮，已封存并在 12:50 停止自有负载；故障恢复、RPC/数据正常与证据不足须分别报告。详见[原始反例与修订](../design/v0.7-soak-interruption-recovery.md#r9-的超时归因缺口与-r10)。
+
+正确修法是保存边界/恢复读数、串行同代抓取、在线执行原完整区间归因，并把存储计数稳定加入原 60 秒健康恢复；保持 180 秒上限，最终用两节点原始观察时刻和累计计数独立复核。缺采样、迟到可见增量、计数回退或窗口跨界不能补零、扩容差、改旧报告或靠重跑丢弃。R10 已于 13:01 重新完整计时，入口 `node temp/v0.7-joint-soak-r10/status.mjs`，完整只读复核 `node temp/v0.7-timeout-boundary-20260930/check-r10.mjs`；复测 `node --test temp/v0.7-joint-soak-r10/*.test.mjs`。Windows 86/Linux 85 加 1 平台跳过、语法/实际预检通过，产品、负载和超时预算未变；无产品改动，不生成或重编。一次 Docker 信息查询超时已保留并按原期限复查成功，不能据其替代实际负载/进程证据。未 push。
+
+2026-09-30 07:40 更新：R8 因 WSL 更新停用服务而使 Docker EOF/CLI 125 失败，协调器按预期收尾，不能把所有环境退出都归为同一种后台托管问题。先保存现场、失败终态/导出和 Windows 时间线，再确认服务恢复、核对数据及全部旧负载已停止。724 个原始区间、五类故障/AOF 及重启后的事务/账本/事件内部一致性通过，不代表缺失的客户端最终验收通过，也不能累计约一小时给新轮。详见[WSL 中断与 R9](../design/v0.7-soak-interruption-recovery.md#r8-的-wsl-更新中断与-r9)。
+
+R9 于 07:39 使用新资源命名/Redis 索引 11 从零执行完整 24 小时，预计 10-01 07:40 左右负载结束后对账；当前入口 `node temp/v0.7-joint-soak-r9/status.mjs`，监控位于同目录 `memory/`。新接续绑定每次失败的状态摘要与复核，强制拒绝尚活着的旧进程/容器和未审故障；负载前后核对 Docker/内核等环境，不把原六级证据冒充新内核重跑。Windows 56/Linux 55（1 项平台跳过）、语法与实际预检通过，产品/负载/超时/验收不变。更新策略保持原样，不为测试关闭系统保护；环境更新完成及两个待重启标记为空不是未来不中断的保证。复测 `node --test temp/v0.7-joint-soak-r9/*.test.mjs`；禁止重跑一次性恢复/注册或改写封存证据，未 codegen/重编/push。
+
+2026-09-30 00:45 更新：联合 30/60/120/240/480/960 分钟完整证据均通过；R7 最后 1440 分钟约 16 小时处发生执行环境中断，不能登记 24 小时通过。先核对 PID/创建时间/脚本，再解释陈旧 running；Windows 的 Codex 更新/沙箱服务更换与集体退出吻合，但无逐进程终止审计，不把推断写成已证明的内部机制。原失败先归档，80 次恢复、16 次 AOF 核对与 11506 个区间通过只证明中断前的观测，不代替 SOAK_FINAL、最终对账或退出。详见[中断取证与完整复跑](../design/v0.7-soak-interruption-recovery.md)。
+
+R8 在新的容器/数据库/索引从零执行完整 86400 秒，六级旧资格逐份重验并绑定原始摘要，不覆盖旧报告、累计中断时长或清库获取空间。启动器改由当前用户普通权限的 Task Scheduler 按需运行，核对实际父进程；不关闭更新、不改安全边界，也不保证能跨注销/系统重启。Windows 44 项、Linux 43 项（1 项平台跳过）、真实资源/前置证据/语法检查通过，00:45 已启动，预计 10-01 00:46 左右负载结束后对账；状态入口 `node temp/v0.7-joint-soak-r8/status.mjs`，内存与关联证据在该目录 `memory/`。产品和冻结负载不变，不重跑旧维护脚本。
+
+本轮复核助手曾把 `recoverySeconds=180` 的恢复截止上限误用为健康尾段下限；原错误脚本/失败说明保留，修复为复用原 `validateWindows` 与 `healthyRecoverySeconds=60`。禁止因此扩大故障窗口、放宽健康要求或修改原失败结果。复测命令 `node --test temp/v0.7-joint-soak-r8/*.test.mjs`，所有接续、恢复、原始取证及边界见上述设计记录。无产品代码生成/重编或 push。
+
+2026-09-28 07:18 更新：R7 完整联合 240 分钟于 00:59 通过，20/20 故障、Host 1,414,919 次 RPC 零错误、DB 正常窗口零错误，最终 SQL/Stream 对账通过。随后自动 Desktop 重启因残留 AF_UNIX 端点失败，协调器整夜保留复核点，未运行 480 分钟。07:05 已保留 socket 目录后恢复 Docker，原六个运行容器及数据核对通过；07:18 放行完整 480 分钟（预计 15:19 左右结束并对账），单次 24 小时仍未通过。维护前后 Windows 可用内存 12.43→15.44 GiB、vmmemWSL Private Bytes 14.94→5.08 GiB，两种口径不能相加。原失败保留，最新恢复入口为 `temp/v0.7-desktop-recovery-20260928/maintenance-complete.json`；新内存/关联观察位于 `temp/v0.7-memory-after-desktop-240/`，新存储观察位于 `temp/v0.7-storage-after-desktop-240/`。详情与边界见[维护结果](../design/v0.7-machine-memory-observation.md#240-分钟通过与-desktop-恢复结果)。
+
+本轮控制教训：Docker 的 Dns:null/[] 和 Mounts 数组顺序变化曾触发完整摘要误报，只有可重建原完整摘要的表示差异才接受，源路径、权限、卷、内存额度等仍严格核对。Windows 后台子进程可继承管道，使启动器 exit=0 后 close 仍等待子进程；必须独立核对真实 worker 身份和新样本，不能因此重复启动或扩大超时掩盖。690 次存储采样错误全部发生在已完成 240 分钟后的维护等待点，不能填零或计入负载。具体失败、五项反例检查与复测命令见上述记录；活动冻结驱动和产品字节没有修改。
+
+2026-09-27 22:12 已按用户授权安排完整 240 分钟之后重启 Docker Desktop：外部任务 `temp/v0.7-desktop-maintenance-240/maintenance.json` 正等待原协调器的 240 分钟复核点，当前尝试零次，受测负载继续。先归档/复核，再尝试一次重启、恢复原运行容器、核对 SQL/Stream 和内存；全部通过才放行新的完整 480 分钟，失败保留等待点。维护与新旧内存观察分代记录，维护时长不累计、缺口不伪装无压力；下一代观察目录为 `temp/v0.7-memory-after-desktop-240/`，尚未启动。八项规则检查、语法和真实 120 分钟/容器只读预检通过；尚未执行重启或完成 240 分钟。接续前先查维护状态及[具体恢复契约](../design/v0.7-machine-memory-observation.md#已安排完整-240-分钟之后重启-docker-desktop)，不得另起重启任务或越过等待点。
+
+整机观察的身份检查教训：本机 PowerShell `ConvertFrom-Json` 默认把 ISO 时间变成 DateTime，再隐式转字符串送入 Parse 会丢时区/小数秒，导致只读身份检查误报。以 `-DateKind String` 保留时间文本后重新核对，创建时间差为零，未停止或替换进程；不得放宽身份容差。原错误/正确结果及复测口径见[内存观察记录](../design/v0.7-machine-memory-observation.md)，这不是产品或冻结协调器故障。
+
+2026-09-27 21:40 内存与测试关联：独立 `temp/v0.7-memory-diagnostic-20260927/impact-status.json` 每分钟关联整机压力、Host 吞吐/错误和 DBProxy 正常窗口阶段耗时；分类变化与原始证据保留。21:28–21:40 的 13 次有效样本可用内存 12.15–12.98 GiB、swap 未增长、WSL 内存阻塞累计未增长，近期 Host 约 99 RPC/s、数据库正常窗口无错误，未见影响。调查阈值不修改原长稳门禁，观察缺失不能记作正常；后续验收须核对累计 `reviewRequiredEver` 和异常/未知时段，不能仅凭协调器 passed 宣称无环境干扰，也不能以环境理由豁免产品失败。Host 逐分钟延迟未采集，完整阶段报告再查延迟分布。只读观察器不自动暂停或清缓存；口径与复查证据见[整机内存观察](../design/v0.7-machine-memory-observation.md#内存是否影响测试同期关联)。
+
+2026-09-27 21:29 整机内存诊断：三分钟七次 Windows/WSL 同步样本显示大额占用集中在约 11.3 GiB Linux 文件缓存，匿名页约 1.1 GiB；Windows 仍有约 12.2 GiB 可用，vmmemWSL 提交口径约 14.68 GiB 基本稳定。Docker 父层级有约 9.735 GiB 文件页未记入当前可见子组，并有 76 个消亡中的内存 cgroup，与历史读写缓存残留相符，不能确认具体构建或据此排除所有泄漏。Host 已完成 30/60/120 分钟末次 RSS 都约 75 MiB，连续 DBProxy 约 12 MiB；R7 240 分钟仍运行。独立每分钟整机观察入口为 `temp/v0.7-memory-diagnostic-20260927/monitor-r2.json`，不改变受测代码、故障门槛或环境。详情见[整机内存观察](../design/v0.7-machine-memory-observation.md)。
+
+取证约束：Windows 提交、工作集、压缩页、WSL Cached/AnonPages/MemAvailable 和 Docker stats 不能互相替代或重复相加；cgroup v2 stats 会减 inactive_file，父子计数也有包含关系。当前 WSL 文档默认自动回收为 dropCache，没有 `.wslconfig` 不等于关闭回收。根 cgroup 缺 memory.current 不能当零；多层 shell 参数失败的空结果不能当零，已改 stdin 传脚本获取真实值并保留失败。观察器睡眠先算一次 remaining 再决定等待，首版仅做预防性替换，未发生产品故障。短样本不能重建先前增长或证明长稳通过，不靠清缓存/重启共享 WSL 让内存数字好看；原日志、命令与复查范围见上述记录。
+
+2026-09-27 16:58 更新：DBProxy 已在 `42f2762` 完成可靠 Redis 等待预算修订，本地 `v0.7.0-rc.2` 指向该提交。入队与 Outbox 分别可配置 AOF/I/O 等待；排队、重连、写入、确认共用本地单调总期限，失败/取消丢弃原写入连接，新增七个阶段的耗时、活跃数及显式超时观测。默认 AOF 暂保留 2000 ms，I/O 3000 ms，入队总预算 4500 ms、排队上限 2000 ms，Outbox 5000 ms；SDK 默认 5000 ms 仍是独立端到端预算，不假设服务端知道远端剩余时间。
+
+Windows Rust 222、Linux Release Rust 224（多两项 Unix 信号停机测试）、TS 29 通过；两端格式/Clippy/Release 构建通过，各有 49 项外部条件测试默认跳过，另行实际执行七项 PostgreSQL/Redis 恢复契约通过。独立 Redis 的 2/3/5 秒对照每组 1200 条入队/30 个事件全部成功，另四项 backlog 回归通过；三个并发完成 p95 约 1006/1006/1012 ms，不能当作独立 AOF p95，也不足以选出统一新默认值。原始 R4 超时失败及所有旧数据保留。
+
+R6 旧版完整 30 分钟已于 16:26 经独立复查通过；当前 60 分钟在运行，预计 17:26 左右结束并对账。外部自动检查点 `temp/v0.7-dbproxy-rc2-build/handoff/cutover.json` 正在等待完整 60 分钟，复查通过才请求原协调器正常停止；确认导出及原协调器/观察器退出后，再做实时预检并启动 R7。R7 计划 SHA256 `0efbba6aa0a594fd2e1a2ed4a43d3b1f436a7a77080d00f3d43c83770bd2bcf4`，从完整联合 30 分钟重新递增，旧时长不累计。Host、旧版 SDK/验收客户端、负载与故障门槛保持，便于验证新服务端兼容；新服务端身份单独冻结。32 项 Windows 控制器检查、Linux 31 项及 1 项平台专用跳过通过。单次 24 小时仍未完成，未 push 或发布。
+
+失败预防：不能用新连接确认旧连接写入，不能重置总期限或把剩余不足 1 ms 转成 WAITAOF 的零（无限等待），不能把超时理解为回滚；按原幂等 ID/内容重试，不降级 memory 或扩大故障窗口。超时指标只计显式观察到的超时，错误/取消耗时不代表成功提交。参数与契约见同级 DBProxy 的 `docs/redis-durability-budget.md`，短对照不证明磁盘根因或长稳通过。
+
+隔离环境的本轮教训：第一次七项恢复契约启动遗漏实际 Cargo 缓存挂载和 CARGO_HOME，在内部网络尝试访问 crates.io，测试尚未执行；第二次在旧驱动收尾完成前启动，被网络空闲检查拒绝。保留两次日志/数据，等待清理结束，按原 Rust 1.97.1 工具链挂载已有缓存、CARGO_NET_OFFLINE=true，用独立数据库与 Redis 索引重新运行，第三次七项通过且存储已停止。不能开放业务网络、跳过真实契约、清空旧数据或取消空闲检查来取绿。复测入口为 `temp/v0.7-dbproxy-rc2-build/run-contracts-r3.mjs` 与其 `contracts-r3` 报告；它是一次性已执行取证脚本，重复测试应重新分配独立名称和数据空间，不能直接复用运行标识。
+
+新增的 RESP 替身还曾将主动丢弃超时连接后的 Windows ConnectionAborted 误判为 panic；只把 reset/aborted 视为预期关闭，其余错误继续失败，再运行完整 Rust 矩阵通过。复测命令见 DBProxy 预算文档，原失败日志保留，不归类为服务端数据故障。
+
+2026-09-27 15:56 更新：R5 首个 30 分钟在第 5 项故障中因控制响应文件 rename 的 Windows EPERM 中断，未处理的后台拒绝使状态陈旧地停留 running；四项故障完成，288 个区间未见健康窗口错误或数据违例，但无完整 AOF/最终对账资格。原始状态和未发布响应已封存，核实进程退出后外部标记 failed，受测报告不改写。R6 修复原子发布的有界共享冲突重试、后台异常接管及进程身份核对，使用原产品/负载字节、NVMe 路径和 2 秒/5 秒预算，从新的完整 30 分钟开始；入口 `temp/v0.7-joint-soak-r6/joint-impTua/state.json`，通过独立复查才继续递增。Windows 31、Linux 30（另 1 项平台专用跳过）及快速矩阵 32 项通过，另 1 项夹具路径检查修正后单独复测通过；正式 codegen 无受控生成物变化。完整 24 小时尚未通过，未 push；失败、修复及附件身份见[联合长稳](../design/v0.7-joint-soak.md)。
+
+失败预防：跨 Windows/Docker 的控制文件必须保持原子可读，并对短暂共享冲突有界重试；持续失败不得删旧文件或重放已完成故障动作。后台 Promise 必须把错误交回拥有清理责任的协调器；不能仅凭 JSON 中 running 判断进程存活。重跑命令为 `node --test tools/lib/soak_control_io.test.mjs tools/lib/soak_control_health.test.mjs`，完整冻结控制器检查在本轮 tests.log/tests-linux.log，原始失败不累计为有效时长。
+
+2026-09-27 15:07：R5 新可靠 Redis NVMe 路径已开始完整 30 分钟复跑，现场 `temp/v0.7-joint-soak-r5/joint-dIm8zA/`；约 15:06 正式起表，当前约 95 秒无错误，尚未合格。22 项控制器检查、资源/源码预检与实际只读存储观察通过；首级完成后独立复查再递增。十份执行/观察文件冻结，新的诊断附件与 SHA 见[联合长稳](../design/v0.7-joint-soak.md)，不可将它标记为 24 小时通过。产品字节未改，本轮未重编或生成协议，也未重复 Rust/TS 全矩阵。
+
+2026-09-27 14:51 更新：R4 的联合 120 分钟在约 57 分 10 秒失败，触发正常窗口 Redis AOF 两秒确认超时；先前联合 30/60 仍保留通过，后续未启动。事后事务/钱包/账本相符，但 16 条 Outbox 未发布，不能登记最终对账通过。原失败、短存储路径对照与准备的新 R5 入口见[联合长稳](../design/v0.7-joint-soak.md)及下文失败教训；下列较早运行中描述均为历史。
+
+2026-09-27 12:17：`temp/v0.7-joint-soak-r4/` 完整 30 分钟复跑及独立复查均于 11:49 通过，五类故障/AOF、最终对账、正常退出、健康窗口与数据一致性门槛全部通过，计时/事件日志两项回归未再出现。60 分钟已自动启动，当前约 28 分钟、3/5 类故障通过；尚未通过完整 60 分钟或单次 24 小时。新工具 Linux Release 构建及八条工具测试、Windows Rust 207（48 ignored）/格式/Clippy、TS SDK 29 与控制器 22 项通过；服务端保持原冻结字节，工具另记源提交和 SHA。失败原因、禁止绕过与复测证据见下文[失败教训与复测流程](#失败教训与复测流程)，现场及独立复查结果见[联合长稳](../design/v0.7-joint-soak.md)。原阶段、旧资源卷和原始失败全部保留，未 push。
+
+本地套件第三次修订仅补充 ELF 运行库说明与证据，70 个文件校验通过，源码/实际程序载荷与第二套完全一致。最终 Linux Host 使用到 GLIBC_2.39、DBProxy 使用到 GLIBC_2.34，不能把架构名 linux-x64 等同任意发行版兼容；原始 readelf 与二进制 SHA 绑定在 temp/v0.7-release/linux-dynamic-requirements.json。跨套件字节比较另发现 Windows BINARY.json 的 DLL 名单顺序不稳定：忽略大小写排序却用 set 去重，大小写变体产生相同排序键；包内程序和导入集合未变。保留差异 kit-comparison-initial-dll-order.diff，比较仍逐字节检查全部实际载荷，仅对这份名单检查完整元素集合；后续构建加入原字符串作为排序次键。不要把元数据顺序差异当程序差异，也不能据此跳过二进制哈希。
+
+三分钟控制器复测 smoke-QT8Qo0 完整通过：17,504 次 Host RPC、120 次直接事务、120 次交易、1400 次入队，原断言零错误；后台排空后 SQL 版本/回执/零和账本、120 个 Outbox 与 Redis Stream 事件集合均一致。它只是控制器预检，正式 30 分钟阶段随后开始，不算长稳完成。发行装配另一次失败是手工抄录 Windows DBProxy SHA256 多写一个字符，原装配目录与 build-kit.log 保留；核对清洁构建日志、实际 Release 输出和冻结副本一致后改读结构化身份文件，不关闭哈希检查。第二套件通过 64 个文件校验、11 个发行包载荷检查及六仓库 bundle 检出/精确远端来源重写验证；未 push。来源摘要应从实际产物计算并结构化传递，避免人工转抄。
+
+2026-09-27 同机 Release 性能比较已完成：六场景各四轮 AB/BA，共 48 个测量单元全过，吞吐变化为 −3.9% 至 +1.2%，无场景触发固定调查门槛；详见[候选性能记录](../design/v0.7-release-candidate.md)。DBProxy 项使用 memory backend，不能称真实存储吞吐或长稳通过。
+
+递增长稳首次三分钟预检被控制器错误的事务吞吐断言拒绝：冻结 dbproxy_fault_soak::run_player 每十周期执行一次事务，控制器误按每周期计算。原报告 120 次事务、120 次交易、1400 次排队写、零错误且客户端最终校验通过；失败保留在 temp/v0.7-soak/smoke-SqT0fh/ 和原控制器。修正计数下限为实际十周期频率并为交易保留独立下限；不修改产品、负载频率或一致性断言，必须整轮重跑并检查积压排空、SQL 和 Stream。失败时提前正常停服，留下的 27 条尚未发布 Outbox 在只读核对中正确被拒绝，不能据客户端零错误登记该轮通过。
+
+最终 Linux 清洁 RC2 完整 **8/33/9、272 Rust** 通过，141 份 npm 文件及 Host/两份热更报告身份一致；Windows/Linux Release 短验证与 DBProxy 最终 Release 配置下 7 项真实恢复契约也通过，详见[候选冻结](../design/v0.7-release-candidate.md)。这些不是 24 小时长稳证据；性能对比和 30→60→120→240→480→960→1440 分钟长稳另行记录。
+
+新增长稳准备的两个失败属于控制器时序：宿主 /ready 成功早于首个五秒资源快照，不能立刻把缺少指标判为版本不兼容；应在负载前限时等待首份完整快照，后续仍严格拒绝缺失指标。首轮性能 smoke 保留 temp/v0.7-performance/runtime-smoke-Hz5lJn/，修正后新旧 Release smoke 均通过。PostgreSQL 官方容器初始化期间的临时实例也会响应 pg_isready，但目标库可能尚未创建；准备必须同时验证正式 TCP 监听与目标数据库 SELECT 成功。首轮失败 temp/v0.7-soak/setup-initialization-readiness-failed.log、ID/所有者验证后的恢复 setup-resume.log，7 个真实恢复用例原断言未变。
+
+最终 Windows RC2 清洁发行矩阵 **8/33/9、268 Rust** 通过，实际 Host/两份热更报告 SHA 一致，见[候选证据](../design/v0.7-release-candidate.md)。三个示例联机通过、MMORPG 193 TS 与 51 Native 通过（另 2 忽略）；SLG 最后发现生成 tsconfig 仍指向作者工作树，必须用标准并列目录的正式构建刷新、检查完整 Git diff，不能只看 build 返回码。差异保留为 `temp/v0.7-rc2-final-examples-generated-drift.patch`，修复冻结在 Examples `31617b7/v0.7.0-rc.2`，重新 npm ci/build/check/smoke 后受控文件无差异。
+
+性能 Release 首次编译再次遇到 Windows V8 跨盘 symlink 权限 1314。核实锁定 V8 源与尚不存在的 `target/release/gn_root` 后创建本工作区目录联接，再用原源码/锁/Release 参数重试；没有修改第三方 build.rs 或启用不受控系统权限。失败保留 `temp/v0.7-performance/baseline-release-build-failed-v8-junction.log`。候选依赖助手调用 npm 时需要当前已安装 npm CLI 身份：从 npm script 启动，或显式传入已验证的 npm_execpath；直接 node 调用被断言拒绝，`npm exec node` 会下载另一个 Node，不能用它代替本机已选定的 Node 24。此次误调用只产生缓存下载，后续安装使用已验证 npm CLI 与原 Node 24，未改全局工具。
+
+最终 VSIX（两端均 0.16.2）在 VS Code 1.139.1 中连续三次通过六组实际编辑器用例。第一次 RC1 测试把重复 typeId 的诊断强制限定在 Collision 文件而超时；同字节重跑通过，两种索引顺序证明诊断属于后发现的声明。修正测试为本工程的任一冲突文件，仍严格检查跨根隔离和两文件修复，不延长超时、不改语言规则。Native Core 0.17.1-rc.2 的 npm tarball 仅 README/package.json 与 RC1 不同，语言/生成器字节一致。证据在 `temp/v0.7-editor-acceptance/result-rc2-{1,2,3}.json`，原失败保留。
+
+AI 0.3.0-rc.1 已做实际客户端验收：Codex 0.158.0-alpha.2 安装技能并调用两种只读 MCP 场景，Claude Code 2.1.275 新控制会话连接 MCP 0.16.1-rc.2 并发现三种只读工具，Cindy 0.1.93 的真实归档安装/重载后沙箱 running、两文件逐字节匹配。Cindy 首次在登录页启动失败是尚无数据所有者，改用其正式本地模式后通过；没有打开被发行客户端禁用的主进程调试器或改其沙箱。Cindy 四工具/六建议来自归档测试，不冒充客户端模型对话，未发起模型推理。候选分发的 MCP 字节以 Git 属性保留原样，防止换行转换破坏哈希；详见 [候选冻结](../design/v0.7-release-candidate.md)。
+
+2026-09-27 候选依赖冻结与 MCP 身份：尚未 push 的 tag 通过带 SHA256/提交校验的 Git bundle 重现，正式 npm/Cargo 锁仍保存上游地址与真实提交。首轮 npm 的 GitHub fetcher 转用 SSH，只有 HTTPS 重写时挂起；补齐同仓库三种 URL 后，又因 tag-only mirror 没有 HEAD 触发 undefined.sha。正确做法是在独立镜像创建指向已验证提交的默认分支，只对子进程设置重写，不改全局 Git、不伪造锁、不靠提前 push 绕过。最终 npm install 与 Cargo update --workspace 已成功，日志为 `temp/v0.7-rc1-dependency-install-head-retry.log`、`temp/v0.7-rc1-cargo-lock.log`，前两份失败日志保留。继续用清洁目录 npm ci/Cargo --locked 确认，不把开发树安装等同清洁重建。
+
+AI MCP 原来依赖全局 Windows .cmd，且实际服务握手仍报旧 0.13.0，不能仅凭插件清单判断已加载版本。Developer 的实际协议 RED 存于 `dist/v0.7-mcp-version-red.log`；改为构建注入包版本，随包提供实际依赖许可证、bundle/锁哈希，AI 只复制校验后的产物。Developer `npm run check` 为 153 通过、3 项宿主条件跳过；指定 `TIANGZ_TEST_MODULE_HOST` 后单独补跑跨 TS5/TS6 和实际模块 Host 的三项检查通过，日志 `dist/v0.7-rc2-host-contract.log`。Core 改用 0.16.1-rc.2 / VSIX 0.16.2，保留原 RC1 tag。Codex 根 `.mcp.json` 用相对 cwd，Claude 通过清单覆盖同名服务为自己的插件根变量；验证器拒绝 Codex 清单指向任意另名 MCP 文件时应修复包结构，不放宽验证器。实际客户端加载仍须另存证据，不以 vm/直接 stdio 冒充客户端验收。
+
+Host 数据/完成驻留预算完成本轮验收：每 Process 512 MiB 数据/回复预留，Disconnect 独立 65536 backing 项；call 执行前整批预留，缩减后沿最后 V8/Native 所有者归还，已接受完成不再重新竞争容量。真实 V8 保留小视图/Native 引用、满额新调用同步过载和已接受完成交付通过。最终 Windows **8/33/9、268 Rust**，Linux io-uring/kcp **8/33/9、272 Rust**；两边实际 Host 与各自两份热更报告哈希一致。139 个实际 npm 候选文件与工具版本已核对，完整日志和失败/修复证据见[驻留预算](../design/v0.7-host-event-budget.md)。本轮仍用原声明配合已核对的三个本地 npm 候选，不把它冒充下一阶段正式 RC 依赖冻结。
+
+2026-09-27 实际编辑器与环境验收：Native 旧 VSIX 在双 worktree 合并 Entity/typeId，已用安装产物复现并修复为按工作区根隔离全部符号查询；同工程冲突仍拒绝，动态增删根顺序重建一个服务器。Native 545bb2f，Core 22/Server 9、21 份正式生成对照/11 份 TS 通过；真正 VS Code 1.139.1 中两插件六组用例通过，包括 Problems 两轮恢复、所属任务 cwd、跨根 Hover/定义与实时 Model 时间规则。原始失败及 `result-model-contract.json`/包哈希保存在 `temp/v0.7-editor-acceptance/`；详见相邻 Native 仓库 `docs/v0.7-workspace-isolation.md`。初始测试启动使用内存存储未加载信任，改独立普通 Extension Host 与限定目录信任，不关闭信任保护；未定义 sleep 的 TS2304 和 Hotfix 直引 Core 的边界错误不能当作时间规则证据，须先构造类型/依赖合法的 Model 反例。重复测试用 WorkspaceEdit 修改已开文档，避免缓存与直接磁盘写不同步。
+
+Docker 4.90 启动因残留 AF_UNIX socket 重命名失败，daemon 未就绪；CLI 优雅停止超时后只停止本轮启动且路径/时间已核实的 Docker 进程。确认 socket 目录仅含零字节端点、最终绝对路径在指定本地应用目录内，保留目录备份后重新创建运行目录，Docker 29.7.2 恢复；原有三个容器按原配置自动启动，未重置数据或卷。证据 `temp/v0.7-docker-socket-recovery.json` 及前后日志。随后 Linux 验证容器断网 npm 安装重试公共 registry 元数据、尚未进入矩阵，已停止该自有容器，保留失败日志并在允许联网的依赖准备环境重试；Rust 仍使用已核实的专用离线缓存。环境失败不能记作产品测试通过，不清空用户服务绕过故障。
+
+Host 错误文本截断还必须释放原 String 容量：首版 truncate 把 30000 字节文本缩短，但 Native 完成仍保留旧 allocation，缩减预算过早。新增容量断言已得到 RED（`temp/v0.7-host-event-budget-error-capacity-red.log`）；改为先创建最多 4096 字节的新字符串并替换旧所有者，再缩减预留，不截断成功业务 payload。完整 Windows 矩阵因该实际所有权修复重新重建/执行，见[字节验收](../design/v0.7-host-event-budget.md)，不能只拿修复前通过的 225 项替代。
+
+本轮完整矩阵的本机痕迹门禁发现上一批确认契约文档残留本机绝对路径；这是文档可迁移性缺陷。修正命令为相邻 worktree 相对路径，保留原检查，不扩大白名单、不隐藏文件。首轮矩阵仍保留失败，单独复测 `npm run verify:no-local-traces`，后续正式候选再跑完整门禁；记录见[Host 预算验收](../design/v0.7-host-event-budget.md)。
+
+Host 驻留预算首轮定向测试 2/5：新增真实 V8 的满额完成交付通过；三个旧打包单测直接伪造未准入事件，被新增“必须带预留”的入口拒绝。它是旧夹具遗漏新契约，不是应放宽的生产限制。正确做法是在夹具的调用/入队前取得原 Process 守卫，保留原字节/顺序/失败原子性断言；不能在生产打包阶段临时预留、绕过检查或用 cfg(test) 关闭保护。首轮日志 `temp/v0.7-host-event-budget-initial.log`，后续主测试/完整矩阵命令及结果见[预算记录](../design/v0.7-host-event-budget.md)。
+
+Host 事件驻留预算正在按 [0.7 契约](../design/v0.7-host-event-budget.md)收口：数据/回复在执行前预留，完成通知沿原守卫交付，混合 batch 的小切片直到最后 Native/V8 引用释放才归还，GC 未回收也计费；Disconnect 使用独立所有权额度。不可在 Host 打包时拒绝已执行回复、在 Promise finally 提前释放、保留原 Bytes 冒充零复制守卫，或用强制 GC 隐藏压力。512 MiB 是数据/回复的保守驻留成本，不是 RSS；Rust 原帧、单批复制峰值与任意业务堆另计。当前修改尚在验证，精确命令/失败与证据写入该设计稿，不能复用旧 Host 的通过结论。
+
+`@queued` 生成器不决定持久性，须核对 DBProxy 部署的 `backlog.enqueueAck`：默认 aof 等 Redis 本地落盘，memory 只确认 Redis 内存，两者都不是 PG 提交；测试 memory backend 不提供持久性。不要从成功响应推断配置，也不以清库替代生产写法迁移。本轮实际 VSIX 的初版 LSP 夹具漏 Entity.instanceId，又只等待零诊断通知，将真实语义错误藏成超时；应接收该 URI 的诊断并明确断言，补合法根字段后原诊断和 Hover 均通过，不关闭校验或加大超时。本地 `temp/包.tgz` 还曾被 npm 当作 GitHub 简写并 SSH 失败；应使用 `./temp/包.tgz`，不改 SSH 配置或发布锁，随后核对实际安装，不能假定失败等于未安装。输入、失败日志、打包与安装复测见[确认契约](../design/v0.7-queued-ack-contract.md)。
+
+离线 Cargo 身份查询要明确实际目标：未过滤的 Linux `metadata --offline` 因缺 `bumpalo 3.20.3` 缓存在测试前失败，指定 `--filter-platform x86_64-unknown-linux-gnu` 后通过。SDK 候选完整矩阵随后 check 8/8、quick 33/33、full 8/9；全新脚手架还暴露缺发布 tag 引用，单有旧锁 commit 缓存不足。核对本机已有 annotated tag 的 peeled commit 与正式锁相同后才导入专用缓存，全新脚手架独立复测通过。保留原始失败，只接受三个候选 crate 来源变化，不手写锁、换依赖、伪造 tag 或禁用 V8。Windows 242 项/Clippy、Linux 268 项及独立复测分别见[SDK 联验](../design/v0.7-dbproxy-sdk-candidate-integration.md)，不把多次结果拼成一轮完整通过。
+
+包身份校验必须使用消费者实际的模块条件：Native 0.17.0 仅导出 types/import，校验夹具用 `createRequire.resolve` 会选择 require 条件并报 `ERR_PACKAGE_PATH_NOT_EXPORTED`。应在实际项目 cwd 启动 ESM import 分别验证 Core/codegen，不能新增 require/default 导出迁就错误夹具。此次三个本地候选一起安装、正式 package/lock 保持不变；0.17 候选在 Windows/Linux 新矩阵均 **8/33/9**、Rust 264/268 项，独立保留实际包/Host 身份，不能与此前 0.16 阶段混称。原始失败、139 文件检查、正式生成/Native 运行和命令见[Native 候选联验](../design/v0.7-native-candidate-integration.md)。
+
+上述 V8 上下文修复最终验证：Windows 含 KCP **check 8/8、quick 33/33、full 9/9**、Rust 264 项；Linux 实际 io-uring/kcp 同为 **8/33/9**、Rust 268 项，原默认并发主测试连续 10 轮各 226 项通过。没有放宽并发、GC 或原断言，生产路径本就使用正确 enter；原 RED、Linux 三轮失败及 core 单独保留。实际命令、宿主 SHA256 和验收范围见[构造上下文](../design/v0.7-v8-runtime-context.md)与[Linux 完整矩阵](../design/v0.7-linux-game-validation.md)。本轮 Native Core 0.16.0 与已打包的 0.17.0 候选不能混称，默认发布依赖尚未冻结。
+
+V8 构造必须先进入由调用者持有、启用 timer 的 Tokio runtime。Linux 第三轮 SIGABRT 通过原 ELF 第 4 次默认并发复现及 core 定位到 deno_core 0.411.0 `spawn_delayed_task`：未登记 handle 时，偶发 GC 延迟任务会主动 abort，普通捕获输出可能看不到诊断。生产入口已有 enter，部分测试/双 Native 临时验收入口遗漏；修复当前入口并在 Host 构造前明确拒绝缺上下文，不靠关 GC、串行化或重试掩盖。runtime 应活过 V8 销毁并由原拥有者驱动；检查当前 handle 不证明 timer 能力或未来寿命。原日志、回归与复测见[上下文契约](../design/v0.7-v8-runtime-context.md)，不把本栈外推为历史无栈 Windows 异常的原因。
+
+Linux 第三轮须与缓存路径故障区分：双路径挂载下原 Inspector 专项 1/1 通过，但完整 quick **32/33** 的失败变为 main Rust 测试进程 **SIGABRT**，尚无原生栈；后代回收仍执行。事后 cgroup pids.events/max、memory.events/oom/oom_kill 为 0，不足以确认根因。保留原二进制、并发和失败日志，在隔离容器取得未捕获输出/调试器堆栈，再决定修法；不能重跑至绿、全局强制串行、删用例或把此前 Windows 异常直接认定为同一问题。证据与复测命令见[Linux 游戏验收](../design/v0.7-linux-game-validation.md)。
+
+复用原生构建缓存要保持绝对位置：Linux 第二轮 quick **32/33**，Inspector 在启动宿主前因旧 `/target/debug/TiangZ` 不存在而 ENOENT；当前真实宿主位于 `/work/target`，旧路径已编译进 `env!(CARGO_BIN_EXE_TiangZ)` 的测试产物。不能把此项当作断点/源码映射运行时失败，或修改断言吞掉启动错误。修正方式是保留缓存原挂载并将同一实际目录提供给宿主发现工具，或重新构建被搬移的缓存；完整复测保持原断言与限额，证据见[Linux 游戏验收](../design/v0.7-linux-game-validation.md)。
+
+Linux 安装不能假设所有 Git 依赖都已含构建物：Native Language 0.16.0 用 prepare 生成 dist，首轮禁用 scripts 后缺入口，生成失败又导致 Hotfix 门禁找不到 generated/model。另一个独立错误来自夹具把 target 目录做成人工软链接，Git 候选扫描仍包含它，读取报 EISDIR。首轮 **6/25/2**、full 7 failed、200840ms，证据 `temp/v0.7-linux-game-initial/`。在全新专用 volume 使用正式 npm 安装脚本，实际目录挂载对齐 Cargo/Host 路径；不伪造 dist/空目录、不关闭门禁或放宽 ignore/期限。保留同一源码和候选依赖，完整复测命令和范围见[Linux 游戏验收](../design/v0.7-linux-game-validation.md)；不要把前置失败当成多项运行时缺陷。
+
+完整 Linux 游戏验收采用干净 `0210279` 源码归档和专用 Linux volume，保留大小写语义；Core/SDK 候选逐项核对 96 个已安装文件，Rust SDK 仍按原发布锁，不混称候选联调。工具镜像补齐 Luban 的 .NET 8.0.31，正式 io-uring/kcp 矩阵离线运行，不更改主机/用户服务。范围、V8 正规离线缓存与证据见[Linux 游戏验收](../design/v0.7-linux-game-validation.md)；执行中不能凭镜像或原生专项通过宣布完整游戏验证成功。
+
+Host 原缓冲区必须按整块 backing store 的最后所有者观测，不能按小子视图长度或请求完成时刻释放。真实 V8/Process 已分别验证子视图持有、最后 Native 引用、正常/停机批次与退出回收；Windows 含 KCP 完整 **8/33/9**、543205ms、Rust 263 项，`temp/v0.7-host-backing-verify.log`。Host/两报告 SHA256 `ba921afd32e5f0fa3d3b9f85824756e8fc6c283cf79dceac3a094b241ea58e90`，Linux 实际原生 **267 项**、Clippy 和 AI 实际归档通过，三宿主正常退出。真实控制请求排空后仍记录 129414 字节，此非零不能直接归因为泄漏，也未强制 GC；见[完整证据](../design/v0.7-host-backing-store.md)。观测排除显式业务复制/其他 op/总堆，未来硬额度须独立保证完成通路。
+
+原生 API 探针要先沿用当前 Host 的真实导入路径：首轮 backing store 集成测试 E0432，`Uint8Array` 实际位于 `deno_core::convert`，`temp/v0.7-host-backing-probe-initial.log`。此时未运行任何 GC/寿命断言，是夹具编译错误；不能改依赖、跳过 V8 或把失败当成框架泄漏。修正路径后复测 `node tools/run_cargo.mjs test --test host_backing_store_ownership --features kcp --locked -- --nocapture`，见[探针边界](../design/v0.7-host-backing-store.md)。
+
+控制入站现按 Process 共享 65536 个未开始项，确认必须等 TS 真正开始或丢弃未执行节点；转入忙碌 Scene mailbox 不得提前释放。实际完成通知和 Shutdown 保留独立通路。最终 Windows 含 KCP **8/33/9**、471440ms、Rust 262 项，`temp/v0.7-control-ingress-verify-final.log`；Host/报告 SHA256 `305b6dc50b08c6bf0347a5a0cf010b84fbef8bb69a2a035550c0685324adae05`。真实峰值 65536 后归零，77825 输入全部获得成功或明确过载，热更/原连接恢复及三宿主正常停机通过；Linux 实际原生 **266 项**、Clippy 和 AI 实际归档通过。完整失败、LE 过载信封夹具修正与边界见[验收](../design/v0.7-control-ingress.md)。必须使用配套新 Model 并重启；聚合确认只适合同质数量槽，不能拿它计不同大小或仍被 Actor DTO 持有的 backing buffer。
+
+io-uring 的 Socket 与 accept 所有权修复已通过真实专项 **4/4**，同一 listener 保持存活时验证关闭、恢复、阻塞控制通知及末条写入排空。最终 Linux **260 项**与全目标 Clippy 通过，`temp/v0.7-linux-native-final.log`；Windows 含 KCP 完整 **8/33/9**、524857ms，`temp/v0.7-linux-native-verify.log`，Host/两报告 SHA256 `4370b245a006fd8f3d642962446f49e5cd08674da4f92082291687c0fad6b500`。Linux 普通 Host SHA256 `2338a1ba0b463851372c65eb5255587dc15d1de3137238aedf9d6cc149e0f8c4`，AI 实际归档通过，三个 Windows 宿主正常退出。完整命令、原始失败与限制见[Linux 验收](../design/v0.7-linux-native-validation.md)；不将 Linux 原生验证说成完整 Linux 游戏热更矩阵。
+
+Linux listener 关闭块的 E0505 编译失败保留在 `temp/v0.7-linux-uring-handshake-final.log`。先 shutdown，再在原总预算消费借用 listener 的 accept Future、排空连接，外层最后 drop listener；不要把 listener 和它的借用一起移进 async 块，更不能用 unsafe 或删除等待规避。这是编译期所有权修正，不能与真实 Socket/恢复失败混成同一种证据；见[完整记录](../design/v0.7-linux-native-validation.md)。
+
+原真实 io-uring 用例必须同时验证超时关闭与后续恢复：首修仅解决前半，`temp/v0.7-linux-uring-handshake-green.log` **1 failed**、6.06 秒。listener 的 select 在连接结束时丢弃 pending accept，会留下无人消费的新 Socket。正确做法是循环保留原 accept，停止时用同一 stop 总预算 shutdown/消费其结果并排空连接；不能只断言名额归零、改用默认后端或删除恢复断言。新直接依赖采用已有锁内 socket2 0.6.5，正规 Cargo 解析并核对锁差异；详细复测见[Linux 验收](../design/v0.7-linux-native-validation.md)。
+
+io-uring 实际握手期限测试发现框架缺陷：5 秒握手超时已归还连接/握手名额，但原 Socket 在 6 秒测试保护内不关闭，`temp/v0.7-linux-uring-handshake-red.log` **1 failed**、6.05 秒。Future drop 只留下 Ignored 内核操作时，FD 仍被持有。关闭守卫从握手转交 writer，异常/取消触发 shutdown，正常路径排空后关闭；不能把守卫留给可能阻塞于 Disconnect 入队的 reader。见[原因与契约](../design/v0.7-linux-native-validation.md)，复测原 `io_uring_handshake_timeout_closes_socket_while_listener_remains_alive` 用例；禁止加长期限或关闭 listener 让客户端 EOF 来绕过。
+
+Linux 离线探针的首个失败发生在 Rustup 组件同步而非 TiangZ：先核对已安装版本，使用明确的同版 RUSTUP_TOOLCHAIN，不能去掉仓库 toolchain/锁来绕过。默认 Docker syscall 策略实际拒绝 io_uring_setup（EPERM）；仅在专用容器调整策略后创建/关闭 ring 成功，宿主内核设置未改。三份原日志为 `temp/v0.7-linux-native-capability-default.log`、`-default-final.log`、`-uring.log`，复测配置与层次见[Linux 验收](../design/v0.7-linux-native-validation.md)。条件编译、ring 能力、V8 链接、生产 backend 收发必须分别验证，任何一层成功都不代替后续层。
+
+连接编号修复完成：相关 **5/5** 覆盖最后合法编号的真实 TCP/Auto/WebSocket/KCP 与耗尽后的资源回收，分配模块 **3/3** 包括八线程竞争最后两号。`TIANGZ_VERIFY_CARGO_FEATURES=kcp npm run verify` **8/33/9**、477578ms、Rust 256 项，`temp/v0.7-connection-id-admission-verify.log`；Host/两报告 SHA256 `3363972a027fc4d31e052c799caf27b2500420b18045e88ee2821a10daadf68c`。Linux 条件编译和实际 AI 归档通过，三个宿主正常退出。见[完整验收](../design/v0.7-connection-id-admission.md)，协议/Native/Stable 锁未手改，插件保持独立版本。
+
+`temp/v0.7-connection-id-admission-red.log` **1 failed**、0.01 秒证明实际 TCP endpoint 会在 uint32 耗尽后发布编号 **4294967296** 的 Frame；最后合法编号的 Frame 已先通过真实 Host 事件头。backend 的 u64 fetch_add 没有协议宽度约束，不能等到下游桥才失败。正确做法是统一原子分配、耗尽不修改计数、不登记/发布新连接，由原监督路径处理；禁止取低 32 位、复用旧号或放宽断言。见[冻结契约](../design/v0.7-connection-id-admission.md)，复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp connection_id_exhaustion_fails_before_publishing_an_invalid_host_event -- --nocapture`；不冒充真实海量连接或生产事故复现。
+
+Native 批次共享元数据验收已完成：Host **28/28**、最终调度 **8/8**、固定标签指标 **1/1**，含 KCP `npm run verify` **8/33/9** 全过，484101ms，`temp/v0.7-native-scene-batches-verify.log`；Rust 252 项、Linux 条件编译和 AI 实际归档通过。实际宿主/报告 SHA256 `f03b30153f2b6fb75f35fd12dfefbd11f476efe2dbae0a17242cae5534cfb91b`。真实最大批次峰值 65536 后归零，258 项批次的已完成部分没有提前减计数，旧消息完整送达、原期限和三宿主正常停机保持。具体命令、失败和范围见[验收](../design/v0.7-native-scene-batches.md)，不能把共享槽数当成整个运行时的内存上限。
+
+`temp/v0.7-native-scene-batches-metrics.log` **1 failed** 的空 Native 指标来自夹具没有有效采样时间：旧 game-only 数据不依赖该门槛，新增 Process 字段必须设置 `sample_timestamp_ms`。补齐夹具后原样检查数值、类型和唯一 Process 标签；不能移除生产采样门槛或忽略缺失行。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp health::tests::host_scene_operation_metrics_separate_queued_cost_from_reply_waiters -- --nocapture`，与真实运行缺陷分开记录。
+
+`temp/v0.7-native-scene-batches-clippy.log` 保留提取批头校验后的 `needless_borrow` 失败：输入已变为 `&[u8]`，仍按原 Bytes 写 `&packet`。去掉多余一层引用并原样复测 `node tools/run_cargo.mjs clippy --all-targets --features kcp -- -D warnings`；禁止加 allow 或降低警告门禁。Rust 调度专项 8/8 与这次静态检查失败分别记账。
+
+实际 Native 批次反例 `temp/v0.7-native-scene-batches-red.log` **1 failed**，0.10 秒：第一批 65536 项因完成背压仍保留元数据，另一合法批次仍被接收。原因是只有单批界限，没有所有批次容器的共享额度；该 V8 测试不经过 TS 准入辅助函数、不发网络。正确修法需复制/分配前预留整批项数，保留到真实容器销毁，异常也归还；不能只随部分完成提前减数、减少旧批规模或丢完成通知。见[冻结契约](../design/v0.7-native-scene-batches.md)，复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::scene_operations_tests -- --nocapture`。
+
+期限句柄修复复测 **原生 9/9、TS 43/43**，含 KCP `npm run verify` **8/33/9** 全过，468894ms，`temp/v0.7-deadline-handles-verify.log`；Rust 248 项、Linux 条件编译与 AI 实际归档通过。Host/报告 SHA256 `db89ee6f56a1b92f7e8ff82df834b7986344d49579f09a88a6af2676149f1bc6`，真实 V8 证明高频期限不消耗通用编号、大句柄无截断、Runtime 清理后原 waiter 才归还。真实 Process 本地期限、超时后业务保留、远程排队期限和停机均通过，三个宿主 exit 0 且无强制终止。完整命令、最初失败与验证范围见[验收](../design/v0.7-deadline-handles.md)；仍须重建重启，不持久化内部句柄或宣称任意业务取消。
+
+期限句柄测试编译的 E0061/E0599 与 E0509 保留在 `temp/v0.7-deadline-handles-compile-failure.log`。原因分别为把 `#[op2]` 生成的 OpDecl 工厂当普通函数调用，以及用结构更新语法搬出 Drop 类型的非 Copy 字段；不是运行时期限缺陷。正确做法是实际 V8 调桥创建资源、测试边界表显式初始化，不能修改依赖宏或去除资源析构绕过。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::deadlines::tests -- --nocapture`，保留原 RED、容量和最终释放断言。
+
+原生期限新增反例：资源都释放后，实际 V8 再创建通用资源取得编号 **131080**，预期 **1**；`temp/v0.7-deadline-handles-red.log` **1 failed**，2.48 秒。原因是 deno_core 0.411.0 的 u32 通用资源编号只增不复用；存活额度正确不等于累计编号可长期使用。正确修法需独立期限表、精确安全整数和明确耗尽，不清空其他资源、不绕过容量/取消完成断言、不将此反例称为已复现生产溢出。见[冻结契约](../design/v0.7-deadline-handles.md)，复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::deadlines::tests -- --nocapture`。
+
+远程排队期限已以原绝对时间贯穿 TS/Native/传输：相关 **43/43**、Rust 专项 **4/4**，设置 `TIANGZ_VERIFY_CARGO_FEATURES=kcp` 后 `npm run verify` **8/33/9** 全过，462086ms，`temp/v0.7-remote-operation-deadlines-verify.log`。245 项 Rust、Linux 条件编译、实际 AI 归档通过，Host/报告 SHA256 `be70e7d8b72465ab72370721866ed46701cdaffeacd1dc5ab3f5b048f0b741f1`。真实 256 个长 RPC 占槽时，短 call/send 在原生队列各记一次到期、单向没有迟到执行，释放后恢复，三宿主正常退出；80ms 短调用在 168.99ms 被观察到，不能把控制通知背压忽略成严格实时保证。定向复测与完整身份见[验收记录](../design/v0.7-remote-operation-deadlines.md)，下方原失败记录保留，不用延长反例阈值或减少并发来绕过。
+
+原生调度反例 `temp/v0.7-remote-operation-deadlines-native-red.log`：隔离真实 V8 先提交 256 个 1000ms sleep，再提交短 RPC；400ms 上限内 RPC 仍没有完成，子进程失败。测试未初始化网络管理器，检验的是普通计时占执行槽导致错误/超时也被阻塞，并非真实网络送达。修复需独立处理 sleep 与排队项绝对到期，不能延长上限、减少 256 项或宣称已取消对端。复测 `node tools/run_cargo.mjs test --bin TiangZ --features kcp host::scene_operations_tests -- --nocapture`，与真实网络证据分开。
+
+远程期限的 8 项确定性反例全部失败，255ms，`temp/v0.7-remote-operation-deadlines-red.log`：旧实现未扣除 TS 排队，过期项仍进入 Rust，sleep 重新计时；新桥还须保留参数转换、路由耗时和单调时钟边界。正确修法是在原批次格式中传递剩余时间并附共享采样时刻，原生未开始项按绝对期限处理，不能只等轮到它时重新计时、损坏其他项或声称已取消对端。复测 `npx vitest run tests/unit/remote_operation_deadline.test.ts tests/unit/host_operation_admission.test.ts tests/unit/process_shutdown_deadline.test.ts tests/unit/scene_call_deadline.test.ts tests/legacy/rpc_actor_correctness_self_test.test.ts`，实际 Native/V8/网络证据另验，见[独立契约](../design/v0.7-remote-operation-deadlines.md)。
+
+停机改动最终复测 **35/35**，Rust 专项 6/6，含 KCP `npm run verify` **check 8/8、quick 33/33、full 9/9**，461927ms，`temp/v0.7-shutdown-deadline-verify.log`；Rust 共 241 项、Linux 条件编译、AI 实际归档通过。真实 Native/V8 证明普通期限满额仍有独立停机资源，完整 Process 故障矩阵的停机场景 187.94ms，三个宿主 exit 0 且无强制终止。宿主/报告 SHA256 `b69e8de9e89542e1ace6b881bd0f20001c6b7ec41343530c4957fa9acc4b7260`，证据和范围见[停机验收](../design/v0.7-shutdown-deadline.md)；保留下方 8 项 RED，不把替身失败注入当作真实满载停机演练。
+
+排队时间要实测纳入预算：`node temp/v0.7-remote-deadline-probe.mjs` 将 20ms 的 call/send/sleep 暂留 TS 队列 **77.32ms**，实际打包仍写入完整 20ms，证据 `temp/v0.7-remote-deadline-audit.json`。探针未发网络，不能据此声称对端执行。后续需统一单调绝对期限，未获得原生执行槽的过期操作也须处理，而非等轮到自己后重新计时；不以 Promise.race 冒充业务取消、不删旧项或降低并发来掩盖。真实 Rust/V8 路径另验，本批停机修改不修此项，见[后续盘点](../design/v0.7-ts-mailbox-audit.md)。
+
+停机 watchdog 不能依赖普通工作队列：`temp/v0.7-shutdown-deadline-red.log` **8 failed**，286ms，其中满远程队列反例证明旧 stop 在实际钩子未完成时已失败退出；其余覆盖共享结果与专用资源的新契约。正确修法是独立的一项原生预留、共享同轮 stop，并在期限创建异常时仍执行/观察清理，继续由 Rust 外层 drain 期限限制异常回退。禁止直接用准入失败不执行 factory 的普通包装器、吞掉创建/钩子异常或将超时冒充取消完成。复测 `npx vitest run tests/unit/process_shutdown_deadline.test.ts tests/unit/scene_call_deadline.test.ts tests/unit/global_id_bootstrap.test.ts`，见[停机期限](../design/v0.7-shutdown-deadline.md)；替身与真实 V8 分别报告。
+
+远程共享准入的最终复测为相关 **27/27**，含 KCP `npm run verify` **check 8/8、quick 33/33、full 9/9**，457372ms，`temp/v0.7-host-operation-admission-verify.log`；Rust 240 项、Linux 条件编译与 AI 实际归档通过。真实 V8 完整保留 65536 条单向消息及 64 MiB 整包，4 次公开 1011 只拒绝新增项，排空后恢复，宿主/报告 SHA256 `73d8d2ee0bd1e1404fe75dd08400bcad73330d6bde5492ddba6230c9c83c27d0`。下方失败反例及初步阶段保留；临时容量夹具的 Rust 出站预算与被测单批上限分开，不能改变默认值后声称默认吞吐已验收。详见[准入最终证据](../design/v0.7-host-operation-admission.md)，停机与排队期限仍有独立边界。
+
+共享准入必须覆盖所有入口和旧项保留：`temp/v0.7-host-operation-admission-red.log` **10 failed/2 passed**，旧 call/sleep 能绕过单向队列上限，无效或已 detach 的帧还能使整批失败。修复在接受前检查输入、pending、条数和含头字节，flush 仅拒绝失效的本项，不能丢旧队列、只改 Rust 上限或把排队成本算成在途总内存。复测 `npx vitest run tests/unit/host_operation_admission.test.ts tests/unit/scene_call_deadline.test.ts tests/legacy/rpc_actor_correctness_self_test.test.ts` 初步 26/26；现有 mock 的一字节业务帧修正为原 Rust 已要求的二字节，完成和 rpcId 断言保留。指标、真实生成协议与完整矩阵另验，见[准入契约](../design/v0.7-host-operation-admission.md)。
+
+本地期限最终复测为相关 **31/31**，含 KCP `npm run verify` **check 8/8、quick 33/33、full 9/9**，434358ms，`temp/v0.7-host-deadlines-verify-final.log`。Rust 239 项、Linux 条件编译、AI 实际归档通过；真实 V8 2000 次快速调用合计 148.95ms，期限届满后原 callee/mailbox/热更仍等实际完成，宿主/两份报告共同 SHA256 `670e83f915b0067d8fe8a979bae688ff77d3855f520f1c3e0740cee3164bf224`。见[最终证据](../design/v0.7-host-deadlines.md)。下方旧夹具缺桥、参数转换、waiter 快速路径反例和首轮 ENOBUFS 逐项保留；未改变网络参数，不能用后续通过覆盖首轮失败或宣称全部队列/内存有界。
+
+跨入口的队列需要共同反例：`node temp/v0.7-host-operation-admission-probe.mjs` 仅在隔离 Node 中记录当前 TS Host 打包，65536 个单向消息加一个 RPC 被全部接受，形成 Rust 不允许的 **65537** 项整批。证据 `temp/v0.7-host-operation-admission-audit.json`，未发网络；下一批需在接受新项前验证共享限制，保留先前已接受项，不能把 TS Mock 打包观测称为真实传输验收或清空旧队列绕过。见[后续盘点](../design/v0.7-ts-mailbox-audit.md)。
+
+快速期限需用确定性行为断言防回归：`temp/v0.7-host-deadlines-fast-path-red.log` 证明 100 次立即完成调用仍启动 100 个原生 waiter（1 failed/10 skipped）。修正为先预留原生绝对期限，宿主刷新时仅启动尚未完成的等待；刷新前完成同步关闭，已启动 waiter 等实际退出。统一停机清理两种状态，延后注册失败不撤销已开始目标。`npx vitest run tests/unit/scene_call_deadline.test.ts tests/unit/scene_call_cleanup.test.ts tests/unit/local_scene_capacity.test.ts tests/legacy/rpc_actor_correctness_self_test.test.ts` **31/31**，`temp/v0.7-host-deadlines-lazy-focused.log`；不得删容量检查、重置起算时间或提前归还原生等待的实际名额来提升速度，最终真实宿主/全矩阵另验。
+
+宿主桥更新也要迁移已有自测：期限首轮完整矩阵的 legacy RPC 自测未安装新桥，仍按旧 packed kind=3 完成计时，报 `hostCreateDeadline is not a function`（`temp/v0.7-host-deadlines-verify.log`，184 passed/1 failed）。修正其显式宿主替身与期限完成驱动，保留 rpcId/超时/停机断言，禁止生产代码回退到旧桥或删测。相同矩阵的真实 admin HTTP 出现 `ENOBUFS`（`temp/hotfix-load-XxB2CZ/fault-report.json`），只能报告观察到的环境错误；事后端口采样不能证明失败瞬间原因。保留 500 连接与失败报告、不改网络配置，继续原命令完整复测。快速本地期限测试 20128ms 也提示等待每次原生取消 pump 的成本；须验证未跨 Update 的工作无需启动 waiter，已启动者仍实际排空，不能只看正确性通过。
+
+期限清理须验证 Rust 真实资源，而不只看 Promise.race 返回：旧本地调用快速成功/拒绝后仍提交计时操作，`temp/v0.7-host-deadlines-red.log` **5 failed/1 passed**；本次用当前 isolate 原生期限并在 finally 关闭、等待取消实际退出。复测 `npx vitest run tests/unit/scene_call_deadline.test.ts tests/unit/scene_call_cleanup.test.ts tests/unit/local_scene_capacity.test.ts`，另跑原生资源/真实生成协议；超时仍须保留目标 ordered 队列、真实名额和热更排空。桥改动初版还漏掉原 DataView 的 uint32 转换，小数/NaN 两个用例失败（`temp/v0.7-host-deadlines-coercion-red.log`，2 failed/9 passed）；须保留原公开转换，不以新桥严格参数检查替代兼容语义。禁止仅延长超时、删任务计数、吞掉测试或将内部期限当游戏 Timer；详见[期限资源](../design/v0.7-host-deadlines.md)。
+
+本地 Scene 容量最终复测：`npx vitest run tests/unit/local_scene_capacity.test.ts tests/unit/mailbox_lifetime.test.ts tests/unit/mailbox_overload_delivery.test.ts tests/unit/actor_mailbox_capacity.test.ts` **49/49**；含 KCP `npm run verify` **check 8/8、quick 33/33、full 9/9**，430647ms，`temp/v0.7-local-scene-capacity-verify.log`。真实 V8 16384 项中一半为已返回发送者的单向工作，仍占原名额；热更暂停期间 Worker RPC 返回后排空并恢复提交。Rust 234 项、Linux 条件编译、AI 实际归档通过，普通 Host/报告共同 SHA256 `604c5e0d2b887b00a836298c5f50cf499745c818fa7931144064df452b86da40`，详见[最终证据](../design/v0.7-local-scene-capacity.md)。下方夹具超时、类型标注、self RPC 误用与公开错误映射按阶段保留，不能混称框架容量失效；网络控制与字节上限仍独立处理。
+
+独立 Process 容量探针也要遵守既有调用契约：`temp/v0.7-local-scene-capacity-v8.log`、`temp/hotfix-load-r9hBNs/fault-report.json` 在 Worker self RPC 处收到 1006 `cannot synchronously call itself`。不能为证明独立额度而绕过 self-call 防护或改 ordered 语义；夹具给 Worker 配置独立 EntryScene，公开 call 指向该目标，重跑完整真实 V8 场景。此轮是夹具误用，不是数量限制失效，热更恢复部分当时尚未完成。
+
+转译测试不等于类型检查：本地容量及相关 Vitest 49/49 通过后，`npm run test:unit:typecheck` 仍报 TS2345（`temp/v0.7-local-scene-capacity-types.log`），泛型 register 的自定义 encode 参数缺少显式 Response 标注而被推断为 unknown。修正夹具的函数参数类型并重跑 `temp/v0.7-local-scene-capacity-types-final.log`；不要 as any、改协议类型或删除类型检查绕过。
+
+容量 RED 用例不能先等待无界旧队列拒绝：本地 Scene 首轮 ordered 用例在 gate 后排队却直接 await rejects，触发测试 30 秒期限（`temp/v0.7-local-scene-capacity-first.log`）。正确反例先检查队列长度没有增加，再等错误，finally 仍释放 gate；修正后 `temp/v0.7-local-scene-capacity-red.log` 8 项均明确失败，不能把夹具 timeout 当作框架崩溃或提高超时来掩盖。配额附着实际节点，void 返回不是归还点，见[本地 Scene 准入](../design/v0.7-local-scene-capacity.md)。
+
+公开 RPC 入口也需保留准入类型：本地节点接线后 7/8 通过，SceneCallContext.callFrame 却把本地 1011 按缺少 Rust 前缀重映射成 1006，`temp/v0.7-local-scene-capacity-propagation-red.log`。修复保留 RpcError(1011)，保持其他错误映射和原 rpcId 释放流程，再验证业务公开 call/send 与真实生成协议；不拼假错误文本、不绕过正常 dispatcher。正在运行的旧任务不能因 Scene/Runtime 销毁提前归还新 Host 的额度。
+
+Actor 容量最终复测：四个相关文件 **42/42**，`temp/v0.7-actor-capacity-focused-final.log`；公开 send 修复后重新执行含 KCP **check 8/8、quick 33/33、full 9/9**，412040ms，`temp/v0.7-actor-capacity-verify-final.log`。真实生成协议验证两级额度、5 次带关联号的 1011（含两次公开 send）、2 次单向来源关闭、销毁保留和热更恢复，Rust 233 项及 Linux 条件编译通过；宿主、报告、AI 归档身份见[最终验收](../design/v0.7-actor-mailbox-capacity.md)。下方阶段失败按发生顺序保留，阶段通过不能覆盖后来发现的公开 API 缺口；现行完整证据以上述最终轮为准。
+
+单测内部 router 通过不能替代公开 Scene API：新增 scene.scenes.send 用例收到 1006 而不是 1011（`temp/v0.7-actor-capacity-public-send-first.log`，1 failed/14 skipped）。原因是外层 SceneCallContext.sendFrame 的 mapError 只按 Rust `[scene-overloaded]` 文本识别过载，本地有类型的错误被重映射。应保留本地 RpcError(1011)，其他原有错误映射保持，并继续支持远程 Host 文本；禁止拼接假 Rust 错误文本或只改断言。真实生成协议须再调用公开 send 验证两级拒绝，改动后重跑完整矩阵。
+
+容量修复自身的来源交叉反例：异步过载的关闭操作也必须验证原等待身份。初版只给成功响应传 AsyncIngressSource，错误回调则直接按 connectionId 关闭，导致旧来源已断开、墓碑过期、同号新等待被误关；`temp/v0.7-actor-capacity-late-source-first.log` 为 1 failed/13 passed。正确修法给错误回调携带同一原状态，Scene 关闭/来源失效后不再发关闭命令，业务实际任务仍自行排空；禁止永久墓碑或全量取消绕过。新增用例同时断言新等待仍正确回包，最终四个相关文件 41/41、类型检查通过，完整矩阵待完成。
+
+新增单向协议时须同步 Model 的值导出和 modelExports：Actor 容量 V8 夹具首轮生成五个消息成功，但 Hotfix 导入 StarterMessages 时 TS2305（`temp/v0.7-actor-capacity-v8.log`、`temp/hotfix-load-RnNoA6`）。消息类型的 export type * 不能导出描述符值；正确修法在临时模块 Model 导入生成 messageDescriptors，同时显式导出与加入运行时桥，再重新走 protocol-update/build。禁止手改 generated 文件、用 Hotfix 深层导入绕过模块边界，或将尚未启动的 Host 算作容量验收。
+
+Actor 两级额度不能只加计数器：`temp/v0.7-actor-capacity-first.log` 为 5 failed/1 passed，反映旧 mailbox 无任务上限。按[契约](../design/v0.7-actor-mailbox-capacity.md)同步拒绝 1011 后，`temp/v0.7-actor-capacity-delivery-first.log` 仍 7 failed/2 passed，原因是单向 Registry 吞错、send 同步准入错误只记日志。修复须把真实过载传给入站所有者：网络关闭物理来源、本地同步错误返回，保留 rpcId/失败指标，不冒充完成、自动重放或提前取消运行任务。
+
+外壳也要验证：Trace、ActorLocation、批次三个 try/catch 曾将运行时过载错分为 MalformedFrame，`temp/v0.7-actor-capacity-envelope-first.log` 为 3 failed/9 passed。部分批次已开始异步工作、下一项同步拒绝时，旧代码没有安装 Promise 聚合观察者，进一步出现未处理拒绝，`temp/v0.7-actor-capacity-partial-batch-first.log` 为 4 failed/9 passed 加 1 unhandled rejection。外壳保留 1011，失败返回前给已接受项安装拒绝观察者；Registry 各自记录失败、Actor 持有实际任务，不能清空在途、等无限长任务后才关闭来源或把批次称为原子操作。当前 `npx vitest run tests/unit/actor_mailbox_capacity.test.ts tests/unit/mailbox_overload_delivery.test.ts tests/unit/mailbox_lifetime.test.ts tests/unit/actor_missing_error.test.ts` 40/40；真实宿主/最终矩阵待完成。
+
+纯拆分应比对实际 AST 所有者：连接记账提取脚本首次在 __dispose 顶层查到 0 个 clear，期望 3，因而在生产源码写入前停止。清理实际位于 discardQueuedWork；修正定位并保留数量/不重叠断言，禁止按方法名称猜测、删断言或在提取时顺手改行为。EntrySceneConnections 只拥有缓存/墓碑/异步来源与指标；118 项执行体/声明比对、原测试路径迁移后的 21/21 和含 KCP 完整 check 8/8、quick 33/33、full 9/9 通过，实际二进制/报告身份见[拆分记录](../design/v0.7-connection-state-split.md)。
+
+拆分声明验证的 TS2339 指向 processIngress 遗漏迁移的 connectionIdBytes.delete，日志 `temp/v0.7-connections-split-diagnostics.log`。正确做法是在原 Disconnect 消费位置调用新所有者的缓存删除，不提前到通知接收时机，也不暴露旧影子字段让编译通过。须同时证明所有保留方法在展开已审核所有权调用后保持；这是拆分接线错误，不是此前已验收行为本身失败。
+
+迟到响应最终复测 20/20、含 KCP 完整 check 8/8、quick 33/33、full 9/9，日志 `temp/v0.7-late-responses-verify.log`；实际 WebSocket 关闭与 HTTP 指标验证没有回填连接缓存，原任务仍阻挡热更至真正结束，随后恢复。单测另覆盖 30 秒后、同号重用和同来源多个等待，不能把可控时钟反例描述为真实网络长稳。失败记录、实际宿主哈希与 AI 0.2.0 归档见[迟到响应](../design/v0.7-late-responses.md)。
+
+来源连接断开不等于 Scene 销毁：旧 enqueueResponse 只检查 mailboxClosed，异步业务结束仍排队迟到响应，并在 unordered Disconnect 已处理后重新插入 connectionIdBytes。`temp/v0.7-late-responses-first.log` 为 6 新用例失败/13 原用例通过，`temp/v0.7-late-responses-cache-red.log` 同时保留两处缓存断言失败。修法是等待绑定来源状态、断线立即失效、最后实际结束按对象身份清理；不提前取消业务计数，不靠短期墓碑判断长任务，不删除同号新来源状态或其他连接队列。复测 `npx vitest run tests/unit/mailbox_lifetime.test.ts`，并验证实际 V8/断线及完整矩阵，见[迟到响应](../design/v0.7-late-responses.md)。
+
+Spawn 总量最终复测：相关 17/17、Rust 232 项、含 KCP check 8/8、quick 33/33、full 9/9 通过，`temp/v0.7-scene-task-capacity-verify.log`。实际 HTTP 指标与 V8 验证 4096 项、销毁 16 个 owner 仍占额度、过载 RPC 码/关联号、独立 Worker、释放后只执行一次及热更恢复。Linux 仅条件编译，AI 仍 0.2.0；二进制/归档身份和首轮失败见[容量验收](../design/v0.7-scene-task-capacity.md)，不把这一范围当作全部 TS 工作有界。
+
+Spawn 总量反例：16 个各 256 项的 Scope 满额后，第 17 个 Scope 仍能接受任务；旧局部容量错误也不是 SceneOverloaded。`temp/v0.7-scene-task-capacity-first.log` 2/2 失败。按[总量契约](../design/v0.7-scene-task-capacity.md)在任务微任务前增加 Process 准入，失败只退回当次预留，真实完成归还原 Host；禁止销毁即清零、把旧任务释放到新 Runtime、自动重试或增大上限迁就测试。复测 `npx vitest run tests/unit/scene_task_capacity.test.ts tests/unit/scene_task_admission.test.ts tests/unit/scene_task_disposal.test.ts tests/unit/hotfix_drain.test.ts`，随后验证实际 V8 和完整矩阵。
+
+任务准入最终复测已补充同 Scope 的旧任务不能被误清理这一反例，相关测试从 11/11 增至 12/12；测试类型检查与含 KCP 完整 check 8/8、quick 33/33、full 9/9 均通过。真实 V8 新用例验证拒绝后热更恢复；AI 0.2.0 归档和实际宿主身份核对见[准入验收](../design/v0.7-scene-task-admission.md)，保留首轮失败证据。
+
+`Tasks.Spawn` 返回 ID 才表示接受；watchdog 注册同步抛错必须撤回本次 task record。原实现先插入/增加高水位再注册 Timer，失败时 body 尚未排微任务，留下不能完成的在途计数并阻挡热更。`temp/v0.7-scene-task-admission-first.log` 的三个反例均在 1→0 断言失败。修复保留原异常、禁止 body 执行、Timer owner/句柄创建成功后一起发布，保留其他 Scene 的真实任务；不能吞错误、清空全表或把失败尝试算成功高水位。复测 `npx vitest run tests/unit/scene_task_admission.test.ts tests/unit/scene_task_disposal.test.ts tests/unit/hotfix_drain.test.ts` 为 11/11；真实 V8 与完整矩阵见[任务准入](../design/v0.7-scene-task-admission.md)。
+
+Host 批次首轮完整矩阵的 quick 32/33、full 8/9 不能标为通过：Clippy 正确拒绝放在 impl 前的测试模块。应把测试移至实现之后并重新执行完整矩阵，不关闭 `items_after_test_module`，也不用已通过的运行测试替代静态门禁；原 `temp/v0.7-host-batches-verify.log` 保留。新增接收器暂存队首时，还要同步深度高水位的范围，物理队列 capacity 与包含暂存的观测值不是同一数字。最终复测见[Host 批次](../design/v0.7-host-event-batches.md)。
+
+Host 批次的入站额度反例：旧代码复制一帧就释放原守卫，生产者可补入；真实 Process/V8 的普通运行与停机 completion 都产生了 83887124 字节单批。正确做法是复制前核对完整批次成本，64 MiB 满批先 Update、保留原事件与 FIFO，控制/数据各一条暂存且退回恢复公平计数；不截断完成结果、不伪造业务拒绝、不把 TS backing buffer 当作已受 ingress 保护。非法单事件须在修改批次前明确失败。禁止提高阈值、缩减反例或将旧二进制通过算作修复；失败日志、`node tools/run_cargo.mjs test --bin TiangZ --features kcp host_batch` 与完整矩阵见[Host 批次](../design/v0.7-host-event-batches.md)。原诊断缺口属于框架缺陷；命令误写大小写 bin 名和漏迁移旧私有编码测试属于测试接线问题，均单独留档。
+
+真实 V8 mailbox 排空夹具的首轮失败是错误文字猜测：宿主返回 `drain deadline exceeded`、`pendingAsync=true` 并保留 generation，测试却匹配 timeout/timed out。正确断言当前结构化拒绝状态、实际 error 字段与 generation，不放宽生产窗口来迁就夹具；原 `temp/hotfix-load-dWu5jg/fault-report.json` 保留，详见[生命周期验收](../design/v0.7-mailbox-lifetime.md)。
+
+mailbox 清理不等于异步业务取消：移出 Actor 路由或销毁 Scene 时，只能立即终结未执行节点；已运行调用仍需计入热更屏障，直到实际结果结束。首次用例发现旧入站槽保留帧、空闲池保持历史峰值、Scene 销毁后仍执行排队调用；随后又发现本地 Actor/ unordered Scene 不经过网络任务计数，pendingAsync 错误为 false。正确做法是在接收/真实完成位置记账，出队清槽，空闲池限 64，关闭后拒绝新准入和迟到成功结果；禁止清零在途数或用 Tasks.Spawn 包装测试来掩盖 mailbox 漏计。失败证据和真实 V8 复测见[mailbox 生命周期](../design/v0.7-mailbox-lifetime.md)。
+
+夜间矩阵的冷链接反例：Rust 223 项用例通过后仍有本步骤 vctip 后代，属于构建工具生命周期，不能用缓存命中的重跑冒充修复。仅设 VSCMD_SKIP_SENDTELEMETRY 未解决，现 Cargo 步骤统一使用既有 run_cargo.mjs，由 Node 启动路径与外层 Job 保持所有权；强制重新链接确认退出，不按名称豁免、不改全局配置、不碰用户既有进程。原 full 8/9 和修正证据见[矩阵生命周期](../design/v0.7-matrix-lifecycle.md)。
+
+夜间验证的超时/中止先回收本步骤进程树，再写 JSON/JUnit；超时计失败，整轮中止之后的步骤计 skipped，回收失败则不继续。Windows 的单 PID 清理不足以覆盖先退出的父进程，使用暂停创建并挂入专属 Job；Linux 嵌套步骤使用 IPC 父级消失通知回收独立组，不能只向外层进程组发信号。PowerShell 5 的 @(...ConvertFrom-Json) 曾令 string[] 变成一个空格拼接参数，应直接转换并验证逐参数原值。Windows 普通 Node 子进程可能已由 Node 自己管理，回收夹具须另测 detached 后代与真实端口，不能用未制造出的残留冒充所有权证明。首轮 4/5 与修正、Linux 隔离复测见[矩阵生命周期](../design/v0.7-matrix-lifecycle.md)。
+
+0.7 Hotfix 成员检查使用 Developer Tools 共享 ruleset 2，CLI 和编辑器同源。确定属于当前 Core 的 System/Handler 禁字段、构造和 static 成员；同名业务函数或其他宿主装饰器不能据名称拒绝。没有 Program 的显式稳定入口候选只能给 `tiangz.hotfix.unverifiable` warning，不能宣称验证成功；真正违规保持 `tiangz.hotfix.instance-state` error。共享代码须调用创建节点的 TS API，ClassElement 用 canHaveModifiers/getModifiers 读取修饰符，不能凭 JS 可用属性绕过 TS 5/6 差异。模块范围由 Host 声明选择，见[Hotfix 契约](../design/v0.7-hotfix-contracts.md)。
+
+验证时不能用预构建哈希替代实际运行身份：原矩阵 quick 的无 features Cargo 步骤会覆盖预构建的 KCP 宿主，之后 full 测到的是默认 feature。显式 Rust/KCP/UDP 通过与默认 full 通过分别报告，原热更 JSON 已记录真实 SHA。现用 `TIANGZ_VERIFY_CARGO_FEATURES=kcp` 贯穿嵌套矩阵，full 先构建，并在 quick 之后记录实际 Host 哈希；不靠额外手动构建或修改旧报告伪装原轮包含 KCP。原证据、哈希更正与复测见[进度](../design/v0.7-progress.md)。
+
+0.7 KCP 使用独立 `maxKcpBufferedBytes`（默认 64 MiB、1..1 GiB），全部 KCP listener 共享，各 Session 另限 4 MiB。预留 C 控制块/工作区、段上界、保留 ACK 容量及输出 Bytes，扩容前保守准入，纯 ACK 在满额度时仍可归还，最后输出引用释放才退额度。额度不足/输出 callback 失败只终结该 Session，不能只记日志或依赖 C 忽略的 callback 返回值。一个 datagram 可让 ACK 数组连续扩容，须计最后中间数组与新数组同时存活的峰值，不只是调用前容量。接收/UDP 封包副本、Rust 容器、系统和 V8 另有边界；配置、Rust 包装器接口变化与验收见[KCP 预算](../design/v0.7-kcp-buffers.md)。
+
+0.7 已解码 Rust 入站帧独立使用 `maxIngressBufferedBytes`（默认 64 MiB、1..1 GiB）。所有业务 listener 的控制 RPC 与数据帧共享，首次入队前接管 Bytes、不复制 payload，排队重试/取消/热更延后均保持同一预留，最后引用释放才归还；超限 Inner RPC 返回既有入口过载，外部/单向来源关闭，控制通知不占本项帧额度。固定 kind=ingress 指标不混作慢客户端。解码器、Host 打包副本、V8/TS mailbox、RPC completion 与 KCP 可靠缓存另算，不称为全进程内存上限。契约与证据见[入站预算](../design/v0.7-ingress-buffers.md)。
+
+入站实测首轮的两个夹具问题已保留：误用不存在的 EndpointTask.stop/wait 导致编译失败；随后给真实 Inner Socket 发了外部 msgcode，访问校验正确拒绝，预算尚未入队。应先读真实生命周期 API（request_stop + await），传输专用夹具使用 Inner 保留范围并单独检查 RPC 标识；禁止新增空转接口、关闭协议检查或仅延长等待。原记录 temp/v0.7-ingress-first.log、v0.7-ingress-focused.log；修正后定向和全目标验证见入站预算文档。
+
+0.7 地图部署走 MMORPG 自有 `map-deployment.json` → 官方生成器 → `map-deployment/runtime.pack.json`，复用通用数据信封，地图策略不进入 Core。过渡期旧字段仍接受，显式双写必须一致；声明包漏当前 MapHost 时失败。不可把部署拓扑写成玩法表，也不能用任意 Scene 字典绕过类型边界。操作、重启要求与证据见[迁移记录](../design/v0.7-map-deployment.md)。
+
+房间类业务可先看 Examples `tools/fixtures/room`：使用现有模块脚手架和生成协议，一个 Scene 的 ordered mailbox 加 Component 即可实现有界房间集合与重连快照。`npm run test:room` 在独立工程运行真实 SDK/Socket 并检查正常退出，无需 Location/MapHost。演示密钥不等于账号鉴权/会话 fencing，内存快照不等于数据库恢复，不能把示例限制转写为 Core 特例。
+
+本轮联合验证先暴露四类问题：内部 SingletonRegistry 不在 Stable 导出；Timer 默认参数收到 undefined 被共享规则误报；测试从两个宿主加载 SDK 导致错误类型身份不同；Native 模块 Cargo 仍指向主线库。正确做法分别是使用现有 RuntimeDataPackRegistry.Instance、按默认参数调用语义修规则并保留负例、令测试从所选宿主解析 Core/SDK、显式对齐 Cargo 输入并在构建前验证实际源。禁止扩大 public 入口、削弱错误断言、改正确 Timer 回调或仅凭版本号接受混合来源。Cargo 全树 paths override 会扫描缓存/其他临时 crate 并改变依赖图，本轮 metadata 试验失败后弃用；没有写入全局配置。复测命令和准确日志见迁移记录。
+
+0.7 DBProxy 容量诊断使用独立 `dbproxy_capacity --postgres-url-env <变量名>`，默认只读固定表目录与大小，不跟每次请求/scrape 查询。显式 `--include-server-age` 有逐表期限，仍须检查每表时间状态；客户端提供的时间不是回执保留时钟。无自动清理，不按 TTL 删回执/事实/未确认 Outbox。真实存储恢复验证已覆盖同 ID 同内容恢复、异内容拒绝、批量逐条结果与重复 Outbox 消费；业务重试不能换操作号或重做随机效果，消费 inbox 与投影同事务后再 ACK。最新隔离范围与证据见[进度](../design/v0.7-progress.md)，不能把短测当长稳或生产就绪。
+
+0.7 部署可用 `maxOutboundBufferedBytes` 限制已登记 ConnectionWriter 的总 payload（默认 64 MiB，1..1 GiB）。排队/正在发送/转发引用都持有资源预留，最后释放才归还；满额度的发送会被拒绝并关闭其连接，不给失败批次额外排队。Process 级压力有独立原因和指标，不能直接归咎慢客户端。同一额度也覆盖主动 Inner Host 整包，从复制前预留到最后切片释放；整包超限同步拒绝，不能部分入队后声称整批成功。writer 入队记录操作/写出最早期限，出队不延长，部分写失败关闭流。额度不覆盖 RPC 响应、入站/V8/Socket 及 KCP 内部重传，不能以此推导整机内存或可靠发送已全部有界；见[传输说明](../reference/transport-backend.md)。
+
+主动 Inner 的慢写单测不能假定 Windows 回环的小 Socket 缓冲必然造成阻塞：首次两帧 2 MiB 已被系统接收。保留真实 TCP 写出/空闲释放/EOF；用固定容量异步流确定性验证部分写、过期队列与取消，同一写者实现和原断线/公平性断言均保留。范围、原失败和复测见[预算契约](../design/v0.7-batch2-contracts.md)。
+
+Linux 编译容器不要把只有 registry/git 的 Cargo 缓存挂到镜像工具链的安装目录；这会遮住 cargo/bin，出现 cargo: command not found，并非代码编译失败。缓存单独挂到 /cargo-cache 并指定 CARGO_HOME，保留镜像 PATH，用非 login shell。首次日志 temp/v0.7-inner-budget-linux.log；原条件编译命令的复测记录为 temp/v0.7-inner-budget-linux-ready.log，不以跳过 Linux 或改全局 PATH 绕过。
+
+生命周期/Timer 契约现在复用 Developer Tools 的 Program 规则，业务工程须运行声明宿主的 check/modules:typecheck，普通 tsc 不会自动执行它。只有当前 Core 的实体/组件钩子和方法名 Timer 被识别；Timer 实际接收者、生成 System 方法、参数和当前 TimerCancelledContext 共同检查。可忽略回调参数并使用可选参数，动态字符串/any/未实例化泛型只表示未证明，不等于运行安全。主工程 CLI/实时 LSP 使用同源诊断；受信任工作区的模块实时 worker 与宿主 CLI 共用 Program，支持既有 TS 的未保存文本及联接真实路径；项目/模块声明与 tsconfig 须保存后刷新，环境失败不能写成零错误。实现、边界与夹具教训见[Program 记录](../design/v0.7-program-contracts.md)。
+
+模块实时检查须以宿主返回的源码/声明范围筛选 overlay，不能仅按工程根过滤联接模块；跨盘 path.relative 可返回绝对路径，Problems 定位使用 path.resolve 并断言实际 URI。首次测试选错进程、side-effect 导入和已有脚手架目录的夹具错误已修正且保留日志；不改生产规则来迁就夹具。操作与复测见[模块实时检查](../design/v0.7-module-live-checks.md)。
+
+
+故障演练出现系统级连接失败时保留整轮失败，不把单项复跑改写成已确认根因。此次热更矩阵在 500 连接后的 admin HTTP connect 出现一次 ENOBUFS，原三轮复测通过；没有降低负载或调整系统 TCP 参数。记录见[实施进度](../design/v0.7-progress.md)，此项不改变业务生命周期契约。
+
+宿主级 V8 生命周期测试按每场景一个 OS 进程运行，保持真实的一 Process 边界；子进程内部必须先断言 Socket/名额清理和端口重绑，父进程还要检查“实际执行 1 条”，防止 --exact 名称错误时 0 测试也返回成功。当前 N3 这样隔离后全目标含 KCP 189 条及 Clippy 通过。初次 0xc0000409 原生退出仍未取得根因栈，不能以多轮通过或隔离方案宣称已修复，更不能降低全套并发去隐藏它。
+
+Process 指标 DTO 与采样/转换放在 process/observability.rs，两个直接检查 DTO 的原测试随类型搬移；GC 回调、裸指针 Box 的寿命、队列和调度仍属于 Process。不为拆分公开字段，8 类型/1 函数/2 测试规范化文本相同。首轮联跑的 0xc0000409 原生日志保留，随后并发多轮及 CDB 下 161 条通过仅说明未复现，不能当作已确认修复；完整证据和 N3/V8 测试拓扑风险见[拆分记录](../design/v0.7-observability-split.md)。遇到此类原生退出要保留退出码/原输出并尝试原生栈，禁止仅设置全局单线程或删除并发/失败回收测试。
+
+0.7 健康指标格式入口集中在 src/health/metrics.rs；健康探针、管理请求及状态所有权仍在 health.rs。修改新指标时沿用同一标签转义/histogram 实现，不为每个指标创建文件或扩大状态字段可见性。此次 13 个函数纯搬移，规范化声明与基线相同，原 15 个健康测试通过；证据见[纯拆分记录](../design/v0.7-observability-split.md)，仍需重建 Rust 宿主。
+
+验证 Process 回滚必须让测试 OS 进程继续存活，检查第一业务端口和健康端口在第二端口绑定失败后可重绑；只等独立子进程退出会让操作系统自动回收掩盖框架泄漏。端点错误/panic/意外正常返回都须让实际 /ready 变为 503，停止期间 /live 仍为 200，最终 Process 返回失败并清理连接/握手名额。生产后端选择不新增故障开关，隔离测试只在同一协调函数的后端工厂注入完成原因。
+
+裸 V8 生命周期夹具须遵守真实制品和返回契约：GameConfigBundle 读取 game-config.manifest.json；Update 的采样帧为 JSON，非采样帧为 compact 数字字符串。首次夹具分别在文件读取和 compact 解析处失败，未触及待验证的 listener 故障。正确做法是入口先调用实际 Bundle 校验，并同时监听 Process 退出与 HTTP 状态，保留根因；禁止改生产契约或仅延长探针超时。原日志 temp/v0.7-process-lifecycle-{first,fixed,diagnostic}.log，修正后的定向证据为 -green.log；它不能替代真实业务模块与 Linux I/O 验收。
+
+0.7 入站准入在 Process 全部业务端点之间共享：maxAcceptedConnections 默认 65536、maxPendingHandshakes 默认 1024，均为 1..1000000 整数。流式 Socket 在创建任务前申请两个名额，超限立即关闭、不排队；握手完成仅归还握手名额。KCP HELLO/cookie 不创建 Session，认证 CONNECT 才申请连接名额，重传不可重复扣减。名额随实际连接任务/Session 生命周期回收，取消和 panic 也不可泄漏。观察 tiangz_transport_admission_in_use/limit/rejections_total 的固定 kind=connection|handshake 标签；配置旧宿主时不要写 0.7 字段。它不限制帧字节、KCP 未确认缓存或主动 Inner/health 连接，详见[传输说明](../reference/transport-backend.md)。
+
+准入指标测试失败教训：首轮没有设置 sample_timestamp_ms，触发既有“未采样不导出”逻辑。修正测试采样时间并保留生产门槛，不能以删除过滤/弱化断言使测试通过。原证据 temp/v0.7-admission-first.log；cargo test --bin TiangZ --features kcp --locked 159 条通过、Clippy 通过（通过现有 run_cargo 工具运行），包括双真实 listener 共享、KCP cookie/重传、任务取消与 panic 回收；完整矩阵和 Linux 证据单列。
+
+AI 插件候选从 tools/ai-assistants 唯一源生成，使用 distribute.py --repository 显式选择分发 worktree，不靠 sibling 默认目录或框架 0.7 给插件改版本。当前实际包内四工具/六建议验证通过，Cindy 版本输出改为未探测与核对入口；不能宣称用户客户端已更新。技能校验要检查解释器真实来源：本机 MSYS2 venv 为 bin/python.exe，缺 PyYAML 时用独立 venv 的纯 Python 安装，保留最初默认扩展构建失败记录。详见[交付记录](assistant-packages.md)，不修改整机 PATH/CC 或第三方源码绕过。
+
+0.7 持久化调用使用共享预算：一个 Repository Load/Save/Enqueue 入口包含编码、版本读取、迁移回写/重读及退避；并发调用各自独立，不给重试续期。相同幂等号必须携带相同字节，Codec 返回复用缓冲区时框架也必须在首发前复制。旧 Transport 未实现物理超时不能声明 supportsRequestTimeout；不使用 Promise.race 假装取消 I/O。Host 将期限固定在参数转换前，并由 Rust Instant 与 OwnedRequest 管理真实任务。候选 SDK/Host 证据和发布依赖限制见[第二批记录](../design/v0.7-batch2-contracts.md)。
+
+新增 async Host op 参数后的最低复测必须包括真实 V8：这轮 Cargo check 成功，实际启动因 10 参数超过 Deno 包装器上限失败；namespace/key 合并为一个结构化 record、保留 payload/result 字节参数后，Host 16 条定向通过并验证隔离 TCP 超时 EOF。原始/修复日志 `temp/v0.7-ts-host-budget-tests.log`、`temp/v0.7-ts-host-budget-tests-fixed.log`。禁止改第三方源码或省略启动测试。旧 Repository 夹具若绕过 SDK、不声明新能力，须更新为真实 SDK + 明确即时内存替身，不给真实旧实现伪造能力。当前开发 worktree 安装本地 npm 候选，默认 npm ci 仍恢复旧 SDK；正式依赖冻结前不能宣称干净检出验收完成。
+
+可选参数也有兼容边界：本轮完整矩阵中 CommitRecords 的既有调用形状断言检出新增 undefined 实参。保留原断言，SDK 和 Host Transport 无预算时维持原参数个数；不能把“可选类型”当成运行时一定不可见。红测在 `temp/v0.7-ts-budget-verify.log`，SDK 29 条复测在其 `target/test-results/v0.7-ts-budget-legacy-args.log`。Rust 候选联调使用独立源码副本和局部 path patch，16 条通过、主 Cargo.lock 哈希未变；不可把该局部路径锁提交到正式宿主。
+
+接续夜间工作以[0.7 实施进度](../design/v0.7-progress.md)为准：最新 full 8/8、quick 32/32、check 8/8；源码已按职责本地提交。两个候选 VSIX 已在独立用户数据/扩展目录安装并校验，日常用户扩展未改。Native/Developer 包身份字段不同，读取时按实际清单映射，不能假设同一 schema 后把脚本失败当成包损坏；实际 CLI/LS、安装内容与可视 UI 证据分别记录。
+
+0.7 RPC ID 修复：请求赋值或编码可以同步抛错，预留请求号之后的全部工作必须位于 try/finally 内；Actor 转发的帧重写也一样。不能只在发送失败时清理。9 条 SceneCallContext 回归含原 6 条失败已通过，失败后原 ID 可重新使用。
+
+0.7 Timer 修复：取消定时器或销毁所有者不代表已触发的异步回调结束，热更必须等待真实 Promise 收敛；不要按定时器活动数判断安全。回调中新建的零延迟 Timer 留到下一轮，取消尚未执行的本轮项仍立即生效；重复 Timer 跳过错过周期并避免浮点误差导致同帧重触发。原反例及完整矩阵已通过，Stable getter 变化需重建重启。
+
+0.7 EntryScene 纯搬移：业务继续使用 Stable 导出的 EntryScene，不导入内部 process/EntryScene.ts。配置契约和实现物理分离，33 个非 import 声明保持；完整声明图与构建身份变化仍需重建/重启，不能只发 Hotfix，见[拆分记录](../design/v0.7-entry-scene-split.md)。
+
+共享时间检查的失败教训：字符串别名表跨函数/块传播会把参数或同级局部数据库回调误判为时间等待。Developer Tools 三个反例原各报 3 项、期望仅 1 项；改为按词法声明解析，同一导入别名在外层仍必须拒绝。Core 61 项通过，证据为插件 `dist/v0.7-time-scope-{red,green}.log`；需继续核对 CLI/实际 LS。禁止用删规则、换诊断级别或认为候选源码已自动更新宿主依赖来绕过。跨文件动态包装仍需审查。
+
+网络阶段复测：Windows 含 KCP 的 179 条全目标测试和 Clippy 通过；真实 TCP 客户端收到帧头后停止读取，服务端写期限生效并清零资源，Linux 条件编译也通过。见[第二批记录](../design/v0.7-batch2-contracts.md)，该证据不能代替 Linux io_uring 运行、KCP ACK 或真实存储恢复。
+
+夜间入口差异：矩阵和 Native 构建已过滤 MSVC 下的 GNU CC/CXX，但 `npm run build:runtime:debug` 以前直连 Cargo，再次出现 LNK1143（`temp/v0.7-write-budget-host-build.log`），完整 verify 尚未启动。修复该 npm 入口使用 `tools/run_cargo.mjs`，依据目标过滤当前子进程变量，保留显式非 MSVC 目标，不修改系统设置或清理第三方缓存。复测同一构建入口及完整 verify，不能把之前单元测试通过当作宿主重建成功。
+
+插件联合验收必须分别记录 Core/VSIX/宿主已安装核心。Native 当前候选为 0.17.0/0.16.0，宿主仍为 0.16.0；修复旧 0.14.0 打包名并增加包内身份，29 个用例及四类生成兼容夹具通过，但不能写成已发布/已安装。使用候选 `check-host-compatibility.mjs --engine <显式宿主>`，CompilerHost 虚拟挂载生成文件，保留 rootDir/严格选项。import-only 依赖的 CJS 解析失败及 TS6059 夹具失败均保留，过程见[插件兼容记录](../design/v0.7-plugin-compatibility.md)；不得通过手工改 Generated 或屏蔽诊断获得通过。
+
+0.7 显式协议握手也受限：TCP/WebSocket/io_uring TCP 沿用 Auto 已有的 5000ms 总期限，覆盖初始前导/内部认证/HTTP Upgrade；空闲预连不可无限等待。真实默认入口的两个反例在旧代码均超过 6 秒保护期限，不能用 Auto 专用辅助函数的测试代替显式路径。该期限不覆盖后续慢写或 Process 总量，详见[传输说明](../reference/transport-backend.md)。
+
+出站预算回归：批次资源守卫负责队列销毁/写入失败/取消时释放计数，KCP 转发帧共享该守卫，最后一帧完成前保守持有整个批次。禁止在各 backend 继续手工减同一计数。原顺序夹具销毁批次后仍断言 3 帧/6 字节，首轮因此失败（`temp/v0.7-network-all-targets.log`）；现保留逐帧顺序并检查释放前 3/6、后 0/0。另有队列销毁反例 `temp/v0.7-outbound-accounting-red.log`，该反例先失败才引入守卫。此修复不包含 KCP 内部重传缓冲和 Process 总量预算。
+
+0.7 生命周期补充：不得丢弃 endpoint/connection/writer 的 JoinHandle 形成后台孤儿；正常停机取消握手、停止准入并排空最后通知，超出既有 `stopTimeoutMs` 取消异步任务，CPU/V8 硬卡死仍需进程监督。健康 listener 和请求也要随所有者收回。KCP 单客户端非法帧不能让共享 listener 失败：先通过 conn/peer 识别，再只移除该 Session；真正 listener 失败仍必须报告 Process。真实 Socket 取消/重绑/排空、KCP 双客户端隔离及错误/取消测试已纳入当前 141 条 Windows KCP 二进制用例，详见[第二批记录](../design/v0.7-batch2-contracts.md)。
+
+0.7 网络补充：TCP/Auto 的 `inner/outer/mixed` 必须在 writer 注册前执行，内部连接仍须凭据认证；WebSocket 在 HTTP Upgrade 前检查外部准入。单帧及分片重组的 1 MiB 限制前移到 WebSocket 解码器；只做业务层长度检查无法约束接收内存。真实 Socket 反例验证未完成的超大帧/分片也会断开，恰好上限可用，阶段证据见[第二批记录](../design/v0.7-batch2-contracts.md)。不可据此宣称 Linux/io_uring、全部资源或退出已经通过。
+
+2026-09-26 夜间继续：第二批按[具体契约](../design/v0.7-batch2-contracts.md)推进。DBProxy Rust SDK 现在由同一逻辑请求拥有许可、写锁、响应、重连及重试的总期限；默认 5 秒，超时仅在整个操作从未写入时报告 `RequestNotSentTimeout`，任何先前可能发送都保持结果未知。客户端 28 条通过，Host/Repository 的外层预算仍待收口，不能以此宣称整个 D2 通过。
+
+2026-09-25 用户确认开始实施[详细设计稿](../design/v0.7-design.md)；2026-09-26 首批 R1–R4 和 DBProxy D1 本地验收完成：TiangZ check 8/8、quick 32/32、full 8/8；DBProxy Rust 190 条、TS SDK 21 条通过，47 条真实存储/显式故障用例未运行。源码尚未提交，Stable Core API 锁漂移留待发布冻结，证据见[首批实现与验收记录](../design/v0.7-batch1-acceptance.md)。六仓库各自使用 `feat/v0.7` worktree，插件继续自身发行版本序列；业务仍通过 Stable 入口，不依赖 EntryScene 拆分后的内部路径。总预算不等于撤销已执行业务，回执清理/记录删除和异步 Native op 仍按独立候选评审；包更新须验证实际生成/安装身份，不能把首批结果、dist 或部分测试当作 0.7 完成交付。
+
 2026-09-18短时采样回归已通过：`sampling10-rd6WDP/report.json`为`sampling10-passed`，北京时间10:36:32开始测量，实测601201ms，10:46:54完成清理；21个有效资源样本通过原20个门槛、同PID及增长检查，26笔业务及26次原命令重放、29次对账、233次快照，最终冷重启恢复通过，游戏/代理/探针/存储全部停止。正式构建与24项工具测试通过；历史样本回放确定复现原18/20失败。本轮仅验证采样修复，未执行热更和五种故障，未启动新八小时测试，原八小时失败报告保持不变。 / The ten-minute sampling regression passed with 21 valid samples against the unchanged 20-sample threshold, same-process growth checks, 26 operations and replays, 29 reconciliations, 233 snapshots, final cold recovery and complete cleanup. The official build and all 24 tool tests passed, including replay of the original 18/20 failure. This verifies sampling only; no new eight-hour soak was started.
 
 2026-09-18八小时SLG长稳soak8h-Bkzmwd最终failed：恢复期23次点采样中，3次outbound=1、2次pending=1被静默过滤，仅18个空闲样本，结束时才触发至少20个门槛；随后资源增长检查及最终冷恢复未执行，原失败报告必须保留。修复采样器为60秒内等待两个不同指标发布周期均空闲，保存全部忙/旧快照，指标不刷新或持续忙碌则失败；固定采样时隙、运行中检查剩余容量、恢复期结束即执行数量和同PID增长门槛。禁止把最低数量改为18或复用同一快照补数。历史23个样本已冻结为回归夹具；复测为SLG正式build、node --test tools/acceptance/*.test.mjs，再node tools/soak_acceptance.mjs --profile sampling10 --confirm isolated-slg-authoritative-test。短测前8分钟每20秒采集、保持20个门槛，后2分钟收敛并冷恢复；它不替代八小时和五类故障验收。 / The completed soak failed because silent filtering left 18 of 23 samples. Preserve that failure; require two fresh idle publications within a bounded wait, check coverage early, and validate with recorded evidence plus a ten-minute real-storage regression.
@@ -22,6 +413,311 @@ D1修复后定向复测：run-wTYhCH/report.json为subset-passed，官方authori
 2026-09-17 SLG D1夹具隔离失败：run-cHJ8WY在D1提前退出；补齐子进程stdout/stderr日志后，run-TC9Bun确认StorageBackend初始化报publisher endpoint changed，尚未执行读取断言。原因是独立存储测试与SLG共用PG数据库，却以宿主机缓存Redis地址注册已被容器队列Redis占用的legacy Publisher。正确做法是在本轮隔离PG容器内创建authority_probe专用数据库；SLG原子批量探针仍检查SLG数据库，存储级断言单独标明范围。禁止清空Publisher注册表、放宽端点校验或手改构建哈希。复测：在Examples/packages/slg执行node tools/authoritative_acceptance.mjs build，再run --cases D1 --rounds 1 --confirm isolated-slg-authoritative-test；失败证据为temp/authoritative-acceptance/run-TC9Bun/D1-1/sql-snapshot-probe.log。修复后的结果以新报告为准。
 
 ## 失败教训与复测流程
+
+### 整合旧分支时须适配当前架构和宿主ABI
+
+源码复核须主动找负路径：原Native worker的`maxOutputBytes`只约束`Ok(String)`，错误直接通过，24字节配置下27字节UTF-8错误的真实反例失败，见`native-error-bound-red.log`。正确修法是同时限制成功和业务错误，超限替换固定诊断，panic诊断保持原分类；测试边界相等、超限后的容量恢复、统计及drain。禁止把成功限长测试当错误路径覆盖、提高上限、删断言或按字符数/截断UTF-8。固定宿主诊断为常量长度，计算函数内部内存不由此限制。修复前Windowsfull9/9不算新Rust资格；新构建、真实Process、完整矩阵和Linux复测分别留档，见[源码对齐](../design/v0.7-merge-0.6.5.md)。
+
+完整矩阵首轮quick33/35：旧端点Drop夹具认为WebSocket只能直接EOF/reset，新握手可能在abort前输出Close。修正为有界读取最多3字节直到真实EOF/reset，只接受空数据或无payload Close及其取消前缀，保留原1秒期限、writer/准入归零及listener重绑；禁止放宽预算、接受任意应用数据或删除资源断言。另有原0.7两处历史文档写死Python安装路径导致本机痕迹门禁失败，改为环境提供的`python`命令，不增加扫描例外，不改封存证据。原始失败`full-verify-r1.log`保留，独立端点复测及下一轮完整矩阵分别登记。
+
+2026-10-07将正式0.6.5整合到0.7：旧关闭测试从`process/types`取得EntryScene导致加载失败，修正为拆分后的`process/EntryScene`；下一轮3/4通过，停止桥接因缺少`__hostCreateShutdownDeadline/__hostCancelDeadline`失败，补齐夹具ABI并检查停止后句柄归零。Rust测试夹具首次编译还漏导入atomic Ordering且误用不存在的`EndpointAudience::External`，应按实际生产枚举使用`Outer`，不增加伪兼容枚举。正确修法是适配旧实现/夹具到当前架构；禁止恢复大文件、删除断言、关闭传输audience校验或放宽生产预算。复测`npx vitest run tests/unit/disconnect_after_outbound.test.ts`、`cargo test --locked --bin TiangZ --features kcp native_worker::tests`及`transport_backend::epoll::tests`，完整矩阵另行登记。原失败及复测在`temp/v07-065-integration/`，移植表和当前状态见[源码对齐](../design/v0.7-merge-0.6.5.md)。
+
+Windows第一次Rust编译报V8 gn_root symlink权限1314，实际Cargo registry在F盘而私有target在D盘；仅在该私有target内创建指向实际锁定V8源码的junction，V8构建脚本验证canonical路径后复测通过。禁止修改registry源码、全局Git/Cargo设置或引用旧二进制作新源码证据。新Native worker是Process级共享资源，drain不可逆，丢弃Promise不取消计算，热更需等待计算与V8交付；Model/清单/Rust/ABI变化重建重启。详细限制见[Native worker](../design/native-workers.md)。旧0.6.5 CI及DBProxy R7长稳不转移为整合后的Host资格；插件/SDK后续对齐和用户指出的未完成部分须单独核对。
+
+### 负载完成不等于长稳通过，控制组 OOM 须独立定位（2026-10-03）
+
+**预判须覆盖完整收尾链路（2026-10-04）**：仅预检报告读取，不证明同时驻留的协调器和 Node，以及后续事件编号输出都能在预算内完成。检查冻结 `review.py` / `independent-review.mjs` / `reconcile.mjs` 后，在独立 512MiB/禁 swap/10%CPU 单元保持 Python 完整 40.40MiB 报告存活，让原 Node 对账函数也冷读同一报告，再处理 30 万条40字节编号；报告输入 SHA 与对账源码 SHA 全核对，Node仍为192MiB old space/4MiB semi space。原 maxBuffer 32MiB、内存预留和全部原始采样不改变。组峰值226.72MiB、Python/Node进程峰值120.66/200.05MiB，OOM/swap零；SQL/Redis模拟输出11.73/12.30MiB。fake Docker独占私有PATH、仅接受fixture资源名；不启动容器、不连接真实存储。该结果只证明固定夹具下的分配/输出边界，不能证明真实Redis Lua内存/耗时、PG查询期限、持续24h分配或任何长稳资格。复测在新独立目录/单元执行 `preflight-review-memory/install-and-start.py`，一次性安装不可重放，结果见 `result.json` / `installation.json` / `started.json`；若预检失败，原证据保留，不加预算或放宽门禁取绿。
+
+**新30m资格**：2026-10-03 23:41:15，北京时间完整新30m独立通过；报告SHA `c864451542b5de78d0b05389c3bfa9534bd0bb6d8de5889d9578671641be0cae`，五份独立证据另逐项重核。负载1800.3839s、空载300.0708s、五类故障，SQL回执/账本/事件/Stream内容/实际退出全部通过；故障期请求错误仍保留。完整960m于23:41:17就绪，不继承旧失败时长；完整960/1440m资格待实际结束。只读入口 `review-current-boundaries.py`、`qualified-30m-and-review-boundaries.json`，不能用初始报告或旧探测状态代替终态复核。
+
+**实际接续**：控制修复 `af0c918` 已部署到独立 memory-r4 现场，2026-10-03 23:06:05 北京时间新完整 30m 就绪；全量五类故障、300s 空载、报告及独立对账通过后自动运行完整 960/1440m，不继承失败时长。48 个 payload、真实服务/负载 ELF、units 与原 2C4G/512MiB 配额均核对。部署前 Linux Node 56 通过 / 1 平台跳过、Python 14 通过，最终 quick 34 步通过、codegen 无差异；23:14 首个主节点强杀恢复通过，数据/请求错误和 OOM 暂零。新阶段资格尚未通过，旧独立 480m 资格保留。
+
+**探测串轮的夹具失败与复测**：23:09 新 Windows 任务的单位名已换，但远端目录仍是旧 diagr3，错误读取旧 failed 后自停；实际新云端测试没有停止。保留错误脚本、快照/事件/自停记录到新现场 `misdirected-probe-20261003/`，修正本机脚本并同时断言 owner、remoteRoot、冻结 plan SHA 和阶段集合，再恢复同一个新任务。`verify-probe-identity.py` 在云端实际旧目录上证明读取 state 前拒绝，正确新目录通过；23:14 任务结果 0、状态 running，下一次 23:39:41。禁止删旧失败、仅修改单位名、取消终态自停或以旧资格代替新运行。复测入口为新现场 `probe-cloud.py` / `probe-identity-recheck.json`，冻结云端代码和计划不修改；后续文档、探测与一次性部署入口必须核对同一身份。
+
+**后续修复与验证**：同一父组内短诊断确认云端默认 V8 堆 2240MiB，未识别祖先 512MiB 限额；只证明预算配置缺口，原退出进程全部保留对象仍无堆证据。显式限制三个 Node 角色的堆、逐条落盘全部历史、分块发布完整报告并观察控制组/各进程，详见[控制内存契约](../design/v0.7-soak-control-memory.md)。完整输入和 1.5 倍采样量在原 512MiB/禁 swap 限额内重放、独立全行核对通过；不是 24h 长稳。新增用例覆盖默认大堆、各类预算/缺失证据、干净缓存与脏页、报告缺行/多行/截断/Unicode/磁盘失败/短写，以及大于堆额度的完整报告；实际进程退出观察未知 RSS 不补零。首次独立核对包装失败来自观察模块所在目录，与产品无关；补齐依赖后重新核对。67 原数据文件加 10 所有权/源码文件，77 份归档已下载逐项核 SHA。新现场先完整 30m 接入验证，再独立 960/1440m，未继承旧失败时长；按实际状态留档，禁止把准备或离线数据量写成真实运行通过。
+
+**追加离线测量及边界**：失败 load/samples/intervals/events/初始 report 五份输入下载后均与原 SHA 匹配；Windows Node v24.20.0 独立进程流式重建 11518 个 progress、11518 个 intervals、1922 个 samples 与 80 次故障，再调用原 saveControlJson。重建后 RSS 90267648 字节，整份报告发布后进程峰值 176570368 字节（约 168MiB），JSON 文件 28283295 字节（约 27MiB）。证据在 temp/v0.7-control-oom-diagnosis-20261003/ 的 raw-hash-verification、replay-result 和重放脚本；重建报告仍为 running，仅含离线 fixture，不可作为真实退出或验收报告。该测试没有 Linux 原控制组约束、16h 网络/轮询历史和旧堆快照，不能据此唯一归因报告大小、确认内存泄漏或宣布修复。下一步仍须把 live heap/external/RSS、共享控制组和发布前后峰值纳入有期限的独立复现。
+
+**现象与证据**：diagr3 的 960m 在 21:22:27 完成客户端负载，原始 SOAK_FINAL 为 57600.40392514s，最终可见状态与观察一致性、validation 均通过；80/80 次故障恢复。21:22:37.351 写入 no-load-observation-started 后，驱动调用 save(reportFile, report)，随后内核触发 CONSTRAINT_MEMCG，512MiB 客户端父组中 Node PID 3601457 被杀，协调器收到取消并在 21:22:39 收尾。report.json 仍是初始 running 报告，progress 的 maintenanceDrained 为真；没有完整空载观察、终态报告及独立 SQL/Stream 复核。不能从初始报告缺 final 判定客户端未完成，也不能用 SOAK_FINAL 替代全阶段验收。
+
+**已确认原因与限度**：内核明确指出 oom_memcg 为客户端控制 slice，被杀者是 Node 驱动，不是两台 DBProxy 或 PG；目标 2C4G 组自身 OOM/swap 为零。Python 协调器、Node broker 和驱动共用 512MiB，不能只检查目标组就宣称所有测试进程无 OOM。失败位于完整报告发布期间，驱动仍累计 progress/samples/intervals 并整体 JSON.stringify；这是需要受限重放的分配路径，尚未测出失败前存活堆、序列化瞬时峰值及各保留对象，不能断言某个唯一分配或 V8/Node 缺陷已经定位或修复。
+
+**正确处理与待修验证**：保留失败状态、停止本轮拥有的运行对象，不改原文件/制品/数据；本机流式复算 11518 个区间，其中 9962 个正常区间错误零，数据不变量零，单次 AOF 超时增量仍位于完整故障窗口。67 原文件共 447916733 字节逐项 SHA 已保存，原数据在云端保留；再次检查保护容器、unit/config SHA 和三项 HTTP 200/health UP。后续先以同一输入在独立限额进程重放，分别记录控制组/各进程峰值及报告发布前后内存，再验证有界驻留和报告生成；24h 数据量与异常发布也要覆盖，完整原始证据和全行门禁仍保留。修复后使用新冻结现场复跑需要的完整阶段，480m 既有独立资格不撤销，失败 960m 不继承。
+
+**禁止绕过**：不扩大控制组预算、增加 swap、裁剪日志/采样、丢弃校验行、放宽 PG/AOF/SDK/恢复门槛、修改 failed 为 passed、补造300s空载或将960m直接记作通过；不重放已执行的 prepare/install/deploy，也不只因 systemd 默认状态零值宣称某个进程实际正常退出。
+
+**复算入口与本轮范围**：既有 inspect-online-diagnostics.py 仅在内存把当前数据库路径切为 960m，保存 failed-960m-prefix-diagnostics-review；另保存 terminal-960m-inspect、oom-boundary-960m 和 failed-960m-evidence-review 时间戳文件。PG 日志仍为 10 条慢占用、queue_timeout 零，9 条在故障窗口、1 条正常窗口 536ms，不因本次控制 OOM 而改写其分类。保护检查只提取冻结 controller 的 run/protect 函数，未执行部署或顶层控制循环。本轮无产品/控制代码修改、codegen 或修复后复测；内存修法与新的长稳启动仍待完成。
+
+### 活跃 timer 的正常触发不能当作业务重启（2026-10-02）
+
+**现象与证据**：日志候选 diagr2 的 480m 在 18:12:36 停止，协调器只报告 `AssertionError: jiaolian-cert-renew.timer`；最后原始客户端周期为 20790.18 秒，30/40 次故障完成，3576 个正常区间无可用性错误，全程数据不变量/缺失或落后快照均零。该证书任务在 18:12:32 开始、18:12:36.795 正常退出，`ExecMainStatus=0`、`Result=success`，证书无需续期。之后保护服务的 PID、启动代次、配置 SHA 和三项 HTTP/健康均未变，timer 返回 waiting。92 文件冻结下载逐项核对，现场 `temp/v0.7-cloud-fault-soak-diag-r2-20261002/failed-480m-evidence/`，归档 SHA `46b60c34a98434932ba1b09a423a0b1e89dcaa4adcddc26ce1c7a37932c9a20e`；`timer-interruption-readonly.json` 保存续期时间、正常退出和当前身份。
+
+**原因与证据限度**：旧保护代码把四种 unit 的所有观察属性都要求等于启动快照，其中活跃 timer 在任务执行期间会从 waiting 变为 running，执行后再返回 waiting。使用专属 `tzfault20261002-timer-policy-test`、32MiB/5%CPU 的真实 systemd timer 复现：配置路径和 ActiveEnterTimestampMonotonic 不变，旧比较仍拒绝正常运行。原始失败没有逐字段快照，不能宣称观测到了历史具体差异；正常触发误判是事件时间及真实复现支持的定位，不归因于 DBProxy、业务故障、内存或 PG 2s 排队。
+
+**正确修法**：`tools/lib/soak_protected_units.py` 被新协调器和接续器共用，只在 baseline/current 都为 active 且 timer 子状态属于 waiting/running 时允许 SubState 转换。其他属性仍精确匹配，属性缺失或多出也拒绝；服务 MainPID/NRestarts/启动时间、timer 启动时间和 FragmentPath 不变，调用者继续核对 unit 原始 SHA、157 个配置 SHA、12 容器身份和业务健康。inactive/failed/elapsed、重启或路径变化均失败；错误现在列出 expected/observed 差异。旧现场不修改，另建 `tzfault20261002diagr3`，仅控制策略改变，原产品 ELF、负载、故障计划、2C4G、PG/AOF 2s、SDK 5s 和资格门禁保持。
+
+**禁止绕过**：不得停用或修改业务续期 timer、忽略全部 unit 状态、更新 baseline 掩盖重启、删旧失败标记重放部署、把 346 分钟拼入新阶段，或将本轮检查误报写成产品排队修复。未完成的 480m 资格为零，原旧制品已通过的 240m 独立证据仍保留。
+
+**复测**：在 `tools/lib` 运行 `python -B -m unittest -v soak_protected_units_test`，Windows/Linux 各 7 项通过；真实独立 timer 完整观察 waiting→running→waiting，新策略接受正常触发且拒绝实际停用，原比较确实失败。diagr3 接续边界 8、Node 控制 44（1 平台跳过）、SQL/容量复核 7 均通过，部署前也执行 Linux 策略 7；新完整 480m 于 21:16:22 就绪，实际 ELF、44 个 payload、unit/guard SHA、资源约束及保护业务再独立核对。证据为新现场 `actual-timer-regression.json`、`post-install-verification.json` 和旧现场 `audit-failed-prefix.mjs` 的原始复算；无 Rust/TS 重编或 codegen，长稳尚待完整结束。
+
+### 停机后端口释放与部署预检（2026-10-02）
+
+旧 240m 独立通过并正常停机后，09:53 首次自动接续的 `new-deploy.py` 普通 `socket.bind` 报 `EADDRINUSE`，发生在创建目录、存储和新负载之前。原代码只报栈、没有记录哪一个端口或 TCP 状态；不能事后认定被保护业务占用、旧进程没退出或确定就是某个 TIME_WAIT。后来只读检查全部七个端口没有监听者；在同一云端用独占的临时 loopback 连接真实复现：监听/进程已关闭、只有 TIME-WAIT，普通 bind 仍为 errno 98。这支持内核连接残留解释，但不补造历史失败的缺失观察。
+
+正确做法为 `tools/lib/soak_port_preflight.py`：原普通绑定方式保持，全部端口共用 180s 等待期限，绑定失败时只读 `ss`，记录端口、监听者与 TIME_WAIT；真实监听立即失败，其他绑定错误或状态采集失败也明确失败，只有无监听的暂时占用才有界重试。禁止强杀占用者、开 SO_REUSEPORT/SO_REUSEADDR 掩盖预检、改业务端口/防火墙、只 sleep 固定秒数假定释放，或删除旧失败标记重放。部署控制单元总期限单独设为 600s 覆盖 180s 端口等待/120s 存储就绪/前置测试；这不是放宽 PG/AOF/SDK 的产品期限。失败现场与旧资格 64 文件冻结、原摘要全部核对；另建 diagr2 所有者和目录，服务/客户端/故障计划/2C4G/2s/5s/SQL 门禁与实际两个产品 ELF 不变。旧控制器边界短暂进入的旧 480m 是计划性中断，旧全局 failed 不撤销完整通过的 240m，其部分时长不折算新版。
+
+复测 `python -B tools/lib/soak_port_preflight_test.py`：Windows 4 通过、2 Linux 专属跳过，实际云端 Linux 6 通过，包括真实监听保留、真实 TIME_WAIT 的有界失败、释放后继续、共享期限和状态采集失败反例；接续不足时长/空载/原始变化/未知或空退出列表/旧资源未停 8 条反例通过，新部署前 Node 44+1 平台跳过、Python 7 均在本机和云端通过。`temp/v0.7-cloud-diag-handoff-20261002/port-preflight-linux-tests.log` 保留真实 errno/状态；新 `post-install-verification.json` 核对实际服务与负载的 /proc/exe、源/计划/payload/unit/guard SHA、父组约束和保护业务。后续只读新 `probe-cloud.py`，不重放已经执行的 install/prepare/deploy。脚本可复用，机器路径和日期仅属于此次证据。
+
+### 启动状态文件就绪不能靠固定短 sleep（2026-10-02）
+
+新恢复服务先流式复核旧报告/原始 SHA，再保存第一份启动状态。安装器固定等 2s 后就读文件，曾抛 FileNotFoundError；后台实际服务继续正常运行，在 12:25:58 就绪 480m。因此读状态失败不等于部署失败，不能盲目重跑安装或重启已开始的负载。保存 `installation.err`，只读服务/状态/日志，独立核对实际 source/ELF/ready 和资源后记录 `post-install-verification.json`，本轮安装没有重放。安装器改为有界 60s 等文件并检查服务仍存活；超时保留未知/失败证据，不补造 running。新部署刚开始的 starting 状态也不是故障，必须等真实 ready，再验证完整目标时长/100 人/连接池/实际进程。恢复准备的首试还因 helper 路径多取一个 parent 在本机失败，未上传，部分候选归档 `preparation-attempt-1/`；修为从实际引擎根解析并在创建任何 payload 前检查 helper 存在，禁止去错误目录创建替代源码。
+
+### 实时进度与终态报告分开读取（2026-10-02）
+
+07:50 接续只读汇总首试从运行中 `database/report.json` 访问 `ready` 抛 `KeyError: 'ready'`；负载期间该文件只是初始报告，ready/增量进度在 `progress.json`，已完成故障事实在 `events.jsonl`，最终报告只在收尾后完整。不是 DBProxy 产品故障，也没有发出停机/重启或变更冻结输入。读取实时状态应结合协调器状态、progress、原始事件和实际进程；判断已完成资格仍须核对终态 report、独立结果及列出的原始 SHA。禁止缺字段补零/写 passed、只凭旧 report 的 running 判断继续、或因只读工具失败重放/重启测试。
+
+修复后的只读入口为 `python -X utf8 temp/v0.7-cloud-fault-soak-r3-20261002/inspect-cloud-progress.py`；它流式核对证据摘要/资源记录，读取实时进度与已完成事件，保存 `latest-status-review.json`，原错误保存 `status-reader-attempt1.err`。实际复读确认 30/60/120 完整阶段与原始证据一致，当前 240 分钟第 11 次故障已恢复，保护业务探针正常。已有资格和产品/期限不变；缺失或过期观察仍不能当正常。详情见相邻 DBProxy `docs/cloud-fault-soak-2026-10-02.md`。
+
+### 原始长时证据必须流式复核（2026-10-02）
+
+第二轮只跑约 18 分钟时，资源采样已经 5,447,411 字节 / 200 行，按原频率的 24 小时文件约 449MiB；控制组上限仅 512MiB，还要运行负载/协调器及持有报告。原 `Path.read_bytes()` 算 SHA 和 Node 整体解析 load/metrics JSONL 是控制器内存风险，不能等数小时后才发现，也不能归因于产品内存随时间泄漏。这里尚无实际 OOM；日志尺寸外推不是服务内存外推。
+
+正确做法是原数据完整留档、记录有界逐行解析、每一行仍执行累计超时/客户端门禁，独立恢复判定只保留必要的每故障/每节点原始边界，SHA 固定小块更新；SQL 活动原文仍保存，只将门禁摘要保留在内存。禁止加大控制组预算、降低采样频率、丢行/裁日志、吞截断 JSON、重置计数或只核对末尾零值来过关。合成证据必须超过控制器额度，并同时验证摘要一致与内存上界；本轮 630,184,560 字节文件 SHA 一致，Python tracemalloc 峰值 2,229,282 字节，不能宣称这是整进程 RSS 或产品验收。
+
+修改控制源时已运行的阶段不得静默继续：本轮显式记录计划性中断、等待协调器收尾、核对实际 PID/制品/容器所有者并保留全部证据，再以新现场从完整 30 分钟重启。第二轮四类故障在线通过但整轮无资格，两个节点实际正常退出，74 文件归档 SHA `0300e2ed28133693adeb508d01839f316d73208f867feaf9f982d05ae68053ec`，没有产品失败或 OOM 的结论。旧本机只读任务已禁用，不恢复旧 PG 数据到新现场。
+
+第三轮工具验证：`check-bounded-memory.py` 生成、核对并只删除自己独占创建的大文件；Node 新增 UTF8 跨块、无换行完整尾记录、截断/超长拒绝、全样本与有界恢复边界同判的反例，本机/云端各 44 通过、1 平台跳过，Python 7 通过。当前跟踪入口 `temp/v0.7-cloud-fault-soak-r3-20261002/` 的 `probe-cloud.py` / `companion-status.py`，仍是只读；一次性部署/准备不重放。计划 `be845f40...`、产品 ELF `07c1f021...`，与下方较早失败/修复记录分别判断，完整阶段和正常终态复核仍待完成。
+
+### SQL JSON framing 与 systemd 退出证据（2026-10-02）
+
+云上故障长稳首轮在 SOAK_READY 后第一次 SQL 采样抛 JSONDecodeError。查询返回多个 JSON 值，其中 PG `json_agg(a)` 数组可跨物理行；`stdout.splitlines()` 再挑第一行截断了数组。正确做法是 `psql -Atq` 抑制命令标签、保留完整 stdout，用 JSONDecoder 游标解析全部值并要求精确行数；JSONB 紧凑输出只是辅助，不能代替 framing。SQL 观察失败要保留原命令结果；只有真实声明 PG 停机窗口内的失败可记为未知，不能记零或忽略。禁止删除 PG 活动观察、只取数组第一项、吞解析异常或放宽正常窗口/产品超时来让测试通过。
+
+同轮 runner 停机又因退出元数据缺失进入错误路径，再向已退出 PID 强杀而中断最终 report；原 runner 文件因此仍为 running。systemd 的默认零属性不能冒充实际进程退出零：本轮 service 保留已完成代次，校验 ExecMainPID / Code / Status 和日志，再明确停止旧代次后启动新进程。所有信号基于完整制品 SHA、实际 PID 与 start ticks，已退出返回 false，不能打到复用 PID。清理失败仍必须保存最终失败报告并核验真实资源状态；禁止把 MainPID=0/接口返回零直接写成正常退出，或覆盖旧 running 文件冒充成功。
+
+首轮协调器明确 failed，三个存储及节点独立核实停止；61 文件归档 SHA `b172e063038de482964f89693af9036dee0d8f06908b6e8401786fe973237962`，原 PG/Redis 数据保留、资格零。修法只改控制脚本，不改产品 ELF / SDK / 2000ms PG 期限。从新数据库/卷/所有者重新跑完整阶段；新现场首次 SIGKILL 已记录正确代次并通过原恢复门禁，但完整阶段的正常退出及独立终态复核仍待结束，不能提前写通过。
+
+准备阶段重犯已知 Mounts 顺序误报，独立 diff 证明只有完整列表顺序变化，PID/网络/内容保持，按完整记录排序修复而非删除保护。失败的前置检查后不得继续依赖准备；本轮不完整包只留在本机、未上传，补齐保护快照后才重新冻结。生成脚本的外层与内层定界符不能相撞，先 ast 解析两层再传 SSH；本轮附加监测安装首试 SyntaxError 在本机解析前置阶段，未建立 SSH，不定性为产品/远端运行失败。
+
+只读/纯工具复测：在新现场执行 `python -m unittest -v review_test`（7 通过，含多行数组/截断和正常积压反例）；用明确的六个 `.test.mjs` 文件执行 Node --test（本机/云端各 41 通过、1 平台专属跳过）。实际只读入口 `probe-cloud.py` 与 `companion-status.py` 保存进度、保护探针、真实代次和冻结源 SHA；不重放 prepare/deploy/初始化。状态未变的本机 30 分钟探测不反复提示，终态且资源已停后只禁用自己的任务；云端独立安全观察器不自动恢复失败测试。证据见上述两处 `temp/v0.7-cloud-fault-soak*20261002/` 以及相邻 DBProxy 云上报告，R11 失败仍保留。
+
+### SSH 脚本传输与负载结果分别判断
+
+R2 后置核对首试在本机 Python `CreateProcess` 抛 WinError 206：含 157 配置摘要的脚本整体编码进 SSH 命令参数后过长，SSH 子进程尚未存在，远端 PG/Redis 核对也未执行；之前的 helper SCP 已完成。原空输出与错误保存为 `attempt1-post-audit.*` 和 `post-audit-attempt1-failure.json`，不能按“已有文件”推断远端执行过，也不能把后置工具失败写成客户端负载失败。实际只读核验三个专用存储均停止后，使用 `ssh -T … python3 -`，源文本从标准输入传输，核对成功并在 finally 再停止自己的 PG/Redis；原负载结果和默认期限保持。
+
+大脚本使用标准输入或专用文件，shell 参数只放固定短命令；不要调产品预算、重放部署/负载、删除首试文件或修改全局 Windows 路径选项来绕过。判断连接失败时是否执行过，须先核对远端状态/所有权；CreateProcess 前的失败和已建连接中断不能混为一谈。复测是源文本解析、真实传输、3870 个 SQL/Stream event_id 与原始 payload 一致、账本总额及保护业务复核，不仅是命令返回零。已完成的现场卷已退役，接续读取 `report.json`、`post-audit.json`、`retirement.json`、`final-verification.json`，不再重跑一次性核对入口。
+
+容量用例同时检查客户端结果、运行中积压/趋势和停载排空，不能只在停载后读零；原失败序列加合成归零尾段的控制反例必须仍失败。积压采样口径要包含正在租赁的未发布事件，两个节点的共享队列 gauge 不相加；桶上界不是精确 P99，第一次读到零的采样时刻不是精确排空耗时。内存保留原父/子组 file/shmem/anon 和进程 PSS/私有页，不双计 shmem 或累计 PG RSS；进程采样退出记录未知，不补零。R2 的短时平台、34 字节以内 payload 和无故障负载，只作为这组试验的证据，不覆盖旧失败、真实游戏容量或 24 小时。
+
+### 初始化探针期限和运行时预算分别判断
+
+2026-10-02 新隔离 PG 首次 initdb 正在 `syncing data to disk`，Windows Docker exec 探针触及工具 10 秒期限，准备驱动提前停止该专用实例；未执行 Linux 产品测试或正式负载，不可定性为 DBProxy 请求超时、OOM 或容量失败。实例退出 137 来自本次有界停止，`OOMKilled=false`，不能只凭退出码认定内存故障。改为 Docker 内的 TCP healthcheck 与 180 秒初始化上限，真正 healthy 后才创建专用数据库和运行验证；产品 2 秒 AOF、PG 排队/SDK 总预算不变，不累计准备时间。第二次准备又发现 volume loop 复用了 attempt 后缀变量，命中错误 env 文件路径并在创建 PG 前失败；独立变量与新的尝试身份修正，原失败状态不改为 passed。三次尝试各用独立卷/网络/容器，最后真实 Linux 228 与另外 9 项 PG/Redis 检查通过。成功与未进入应用请求的失败准备对象均在日志/摘要保存后按所有者和完整 ID 回收，不能留下新一批过期容器。
+
+复查分别读取 `local-build-state.json`、`local-build-state-a2.json`、`local-build-state-a3.json`、`build-report.json`、各阶段 Linux 日志和 `preparation-cleanup.json`；源码 `08aa916` 与服务 ELF `07c1f021...` 分别记身份，不继承旧 `42f2762` 容量或长稳结果。周期故障/性能验证先声明趋势、稳态和停载门禁；只检查 RPC 最终状态或停载排空会漏掉持续积压。新观察门禁对修改前的真实失败序列加合成零积压尾段仍拒绝，属于控制器反例，不能称为重跑基线 SQL 或新容量通过。
+
+### 失败证据与可重建编译缓存分别收尾
+
+旧验证只收尾运行对象，未回收工作区的增量对象、重复 Native 构建中间产物和隔离 Linux 下载缓存，累计 169.09 GiB 文件长度。保留失败报告不意味着保留所有 `target/deps/build/incremental`；同时不能按目录名删除整个旧 worktree，本轮旧部署 worktree 和 rc.1 验证副本仍有未提交修改。先固定需保留的源码、Git 状态、实际二进制/符号/manifest、失败日志/数据和冻结路径，再仅删除已闲置的可重建中间产物。清单预备首次因只汇总浅层目录、补算返回形状错误而中止，均未开始删除；修正后形成完整清单才执行。PowerShell 只读联接检查也曾误用不兼容的 `Split-Path -LiteralPath/-Parent` 参数组，改为 .NET 路径解析并启用遇错即停，不能将空检查结果当作通过。
+
+递归操作必须核对绝对边界与每级 reparse 属性，枚举不跟随目录联接；不能把联接外部目标算作工作区临时数据。6 个 GN 联接的额外 unlink 遭工具策略拒绝后原样保留，不重试绕过，不触碰 F 盘 Cargo/V8 缓存。禁止全局 `git clean/reset`、删除未提交文件、注销实际开发 worktree 或为了清理重跑旧失败负载；最终二进制保留不表示被删缓存仍可直接用于增量构建，之后按原锁和源身份重建。
+
+统计分别保存文件逻辑长度、删除阶段盘可用差值及后续盘采样；压缩、硬链接和其他同机活动会使这些数字不同。新验证从创建时记录所有者、保留物和成功/失败收尾，结束后回收中间产物，避免日后靠磁盘告急再集中清理。只读复查证据为本轮 `verification.json`、`git.after-cleanup.json`、`retained-binaries.before.json`、`r11-inputs.after.json`；100 个制品摘要、22 仓库状态、39 个冻结文件及 16 个证据绑定通过。不要重跑一次性 `cleanup.ps1`；文档检查使用 `git diff --check` 与 `npm run verify:no-local-traces`。
+
+### 测试收尾要回收容器，不能只看镜像引用
+
+2026-10-01 清理只筛选无容器引用的镜像，漏掉 56 个早已结束的 v7 构建/控制/历史长稳容器。引用同一验证镜像并不说明仍有运行用途；输出已在挂载目录，旧容器可写层四次保留依赖安装约 265 MB，各阶段退出后无人回收，累积约 1.06 GB。容器 `virtual size` 和镜像 tag 字节含共享层，不能逐个相加。退出容器不占 CPU；正在运行的旧存储和其他项目进程要分别核对。
+
+正确流程是核对最新容器状态、所有者、完整 ID 与挂载引用，保存必要 inspect/日志/diff 和实际产物证据，再移除一次性容器；对仍需诊断的数据仅停止专用服务并保留卷/AOF/冻结输入，不排空失败 Outbox。清理失败现场不等于将失败改成通过。新验证从创建时就指定所有者、日志/产物位置及成功/失败收尾策略；无保留价值的一次性容器在取证完成后回收，不靠无限堆积历史运行对象保存报告。不套用全局 prune、force 或 `rm -v`，不清其他工程、匿名卷、全部 cache，不重启共享服务来掩盖资源增长。
+
+复核时使用执行前重新读取的身份；其他进程/用户可能在检查与执行之间改变状态。本轮 battle-lab 和 SLG 在移除动作之前已停止，不能用执行前后 guard 通过宣称整个会话它们始终运行，也不能归因于删 v7 容器。读取实际 Docker 事件时间与本次 action 时间，不自动恢复他人状态。日志双通道均需归档：`docker logs` 的 stderr 不是调用失败；校验 gzip 解压/摘要后再删除对象。56 份 manifest 与动作见 `temp/v0.7-local-images-cleanup-20261001/`；只读复核用 `docker ps -a`、`docker system df` 和最终审计，勿重跑一次性清理脚本。
+
+
+### 分片排队必须区分持锁、SQL 点样本和指标漏计
+
+2026-10-01 R11 离线分析：失败前副节点请求连接阶段在执行 4 项、等待 28 项，近 120 秒完成阶段占 96.82%；此前有 34 项等待仍通过，不能只凭人数定性为泄漏、持续积压或稳定哈希失衡。健康完整指标区间有 694 次等待落在 (1, 2] 秒，平均 36 ms 不证明两秒有充分余量。按节点 generation 做累计指标差，跨故障/恢复的整个采样区间不纳入正常耗时统计；分位桶上界不能写成精确 p99，未完成等待也不在已完成直方图内。
+
+代码确认 PG `request_client` 到期未递增超时指标：副节点 660 条早期排队超时日志均在故障/恢复窗口，但指标仍为 0，最后一次正常到期使日志总数变为 661。超时回归需同时断言错误、无 SQL、等待释放与显式计数；正常取消不能计为超时。长稳一般错误只采前 16 个会耗尽末段证据，应保留有界的滚动/终态首错及请求关联；不要删除前期失败、无限打日志，或用重试隐藏正常窗口错误。
+
+后台的独立 claim/ACK 连接不代表所有后台数据路径隔离：当前整批快照落盘、cache repair 权威读取仍用请求分片。建议以有界的独立后台连接减少前台争用，同时保留 fence、原子事务、锁顺序、结果映射和可靠确认；共同 WAL/磁盘等待仍需观测。失败附近 WAL/检查点相关，但排队约在检查点前已开始，不可据此断定机械盘或 checkpoint 是唯一原因。PG activity 是一秒点观察，最长年龄也可能属于 autovacuum 或故障中的 ClientRead，不能冒充前台 SQL 或 mutex 占用最大耗时。
+
+容量验证应允许健康副节点持续承接全部 40 人，不靠自动回主、增大分片数或把两秒改十秒规避；结合客户端默认五秒总预算校准排队余量。下一轮先针对性回归与新的隔离 30 分钟诊断，再开始新的完整 24 小时；保留原数据/门禁和失败，不累计部分时长。完整离线来源摘要与建议见[R11 分析](../design/v0.7-soak-interruption-recovery.md#r11-排队结构与观测缺口分析)，本次只写分析和文档，未实现上述修法。
+
+### 正常窗口失败、终态观察和失败后积压分别处理
+
+2026-10-01 R11 第 6929 个原始区间出现 1 次交易错误，正常区间不与任何故障/恢复窗口重叠；日志确认副节点 PG 请求连接锁 2000 ms 到期。正确保留最后拒绝行、失败状态、原 39 份冻结摘要和失败导出，再按原预算复核，不能把错误补入已结束的故障窗口、加大期限、生成新幂等号、拼接时长或不停盲重跑。该 Store 操作未发送 SQL 不保证整个业务 RPC 未提交；本轮读到的事务回执比已采集客户端完成数多，并不自动等于重复写入。
+
+新增 PG 采样确实留到失败收尾：33681 成功、960 个显式错误，完整错误区间均包含在实际故障事件 UTC 窗口内。失败附近看到多连接 WALWrite/WalSync 与 11:17:32 UTC checkpoint 启动；最长采到的查询年龄 0.367 秒只是离散快照，不能证明 SQL 最大耗时、持锁者、分片排队深度或 checkpoint/HDD 因果。下一步需补齐连接归属/完整持锁与排队阶段证据并验证修法，不用点样本直接改产品预算或关闭可靠落盘。
+
+PG 观察器已受控退出且原报告/观察 SHA 一致；终态助手仍将空 CIM stdout 直接 JSON.parse，产生独立解析误报。活动运行必须检查 PID/创建时间/程序和新样本，终态则核对原完成报告及输出摘要，并明确当前进程不存在；不能把正常观察退出误报成原业务失败，也不能忽略活动观察器死亡。本轮独立失败审计按终态证据解释，未改旧助手、绑定或冻结现场。定时通知只记录 requested；它固定指向 R11，终态禁用后不会自动监控将来的新阶段。
+
+失败后两个服务退出而没有完成维护排空，26 条 Outbox 未发布仍保留。正确分别核对 SQL 版本/回执/账本、已发布事件的 Stream 集合和待发布数；缺最终客户端与排空时，内部一致只作取证，不作长稳通过。不得启动旧工作负载/Worker 把失败现场排空后宣称原测试正常，也不删除旧库/索引腾新空间。副节点实际有 4 个请求分片；后台批次共用请求分片是代码可查的候选路径，尚无超时持锁证据，不能定性为根因。
+
+独立审计首版误传 `validateWindows` 参数，产生 Missing scheduled faults 误报；保留首版源码和失败。正确调用原 `validateWindows(expected, windows, seconds, recoverySeconds)`，只复核已完成的计划前缀/原窗口，使用原 86400 秒声明和 180 秒恢复界限，明确 49/120 不能冒充完整资格，不删除断言。完整 158 份失败导出、9 组 AOF 原内容、客户端拒绝反例、采样错误归因和只读 SQL/Stream 已复核。可重复查看 `temp/v0.7-r11-failure-review-20261001/failure-summary.json`；inspect/verify/storage-review/finalize 为一次性保存入口，不重跑覆盖。SHA 和证据范围见[失败记录](../design/v0.7-soak-interruption-recovery.md#r11-正常窗口再次-pg-排队超时)。
+
+### 外部定时探测必须验证实际运行和通知路径
+
+2026-10-01 按要求启动 R11 每 30 分钟探测。本会话没有可调用的 Codex 自动任务接口，已向用户说明采用 Windows Task Scheduler；不得伪称已创建聊天自动唤醒。注册成功、NotifyIcon 的无显示探针通过都不等于实际定时执行和完整通知路径通过。必须查看真实退出码、源快照 SHA、下一次时间、触发间隔及实际完整通知调用；本轮修正后任务真实退出 0，完整通知比较约 10.4 秒完成，原 20 秒期限不变。通知记录只表示请求，不冒充用户已收到。
+
+首次定时运行只在 `docker info` 原 10 秒环境查询门禁处超时；负载、3 次故障恢复、正常窗口和内存检查仍通过。保留 `probe-gR2Ypb/report.json` 与原快照，随后独立只读检查及修正后定时检查在原门禁内通过。底层超时原因未记录，不能推断是产品崩溃、内存不足或已修复；不改冻结助手、扩大预算或忽略环境失败。外部探测不得重新启动工作负载或重跑一次性准备/恢复脚本。
+
+通知首版在 Node 隐藏、重定向的 Windows PowerShell 子进程中另传 `-WindowStyle Hidden`，进入脚本前无输出，完整比较亦失败；只去掉重复开关、保留 Node `windowsHide:true` 后完整调用通过。具体底层 Windows 原因未证明，不推广为所有机器的结论。子进程错误应记录本次实际期限与已有 stdout/stderr，不能把 20 秒通知超时误标成 180 秒状态检查。先保留旧配置/源码/首跑报告及 SHA，再修改外部脚本并重绑自己的摘要；不触碰 R11 的 39 份冻结输入。
+
+前置检查还遇到外层 PowerShell 展开内层变量、PS5 拒绝运行 `.ps1`、按名称导入 Security 模块产生重复类型成员。修法为结构化 argv 传入已核对固定代码和 JSON 数据，诊断显式导入 PS5 原生模块 manifest；不要用反斜杠转义 PowerShell 的 `$`，不要改全局执行策略/模块路径或添加 Bypass。保留首个 `validation.json`，独立复核通过；通知代码不执行 JSON 内容。
+
+任务身份审计首版直接比较导出的 `UserId` 字符串和当前 SID，因 Scheduler 将其规范为账户名而误报。正确做法是通过 Windows NTAccount/SecurityIdentifier 解析后精确比较 SID，同时仍要求当前用户、Interactive、Limited、30 分钟、IgnoreNew、5 分钟上限和无自动重试；不能删除身份断言或改成提权任务。首版审计源码和失败记录保留。
+
+复测：`node --test temp/v0.7-periodic-probe-20261001/policy.test.mjs`（7 项）、`node --check temp/v0.7-periodic-probe-20261001/probe.mjs`；查看 `Get-ScheduledTaskInfo -TaskName TiangZ-v07-R11-Probe-30min-20261001`、该目录 `latest.json` 和 SHA 绑定的 `registration-review.json`。一次性 validation/register/rebind/审计与通知比较脚本已有保留结果，不作周期命令重跑。证据 SHA、去重与终态规则见[定时探测](../design/v0.7-soak-interruption-recovery.md#每-30-分钟只读探测与本机通知)。
+
+### 关机恢复、历史证据和采样寿命分别处理
+
+2026-10-01 用户关机后，旧 30 分钟诊断已完整结束；当前 Docker pipe 不可用不能反向否定已封存的历史结果。终态复核需分别报告原文件/冻结摘要与当前资源观察失败；活动运行仍要求真实 PID、创建时间、程序/脚本、容器和新样本，不能仅凭 running 文件继续计时。Desktop 自动升级时保留版本变化，新长稳重新冻结环境，不能改旧版本记录或拼接停机前后时长。
+
+恢复原存储时 PG 仍在自动日志恢复，首次 `pg_isready` 拒绝；这不等于容器没启动。必须先核对 owner/ID/image、原挂载与额度，再使用独立有界就绪检查和真实查询，核对完成阶段 SQL/Stream 与失败现场数据。第一次失败与后续成功分别 SHA 绑定保留，不重复 start、重建容器、清卷或循环重启。命令非零退出可能只写 stdout；保存实际 stdout/stderr、退出码或信号，不能把空 stderr 的 `null` 当真实诊断。本次新助手以真实 stdout-only 拒绝验证，原预算不变。
+
+独立审计首次因阶段内缺日志失败，原因是诊断协调器把日志放在运行根目录。正确修法是在独立审计视图按原日志 SHA 映射路径，并记录第一次失败；新协调器统一阶段路径。禁止补造日志、在原封存现场补文件、跳过日志断言或以重新跑产品代替历史核验。历史报告必须使用原状态/计划/控制器 SHA，不能拿新驱动或报告自报值作期望。R11 的新导出将历史六级与新 1440 分钟分别校验；完整新导出尚未执行，规则检查不冒充发行验收。
+
+诊断由 30 分钟扩到 24 小时时，观察器寿命必须显式覆盖负载和收尾。本次只把 PG 采样寿命由固定 40 分钟改成显式 87600 秒；500 ms SQL/2 秒采集命令、产品 PG 排队两秒、AOF/SDK 与恢复预算均不变。新增 PG 指标也沿用正常窗口/完整区间超时门禁，缺失计数不得补零；缓存指标和 SQL 活动快照不提供精确超时事件时间。真实 `pg_sleep(2)` 只在已完成旧库验证观察能力，不在活动负载中重跑。
+
+证据清单、第一次路径/就绪失败、恢复复核 SHA 和当前检查记录见[诊断完成与恢复](../design/v0.7-soak-interruption-recovery.md#30-分钟诊断完成与关机后恢复)。当前只读复测：`node temp/v0.7-pg-queue-review-20261001/status-r11.mjs`；窗口/来源反例已在新冻结检查中验证。不要重新执行 prepare/freeze/precheck/register 的一次性入口；这不是产品修复，短时通过不能排除原 R10 故障。
+
+### 正常窗口的 PG 排队超时必须保留并调查占用者
+
+2026-10-01 R10 正常区间增加两次事务错误，服务日志确认等待 PG 请求分片连接锁 2000 ms 到期；最近故障结束与下次故障开始均在该区间之外。原测试正确拒绝，不得按可重试错误免除、补入故障窗口、删最后一行或调大期限制造通过。该次 Store 操作未发送 SQL不代表此前业务提交不存在；结果未知仍用原操作号和完整请求恢复。
+
+正确顺序是保留原始区间/日志/冻结身份，再核对数据、进程退出和环境，补齐活动 SQL、等待类型、事务年龄、阻塞 PID及 PG阶段指标，确定具体修法后重新构建和验收。现有零数据违例、正常退出与内部对账只说明已观察部分；没有最终客户端记录便不能宣称完整数据验收。I/O压力、checkpoint或充足内存均不能单独证明或排除根因。PG 排队两秒、Redis AOF 两秒与观测区间越界是不同事实。
+
+本次同时发现失败导出对历史继承阶段误用新驱动摘要：必须验证 SHA 绑定的原状态/计划与控制器来源，再用原阶段驱动校验；不得仅拿报告自报摘要作为期望值或关闭校验。失败现场与直接触发已确认，产品修法及冻结导出器修订未实施。证据 SHA、原失败反例复核命令与当前 30 分钟诊断见上述设计文档。新只读观察器已用真实 `pg_sleep(2)` 等待和受控退出验证；人为等待属于采样用例，不混入产品错误，不能在活动负载中重复执行。
+
+### 故障切换与诊断采样必须分开判读
+
+2026-09-30 R10 第 40 次故障主动停止 PostgreSQL 时，观察器已取得 running，四项后续 `docker exec` 读取却返回容器未运行。`inspect` 与读取分属不同命令，状态可能在其间变化；必须按 1 条缺失样本、4 项采集错误保留，不能当作 4 次意外宕机。用原容器身份、采样开始/耗时、停止请求/完成、恢复后的成功读取和负载数据联合判读，不能单凭 `activeFault` 或一次 running 快照作结论。
+
+本次时间线与计划内停库吻合，恢复和 AOF 前后内容均通过；采集错误没有触发重启或修改冻结脚本。诊断命令竞态的解释不等于累计超时增量获得豁免：跨界计数仍按原规则拒绝。缺失指标不能补零、删除或无限重试掩盖。证据 SHA、原始行和具体时间见[采样缺口](../design/v0.7-soak-interruption-recovery.md#r10-故障切换期间的采样缺口)；只读回放 `node temp/v0.7-timeout-boundary-20260930/check-storage-stop-race.mjs`，完整运行中复核 `node temp/v0.7-timeout-boundary-20260930/check-r10.mjs`。仅验证历史诊断与当前已完成区间，不代替最终数据对账及完整 24 小时。
+
+### Desktop 维护恢复必须区分产品、资源身份与观察器启动
+
+2026-09-28 完整 240 分钟后，自动重启卡在残留 `sailor-ingest.sock` 重命名；这是 Desktop 启动失败，既不撤销已完成阶段，也不允许累计后续未运行时长。保留原失败，在核对路径和进程身份后只备份已证实的运行时 socket 目录，恢复同一批容器和持久数据；不能恢复出厂设置、清卷、全局关闭 WSL 或循环重启碰运气。
+
+恢复脚本另暴露两种表示误报：Docker 将空 DNS 的 null 序列化成 []，同一 Mounts 数组在重复 inspect 中改变顺序。先用原完整 SHA 证明每个字段相同，再仅归一化这两种差异并保留原始 SHA；不忽略整段 HostConfig/Mounts，也不靠重复 inspect 直到碰巧同序。五项反例检查涵盖 DNS 服务、额度、权限、挂载源/目的地、读写标志、卷身份、缺失/重复条目，真实变化仍拒绝。
+
+后台观察器通过 Windows Start-Process 正常启动，但 Node 启动器等待管道 close，误报 15 秒超时。三秒子进程复现中父进程约 409 ms exit=0，约 3770 ms 才 close；退出与所有管道关闭不是一个事件。正确做法是把长期 worker 的 I/O 直接归到文件，分别监督短启动器和 worker，按 PID/创建时间/可执行路径/脚本 SHA 与新样本确认运行。当前恢复直接接管已正常采样的内存 worker，不重启它；仅停止保留失败后仍持有管道的已核实启动器。禁止把通用负载驱动的 close 全改为 exit，避免尚未排空的日志丢失。
+
+维护延误还会消耗旧观察器的固定寿命：本次新建只读存储观察代次，核对成功后停止原观察器，保留 1547 份旧样本；其中 690 份错误全部属于维护等待点，活动阶段为零。新观察器最多 72 小时、原协调器终态即退出，覆盖剩余 48 小时负载，不拼接维护缺口。复测命令、完整证据和内存前后口径见[维护结果](../design/v0.7-machine-memory-observation.md#240-分钟通过与-desktop-恢复结果)。不重复执行已经放行的恢复脚本。
+
+### 正常窗口 AOF 确认失败须保留，不能按故障重试掩盖
+
+R5 启动前的源码核对另发现：新的专项失败诊断使用具体状态 `confirmed-unexpected-availability-failure`，原协调器要求通用 `failed-run-reviewed`。最初预检只查报告 SHA，可能预检通过而启动拒绝。正确做法是保持原诊断，新增绑定其 SHA 和原终态 SHA 的通用复查信封，预检同步验证协调器约定；原尚未启动的准备文件保留 `preparation-r1/`，新准备与只读预检、22 项控制器检查重新执行通过后才启动。不能把具体错误状态改成 passed、删除协调器断言、修改运行中的冻结文件或将未开始的准备记为失败长稳。
+
+2026-09-27 R4 联合 120 分钟的 3425.818–3430.819 秒区间新增 40 条入队失败；服务端记录 Redis AOF 2,000 ms 内未确认。上次故障窗口结束已超过 775 秒，门禁正确拒绝。进度文件在 validateInterval 之后更新，因此显示的 400 是最后合格区间累计；原始 load.log 最后区间为 440。先查原始日志和服务端时间线，不能凭摘要把失败计数遗漏，或静默在客户端重试正常窗口失败。两服务进程正常退出、Host 协作取消；没有 SOAK_FINAL、完整时长或排空/最终对账。事后 16 条 Outbox 仍待投递，只读快照不等于验收成功。
+
+已确认本机 Docker 数据 VHD 在 F 盘 SATA HDD，D 为 NVMe。相同 Redis 镜像/AOF/内存配置的两个独立路径各做 90 批 40 条写入，同一连接执行 WAITAOF 1 0 2000，全部确认成功；HDD 最大等待约 1907 ms，NVMe bind 约 1100 ms。这是短路径对照，同时改变磁盘与文件系统路径，既未复现原超时，也不证明框架修复。原延迟采样关闭，不能根据事后 aof_delayed_fsync=0 宣称过去没有延迟；可靠确认超时的具体 I/O/调度原因仍须新记录确认。
+
+正确后续是保留原失败，在新专用资源组验证可靠 Redis 的 NVMe 持久化路径，附加 Redis 延迟与容器/宿主 I/O 只读观察；确认门槛、AOF fsync、请求预算、负载和故障/一致性断言不变。不得改成 memory ACK、关闭 fsync、延长超时、扩大已结束的故障窗口、清理旧卷、迁移 Docker 全局目录或将旧路径短阶段通过冒充新环境资格。重新完整 30 分钟并复查，之后继续原七级；配置/环境变更和产品变更分开记录。
+
+原失败审查与只读 SQL：`temp/v0.7-joint-review-r4-120m/`；原始导出：`dist/release/v0.7.0-rc.2-joint-bdDSFk/`；短对照：`temp/v0.7-aof-diagnostic/comparison.json`，脚本 `compare.mjs` 仅在独立目录首次执行、拒绝覆盖旧资源。后续 R5 用 `node temp/v0.7-joint-soak-r5/status.mjs` 读取进度，`observe-storage.mjs --once` 在启动前只读核对观察器；真实运行记录仍是最终判据。短探针结束后按完整容器身份停止，仅保留数据，不能把探针结果写成正式长稳通过。
+
+### 长稳初始化失败与正式负载分开计量
+
+2026-09-27 11:07，已修超时分类的新 Rust 客户端在并发预置 40 玩家时收到 StorageUnavailable，服务端日志为 PostgreSQL connection queue timed out after 2000ms; no SQL sent。发生在 SOAK_READY 前，既不是完整 30 分钟失败后的通过，也不是已进入正式负载的可用性错误。旧预置/预热函数直接传播暂时不可用，需在固定初始化期限内恢复；现在独立 `src/bin/fault_soak/seed.rs` 共用 90 秒绝对期限，写请求循环外构造，重试保持原 ID/完整载荷，永久错误或预热快照缺失立即失败，到期取消在途初始化。保留有限重试/恢复日志；不得增加服务端两秒或 SDK 五秒预算、把正式健康窗口的失败藏进预置、清理原数据或用短跑累计时长。
+
+新增三条回归验证暂时/永久分类、过期不启动、在途取消及重试不续期；工具八条通过，Rust 工作区 207 通过/48 ignored，格式及 Clippy 通过，日志在 DBProxy `temp/v0.7-soak-seed-*`。首次测试模块位置被 Clippy 拒绝，移动测试模块至文件末尾后重跑，不用 allow 关闭检查；原 lint 失败另存。原运行 `temp/v0.7-joint-soak-r3/joint-fXDpZh/`、诊断 `temp/v0.7-joint-review-r3/failure-seed-review.json` 保留，Host/DB 都已回收，没有正式时长额度。剩余旧 Redis 索引不足重新跑七级时，创建新的专用资源组与独立分配记录，保留原卷，不能清库挤出空间。
+
+### 重建验收程序与保留冻结服务端身份
+
+首次辅助 Linux 构建成功跑完测试及编译，但附加的“新编译副产物必须与旧 Release 字节相同”断言失败，记录在 `temp/v0.7-soak-client-r2/build-report.json`。未改对应源码并不能直接推出新产物逐字节相同；本轮未定位所有链接字节差异，因此不能宣称可重现构建成立。后续辅助构建只导出修复后的验收客户端，单独记录源提交/源码 bundle/二进制 SHA；新编译的其他副产物明确 usedInSoak=false。实际参与长稳的 Host/DB 服务端继续使用旧冻结文件，严格核对其 SHA，不替换为哈希不同的副产物、不把旧失败改为通过。第二次重新执行构建与身份检查的报告为 `temp/v0.7-soak-client-r3/build-report.json`，候选 tag 和原基线报告均未改写。
+
+加入预置修复后再次以 DBProxy `e9596d1` 的已核验源码 bundle 构建：Linux `cargo test --release --locked --bin dbproxy_fault_soak --bin dbproxy_relay_soak` 八条通过，`cargo build --release --locked --workspace --bins` 通过，报告为 `temp/v0.7-soak-client-r4/build-report.json`。实际负载客户端 SHA 为 `5d1a2b8afc8493e94920f38e18784f9e6eda7eeacbf5d433d9bc8a33025a8962`；冻结服务端与原业务 load 二进制仍逐字节检查，不把新编译副产物混入基线。58 文件追溯附件明确标记 soak-pending；逐项 ZIP 内容/SHA 与真实私密值排除检查通过，不能替代未完成长稳。版本化附件路径不能用 `Path.with_suffix('.zip')`，它会截去名称中最后一段版本；应在完整 basename 后追加 `.zip`，验证摘要后用已核定目录内的原生移动改正初次名称，禁止覆盖旧包。
+
+### SDK 错误分类新增分支必须同步验收消费者
+
+2026-09-27 10:54，联合 30 分钟在第五类 AOF 故障的暂停写入窗口收到“DBProxy request timed out before sending; no request was submitted”，`dbproxy_fault_soak` 将它输出为 SOAK_CONTRACT_ERROR，约 22 分 40 秒结束。真实原因是 0.7 SDK 的 `RequestBudget::timeout_error` 新增 RequestNotSentTimeout 后，验收客户端的暂时错误匹配只保留 RequestTimeout；SDK 遵守确定未发送的契约。`dbproxy_relay_soak` 同样漏分支。修复两个验收消费者并重新构建其 Rust 二进制，不改服务端、延长期限、重置幂等 ID、放行永久错误、删除 SOAK_CONTRACT_ERROR 门禁或改写本次失败。故障窗口外可用性错误与全部数据一致性断言继续成立。
+
+先添加反例，旧实现的两个测试确实失败；修后 `cargo test --locked --bin dbproxy_fault_soak --bin dbproxy_relay_soak` 五条通过，`cargo test --workspace --locked` 204 通过/48 ignored（含 SDK 28），`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings` 与 `npm run test:typescript` 29 条通过。DBProxy 日志为 `temp/v0.7-soak-budget-{red,green,workspace,fmt,clippy,typescript}.log` 和 `temp/v0.7-relay-budget-red.log`。原失败 `temp/v0.7-joint-soak-r2/joint-uOk7T5/` 已原样导出，诊断在 `temp/v0.7-joint-review-30-r2/failure-review.json`；Host/DB 服务正常退出，自有存储已恢复，未启动 60 分钟。清理后只读取证的 40 条积压与强杀前 SHA 相同，但故障窗口、最终验证及对账被中断，仍须使用新二进制、独立数据库重新完整跑 30 分钟，短跑不累加。
+
+### 0.7 联合长稳的执行与证据边界
+
+最新用户指令优先于自动递增计划：当前联合 30 分钟完整结束后，先审查真实故障恢复、数据及资源；有产品问题先修，再改控制器的计时与事件日志，复测后继续。检查点在 `temp/v0.7-joint-review-30-r2/`，保持正在运行的冻结胶囊。没有阶段停止 API 时，可以在前一级完整通过后，经容器完整身份和准备状态校验，协作取消刚初始化的下一阶段；要预先记录用户指令与取消意图，核对实际取消原因，保留原始失败证据，不把无关失败统称人为中止。复查、修复和再运行分别留证，不能在本级未结束前宣称产品没有问题。
+
+2026-09-27 10:31 的实际进展：正常 30/60/120/240 分钟全部通过，240 分钟两端均连续超过 14400 秒且零错误，正常停止、资源趋势、维护排空及直接 SQL/Stream 对账完整通过。自动切换到 temp/v0.7-joint-soak-r2/joint-uOk7T5/ 联合 30 分钟，仍在运行；不能据启动或单个故障恢复宣称整轮通过。原总体 failed 对应随后新启动旧 480 分钟的主动取消，必须连同 handoff.json 的用户计划变更分类理解，既不抹掉原失败报告，也不误报已完成正常阶段失败。原四级证据与新联合阶段分别保存，不因更新状态重跑或改动已冻结工作负载。
+
+2026-09-27 用户要求当前 240 分钟阶段完成后直接加入故障长稳，并同意从联合 30 分钟重新逐级递增。必须先确认当前阶段负载、正常停机、排空及直接对账全部通过，再切换独立冻结控制器；不得在运行中改原计划或用哈希不匹配强迫退出。没有阶段停止接口时，只取消随后新启动的旧 480 分钟尝试，保留原始失败报告及用户变更计划的独立分类，不把它记作产品通过或抹掉其他真实故障。联合 30 分钟完整验证五类故障并计为第一级，其后为 60/120/240/480/960/1440 分钟，前一级通过才继续；不重复另跑 30 分钟预检，不从 30 直接跳到 480，短跑不能相加替代最后一轮 24 小时。
+
+故障窗口内也不能容忍已确认数据旧读、缺失、永久契约错误、重复经济效果、账本/Outbox 对账错误。只对明确故障及最多 180 秒恢复窗口中的可重试可用性错误放行；至少观察 60 秒无新增错误且三种写入重新成功，仍须最终排空和 SQL/事件 ID 对账。AOF 取证先固定所有写入者，读取强杀前后全部积压语义状态，再恢复写入，禁止用后来覆盖的最终值冒充崩溃存活证据；整个负载客户端保持运行。稳定 DB 节点全程不重启，其 RSS 趋势独立检查。当前新版 15 项控制器/证据反例、候选 SHA 和只读存储预检通过，不代表真实故障或 24 小时已通过；复测命令、范围与状态入口见[联合长稳计划](../design/v0.7-joint-soak.md)。
+
+### PowerShell 进程身份时间戳保留时区
+
+同轮更换待机监控首次报 PID reused，停止动作尚未执行；实际 PID/可执行文件/命令行相符，原因是 ConvertFrom-Json 将 ISO UTC 日期转成 DateTime，传给 DateTimeOffset.Parse 时隐式字符串失去时区，按本地时区二次解析后偏移八小时。正确做法为 ConvertFrom-Json -DateKind String 保留原 ISO 文本再解析，或直接在明确 UTC 类型上运算，不扩大两秒身份门槛、不去掉创建时间或改成按进程名停止。已同时修复新胶囊 activate.ps1 与 stop-owned-watcher.ps1；失败快照为 temp/v0.7-joint-soak-r2/activation-date-parse-failure.json。用相同实际监控元数据只读复测，时间差约 31/38 毫秒；随后 pwsh -NoProfile -File temp/v0.7-joint-soak-r2/activate.ps1 实际换接通过，旧待机进程停止，新进程 waiting-240m，原正常长稳与原证据观察器保持运行。重复接管会被现有状态拒绝，不为复测重复执行已完成的换接。
+
+### 联合驱动的延时余量与事件字段
+
+2026-09-27 首个节点故障恢复窗口实际通过后，`joint-uOk7T5/30m/db-driver.log` 记录 Node 对约负 0.000418 毫秒 delay 的警告：循环条件和 delay 参数分别取时钟，可能在两次取样之间越过期限，Node 将其钳制为 1 毫秒。`database/events.jsonl` 的 fault-passed 记录又因对象展开顺序把 ISO at 覆盖成计划秒数。两项属于控制器日志问题，业务错误计数为零，单调 start/actionCompleted/end/elapsedSeconds 和恢复断言继续成立；不在进行中的哈希冻结阶段修改文件或放宽门槛。后续控制器修订应对最终余量做非负钳制，事件时刻与计划偏移使用独立字段；以零/负余量和包含同名计划字段的事件做定向复测，再在新冻结版本运行。原始日志保留，当前没有宣称这些后续修订已经完成。
+
+同日先完成 10:54 的真实失败诊断和验收客户端修复，再在新胶囊修订控制器：等待循环每轮只读取一次时钟，余量耗尽直接返回，期限边界仍调用取消检查；不传负值，不取消总时长要求。日志以独立 `scheduledAtSeconds` 保存计划偏移，保护 ISO `at`、事件名和实际 elapsed，不修改调用方对象。新增完成本级退出/对账后等待复查决定的入口，决定必须绑定运行身份及两端报告 SHA；取消或失败决定不记为通过。R4 的 policy/export/controller 共 22 项覆盖零/跨期余量、总时长、取消、字段覆盖、陈旧复查决定与原故障/对账反例，命令见联合文档。实际新 30 分钟仍须核对所有日志没有负/溢出 delay 警告且事件字段类型正确；只有独立复查通过才放行后一级，不能用脚本测试替代真实运行。
+
+### 容器 PID 1 必须回收构建工具子进程
+
+2026-09-27 Linux 清洁候选用 Node 控制器直接作为 PID 1，首次 check/quick 的多项命令正文通过，但外层报 exit 125 `command left descendant processes`。`/proc` 证明 53 个 git/esbuild 等进程为 Z、PPID=1，是控制器不回收被收养子进程造成的环境错误，不是把失败的进程回收门禁改成通过的理由。保存 `temp/v0.7-rc2-linux-clean-evidence/process-reaping.json` 与完整矩阵后，向自有 full runner 发 SIGINT，让在途用例清理、未执行项记 skipped。正确复测以 Docker `--init` 启动新专用空卷，开始前核对 PID 1，重新从相同 bundle 检出、npm ci 和 `verify:release`；保留原卷及失败日志，不按进程名杀用户程序、不禁用后代检查、不用缓存目录冒充清洁检出。新轮证据 `temp/v0.7-rc2-linux-clean-init-evidence/`，结果单独登记。
+
+### 清洁目录的 System 声明必须重新生成
+
+Examples 候选首次联机又发现 `registration mismatch`：模块清单改为 0.7.0-rc.1，而 MMORPG/Bench 的 Model `defineGameModule` 仍为 0.6.0-alpha.0。这是候选升版漏项，宿主拒绝行为正确。必须同步两份源码身份、完整构建并重启，再用 `npm run smoke -- --package mmorpg` 验证；不能关注册检查，也不能仅修改清单后把编译通过算作升级通过。原失败 `temp/v0.7-clean-mmorpg-smoke.log` 保留；修正后 `temp/v0.7-clean-mmorpg-registration-smoke.log` 记录真实登录/进图/退出、即时切换角色与正常停机通过。此轮还是准备目录；最终冻结 RC2 宿主的 Native 与三类消费方结果独立记录。
+
+跨平台重建还要区分原始归档、解包载荷与文本换行：三个 npm 候选从 bundle 清洁重建后整个 tgz 哈希一致；VSIX ZIP 时间字段不同，Native 的 sourcemap 内嵌 `server.ts` 另有 CRLF/LF 差异，规范化该项后相同，运行 bundle 本身逐字节一致。不得把它写成两份 VSIX 原始哈希相同。Examples 的协议/配置清单含输入字节哈希，新增 `.gitattributes` 固定文本 LF，并在标准同级目录用正式生成器刷新声明和清单；不手改锁/哈希或拿原 worktree 名作为发行路径。证据 `temp/v0.7-clean-artifact-reproduction.json`，重新检出后应再生成并检查 Git 差异。
+
+2026-09-27，正式候选依赖的清洁 MMORPG 构建在九处生成声明报 `tiangz.architecture.invalid-dependency`。生成器只转换普通 type import，漏掉签名中的 `import("#tiangz/module").T`；Hotfix 的模块别名被复制到 Model 后不再是合法入口。正确修法是在生成器按 AST 重定位自己的 import-type 至 Model public 相对路径，覆盖参数、返回值、泛型约束及访问器，保留普通字符串和其他依赖给既有检查。不能放宽依赖规则、手改生成物、打开 skipLibCheck 跳过声明检查或复用开发目录旧输出。
+
+复测：`node --test tools/system_declarations.test.mjs`，然后在标准同级候选目录运行 `npm run build -- --package mmorpg`、`check`、`test:native` 和 `smoke`。首轮真实失败为 `temp/v0.7-clean-mmorpg-build.log`，针对性编译 RED 为 `temp/v0.7-inline-system-types-red-imports.log`；修复后三个生成器测试通过，真实模块重新生成后的依赖/类型检查通过，Native 与联机结果另记。初次新增夹具把同一访问器类型写成单双引号两种文本，先触发既有文本比较而未验证本缺陷；统一夹具引用后才取得正确 RED，原日志 `temp/v0.7-inline-system-types-red.log` 保留。生成检查通过不等于连续长稳或清洁冻结源验证完成。
+
+### 0.7 依赖规则入口不一致
+
+候选安装的进程完成也是依赖边界：一次 `npm install` 工具返回 session_id 后，检查过早启动，安装实际上运行了 26 秒。此时调用返回不能证明依赖已稳定；重叠的 final 命名日志也不能当最终证据。必须取得安装退出码 0，再运行依赖它的 quick/LSP，换新日志并对 npm 归档/安装内容逐字节核对。原安装和重叠报告保留，见[依赖方向](../design/v0.7-dependency-rules.md)。
+
+去重也必须按实际检查文件：新增 `dist/v0.7-dependency-excluded-first.log` 反例为 0 错误而应有 1 错误。tsconfig 仅包含 Core 时，索引器仍发现被排除的 Model 深层导入；全局 Program checked 标志错误地禁止全部语法回退。改为返回实际文件集合，仅对这些文件去重，排除文件仍作可确定的 AST 检查。禁止为了修复扩大用户 tsconfig、把全部索引文件宣称已获类型证明，或只在完整夹具测试。
+
+实际 CLI/LSP 首轮比纯规则多报 Stable 身份错误：TS 返回正斜杠 SourceFile 路径，Windows 预期值为反斜杠，直接字符串相等错误地拒绝合法导入。应使用平台路径身份比较，保留大小写/分隔符对照；不能删掉身份核对或仅扩展等待。原插件 `dist/v0.7-dependency-check-first.log` 保留，修复后需要重打候选、重装和实际 LSP 复跑，旧 npm/VSIX 结果不能复用。
+
+新增模块边界反例初次实际返回 TS5097，原因是夹具相对导入携带 `.ts` 扩展，正式模块 tsconfig 在类型阶段先拒绝。应使用当前支持的无扩展导入，使类型合法后验证依赖方向；禁止放宽编译配置或把 TS 错误当作规则覆盖证据。原 `temp/v0.7-dependency-module-worker-first.log` 保留，复跑 `node --test tools/module_live_worker.test.mjs` 与实际安装 LSP。
+
+Developer Tools 首轮依赖反例 5 项中 4 项失败（`dist/v0.7-dependency-rules-first.log`）：Model 仍可深入 Core，Core 通过 `#tiangz/model` 反向依赖，type-only/import-equals 未检查，相似启动文件未按 Stable 约束。宿主另有正则扫描和不同 AST 遍历，不能靠“都检查 imports”推断一致。现统一到 dependency ruleset 1，传入调用方 TS API/Program 与模块清单，仅保留精确启动、生成协议 ABI 和 System 增补例外。禁止宽泛忽略 generated/main、把错误降级或保留旧错误正例；动态目标 warning 不证明安全。旧 LSP 夹具的 Model 别名直接指向 Core，需补实际 Model 聚合文件而不是关闭 Stable 身份核对。复测纯规则、TS 5/6、模块 CLI/Host worker、实际安装 LSP、制品身份及宿主 quick，详见[依赖方向](../design/v0.7-dependency-rules.md)。
+
+### 0.7 动态 Scene 任务的实际结束与 Timer 所有者
+
+首次 `tests/unit/scene_task_disposal.test.ts` 两项均失败（`temp/v0.7-scene-task-disposal-first.log`）：动态 Scene 已注销，Scope 仍在途，但仅遍历路由表的 ProcessHost 错误报告排空；旧 Runtime 的任务 finally 还通过当前单例取消新 Runtime 的 Timer。Host 必须保留未完成 Scope 并在真实完成时主动移除，watchdog 取消绑定创建它的服务实例，销毁停止告警但不强制终止 Promise。禁止清空任务表、把 aborted 当完成、只在读取计数时清理引用，或用 TryGet 当前单例掩盖跨实例句柄错误。复测定向 `vitest run tests/unit/scene_task_disposal.test.ts`、正式生成的真实 V8 夹具及完整 `npm run verify`；范围和结果记入[Scene 任务销毁](../design/v0.7-scene-task-disposal.md)。
+
+### 0.7 请求预算与部分写夹具（2026-09-26）
+
+Host 任务现在从提交前起计时，涵盖任务排队、连接池和 SDK，并由调用方 RAII 持有；调用方取消请求 abort，不能留下脱离所有者的后台 I/O。删除 Host 的整池重试层，让 SDK 的单连接恢复保留原身份，Host 仅执行一次闭包。4 个所有权/期限测试通过，`temp/v0.7-host-budget-msvc.log`。第一次手动复跑再次出现 LNK1143，是只匹配 `CC=gcc` 而遗漏 工具链目录下的 `gcc.exe` 完整路径；过滤必须按 basename 匹配 gcc/g++，或直接使用已有正式矩阵环境过滤，不能只比较完整变量字符串。原失败 `temp/v0.7-host-budget.log` 保留；修正后重建，不调整测试期望。
+
+原 Rust SDK 在拿到许可/写锁后才计时，重连后又得到完整预算；5 个受控 TCP 反例分别覆盖许可、写锁、排队后响应、重连锁和慢候选握手，原实现全部失败。逻辑 API 首次 poll 时创建同一单调期限，排队和全部自动尝试共用；过期且锁 ready 也不能再发包。许可/pending 用 RAII 释放，未发送与结果未知分开，原操作 ID/payload 不重建。DBProxy 证据为 `target/test-results/v0.7-budget-red.log` 和 `v0.7-budget-green-complete.log`（28 条客户端测试通过）。宿主尚未联调，不能把 SDK 单仓通过当作跨仓库通过。
+
+部分写夹具最初用本机 TCP 的小发送/接收缓冲，但观测到帧头到达时写锁已释放，实际已进入等待响应；因此两个“应关闭半帧流”断言失败，不能据此宣称 RAII 有缺陷。修正为 64 字节 Tokio duplex，先读取帧头并确认仍持写锁，再执行取消/超时，严格检查截断、EOF 与写端不可复用。它验证同一通用写路径，真实 Socket 的慢写仍须另验；禁止删除断言、扩大生产 timeout 或把响应超时冒充部分写。原日志为 DBProxy `target/test-results/v0.7-write-budget-fixture.log`、`v0.7-write-budget-controlled.log`，复测 `cargo test --locked -p tiangz-dbproxy-client`。
+
+### 0.7 首批运行时修复与构建环境（2026-09-25）
+
+以下为运行时代码缺陷，不能通过调整测试期望掩盖：
+
+- 异步 Actor/Component Timer 在途时，`CanCommitHotfix` 曾提前为 true。TimerSystem 在实际 Promise 完成前保留计数，并把到期、取消和销毁路径纳入排空；未来尚未触发的 Timer 不阻塞热更。不要因所有者被移除而清零，也不要超时后直接解锁有序 mailbox。
+- Update 回调新建的零延迟 Timer 曾在同一轮执行。先快照本轮到期项，再逐项检查是否取消，保留“下一轮执行”和立即取消两个语义。重复周期计算也存在浮点边界：`28.003 + 10` 开始、更新到 `128.003` 时，差值商会得到 `8.999999999999998`；计算后必须保证期限推进，不能仅把测试时钟取整后宣布修好。
+- RPC 请求赋值、编码、Actor 信封校验曾在 try/finally 外抛出，导致 ID 泄漏。所有 reserve 之后的操作都进入同一释放范围，失败后还要验证后续请求能复用 ID 并正确关联响应。
+- DBProxy 多租户的共享 listener 不能默取首租户的并发限制。不同 `maxInFlightPerConnection` 必须在打开后端前拒绝，正反顺序均覆盖，诊断包含字段和安全租户标识，不包含凭据。
+- Auto 首次 peek 收到 `G` 或 `GE` 时曾误判为 TCP。流握手现在由独立所有者消费并重放完整前缀，探测、HTTP 和内部认证共用 5000ms 墙钟期限；收到分片不能重置总预算。显式 TCP/WebSocket 和慢写期限仍属于后续 N 工作包。不要循环等待已可读但未消费的短前缀，也不能丢掉探测字节。
+
+握手夹具初次还出现 `Junk after client request`：测试在收到 HTTP 101 之前发送了 WebSocket 数据帧，违反客户端握手顺序。修正夹具后，完整 GET 与显式 WebSocket 通过，仅 `G/ET` 和 `GE/T` 两项仍失败，才是本次框架缺陷证据。禁止放宽 Tungstenite 协议校验来迁就夹具。
+
+Windows 首次 Rust 构建还暴露两项环境问题：Cargo 缓存与 target 跨盘时，V8 的 build.rs 尝试创建 `target/debug/gn_root` 符号链接，缺少权限导致错误 1314；可在确认该路径尚不存在后，为本工作树建立指向实际锁定 V8 源目录的目录联接，或选用与缓存同盘的独立 target。不要修改第三方 build.rs 或关闭真实链接检查。另一个失败为 `mimalloc` 对象的 LNK1143，原因是 MSVC 构建继承了 `CC=gcc` / `CXX=g++`；只在当前构建子进程清除这两个冲突值，使用已安装 MSVC。正式矩阵已有相同环境过滤，手动 cargo 复测也需遵守。目录联接不是新增 Rust 工具，也不应提交到仓库。
+
+新 worktree 还需先运行 `npm run build:runtime:debug` 再执行含真实宿主步骤的 verify。`cargo test --bin TiangZ` 生成的是测试程序，不能证明 `target/debug/TiangZ.exe` 已存在；不得复制主线旧二进制来填补。首次模块宿主检查因此失败，补建后已单独通过真实启停和错误配置拒绝，完整矩阵结果仍以其最终报告为准。
+
+首轮 full 的开发热更/故障矩阵还有 `RUST_LOG=warn` 环境污染：测试依赖 `tiangz::hotfix` 的 INFO 完成/暂停事件，日志被过滤后，开发测试误报 reload 超时；故障驱动不释放远程请求，宿主在 2900ms 排空期限后正确恢复旧版。隔离测试的子进程现在显式使用 `warn,tiangz::hotfix=info`，不改变调用终端或宿主日志默认值。禁止放宽 3000ms 热更窗口或提前解除在途计数来迁就驱动；保留原 `temp/hotfix-load-Masa3B/fault-report.json` 及 main.log，再复跑 `test:hotfix-faults`、`test:game-project-dev`。
+
+定向复测入口为 `vitest run tests/unit/hotfix_timer_drain.test.ts tests/unit/timer_system.test.ts tests/unit/scene_call_cleanup.test.ts`、Rust 的 `transport_backend::handshake::tests` 和 DBProxy `tenant_config_tests`/`tenancy`。修复后的完整 `npm run verify` 已在 2026-09-26 通过；完整命令、首轮失败和最终报告集中记录在[首批验收记录](../design/v0.7-batch1-acceptance.md)。Windows 链接仍有已有 LNK4098 告警，不能称为零告警构建；环境失败不能算行为测试失败或通过，修正环境后必须真实重跑。
+
+### 0.7 worktree 依赖准备与中止结果（2026-09-25）
+
+现象：新 worktree 执行 `npm ci --ignore-scripts` 后，codegen/检查找不到 `@tiangz/native-language-core`、`@tiangz/developer-tools-core` 和 `@tiangz/dbproxy-sdk` 的声明或 dist 入口；生成中止又导致后续 Generated 目录缺失。真实原因是 Git 依赖的 prepare 构建被跳过，属于依赖准备失败，不是 EntryScene 拆分导致的运行时缺陷。
+
+正确做法：按锁执行正常 `npm ci --no-audit --no-fund`，确认依赖入口可解析，再执行 `npm run codegen` 和对应验证。禁止从另一 worktree 复制旧 dist/Generated、修改类型为 any 或放宽检查来掩盖缺包。重装后依赖入口及部分检查恢复，但完整 quick 随用户要求停止讨论外的实现而中止；不得把部分通过汇总为整轮成功。
+
+复测：实施恢复后，在目标工作树依次执行正常依赖安装、正式 codegen、`npm run verify:quick`；按改动范围补完整集成验收。前置本机证据为 `dist/test-results/check-initial-dependency-failure.json` 与 `temp/verify-quick-refactor.log`（未提交的运行记录），新报告须记录中止/失败/跳过状态，不能用旧报告替代当前制品验证。
 
 2026-09-17 90分钟验收首次启动run-MeA1nL失败：夹具把主endpoint重复放入endpoints（failoverEndpoints旧别名），宿主在连接前正确拒绝；尚未进入业务或计时。修复为endpoint=A、failoverEndpoints=[B]，不放宽运行时校验。原报告和卷保留，隔离容器已停止。配置/源码改变后经正式build/check再开新报告，不能覆盖旧失败或手改构建哈希。
 
@@ -172,13 +868,27 @@ SLG 首次玩法 smoke（临时目录 tiangz-slg-smoke-Lipipu）报 `DBProxy is 
 
 # TiangZ AI 业务开发手册
 
+新增 Transport 驱动不能从公共帧头 BE 推断所有内部字段：现有 29998/6 字节过载信封的 rpcId 使用 LE；控制入站首次真实故障夹具误读 BE，将 69632 变成 1048832 后失败（`temp/hotfix-load-yYtUnM/fault-report.json`，两宿主正常退出）。查生产 build/parse 函数修读取，不改已有线上格式或忽略未知/重复响应；本次 full 失败保留，修正后重新执行 `TIANGZ_VERIFY_CARGO_FEATURES=kcp npm run verify`。
+
+控制确认 TS 第二轮 **2 failed / 40 passed**，724ms，`temp/v0.7-control-ingress-ts-second.log`：新夹具误设跨 data/control 的执行顺序，且直接 Scene dispose 绕过 Host Root 注销。使用真实 `ProcessHost.despawnScene`、沿用既有公平调度顺序修正断言，不改生产调度或移除 Root 泄漏检查；复测原四个 TS 文件。此阶段与上一轮错误所有者接线分开记录。
+
+控制确认实现的 TS 首轮 **12 failed / 30 passed**，818ms，`temp/v0.7-control-ingress-ts-initial.log`。真实原因是把 SceneCallContext 当作持有 Host 的对象，读取 `this.ctx.processHost` 为 undefined；应沿用 EntryScene 构造时保存的 `this.processHost`，不能可选调用或吞错以隐藏名额泄漏。复测 `npx vitest run tests/unit/control_ingress.test.ts tests/unit/process_shutdown_deadline.test.ts tests/unit/mailbox_lifetime.test.ts tests/unit/local_scene_capacity.test.ts`；该失败属于本轮实现接线，不能归因于原先框架。
+
+新增 Native op 先按当前宏诊断验证参数形状：控制桥初次编译拒绝 `deno_core::OpState` 完整路径，`#[op2]` 要求显式导入 `OpState` 后使用短类型名；日志 `temp/v0.7-control-ingress-native-initial.log`，测试未运行。应修复宏参数再运行 `node tools/run_cargo.mjs test --bin TiangZ --features kcp control_ingress -- --nocapture`，不能移除生命周期所有者或用条件编译绕过。
+
+控制通道必须验证跨轮积压：`node temp/v0.7-control-ingress-probe.mjs` 在真实 TS Runtime 的 ordered 断线钩子阻塞时，按 128 条/轮、520 轮累积 **66560** 条，放行后才排空（`temp/v0.7-control-ingress-audit.json`）。这不是 6 万真实连接容量测试。原因是 Native 每轮控制泵继续投递、TS 无共享总额度；正确修法在 Native 入队前准入并将所有权贯穿 V8 到 TS 未执行节点，完成通知另行保留。禁止丢弃断线通知、扩大单轮界限或只在搬入另一个忙碌 mailbox 时提前归还。见[冻结设计与验证计划](../design/v0.7-control-ingress.md)；实际网络、V8 与 TS 各层证据须分别记录。
+
+0.7 慢写候选：`process.network.writeTimeoutMs` 为 1..300000 的正整数，默认 10000ms，包含出站批次排队与写入；关闭时全部批次另共用 stopTimeoutMs，先到期者生效。超时可能已发送部分字节，不等于操作取消或业务确认。KCP 此期限只覆盖可靠传输前的宿主队列；业务结果未知仍需原幂等号恢复。旧宿主不接受新字段，变更后重建/重启；见[具体契约](../design/v0.7-batch2-contracts.md)。
+
+慢写首轮复测出现 Windows KCP 端口 bind 失败：148 通过、2 失败，证据 `temp/v0.7-write-budget-first.log`。真实原因是测试用 TCP 端口 0 选择的端口在 UDP 上不可绑定，并非 KCP 协议失败。夹具必须按真实协议申请端口；禁止修改系统保留端口或跳过失败。复测 `cargo test --bin TiangZ --features kcp --locked`。确定性 duplex 的生产 vectored writer 已确实写出 64 字节半帧后超时，证明资源基线回收；不能据此冒充操作系统 Socket 慢写通过。
+
 2026-09-16 客户端开发入口迁移：先在 TiangZ 运行 npm run codegen，再到独立 TiangZ-Examples 执行 npm run sdk:sync、npm run check。Cocos/Pixi/Godot/Unity/UE 的手写业务位于该工程 clients/；不得在主工程重新创建 client_demo 或用联接伪装旧目录。SDK 同步命令只更新 tiangz.clients.json 声明的生成目标，--check 不写文件，编辑器 .meta 保留。服务端 MMORPG、Native 与 ModuleGame/WoW335 公共模块依赖迁移仍待完成，本次没有修改玩法或现有数据库。详见 [示例拆分状态](../design/example-extraction.md)。
 
 2026-09-16 modelExports 的提前漏导出诊断只针对唯一直接顶层登记；未调用辅助函数不会覆盖登记结果。动态或多处分支登记不靠静态推测，仍需真实启动验证，不能为规避错误而把正常入口改成动态装配。
 
 2026-09-16 开发模式的 [tiangz-dev-check] begin/end 只划分 Problems 检查轮次，失败也成对结束；不代表游戏就绪。确认服务可用应看 Runtime 就绪与真实请求，不能把该匹配器当作已实现自动附加调试器。
 
-2026-09-16 独立模块在 Developer Tools 中使用模块导航、模块工程操作和新建模块 Component；不要使用主工程 verify:fast 或旧三件套脚手架。插件发现 tiangz.project.json 后会隔离旧 app/ 索引，避免入口 Scene 误报；源码检查仍运行宿主 check/build，通过任务 Problems 查看位置。旧索引未执行模块检查不是“检查通过”，实时 LSP 模块诊断仍未接入。
+2026-09-16 独立模块在 Developer Tools 中使用模块导航、模块工程操作和新建模块 Component；不要使用主工程 verify:fast 或旧三件套脚手架。插件发现 tiangz.project.json 后会隔离旧 app/ 索引，避免入口 Scene 误报；源码检查仍运行宿主 check/build，通过任务 Problems 查看位置。旧索引未执行模块检查不是“检查通过”。0.7 配套候选已通过 Host worker 接入实时 Program；容量、信任与诊断定位边界见[实时检查](../design/v0.7-module-live-checks.md)，不能冒充完整生成/build 验收。
 
 2026-09-16 边界检查只针对真实 Core 装饰器/模块登记函数；同名业务函数不应触发 Hotfix 字段或 modelExports 误报。诊断修复应保留符号来源和别名解析，不能以简单字符串匹配替代。
 
@@ -1263,7 +1973,7 @@ const stop = loginFlow.onSessionReplaced((message) => {
 });
 ```
 
-服务端关闭连接前会排空已经入队的通知；SDK的`RpcSocket`会保留关闭前已经收到、但尚未由游戏循环`update()`分发的单向消息。客户端仍必须持续驱动`update()`，不能只依赖网络回调。同Gate顶号使用连接代次；跨Gate故障接管使用Location gateEpoch与ActorLocation fencing。两者都不会迁移原Socket。
+`disconnectClient`的关闭请求随本Scene下一次出站排空交给宿主，排在此前`sendClient`入队的帧之后；宿主本轮先写出站帧再执行关闭，传输层关闭前再排空已交付的帧，因此健康传输下“先推送通知再断开”保持提交顺序；断网、发送失败或期限耗尽仍可能丢帧，即使调用发生在RPC续体等Scene更新之后的时点（0.6.3起；此前关闭可能抢在通知之前，业务曾需延迟断开绕过）。关闭最多晚一次更新生效，生效前已在途的入站帧仍可能到达，业务应先使Session失效再请求关闭。SDK的`RpcSocket`会保留关闭前已经收到、但尚未由游戏循环`update()`分发的单向消息。客户端仍必须持续驱动`update()`，不能只依赖网络回调。同Gate顶号使用连接代次；跨Gate故障接管使用Location gateEpoch与ActorLocation fencing。两者都不会迁移原Socket。
 
 Gate候选排序统一复用`RankStickyScenes/SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。Login先保留Location记录的当前健康Gate；仅当它不可达时才依Rendezvous顺序探测其他Gate。恢复节点不自动回切现存玩家；绕过Login连接旧Gate也必须在旧所有者健康探测和Location CAS处被拒绝。
 
@@ -1382,7 +2092,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 ## 验证矩阵
 
-`0.3.10`框架稳定化和`0.4.0` Phase 4.0空间契约已经完成，当前版本为 `0.6.2`（2026-09-23 发布），直接进入模块化开发预发布线，尚未完成 0.6 正式发布验收。升级宿主先逐个检查模块版本范围；旧 `<0.5.0` 上限必须经消费方验证后迁移，不自动放宽其他游戏声明。随后重新生成、完整构建并重启。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议、空间模式或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
+`0.3.10`框架稳定化和`0.4.0` Phase 4.0空间契约已经完成，当前版本为 `0.6.3`（2026-09-28 发布），直接进入模块化开发预发布线，尚未完成 0.6 正式发布验收。升级宿主先逐个检查模块版本范围；旧 `<0.5.0` 上限必须经消费方验证后迁移，不自动放宽其他游戏声明。随后重新生成、完整构建并重启。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议、空间模式或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
 
 本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/cluster/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。需要在VS Code断点调试中持续Reload时使用`npm run dev:debug`：初始和后续候选都带内联sourcemap，Process/V8/Inspector连接不重启，新脚本会重新绑定TS断点。若V8正停在断点必须先Resume；当前栈继续旧代码，后续调用才使用新generation。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools把Model长期状态中的显式`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`字段和`as any`写属性视为错误；请使用稳定默认值或明确的数据结构。对象`T | null`、判别联合、显式Map/Record和普通DTO仍可正常使用。
 
@@ -1477,7 +2187,7 @@ Handler
 
 - `LoadSnapshot`：登录、恢复或接管时读取权威记录；`None`表示记录不存在。
 - `SaveSnapshot`：调用方需要等待PostgreSQL提交的普通快照；只有`StorageUnavailable`允许有限重试，并保留原`request_id`。Repository使用25ms起步、200ms封顶的墙钟指数full jitter，Revision冲突和业务错误立即返回；不得在业务、SDK和Transport外层叠加另一套重试。`SaveMultiSnapshot`只批量独立记录，不提供跨记录业务原子性；DBProxy可以在同一连接分片内合并一次数据库commit和缓存往返，Revision/幂等冲突仍逐条返回。关键背包、货币和交易不能为了批量性能改走这个入口。
-- `EnqueueSnapshot`：只用于位置、普通任务进度等允许小范围回退的数据；成功只表示Redis AOF backlog接收，不代表PostgreSQL已落库。
+- `EnqueueSnapshot`：只用于位置、普通任务进度等允许小范围回退的数据；成功按部署的`backlog.enqueueAck`确认，默认`aof`等待Redis本地落盘，`memory`仅确认Redis内存，都不代表PostgreSQL已提交。测试`memory`存储后端不提供持久性。
 - `ApplyTransaction`：用于Wallet、Inventory、Reward、Trade等关键单记录事务；必须携带原`operation_id`、期望Revision、提交后的完整Payload和可重试业务结果。
 
 同一个`DbProxyClient`连接只允许一个在途RPC；高并发服务使用Rust`DbProxyClientPool`按RecordKey稳定分片。DBProxy网络工作运行在多线程Rust Host Runtime，业务V8只等待Promise；不得在TS中自行打开Socket或实现第二套连接池。业务不能为了躲开PlayerUnit ordered mailbox而改用`Spawn`异步确认关键经济操作：关键事务必须在可靠提交成功后才向客户端确认。普通快照可以合并并进入backlog，但不得把关键事务降级成“稍后保存”。
@@ -1987,11 +2697,11 @@ SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools
 | `@transactional` | `DbProxyTransactionalEntityRepository` | `TransactionWrite`/`TransactionWriteSnapshot`，交给`HostDbProxyRecords.CommitRecords` |
 
 - 一条记录只允许一种写法。排队写不带revision校验、按记录合并，落库是无条件覆盖；同一记录若还被CAS保存或事务写入，迟到的排队值会覆盖已确认的新数据。校验器拒绝两个标记同用，生成仓库在类型和运行时上都没有被禁止的方法；业务绕过生成仓库、直接拼namespace写入时不受保护。
-- Enqueue成功只表示Redis AOF已接收，不表示PG已落库；崩溃或换服后可能回退到最近落库状态，不能用于经济或需要立即恢复的数据。仓库只发送一次、不在内部重试：下一次排队写会取代它，重试只会在过载时放大负载。
+- Enqueue按DBProxy部署的`backlog.enqueueAck`确认：默认`aof`等Redis本地AOF落盘，`memory`仅确认Redis内存，崩溃可能丢失尚未落盘的已确认入队；两档都不表示PG已提交。成功响应不携带档位，业务必须核对部署契约；测试`memory`后端另为进程内易失存储。崩溃或换服后可能回退到最近落库状态，不能用于经济或需要立即恢复的数据。仓库只发送一次、不在内部重试：下一次排队写会取代它，重试只会在过载时放大负载。
 - 受限仓库读到旧schema只在内存迁移、不回写：排队记录回写会与待落库值竞争，事务记录由下一次事务以读到的revision写入新版本。普通仓库保持原有CAS回写。
 - 未加标记的实体，生成文本与0.16.0逐字节一致（已用Examples已提交的`NativeItemPersistence.ts`实测）。
 - 开发期更换写法直接清库；从`@queued`改为其他写法前，至少停写并等DBProxy排队积压清零。运营中更换写法造成的数据问题不由DBProxy兜底。
-- 发布顺序：先给tiangz-native-language打`v0.17.0`，再升级TiangZ依赖；在此之前主工程codegen仍使用0.16.0，新标记不生效。公共API锁的处理见[API稳定性迁移记录](../reference/api-stability.md#开发中)。
+- 发布顺序：先给tiangz-native-language打`v0.17.0`，再升级TiangZ依赖；默认发布依赖仍为0.16.0，新标记不生效。0.7 独立工作树已用明确本地 tgz 联验 0.17 候选，不代表已更新正式依赖；见[候选联验](../design/v0.7-native-candidate-integration.md)。公共API锁的处理见[API稳定性迁移记录](../reference/api-stability.md#开发中)。
 
 长稳入口：`npm run soak:write-modes -- plan|check|smoke|run`（控制器`tools/persistence_write_modes_soak.mjs`），Examples可用`npm run reliability -- plan --suite write-modes`编排。探针在真实TiangZ进程里经Host op同时运行三种写法，账本先记意图再执行写入，进程在任意时刻被杀都能判定可能已提交的最大值。
 
@@ -2017,3 +2727,21 @@ SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools
 - 过夜长稳（500玩家，每人每种写法60秒一次，每节点8条PG连接，aof档位）：主体运行连续通过7轮七类故障、0违例（01:03–05:57）；第8轮在dbproxy-all后因业务恢复超时失败，当时直接查PG，500个普通写与500对钱包全部与账本一致、总额守恒。随后用加抖动的探针再跑2轮完整收尾并通过：普通28,522、排队32,755、事务31,944次确认，13个故障动作，0违例，排空积压后最终读取0问题、无排队回退，PG直接对账0问题（2,000行快照、每玩家事务恰好一次），证据`write-modes-run-2026-09-19T21-59-07-118Z`。
 - 长稳控制器同期修的都是核对/夹具问题，不是产品问题：500人恢复读取改并发（串行约2分钟接近就绪上限）；AOF核对的键改在Redis脚本内生成（500个键超Windows命令行上限）；AOF核对补查PG（PG优雅关闭前几秒仍可落库，条目因此不在积压里）；探针出错退避加50%–150%抖动（固定退避让数百玩家在节点恢复后同步重试）。新增 `--step-ms`、`--dbproxy-shards`，放开到500玩家/12小时。
 - 容量观察（不是产品结论）：本机Windows Docker上单次PG操作约117→133毫秒（随表增长变慢），每节点8条连接约每秒80次操作。500玩家每5秒一次会把它压满并触发2秒连接排队快速失败；60秒一次约为容量三分之一，稳定。
+
+
+## v0.7.0-rc1 发布准备的环境记录
+
+隔离目录首轮 check 为 7/8，模块宿主项因尚未构建 target/debug/TiangZ.exe 拒绝；不能复用旧二进制宣称通过。随后 Windows 首次构建因 Cargo 注册表位于 C 盘、target 位于 D 盘，V8 构建脚本创建跨卷目录链接时返回 Win32 1314（缺少符号链接权限）。保留两次原日志，使用与 Cargo 注册表同卷的本次专用 CARGO_TARGET_DIR 重建，不修改系统权限或依赖源码。新宿主复制回本次隔离目录后复验模块宿主；最终结果与 SHA256 记录在发布验证附件中，旧失败不改写。独立构建与复验尚未完成时不得标记通过。
+
+
+## RC1 发布门禁的夹具修正（2026-10-08）
+
+远端旧功能分支的完整 Windows/Linux CI 暴露两个夹具问题。V8 deadline 回归以 65,540 个串行 Promise 轮询挤入 5 秒，与回收语义无关的调度吞吐影响结果；保留全部创建/取消次数、容量、回收断言及原 5 秒期限，改成最多 256 项一批并逐批等待，本地 exact 回归 0.77 秒通过。控制入口满额后只观察共享 reserved/rejections，不能证明 TCP 尾批已进入 TS；现要求最后一个输入 RPC 的真实拒绝响应已返回，且目标 Scene 入队数为 65,536，才开始热更。默认额度和 3 秒热更期限不变。完整三轮 hotfix fault matrix 已通过，满额场景 pause=316.5384ms。修正只在测试/夹具，不改变生产调度或配额；旧失败日志保留，最终跨平台 CI 需重新核对。
+
+### Scene HTTP 与 0.7 生命周期
+
+HTTP 使用 Scene 的独立 `http.port` 和 `httpHandler(SceneCtor, method, path)` 精确路由，面向工具接口。入站复用 0.7 Host 事件字节预算，队列或预算不足立即返回 503。调用方超时不取消已开始的业务，也不提前归还执行名额；尚未开始的过期请求不进入 Handler，Scene 销毁会清理排队请求。业务需要自行保证修改操作的幂等性。共享 Developer Tools Hotfix 检查器必须包含 `httpHandler` 状态规则，宿主锁定提交为 `198afe8f040d1fc1e17d1a3250791cb62e25109b`。出站 HTTP 尚未提供。
+
+HTTP 合入 0.7 的首次完整矩阵在 Rust 测试编译失败：`process_endpoint_tests.rs` 手工构造 `SceneConfig` 时缺少新增的 `http` 字段，quick 为 33/35。修正为 `http: None`，保持原端点断言；不能只用 `cargo check --bin` 代替全目标测试。原日志保留在 `target/http-rc1-verify-20261007.log`，完整复测另写日志，不覆盖失败证据。此前 0.6.2 基线的日志过滤与 Windows V8 构建路径失败也保留在 `target/http-verify-full-20261007.log`；本轮设置进程级 `RUST_LOG=info`，使用本机可编译的 Cargo 输出目录并把新宿主复制到测试实际读取的 `target/debug`。不能把旧宿主的通过结果算给新源码。
+
+HTTP 合入 0.7 最终完整复测通过：Windows 默认功能集 full 9/9、quick 35/35、TS 234 项、Rust 全目标 284 项。先前夹具遗漏已修正，首次失败证据保留；实际宿主身份、范围和日志见 [0.7 发布记录](../../RELEASE-v0.7.0-rc1.md#rc1-标签之后的-07-集成)。HTTP 监听失败参与 Process 监督，读体/回复共享期限，停机按既有预算排空并 join 连接；运行中业务真实结束前不得归还执行许可。

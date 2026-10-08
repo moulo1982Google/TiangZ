@@ -1,0 +1,1566 @@
+use super::*;
+use crate::config::{EndpointAudience, EndpointProtocol, ProcessNetworkConfig, SceneConfig};
+use crate::transport_backend::admission::ConnectionAdmission;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+    time::timeout,
+};
+
+struct EndpointFixture {
+    task: crate::transport_backend::EndpointTask,
+    address: std::net::SocketAddr,
+    writers: ConnectionWriters,
+    admission: Arc<ConnectionAdmission>,
+    next_connection_id: Arc<AtomicU64>,
+    _control: mpsc::Receiver<ProcessEvent>,
+    _data: mpsc::Receiver<ProcessEvent>,
+    _wake: mpsc::Receiver<()>,
+}
+
+/// 通过生产 backend 启动端点，隔离 Tokio 测试运行时持有其任务生命周期。 / Starts the production backend within an isolated Tokio test runtime.
+fn endpoint(audience: EndpointAudience, protocol: EndpointProtocol) -> EndpointFixture {
+    let network = ProcessNetworkConfig::default();
+    endpoint_with_admission(
+        audience,
+        protocol,
+        Arc::new(ConnectionAdmission::new(
+            network.max_accepted_connections,
+            network.max_pending_handshakes,
+        )),
+    )
+}
+
+/// 多个真实端点使用相同准入所有者，复现生产 Process 的共享范围。 / Shares one admission owner across real endpoints, matching the production process scope.
+fn endpoint_with_admission(
+    audience: EndpointAudience,
+    protocol: EndpointProtocol,
+    admission: Arc<ConnectionAdmission>,
+) -> EndpointFixture {
+    endpoint_with_stats(
+        audience,
+        protocol,
+        Arc::new(ProcessQueueStats {
+            admission,
+            ..ProcessQueueStats::new(16)
+        }),
+    )
+}
+
+fn endpoint_with_stats(
+    audience: EndpointAudience,
+    protocol: EndpointProtocol,
+    stats: Arc<ProcessQueueStats>,
+) -> EndpointFixture {
+    endpoint_with_network(audience, protocol, stats, &ProcessNetworkConfig::default())
+}
+
+/// 显式选择实际后端，不能将启用 feature 当作运行 io-uring 的证据。 / Selects the actual backend explicitly; enabling a feature does not prove io-uring execution.
+fn endpoint_with_network(
+    audience: EndpointAudience,
+    protocol: EndpointProtocol,
+    stats: Arc<ProcessQueueStats>,
+    network: &ProcessNetworkConfig,
+) -> EndpointFixture {
+    let address = if protocol == EndpointProtocol::Kcp {
+        std::net::UdpSocket::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+    } else {
+        std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+    };
+    let admission = stats.admission.clone();
+    let next_connection_id = Arc::new(AtomicU64::new(1));
+    let writers = Arc::new(Mutex::new(HashMap::new()));
+    let (control_sender, control) = mpsc::sync_channel(8);
+    let (data_sender, data) = mpsc::sync_channel(8);
+    let (wake_sender, wake) = mpsc::sync_channel(1);
+    let scene = SceneConfig {
+        name: "audience-test".into(),
+        scene_type: "Fixture".into(),
+        inner_ip: "127.0.0.1".into(),
+        bind_ip: None,
+        outer_ip: None,
+        outer_port: None,
+        port: address.port(),
+        protocol,
+        audience,
+        static_map_ids: None,
+        accept_dynamic_maps: None,
+        http: None,
+    };
+    let task = create_io_backend(network)
+        .unwrap()
+        .start_endpoint(EndpointContext {
+            shutdown_timeout: Duration::from_millis(500),
+            write_timeout: Duration::from_millis(500),
+            scene_index: 0,
+            scene,
+            event_tx: ProcessEventSender {
+                control_sender,
+                data_sender,
+                wake_sender,
+                stats: stats.clone(),
+            },
+            writers: writers.clone(),
+            next_connection_id: Arc::clone(&next_connection_id),
+            stats,
+        })
+        .unwrap();
+    EndpointFixture {
+        task,
+        address,
+        writers,
+        admission,
+        next_connection_id,
+        _control: control,
+        _data: data,
+        _wake: wake,
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+#[tokio::test]
+async fn io_uring_handshake_timeout_closes_socket_while_listener_remains_alive() {
+    let fixture = endpoint_with_network(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        Arc::new(ProcessQueueStats::new(16)),
+        &ProcessNetworkConfig {
+            io_backend: crate::config::IoBackendKind::IoUring,
+            ..ProcessNetworkConfig::default()
+        },
+    );
+    let mut client = TcpStream::connect(fixture.address).await.unwrap();
+    client.write_all(b"G").await.unwrap();
+    wait_admission(&fixture.admission, 1, 1).await;
+    let closed = timeout(Duration::from_secs(6), client.read(&mut [0u8])).await;
+    wait_admission(&fixture.admission, 0, 0).await;
+    assert!(fixture.writers.lock().unwrap().is_empty());
+    assert!(
+        matches!(closed, Ok(Ok(0)))
+            || matches!(closed, Ok(Err(ref error)) if error.kind() == std::io::ErrorKind::ConnectionReset),
+        "expired handshake returned its slots but retained the real socket: {closed:?}"
+    );
+    assert!(fixture._control.try_recv().is_err());
+    assert!(fixture._data.try_recv().is_err());
+    let mut recovered = preamble(&fixture, false).await;
+    wait_registered(&fixture).await;
+    let writer = fixture
+        .writers
+        .lock()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    try_queue_connection_frame(&writer, Bytes::from_static(&[0, 1])).unwrap();
+    assert_eq!(
+        timeout(Duration::from_secs(1), recovered.read_u32())
+            .await
+            .unwrap()
+            .unwrap(),
+        2
+    );
+    let mut payload = [0; 2];
+    timeout(Duration::from_secs(1), recovered.read_exact(&mut payload))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(payload, [0, 1]);
+    fixture.task.request_stop();
+    timeout(Duration::from_secs(1), fixture.task)
+        .await
+        .unwrap()
+        .unwrap();
+    wait_admission(&fixture.admission, 0, 0).await;
+    assert!(fixture.writers.lock().unwrap().is_empty());
+    assert_capacity_rejected(recovered).await;
+    let _rebound = std::net::TcpListener::bind(fixture.address).unwrap();
+}
+
+#[tokio::test]
+async fn connection_id_exhaustion_fails_before_publishing_an_invalid_host_event() {
+    for protocol in [
+        EndpointProtocol::Tcp,
+        EndpointProtocol::Auto,
+        EndpointProtocol::WebSocket,
+    ] {
+        verify_stream_connection_id_exhaustion(
+            protocol,
+            endpoint(EndpointAudience::Outer, protocol),
+        )
+        .await;
+    }
+}
+
+/// 验证共享编号在各流握手前耗尽，不把最后合法连接误判为超宽。 / Checks exhaustion before each stream handshake without rejecting the final legal connection.
+async fn verify_stream_connection_id_exhaustion(
+    protocol: EndpointProtocol,
+    mut fixture: EndpointFixture,
+) {
+    fixture
+        .next_connection_id
+        .store(u64::from(u32::MAX), Ordering::Relaxed);
+    let first = if protocol == EndpointProtocol::WebSocket {
+        let mut first = websocket_client(&fixture).await;
+        first
+            .write_all(&[0x82, 0x82, 1, 2, 3, 4, 1, 3])
+            .await
+            .unwrap();
+        first
+    } else {
+        let mut first = preamble(&fixture, false).await;
+        first.write_all(&[0, 1]).await.unwrap();
+        first
+    };
+    let event = timeout(Duration::from_secs(2), async {
+        loop {
+            if let Ok(event) = fixture._data.try_recv() {
+                break event;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        matches!(&event, ProcessEvent::Frame { connection_id, .. } if *connection_id == u64::from(u32::MAX))
+    );
+    let stats = ProcessQueueStats::default();
+    let mut batch = HostEventBatch::new();
+    assert!(batch.try_push(event, &stats).unwrap().is_none());
+    let mut rejected = TcpStream::connect(fixture.address).await.unwrap();
+    // 新实现应在任何流握手前关闭；TCP/Auto 旧路径会接受这一合法外部帧。 / The new path closes before any stream handshake; the old TCP/Auto path accepts this valid external frame.
+    let _ = rejected.write_all(&[0, 0, 0, 2, 0, 1]).await;
+    timeout(Duration::from_secs(2), async {
+        tokio::select! {
+            outcome = &mut fixture.task => assert!(format!("{:#}", outcome.unwrap_err()).contains("connection id space exhausted")),
+            event = async {
+                loop {
+                    if let Ok(event) = fixture._data.try_recv() { break event; }
+                    tokio::task::yield_now().await;
+                }
+            } => panic!("endpoint published an event after exhausting uint32 ids: {event:?}"),
+        }
+    }).await.unwrap();
+    assert_eq!(
+        fixture.next_connection_id.load(Ordering::Relaxed),
+        u64::from(u32::MAX) + 1
+    );
+    wait_admission(&fixture.admission, 0, 0).await;
+    assert!(fixture.writers.lock().unwrap().is_empty());
+    assert_capacity_rejected(rejected).await;
+    assert_capacity_rejected(first).await;
+}
+
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+#[tokio::test]
+async fn io_uring_audiences_and_final_connection_id_keep_the_shared_contract() {
+    let network = ProcessNetworkConfig {
+        io_backend: crate::config::IoBackendKind::IoUring,
+        ..ProcessNetworkConfig::default()
+    };
+    for (audience, internal) in [
+        (EndpointAudience::Inner, false),
+        (EndpointAudience::Outer, true),
+    ] {
+        let fixture = endpoint_with_network(
+            audience,
+            EndpointProtocol::Tcp,
+            Arc::new(ProcessQueueStats::new(16)),
+            &network,
+        );
+        let client = preamble(&fixture, internal).await;
+        assert_rejected(client, &fixture).await;
+        fixture.task.request_stop();
+        timeout(Duration::from_secs(1), fixture.task)
+            .await
+            .unwrap()
+            .unwrap();
+        let _rebound = std::net::TcpListener::bind(fixture.address).unwrap();
+    }
+    let fixture = endpoint_with_network(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        Arc::new(ProcessQueueStats::new(16)),
+        &network,
+    );
+    verify_stream_connection_id_exhaustion(EndpointProtocol::Tcp, fixture).await;
+}
+
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+#[tokio::test]
+async fn io_uring_shared_admission_recovers_and_stop_preserves_the_final_notice() {
+    let network = ProcessNetworkConfig {
+        io_backend: crate::config::IoBackendKind::IoUring,
+        ..ProcessNetworkConfig::default()
+    };
+    let stats = Arc::new(ProcessQueueStats {
+        admission: Arc::new(ConnectionAdmission::new(2, 1)),
+        ..ProcessQueueStats::new(16)
+    });
+    let first = endpoint_with_network(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        stats.clone(),
+        &network,
+    );
+    let second = endpoint_with_network(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        stats.clone(),
+        &network,
+    );
+    let mut active = TcpStream::connect(first.address).await.unwrap();
+    active.write_all(&[0]).await.unwrap();
+    wait_admission(&stats.admission, 1, 1).await;
+    assert_capacity_rejected(TcpStream::connect(second.address).await.unwrap()).await;
+    active.write_all(&[0, 0, 2]).await.unwrap();
+    wait_registered(&first).await;
+    wait_admission(&stats.admission, 1, 0).await;
+    let partial = TcpStream::connect(second.address).await.unwrap();
+    wait_admission(&stats.admission, 2, 1).await;
+    assert_capacity_rejected(TcpStream::connect(first.address).await.unwrap()).await;
+    drop(partial);
+    wait_admission(&stats.admission, 1, 0).await;
+    let mut recovered = TcpStream::connect(second.address).await.unwrap();
+    recovered.write_all(b"G").await.unwrap();
+    wait_admission(&stats.admission, 2, 1).await;
+    let writer = first
+        .writers
+        .lock()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    try_queue_connection_frame(&writer, Bytes::from_static(&[0, 1])).unwrap();
+    first.task.request_stop();
+    second.task.request_stop();
+    let mut received = Vec::new();
+    timeout(Duration::from_secs(1), active.read_to_end(&mut received))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(received, [0, 0, 0, 2, 0, 1]);
+    assert_capacity_rejected(recovered).await;
+    for task in [first.task, second.task] {
+        timeout(Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+    wait_admission(&stats.admission, 0, 0).await;
+    assert!(first.writers.lock().unwrap().is_empty());
+    assert!(second.writers.lock().unwrap().is_empty());
+    assert_eq!(stats.outbound_buffers.snapshot().used_bytes, 0);
+    for address in [first.address, second.address] {
+        let _rebound = std::net::TcpListener::bind(address).unwrap();
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+#[tokio::test]
+async fn io_uring_writer_timeout_closes_socket_before_blocked_disconnect_can_finish() {
+    let stats = Arc::new(ProcessQueueStats::new(16));
+    let fixture = endpoint_with_network(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        stats.clone(),
+        &ProcessNetworkConfig {
+            io_backend: crate::config::IoBackendKind::IoUring,
+            ..ProcessNetworkConfig::default()
+        },
+    );
+    // 八条真实连接填满夹具控制通道，也验证回收连接不会遗弃 pending accept。 / Eight real disconnects fill the control lane and exercise accept retention across task reaping.
+    for _ in 0..8 {
+        let client = preamble(&fixture, false).await;
+        wait_registered(&fixture).await;
+        drop(client);
+        wait_admission(&stats.admission, 0, 0).await;
+    }
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.set_recv_buffer_size(1024).unwrap();
+    let mut client = socket.connect(fixture.address).await.unwrap();
+    client.write_u32(2).await.unwrap();
+    wait_registered(&fixture).await;
+    let local = format!("0100007F:{:04X}", fixture.address.port());
+    let remote = format!("0100007F:{:04X}", client.local_addr().unwrap().port());
+    // 只检查本测试的四元组及非零 inode，不用全进程 FD 数，也不把 TIME_WAIT 当作活跃 Socket。 / Checks this socket tuple and live inode, not total FDs or TIME_WAIT.
+    let socket_retained = || {
+        std::fs::read_to_string("/proc/net/tcp")
+            .unwrap()
+            .lines()
+            .skip(1)
+            .any(|line| {
+                let columns: Vec<_> = line.split_whitespace().collect();
+                columns.len() > 9
+                    && columns[1] == local
+                    && columns[2] == remote
+                    && columns[9] != "0"
+            })
+    };
+    assert!(socket_retained());
+    let writer = fixture
+        .writers
+        .lock()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    let frame = Bytes::from(vec![0; crate::transport_backend::MAX_FRAME_LEN]);
+    try_queue_connection_frame(&writer, frame.clone()).unwrap();
+    assert_eq!(
+        timeout(Duration::from_secs(1), client.read_u32())
+            .await
+            .unwrap()
+            .unwrap(),
+        frame.len() as u32
+    );
+    let mut admitted = 1;
+    timeout(Duration::from_secs(2), async {
+        while !writer.sender.is_closed() {
+            match try_queue_connection_frame(&writer, frame.clone()) {
+                Ok(()) => {
+                    admitted += 1;
+                    assert!(admitted <= 64);
+                }
+                Err(crate::transport_backend::ConnectionQueueError::ByteLimit) => {}
+                Err(crate::transport_backend::ConnectionQueueError::Closed) => break,
+                Err(error) => panic!("unexpected queue result: {error}"),
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        while socket_retained() || stats.outbound_buffers.snapshot().used_bytes != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("writer timeout must close the actual socket while disconnect is blocked");
+    assert!(admitted > 1);
+    wait_admission(&stats.admission, 1, 0).await;
+    assert_eq!(writer.queued_bytes.load(Ordering::Relaxed), 0);
+    assert_eq!(writer.queued_frames.load(Ordering::Relaxed), 0);
+    assert!(matches!(
+        fixture._control.try_recv(),
+        Ok(ProcessEvent::Disconnect { .. })
+    ));
+    wait_admission(&stats.admission, 0, 0).await;
+    fixture.task.request_stop();
+    timeout(Duration::from_secs(1), fixture.task)
+        .await
+        .unwrap()
+        .unwrap();
+    let _rebound = std::net::TcpListener::bind(fixture.address).unwrap();
+}
+
+async fn wait_ingress(stats: &ProcessQueueStats, bytes: u64, rejected: u64) {
+    timeout(Duration::from_secs(2), async {
+        loop {
+            let snapshot = stats.ingress_buffers.snapshot();
+            if snapshot.used_bytes == bytes && snapshot.rejections == rejected {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "unexpected ingress budget: {:?}",
+            stats.ingress_buffers.snapshot()
+        )
+    });
+}
+
+#[tokio::test]
+async fn ingress_byte_budget_is_shared_across_real_tcp_websocket_listeners_and_recovers() {
+    let stats = Arc::new(ProcessQueueStats::with_network_limits(
+        16,
+        &ProcessNetworkConfig {
+            max_ingress_buffered_bytes: 2,
+            ..Default::default()
+        },
+    ));
+    let tcp = endpoint_with_stats(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        stats.clone(),
+    );
+    let websocket = endpoint_with_stats(
+        EndpointAudience::Outer,
+        EndpointProtocol::WebSocket,
+        stats.clone(),
+    );
+    let mut accepted = preamble(&tcp, false).await;
+    accepted.write_all(&[0, 1]).await.unwrap();
+    wait_ingress(&stats, 2, 0).await;
+    let mut rejected = websocket_client(&websocket).await;
+    // Masked payload [0, 1], valid at the decoder; rejected only by the shared byte pool.
+    rejected
+        .write_all(&[0x82, 0x82, 1, 2, 3, 4, 1, 3])
+        .await
+        .unwrap();
+    wait_ingress(&stats, 2, 1).await;
+    assert_capacity_rejected(rejected).await;
+    assert!(matches!(
+        websocket._control.try_recv().unwrap(),
+        ProcessEvent::Disconnect { .. }
+    ));
+    assert!(websocket._data.try_recv().is_err());
+    assert_eq!(tcp.writers.lock().unwrap().len(), 1);
+    assert_eq!(stats.slow_client_disconnects.load(Ordering::Relaxed), 0);
+    drop(tcp._data.try_recv().unwrap());
+    wait_ingress(&stats, 0, 1).await;
+    let mut recovered = websocket_client(&websocket).await;
+    recovered
+        .write_all(&[0x82, 0x82, 1, 2, 3, 4, 1, 3])
+        .await
+        .unwrap();
+    wait_ingress(&stats, 2, 1).await;
+    drop(websocket._data.try_recv().unwrap());
+    drop((accepted, recovered));
+    tcp.task.request_stop();
+    websocket.task.request_stop();
+    timeout(Duration::from_secs(2), tcp.task)
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(Duration::from_secs(2), websocket.task)
+        .await
+        .unwrap()
+        .unwrap();
+    wait_ingress(&stats, 0, 1).await;
+    wait_admission(&stats.admission, 0, 0).await;
+}
+
+#[tokio::test]
+async fn control_ingress_real_inner_tcp_rejects_full_quota_and_retains_disconnect_cleanup() {
+    let stats = Arc::new(ProcessQueueStats {
+        control_admission: super::control_ingress::ControlAdmission::with_capacity(2),
+        ..ProcessQueueStats::default()
+    });
+    let fixture = endpoint_with_stats(
+        EndpointAudience::Inner,
+        EndpointProtocol::Tcp,
+        Arc::clone(&stats),
+    );
+    let mut client = preamble(&fixture, true).await;
+    // 只验证 Transport 的保留 Inner 范围与 rpcId，不冒充生成业务协议。 / Exercises transport-only reserved Inner codes and rpcId, not a generated business protocol.
+    let mut request = [0, 0, 0xd0, 0x05, 1];
+    request[..2].copy_from_slice(&crate::transport_backend::INNER_MSGCODE_START.to_be_bytes());
+    for id in 1..=2 {
+        request[4] = id;
+        client.write_u32(5).await.unwrap();
+        client.write_all(&request).await.unwrap();
+    }
+    wait_ingress(&stats, 10, 0).await;
+    let mut batch = HostEventBatch::new();
+    for _ in 0..2 {
+        let event = fixture._control.try_recv().unwrap();
+        stats.dequeue(event.kind(), event.ingress_class());
+        assert!(batch.try_push(event, &stats).unwrap().is_none());
+    }
+    let payload = batch.into_payload(&stats);
+    assert_eq!(stats.ingress_buffers.snapshot().used_bytes, 0);
+    assert_eq!(stats.control_admission.snapshot().reserved, 2);
+    let mut published =
+        super::control_ingress::PublishedControls::new(Arc::clone(&stats.control_admission));
+    published.publish(payload.reservations);
+    drop(payload.bytes);
+    request[4] = 3;
+    client.write_u32(5).await.unwrap();
+    client.write_all(&request).await.unwrap();
+    let response = timeout(Duration::from_secs(2), async {
+        let length = client.read_u32().await.unwrap();
+        let mut response = vec![0; length as usize];
+        client.read_exact(&mut response).await.unwrap();
+        response
+    })
+    .await
+    .unwrap();
+    assert_eq!(response, crate::transport::build_target_ingress_overload(3));
+    assert_eq!(stats.control_admission.snapshot().rejections, 1);
+    assert!(fixture._control.try_recv().is_err());
+    published.release(1.0).unwrap();
+    request[4] = 4;
+    client.write_u32(5).await.unwrap();
+    client.write_all(&request).await.unwrap();
+    wait_ingress(&stats, 5, 0).await;
+    let recovered = fixture._control.try_recv().unwrap();
+    stats.dequeue(recovered.kind(), recovered.ingress_class());
+    assert!(matches!(
+        &recovered,
+        ProcessEvent::Frame {
+            connection_id: 1,
+            ..
+        }
+    ));
+    drop(client);
+    timeout(Duration::from_secs(2), async {
+        while stats.control_admission.snapshot().waits != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        stats.admission.snapshot().connections,
+        1,
+        "cleanup retains its original connection permit"
+    );
+    assert!(fixture.writers.lock().unwrap().is_empty());
+    drop(recovered);
+    wait_admission(&stats.admission, 0, 0).await;
+    let disconnected = fixture._control.try_recv().unwrap();
+    assert!(matches!(
+        disconnected,
+        ProcessEvent::Disconnect {
+            connection_id: 1,
+            ..
+        }
+    ));
+    stats.dequeue(disconnected.kind(), disconnected.ingress_class());
+    drop(disconnected);
+    published.release(1.0).unwrap();
+    assert_eq!(stats.control_admission.snapshot().reserved, 0);
+    assert_eq!(stats.control_admission.snapshot().peak, 2);
+    assert_eq!(stats.ingress_buffers.snapshot().used_bytes, 0);
+    fixture.task.request_stop();
+    timeout(Duration::from_secs(2), fixture.task)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn ingress_full_inner_rpc_returns_wire_overload_and_same_connection_recovers() {
+    let stats = Arc::new(ProcessQueueStats::with_network_limits(
+        16,
+        &ProcessNetworkConfig {
+            max_ingress_buffered_bytes: 5,
+            ..Default::default()
+        },
+    ));
+    let fixture = endpoint_with_stats(
+        EndpointAudience::Inner,
+        EndpointProtocol::Tcp,
+        stats.clone(),
+    );
+    let mut client = preamble(&fixture, true).await;
+    // Transport-only fixture: use the reserved Inner range, not a client message code.
+    let mut request = [0, 0, 0xd0, 0x05, 0x01];
+    request[..2].copy_from_slice(&crate::transport_backend::INNER_MSGCODE_START.to_be_bytes());
+    client.write_u32(request.len() as u32).await.unwrap();
+    client.write_all(&request).await.unwrap();
+    wait_ingress(&stats, 5, 0).await;
+    client.write_u32(request.len() as u32).await.unwrap();
+    client.write_all(&request).await.unwrap();
+    let response = timeout(Duration::from_secs(2), async {
+        let length = client.read_u32().await.unwrap();
+        assert_eq!(length, 6);
+        let mut response = vec![0; length as usize];
+        client.read_exact(&mut response).await.unwrap();
+        response
+    })
+    .await
+    .unwrap();
+    assert_eq!(response, crate::transport::build_target_ingress_overload(1));
+    wait_ingress(&stats, 5, 1).await;
+    drop(fixture._control.try_recv().unwrap());
+    assert_eq!(stats.ingress_buffers.snapshot().used_bytes, 0);
+    client.write_u32(request.len() as u32).await.unwrap();
+    client.write_all(&request).await.unwrap();
+    wait_ingress(&stats, 5, 1).await;
+    assert_eq!(fixture.writers.lock().unwrap().len(), 1);
+    drop(fixture._control.try_recv().unwrap());
+    drop(client);
+    fixture.task.request_stop();
+    timeout(Duration::from_secs(2), fixture.task)
+        .await
+        .unwrap()
+        .unwrap();
+    wait_ingress(&stats, 0, 1).await;
+    wait_admission(&stats.admission, 0, 0).await;
+}
+
+/// 只发准入前导，不向业务队列投递消息。 / Sends only the admission preamble, without business frames.
+async fn preamble(fixture: &EndpointFixture, internal: bool) -> TcpStream {
+    let mut client = TcpStream::connect(fixture.address).await.unwrap();
+    if internal {
+        let token = crate::transport::inner_token();
+        client
+            .write_u32(crate::transport::INNER_HANDSHAKE_MAGIC)
+            .await
+            .unwrap();
+        client.write_u16(token.len() as u16).await.unwrap();
+        client.write_all(token.as_bytes()).await.unwrap();
+    } else {
+        client.write_u32(2).await.unwrap();
+    }
+    client
+}
+
+/// 确认拒绝发生在 writer 登记和业务投递之前。 / Verifies rejection precedes writer registration and business delivery.
+async fn assert_rejected(mut client: TcpStream, fixture: &EndpointFixture) {
+    let result = timeout(Duration::from_millis(400), client.read(&mut [0u8])).await;
+    assert!(
+        matches!(result, Ok(Ok(0)))
+            || matches!(result, Ok(Err(ref error)) if error.kind() == std::io::ErrorKind::ConnectionReset),
+        "endpoint must close a disallowed connection: {result:?}"
+    );
+    assert!(fixture.writers.lock().unwrap().is_empty());
+    assert!(fixture._data.try_recv().is_err());
+    assert!(fixture._control.try_recv().is_err());
+    wait_admission(&fixture.admission, 0, 0).await;
+}
+
+/// 在真实任务调度后检查资源回收，不把客户端 connect 成功当作服务端已接受。 / Observes real task scheduling rather than assuming client connect means server admission.
+async fn wait_admission(admission: &ConnectionAdmission, connections: u64, handshakes: u64) {
+    timeout(Duration::from_secs(1), async {
+        loop {
+            let snapshot = admission.snapshot();
+            if snapshot.connections == connections && snapshot.handshakes == handshakes {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "admission did not settle at {connections}/{handshakes}: {:?}",
+            admission.snapshot()
+        )
+    });
+}
+
+/// 过载关闭新 Socket，已有其他连接仍可登记与工作。 / Checks overload closes only the new socket while existing connections remain registered.
+async fn assert_capacity_rejected(mut client: TcpStream) {
+    let result = timeout(Duration::from_secs(1), client.read(&mut [0u8]))
+        .await
+        .unwrap();
+    assert!(
+        matches!(result, Ok(0))
+            || matches!(result, Err(ref error) if error.kind() == std::io::ErrorKind::ConnectionReset),
+        "capacity rejection must close socket: {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn process_admission_is_shared_across_tcp_and_websocket_listeners_and_recovers() {
+    let admission = Arc::new(ConnectionAdmission::new(2, 1));
+    let tcp = endpoint_with_admission(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        admission.clone(),
+    );
+    let websocket = endpoint_with_admission(
+        EndpointAudience::Outer,
+        EndpointProtocol::WebSocket,
+        admission.clone(),
+    );
+    let mut slow = TcpStream::connect(tcp.address).await.unwrap();
+    wait_admission(&admission, 1, 1).await;
+    assert_capacity_rejected(TcpStream::connect(websocket.address).await.unwrap()).await;
+    wait_admission(&admission, 1, 1).await;
+    assert_eq!(admission.snapshot().handshake_rejections, 1);
+    assert_eq!(admission.snapshot().connection_rejections, 0);
+
+    slow.write_u32(2).await.unwrap();
+    wait_registered(&tcp).await;
+    wait_admission(&admission, 1, 0).await;
+    let web_client = websocket_client(&websocket).await;
+    wait_admission(&admission, 2, 0).await;
+    assert_capacity_rejected(TcpStream::connect(tcp.address).await.unwrap()).await;
+    assert_eq!(admission.snapshot().connection_rejections, 1);
+    assert_eq!(tcp.writers.lock().unwrap().len(), 1);
+    assert_eq!(websocket.writers.lock().unwrap().len(), 1);
+
+    drop(slow);
+    wait_admission(&admission, 1, 0).await;
+    let recovered = preamble(&tcp, false).await;
+    wait_registered(&tcp).await;
+    wait_admission(&admission, 2, 0).await;
+    tcp.task.request_stop();
+    timeout(Duration::from_secs(1), tcp.task)
+        .await
+        .unwrap()
+        .unwrap();
+    wait_admission(&admission, 1, 0).await;
+    drop(websocket);
+    wait_admission(&admission, 0, 0).await;
+    drop((recovered, web_client));
+}
+
+#[tokio::test]
+async fn inner_endpoints_reject_external_tcp_before_business_registration() {
+    for protocol in [EndpointProtocol::Tcp, EndpointProtocol::Auto] {
+        let fixture = endpoint(EndpointAudience::Inner, protocol);
+        let client = preamble(&fixture, false).await;
+        assert_rejected(client, &fixture).await;
+    }
+}
+
+#[tokio::test]
+async fn outer_endpoints_reject_authenticated_inner_tcp_before_business_registration() {
+    for protocol in [EndpointProtocol::Tcp, EndpointProtocol::Auto] {
+        let fixture = endpoint(EndpointAudience::Outer, protocol);
+        let client = preamble(&fixture, true).await;
+        assert_rejected(client, &fixture).await;
+    }
+}
+
+#[tokio::test]
+async fn inner_auto_endpoint_rejects_websocket_before_http_upgrade() {
+    let fixture = endpoint(EndpointAudience::Inner, EndpointProtocol::Auto);
+    let mut client = TcpStream::connect(fixture.address).await.unwrap();
+    client.write_all(b"GET").await.unwrap();
+    assert_rejected(client, &fixture).await;
+}
+
+#[tokio::test]
+async fn allowed_audiences_keep_normal_connection_lifecycle() {
+    for protocol in [EndpointProtocol::Tcp, EndpointProtocol::Auto] {
+        for (audience, internal) in [
+            (EndpointAudience::Mixed, false),
+            (EndpointAudience::Mixed, true),
+            (EndpointAudience::Inner, true),
+            (EndpointAudience::Outer, false),
+        ] {
+            let fixture = endpoint(audience, protocol);
+            let client = preamble(&fixture, internal).await;
+            timeout(Duration::from_secs(1), async {
+                while fixture.writers.lock().unwrap().is_empty() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            drop(client);
+            timeout(Duration::from_secs(1), async {
+                while !fixture.writers.lock().unwrap().is_empty() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+        }
+    }
+}
+
+/// 完成真实 HTTP Upgrade，保留原始 Socket 以控制未完成的数据帧。 / Completes HTTP Upgrade and keeps the raw socket for incomplete-frame tests.
+async fn websocket_client(fixture: &EndpointFixture) -> TcpStream {
+    let mut client = TcpStream::connect(fixture.address).await.unwrap();
+    client.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n").await.unwrap();
+    let mut response = Vec::new();
+    timeout(Duration::from_secs(1), async {
+        while !response.ends_with(b"\r\n\r\n") {
+            response.push(client.read_u8().await.unwrap());
+        }
+    })
+    .await
+    .unwrap();
+    assert!(response.starts_with(b"HTTP/1.1 101"));
+    client
+}
+
+/// 使用零 mask 的合法客户端帧，只测试传输大小而不构造业务协议。 / Uses a valid zero-mask client frame to test transport sizes without a business protocol.
+async fn websocket_header(client: &mut TcpStream, opcode: u8, length: usize) {
+    client.write_all(&[opcode, 0x80 | 127]).await.unwrap();
+    client.write_u64(length as u64).await.unwrap();
+    client.write_all(&[0; 4]).await.unwrap();
+}
+
+/// 等待解码器主动断开，并确保没有向业务层提交不完整消息。 / Awaits decoder rejection and verifies no incomplete message reaches business ingress.
+async fn assert_websocket_rejected(mut client: TcpStream, fixture: &EndpointFixture) {
+    let result = timeout(Duration::from_secs(1), client.read(&mut [0u8])).await;
+    assert!(
+        matches!(result, Ok(Ok(0)))
+            || matches!(result, Ok(Err(ref error)) if error.kind() == std::io::ErrorKind::ConnectionReset),
+        "oversized websocket must close before more payload: {result:?}"
+    );
+    assert!(fixture.writers.lock().unwrap().is_empty());
+    assert!(fixture._data.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn websocket_rejects_oversized_frame_header_without_reading_payload() {
+    for protocol in [EndpointProtocol::WebSocket, EndpointProtocol::Auto] {
+        let fixture = endpoint(EndpointAudience::Outer, protocol);
+        let mut client = websocket_client(&fixture).await;
+        websocket_header(
+            &mut client,
+            0x82,
+            crate::transport_backend::MAX_FRAME_LEN + 1,
+        )
+        .await;
+        assert_websocket_rejected(client, &fixture).await;
+    }
+}
+
+#[tokio::test]
+async fn websocket_rejects_oversized_fragmented_message_before_final_fragment() {
+    let fixture = endpoint(EndpointAudience::Outer, EndpointProtocol::WebSocket);
+    let mut client = websocket_client(&fixture).await;
+    let fragment = vec![0; crate::transport_backend::MAX_FRAME_LEN / 2 + 1];
+    websocket_header(&mut client, 0x02, fragment.len()).await;
+    client.write_all(&fragment).await.unwrap();
+    websocket_header(&mut client, 0x00, fragment.len()).await;
+    client.write_all(&fragment).await.unwrap();
+    assert_websocket_rejected(client, &fixture).await;
+}
+
+#[tokio::test]
+async fn websocket_accepts_fragmented_message_at_exact_size_limit() {
+    let fixture = endpoint(EndpointAudience::Outer, EndpointProtocol::WebSocket);
+    let mut client = websocket_client(&fixture).await;
+    let fragment = vec![0; crate::transport_backend::MAX_FRAME_LEN / 2];
+    websocket_header(&mut client, 0x02, fragment.len()).await;
+    client.write_all(&fragment).await.unwrap();
+    websocket_header(&mut client, 0x80, fragment.len()).await;
+    client.write_all(&fragment).await.unwrap();
+    let event = timeout(Duration::from_secs(1), async {
+        loop {
+            if let Ok(event) = fixture._data.try_recv() {
+                break event;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        matches!(event, ProcessEvent::Frame { frame, .. } if frame.len() == crate::transport_backend::MAX_FRAME_LEN)
+    );
+    assert_eq!(fixture.writers.lock().unwrap().len(), 1);
+}
+
+/// 等待生产连接完成登记，避免把未启动任务当作取消成功。 / Waits for production registration so cancellation cannot pass without starting a connection.
+async fn wait_registered(fixture: &EndpointFixture) {
+    timeout(Duration::from_secs(1), async {
+        while fixture.writers.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn slow_tcp_reader_expires_actual_outbound_write_and_reclaims_registration() {
+    let fixture = endpoint(EndpointAudience::Outer, EndpointProtocol::Tcp);
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.set_recv_buffer_size(1024).unwrap();
+    let mut client = socket.connect(fixture.address).await.unwrap();
+    client.write_u32(2).await.unwrap();
+    wait_registered(&fixture).await;
+    let writer = fixture
+        .writers
+        .lock()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    let frame = Bytes::from(vec![0; crate::transport_backend::MAX_FRAME_LEN]);
+    try_queue_connection_frame(&writer, frame.clone()).unwrap();
+    // 收到真实帧头证明写入已开始，再停止读取，直到窗口及本机发送缓存耗尽。
+    // Receiving the real header proves writing started; stop reading until both TCP buffers fill.
+    assert_eq!(
+        timeout(Duration::from_secs(1), client.read_u32())
+            .await
+            .unwrap()
+            .unwrap(),
+        frame.len() as u32
+    );
+    let mut admitted = 1;
+    timeout(Duration::from_secs(2), async {
+        while !writer.sender.is_closed() {
+            match try_queue_connection_frame(&writer, frame.clone()) {
+                Ok(()) => {
+                    admitted += 1;
+                    assert!(
+                        admitted <= 64,
+                        "fixture must establish actual backpressure within 64 MiB"
+                    );
+                }
+                Err(crate::transport_backend::ConnectionQueueError::ByteLimit) => {}
+                Err(crate::transport_backend::ConnectionQueueError::Closed) => break,
+                Err(error) => panic!("unexpected queue result: {error}"),
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        while !fixture.writers.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("slow write must expire without endpoint shutdown");
+    assert!(admitted > 1);
+    assert_eq!(writer.queued_bytes.load(Ordering::Relaxed), 0);
+    assert_eq!(writer.queued_frames.load(Ordering::Relaxed), 0);
+    assert!(matches!(
+        fixture._control.try_recv(),
+        Ok(ProcessEvent::Disconnect { .. })
+    ));
+}
+
+#[tokio::test]
+async fn endpoint_drop_reclaims_active_connections_and_releases_listener() {
+    for protocol in [EndpointProtocol::Tcp, EndpointProtocol::WebSocket] {
+        let fixture = endpoint(EndpointAudience::Outer, protocol);
+        let mut client = if protocol == EndpointProtocol::Tcp {
+            preamble(&fixture, false).await
+        } else {
+            websocket_client(&fixture).await
+        };
+        wait_registered(&fixture).await;
+        let address = fixture.address;
+        let writers = fixture.writers.clone();
+        let admission = fixture.admission.clone();
+        drop(fixture);
+        // Drop仍须释放实际Socket；WebSocket可能在abort前写出Close或其前缀。
+        // Drop must release the real socket; WebSocket may write Close or its prefix before abort.
+        let mut terminal_bytes = Vec::new();
+        let result = timeout(
+            Duration::from_secs(1),
+            (&mut client).take(3).read_to_end(&mut terminal_bytes),
+        )
+        .await
+        .expect("endpoint drop retained the client socket");
+        assert!(
+            result.is_ok()
+                || matches!(result, Err(ref error) if error.kind() == std::io::ErrorKind::ConnectionReset)
+        );
+        assert!(
+            terminal_bytes.is_empty()
+                || (protocol == EndpointProtocol::WebSocket
+                    && matches!(terminal_bytes.as_slice(), [0x88] | [0x88, 0])),
+            "endpoint drop emitted unexpected data: protocol={protocol:?}, bytes={terminal_bytes:?}"
+        );
+        assert!(writers.lock().unwrap().is_empty());
+        wait_admission(&admission, 0, 0).await;
+        let _rebound = std::net::TcpListener::bind(address).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn endpoint_stop_cancels_incomplete_handshakes_and_releases_listener() {
+    for protocol in [
+        EndpointProtocol::Tcp,
+        EndpointProtocol::Auto,
+        EndpointProtocol::WebSocket,
+    ] {
+        let fixture = endpoint(EndpointAudience::Outer, protocol);
+        let mut client = TcpStream::connect(fixture.address).await.unwrap();
+        client.write_all(b"G").await.unwrap();
+        wait_admission(&fixture.admission, 1, 1).await;
+        fixture.task.request_stop();
+        timeout(Duration::from_secs(1), fixture.task)
+            .await
+            .unwrap()
+            .unwrap();
+        let result = timeout(Duration::from_secs(1), client.read(&mut [0u8]))
+            .await
+            .unwrap();
+        assert!(
+            matches!(result, Ok(0))
+                || matches!(result, Err(ref error) if error.kind() == std::io::ErrorKind::ConnectionReset)
+        );
+        assert!(fixture.writers.lock().unwrap().is_empty());
+        wait_admission(&fixture.admission, 0, 0).await;
+        let _rebound = std::net::TcpListener::bind(fixture.address).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn endpoint_stop_drains_already_queued_tcp_notice_before_close() {
+    let fixture = endpoint(EndpointAudience::Outer, EndpointProtocol::Tcp);
+    let mut client = preamble(&fixture, false).await;
+    wait_registered(&fixture).await;
+    {
+        let writers = fixture.writers.lock().unwrap();
+        let writer = writers.values().next().unwrap();
+        try_queue_connection_frame(writer, Bytes::from_static(&[0, 1])).unwrap();
+    }
+    fixture.task.request_stop();
+    let mut received = Vec::new();
+    timeout(Duration::from_secs(1), client.read_to_end(&mut received))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(received, [0, 0, 0, 2, 0, 1]);
+    timeout(Duration::from_secs(1), fixture.task)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(fixture.writers.lock().unwrap().is_empty());
+}
+
+#[cfg(feature = "kcp")]
+#[tokio::test]
+async fn process_admission_counts_kcp_only_after_cookie_and_shares_tcp_capacity() {
+    use tiangz_transport::kcp_wire::*;
+    let admission = Arc::new(ConnectionAdmission::new(1, 1));
+    let tcp = endpoint_with_admission(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        admission.clone(),
+    );
+    let kcp = endpoint_with_admission(
+        EndpointAudience::Outer,
+        EndpointProtocol::Kcp,
+        admission.clone(),
+    );
+    let slow = TcpStream::connect(tcp.address).await.unwrap();
+    wait_admission(&admission, 1, 1).await;
+    let udp = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    udp.connect(kcp.address).await.unwrap();
+    let mut hello = [0; HELLO_BYTES];
+    hello[0] = HELLO;
+    hello[1] = PROTOCOL_VERSION;
+    write_u32(&mut hello, 2, 77);
+    write_u64(&mut hello, 6, 123);
+    udp.send(&hello).await.unwrap();
+    let mut connect = [0; CHALLENGE_BYTES];
+    assert_eq!(
+        timeout(Duration::from_secs(1), udp.recv(&mut connect))
+            .await
+            .unwrap()
+            .unwrap(),
+        CHALLENGE_BYTES
+    );
+    assert_eq!(connect[0], CHALLENGE);
+    assert_eq!(admission.snapshot().handshake_rejections, 0);
+    assert!(kcp.writers.lock().unwrap().is_empty());
+
+    connect[0] = CONNECT;
+    udp.send(&connect).await.unwrap();
+    timeout(Duration::from_secs(1), async {
+        while admission.snapshot().connection_rejections == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(kcp.writers.lock().unwrap().is_empty());
+    drop(slow);
+    wait_admission(&admission, 0, 0).await;
+    let mut accepted = [0; ACCEPT_BYTES];
+    for _ in 0..2 {
+        // 同一已认证 CONNECT 的重传必须重用现有 Session，不再申请名额。
+        // A retransmitted authenticated CONNECT must reuse its session without another slot.
+        udp.send(&connect).await.unwrap();
+        assert_eq!(
+            timeout(Duration::from_secs(1), udp.recv(&mut accepted))
+                .await
+                .unwrap()
+                .unwrap(),
+            ACCEPT_BYTES
+        );
+        assert_eq!(accepted[0], ACCEPT);
+        wait_admission(&admission, 1, 0).await;
+        assert_eq!(kcp.writers.lock().unwrap().len(), 1);
+        assert_eq!(admission.snapshot().connection_rejections, 1);
+    }
+    assert_capacity_rejected(TcpStream::connect(tcp.address).await.unwrap()).await;
+    assert_eq!(admission.snapshot().connection_rejections, 2);
+    let mut close = [0; CLOSE_BYTES];
+    close[0] = CLOSE;
+    close[1] = PROTOCOL_VERSION;
+    write_u32(&mut close, 2, 77);
+    write_u32(&mut close, 6, read_u32(&accepted, 2));
+    udp.send(&close).await.unwrap();
+    wait_admission(&admission, 0, 0).await;
+
+    let _client = tiangz_transport::KcpClient::connect(kcp.address)
+        .await
+        .unwrap();
+    wait_admission(&admission, 1, 0).await;
+    kcp.task.request_stop();
+    timeout(Duration::from_secs(1), kcp.task)
+        .await
+        .unwrap()
+        .unwrap();
+    wait_admission(&admission, 0, 0).await;
+}
+
+#[cfg(feature = "kcp")]
+#[tokio::test]
+async fn kcp_connection_id_exhaustion_releases_sessions_after_the_last_legal_echo() {
+    use tiangz_transport::kcp_wire::*;
+    let stats = Arc::new(ProcessQueueStats::new(16));
+    let fixture = endpoint_with_stats(
+        EndpointAudience::Outer,
+        EndpointProtocol::Kcp,
+        stats.clone(),
+    );
+    fixture
+        .next_connection_id
+        .store(u64::from(u32::MAX), Ordering::Relaxed);
+    let mut first = timeout(
+        Duration::from_secs(2),
+        tiangz_transport::KcpClient::connect(fixture.address),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let (response, ()) = tokio::join!(first.request(&[0, 1], Duration::from_secs(2)), async {
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if let Ok(event) = fixture._data.try_recv() {
+                    let ProcessEvent::Frame {
+                        connection_id,
+                        frame,
+                        ..
+                    } = &event
+                    else {
+                        panic!("expected the last legal KCP frame")
+                    };
+                    assert_eq!(*connection_id, u64::from(u32::MAX));
+                    let reply = frame.clone();
+                    let id = *connection_id;
+                    let mut batch = HostEventBatch::new();
+                    assert!(batch.try_push(event, &stats).unwrap().is_none());
+                    try_queue_connection_frame(
+                        fixture.writers.lock().unwrap().get(&id).unwrap(),
+                        reply,
+                    )
+                    .unwrap();
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    });
+    assert_eq!(response.unwrap(), [0, 1]);
+    wait_admission(&fixture.admission, 1, 0).await;
+    let peer = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    peer.connect(fixture.address).await.unwrap();
+    let mut hello = [0; HELLO_BYTES];
+    hello[0] = HELLO;
+    hello[1] = PROTOCOL_VERSION;
+    write_u32(&mut hello, 2, 77);
+    write_u64(&mut hello, 6, 123);
+    peer.send(&hello).await.unwrap();
+    let mut connect = [0; CHALLENGE_BYTES];
+    assert_eq!(
+        timeout(Duration::from_secs(1), peer.recv(&mut connect))
+            .await
+            .unwrap()
+            .unwrap(),
+        CHALLENGE_BYTES
+    );
+    assert_eq!(connect[0], CHALLENGE);
+    assert_eq!(
+        fixture.next_connection_id.load(Ordering::Relaxed),
+        u64::from(u32::MAX) + 1
+    );
+    connect[0] = CONNECT;
+    peer.send(&connect).await.unwrap();
+    let error = timeout(Duration::from_secs(2), fixture.task)
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("connection id space exhausted"));
+    assert_eq!(
+        fixture.next_connection_id.load(Ordering::Relaxed),
+        u64::from(u32::MAX) + 1
+    );
+    wait_admission(&fixture.admission, 0, 0).await;
+    assert!(fixture.writers.lock().unwrap().is_empty());
+    assert!(fixture._data.try_recv().is_err());
+    timeout(Duration::from_secs(1), async {
+        while stats.kcp_buffers.snapshot().used_bytes != 0
+            || stats.outbound_buffers.snapshot().used_bytes != 0
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let rebound = tokio::net::UdpSocket::bind(fixture.address).await.unwrap();
+    drop((first, peer, rebound));
+}
+
+#[cfg(feature = "kcp")]
+#[tokio::test]
+async fn ingress_byte_budget_closes_only_rejected_kcp_session_and_listener_recovers() {
+    let stats = Arc::new(ProcessQueueStats::with_network_limits(
+        16,
+        &ProcessNetworkConfig {
+            max_ingress_buffered_bytes: 2,
+            ..Default::default()
+        },
+    ));
+    let tcp = endpoint_with_stats(
+        EndpointAudience::Outer,
+        EndpointProtocol::Tcp,
+        stats.clone(),
+    );
+    let kcp = endpoint_with_stats(
+        EndpointAudience::Outer,
+        EndpointProtocol::Kcp,
+        stats.clone(),
+    );
+    let mut held = preamble(&tcp, false).await;
+    held.write_all(&[0, 1]).await.unwrap();
+    wait_ingress(&stats, 2, 0).await;
+    let mut rejected = tiangz_transport::KcpClient::connect(kcp.address)
+        .await
+        .unwrap();
+    assert!(
+        rejected
+            .request(&[0, 1], Duration::from_millis(100))
+            .await
+            .is_err()
+    );
+    wait_ingress(&stats, 2, 1).await;
+    wait_admission(&stats.admission, 1, 0).await;
+    assert!(kcp.writers.lock().unwrap().is_empty());
+    assert!(matches!(
+        kcp._control.try_recv().unwrap(),
+        ProcessEvent::Disconnect { .. }
+    ));
+    assert!(kcp._data.try_recv().is_err());
+    assert_eq!(tcp.writers.lock().unwrap().len(), 1);
+    drop(tcp._data.try_recv().unwrap());
+    let mut recovered = tiangz_transport::KcpClient::connect(kcp.address)
+        .await
+        .unwrap();
+    let (response, ()) = tokio::join!(recovered.request(&[0, 1], Duration::from_secs(1)), async {
+        timeout(Duration::from_secs(1), async {
+            loop {
+                if let Ok(ProcessEvent::Frame {
+                    connection_id,
+                    frame,
+                    ..
+                }) = kcp._data.try_recv()
+                {
+                    // Last ingress owner follows the echoed Bytes until the forwarder releases it.
+                    assert_eq!(stats.ingress_buffers.snapshot().used_bytes, 2);
+                    let writers = kcp.writers.lock().unwrap();
+                    try_queue_connection_frame(writers.get(&connection_id).unwrap(), frame)
+                        .unwrap();
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    });
+    assert_eq!(response.unwrap(), [0, 1]);
+    recovered.close().await.unwrap();
+    drop(held);
+    tcp.task.request_stop();
+    kcp.task.request_stop();
+    timeout(Duration::from_secs(2), tcp.task)
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(Duration::from_secs(2), kcp.task)
+        .await
+        .unwrap()
+        .unwrap();
+    wait_ingress(&stats, 0, 1).await;
+    wait_admission(&stats.admission, 0, 0).await;
+}
+
+#[cfg(feature = "kcp")]
+#[tokio::test]
+async fn kcp_cache_budget_rejects_creation_without_stopping_shared_listener() {
+    let stats = Arc::new(ProcessQueueStats::with_network_limits(
+        16,
+        &ProcessNetworkConfig {
+            max_kcp_buffered_bytes: 16 * 1024,
+            ..Default::default()
+        },
+    ));
+    let fixture = endpoint_with_stats(
+        EndpointAudience::Outer,
+        EndpointProtocol::Kcp,
+        stats.clone(),
+    );
+    let occupied = stats.kcp_buffers.try_reserve(16 * 1024).unwrap();
+    assert!(
+        timeout(
+            Duration::from_millis(100),
+            tiangz_transport::KcpClient::connect(fixture.address)
+        )
+        .await
+        .is_err()
+    );
+    assert!(stats.kcp_buffers.snapshot().rejections >= 1);
+    assert!(fixture.writers.lock().unwrap().is_empty());
+    wait_admission(&stats.admission, 0, 0).await;
+    drop(occupied);
+    let recovered = timeout(
+        Duration::from_secs(1),
+        tiangz_transport::KcpClient::connect(fixture.address),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(fixture.writers.lock().unwrap().len(), 1);
+    assert!(stats.kcp_buffers.snapshot().used_bytes > 0);
+    recovered.close().await.unwrap();
+    fixture.task.request_stop();
+    timeout(Duration::from_secs(2), fixture.task)
+        .await
+        .unwrap()
+        .unwrap();
+    wait_admission(&stats.admission, 0, 0).await;
+    assert_eq!(stats.kcp_buffers.snapshot().used_bytes, 0);
+}
+
+#[cfg(feature = "kcp")]
+#[tokio::test]
+async fn kcp_unacknowledged_output_exhaustion_closes_only_its_session_and_releases_cache() {
+    let stats = Arc::new(ProcessQueueStats::with_network_limits(
+        16,
+        &ProcessNetworkConfig {
+            max_kcp_buffered_bytes: 16 * 1024,
+            ..Default::default()
+        },
+    ));
+    let fixture = endpoint_with_stats(
+        EndpointAudience::Outer,
+        EndpointProtocol::Kcp,
+        stats.clone(),
+    );
+    let _nonreading = tiangz_transport::KcpClient::connect(fixture.address)
+        .await
+        .unwrap();
+    let mut healthy = tiangz_transport::KcpClient::connect(fixture.address)
+        .await
+        .unwrap();
+    {
+        let writers = fixture.writers.lock().unwrap();
+        let writer = writers.get(&1).unwrap();
+        let mut payload = vec![7; 8192];
+        payload[..2].copy_from_slice(&1_u16.to_be_bytes());
+        for _ in 0..8 {
+            try_queue_connection_frame(writer, Bytes::copy_from_slice(&payload)).unwrap();
+        }
+    }
+    timeout(Duration::from_secs(2), async {
+        while fixture.writers.lock().unwrap().contains_key(&1) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(stats.kcp_buffers.snapshot().rejections >= 1);
+    assert!(fixture.writers.lock().unwrap().contains_key(&2));
+    assert_eq!(stats.slow_client_disconnects.load(Ordering::Relaxed), 0);
+    let (response, ()) = tokio::join!(healthy.request(&[0, 1], Duration::from_secs(1)), async {
+        timeout(Duration::from_secs(1), async {
+            loop {
+                if let Ok(ProcessEvent::Frame {
+                    connection_id,
+                    frame,
+                    ..
+                }) = fixture._data.try_recv()
+                {
+                    assert_eq!(connection_id, 2);
+                    let writers = fixture.writers.lock().unwrap();
+                    try_queue_connection_frame(writers.get(&connection_id).unwrap(), frame)
+                        .unwrap();
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    });
+    assert_eq!(response.unwrap(), [0, 1]);
+    healthy.close().await.unwrap();
+    fixture.task.request_stop();
+    timeout(Duration::from_secs(2), fixture.task)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stats.kcp_buffers.snapshot().used_bytes, 0);
+    assert_eq!(stats.outbound_buffers.snapshot().used_bytes, 0);
+    wait_admission(&stats.admission, 0, 0).await;
+}
+
+#[cfg(feature = "kcp")]
+#[tokio::test]
+async fn kcp_endpoint_stop_releases_udp_listener() {
+    let fixture = endpoint(EndpointAudience::Outer, EndpointProtocol::Kcp);
+    fixture.task.request_stop();
+    timeout(Duration::from_secs(1), fixture.task)
+        .await
+        .unwrap()
+        .unwrap();
+    let _rebound = std::net::UdpSocket::bind(fixture.address).unwrap();
+}
+
+#[cfg(feature = "kcp")]
+#[tokio::test]
+async fn invalid_kcp_session_cannot_stop_listener_or_other_sessions() {
+    use futures_util::FutureExt;
+    let mut fixture = endpoint(EndpointAudience::Outer, EndpointProtocol::Kcp);
+    let mut bad_client = tiangz_transport::KcpClient::connect(fixture.address)
+        .await
+        .unwrap();
+    let mut good_client = tiangz_transport::KcpClient::connect(fixture.address)
+        .await
+        .unwrap();
+    // 直接测试传输准入：外部 KCP 不得投递内部保留 msgcode。
+    // Tests transport admission directly: outer KCP cannot deliver a reserved inner msgcode.
+    let invalid = crate::transport_backend::INNER_MSGCODE_START.to_be_bytes();
+    assert!(
+        bad_client
+            .request(&invalid, Duration::from_millis(50))
+            .await
+            .is_err()
+    );
+    assert!(
+        (&mut fixture.task).now_or_never().is_none(),
+        "one invalid KCP session stopped its endpoint"
+    );
+    assert_eq!(fixture.writers.lock().unwrap().len(), 1);
+    let (response, ()) = tokio::join!(
+        good_client.request(&[0, 1], Duration::from_secs(1)),
+        async {
+            timeout(Duration::from_secs(1), async {
+                loop {
+                    if let Ok(ProcessEvent::Frame {
+                        connection_id,
+                        frame,
+                        ..
+                    }) = fixture._data.try_recv()
+                    {
+                        let writers = fixture.writers.lock().unwrap();
+                        try_queue_connection_frame(writers.get(&connection_id).unwrap(), frame)
+                            .unwrap();
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+        }
+    );
+    assert_eq!(response.unwrap(), [0, 1]);
+    fixture.task.request_stop();
+    timeout(Duration::from_secs(1), fixture.task)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(fixture.writers.lock().unwrap().is_empty());
+}

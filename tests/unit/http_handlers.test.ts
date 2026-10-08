@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { ProcessRuntime } from "../../app/core/process/ProcessRuntime";
-import { EntryScene } from "../../app/core/process/types";
+import { EntryScene } from "../../app/core/process/EntryScene";
 import { entryScene } from "../../app/core/process/registry";
 import {
   decodeHttpRequest,
@@ -56,6 +56,15 @@ class InvalidResponseHandler implements SceneHttpHandler<HttpFixture> {
   }
 }
 
+let finishHeldRequest: (() => void) | undefined;
+@httpHandler(HttpFixture, "POST", "/hold")
+class HeldHandler implements SceneHttpHandler<HttpFixture> {
+  async handle(): Promise<HttpResponse> {
+    await new Promise<void>((resolve) => { finishHeldRequest = resolve; });
+    return jsonResponse({ finished: true });
+  }
+}
+
 interface Reply {
   status: number;
   headers: Map<string, string>;
@@ -64,11 +73,15 @@ interface Reply {
 
 let replies: Map<number, Reply>;
 let delivered: boolean;
+const expiredRequests = new Set<number>();
+const discardedRequests = new Set<number>();
 
 beforeEach(() => {
   replies = new Map();
   delivered = true;
   (globalThis as { __hostHttp?: unknown }).__hostHttp = {
+    isPending: (requestId: number) => !expiredRequests.has(requestId),
+    discard: (requestId: number) => { discardedRequests.add(requestId); },
     respond(requestId: number, status: number, headersJson: string, body: Uint8Array): boolean {
       // 与 Rust op 一致：非法状态码抛 TypeError，请求保持等待。 / Mirrors the Rust op: invalid status throws.
       if (status < 200 || status > 599) throw new TypeError(`HTTP status ${status} must be between 200 and 599`);
@@ -83,6 +96,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  finishHeldRequest = undefined;
+  expiredRequests.clear();
+  discardedRequests.clear();
   delete (globalThis as { __hostHttp?: unknown }).__hostHttp;
 });
 
@@ -202,4 +218,37 @@ test("a late reply after host timeout does not throw", async () => {
   });
 });
 
+test("expired queued requests never execute and disposal releases queued admission", async () => {
+  await withRuntime(async (runtime) => {
+    expiredRequests.add(30);
+    runtime.pushHostHttpRequest(0, 30, encodeRequest("GET", "/status"));
+    runtime.pushHostHttpRequest(0, 31, encodeRequest("GET", "/status"));
+    await settle(runtime);
+    expect(replies.has(30)).toBe(false);
+    expect(discardedRequests.has(30)).toBe(true);
+    expect(replies.get(31)?.body).toBe('{"hits":"1","name":null}');
+    runtime.pushHostHttpRequest(0, 32, encodeRequest("GET", "/status"));
+    await runtime.stop();
+    expect(discardedRequests.has(32)).toBe(true);
+  });
+});
+
 void [StatusHandler, EchoHandler, ForbiddenHandler, BoomHandler, InvalidResponseHandler];
+
+test("an executing request retains admission after caller timeout until its real completion", async () => {
+  await withRuntime(async (runtime) => {
+    runtime.pushHostHttpRequest(0, 40, encodeRequest("POST", "/hold"));
+    await settle(runtime);
+    expect(finishHeldRequest).toBeTypeOf("function");
+    expiredRequests.add(40);
+    delivered = false;
+    await settle(runtime);
+    expect(discardedRequests.has(40)).toBe(false);
+    expect(replies.has(40)).toBe(false);
+    finishHeldRequest!();
+    await settle(runtime);
+    expect(replies.get(40)?.status).toBe(200);
+    expect(discardedRequests.has(40)).toBe(true);
+  });
+});
+void HeldHandler;

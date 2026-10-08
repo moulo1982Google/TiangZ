@@ -1,0 +1,308 @@
+{
+  "checkedAt": "2026-09-30T11:08:07.189Z",
+  "sourceCommit": "528203fca7d944f878ea75a20f57d3f1305492c1",
+  "runs": [
+    {
+      "id": 36702713801,
+      "url": "https://github.com/moulo1982Google/TiangZ/actions/runs/36702713801",
+      "name": "verify",
+      "headSha": "528203fca7d944f878ea75a20f57d3f1305492c1",
+      "status": "completed",
+      "conclusion": "success",
+      "createdAt": "2026-09-30T10:29:13Z",
+      "updatedAt": "2026-09-30T11:07:09Z"
+    },
+    {
+      "id": 36702713895,
+      "url": "https://github.com/moulo1982Google/TiangZ/actions/runs/36702713895",
+      "name": "starter",
+      "headSha": "528203fca7d944f878ea75a20f57d3f1305492c1",
+      "status": "completed",
+      "conclusion": "success",
+      "createdAt": "2026-09-30T10:29:13Z",
+      "updatedAt": "2026-09-30T10:31:41Z"
+    },
+    {
+      "id": 36702713994,
+      "url": "https://github.com/moulo1982Google/TiangZ/actions/runs/36702713994",
+      "name": "security",
+      "headSha": "528203fca7d944f878ea75a20f57d3f1305492c1",
+      "status": "completed",
+      "conclusion": "success",
+      "createdAt": "2026-09-30T10:29:13Z",
+      "updatedAt": "2026-09-30T10:33:01Z"
+    }
+  ],
+  "jobs": [
+    {
+      "name": "framework (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-09-30T10:29:17Z",
+          "completed_at": "2026-09-30T10:29:19Z"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-09-30T10:29:19Z",
+          "completed_at": "2026-09-30T10:29:20Z"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-09-30T10:29:20Z",
+          "completed_at": "2026-09-30T10:29:21Z"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-09-30T10:29:21Z",
+          "completed_at": "2026-09-30T10:29:31Z"
+        },
+        {
+          "name": "Run npm install",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-09-30T10:29:31Z",
+          "completed_at": "2026-09-30T10:29:54Z"
+        },
+        {
+          "name": "Rust format check",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-09-30T10:29:54Z",
+          "completed_at": "2026-09-30T10:29:55Z"
+        },
+        {
+          "name": "Rust Clippy warnings",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-09-30T10:29:55Z",
+          "completed_at": "2026-09-30T10:31:16Z"
+        },
+        {
+          "name": "Build the debug host",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-09-30T10:31:16Z",
+          "completed_at": "2026-09-30T10:32:36Z"
+        },
+        {
+          "name": "Run npm run verify",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-09-30T10:32:36Z",
+          "completed_at": "2026-09-30T10:44:13Z"
+        },
+        {
+          "name": "Upload failure logs",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10,
+          "started_at": "2026-09-30T10:44:13Z",
+          "completed_at": "2026-09-30T10:44:13Z"
+        },
+        {
+          "name": "Report development lock drift",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-09-30T10:44:13Z",
+          "completed_at": "2026-09-30T10:44:17Z"
+        },
+        {
+          "name": "Run npm run release:package",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-09-30T10:44:17Z",
+          "completed_at": "2026-09-30T10:47:20Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-09-30T10:47:20Z",
+          "completed_at": "2026-09-30T10:47:23Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25,
+          "started_at": "2026-09-30T10:47:23Z",
+          "completed_at": "2026-09-30T10:47:24Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 26,
+          "started_at": "2026-09-30T10:47:24Z",
+          "completed_at": "2026-09-30T10:47:24Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 27,
+          "started_at": "2026-09-30T10:47:24Z",
+          "completed_at": "2026-09-30T10:47:24Z"
+        }
+      ]
+    },
+    {
+      "name": "framework (windows-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-09-30T10:29:17Z",
+          "completed_at": "2026-09-30T10:29:18Z"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-09-30T10:29:18Z",
+          "completed_at": "2026-09-30T10:29:23Z"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-09-30T10:29:23Z",
+          "completed_at": "2026-09-30T10:29:30Z"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-09-30T10:29:30Z",
+          "completed_at": "2026-09-30T10:29:52Z"
+        },
+        {
+          "name": "Run npm install",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-09-30T10:29:52Z",
+          "completed_at": "2026-09-30T10:34:55Z"
+        },
+        {
+          "name": "Rust format check",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-09-30T10:34:55Z",
+          "completed_at": "2026-09-30T10:34:58Z"
+        },
+        {
+          "name": "Rust Clippy warnings",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-09-30T10:34:58Z",
+          "completed_at": "2026-09-30T10:38:10Z"
+        },
+        {
+          "name": "Build the debug host",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-09-30T10:38:10Z",
+          "completed_at": "2026-09-30T10:41:07Z"
+        },
+        {
+          "name": "Run npm run verify",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-09-30T10:41:07Z",
+          "completed_at": "2026-09-30T11:00:18Z"
+        },
+        {
+          "name": "Upload failure logs",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10,
+          "started_at": "2026-09-30T11:00:18Z",
+          "completed_at": "2026-09-30T11:00:18Z"
+        },
+        {
+          "name": "Report development lock drift",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-09-30T11:00:18Z",
+          "completed_at": "2026-09-30T11:00:26Z"
+        },
+        {
+          "name": "Run npm run release:package",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-09-30T11:00:26Z",
+          "completed_at": "2026-09-30T11:06:50Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-09-30T11:06:50Z",
+          "completed_at": "2026-09-30T11:06:54Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25,
+          "started_at": "2026-09-30T11:06:54Z",
+          "completed_at": "2026-09-30T11:07:04Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 26,
+          "started_at": "2026-09-30T11:07:04Z",
+          "completed_at": "2026-09-30T11:07:06Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 27,
+          "started_at": "2026-09-30T11:07:06Z",
+          "completed_at": "2026-09-30T11:07:06Z"
+        }
+      ]
+    }
+  ]
+}

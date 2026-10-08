@@ -186,6 +186,7 @@ function snapshot(key: string, schemaVersion: number, value: number, revision: b
 
 /** 进程内DBProxy替身：Save执行CAS，Enqueue直接覆盖，记录全部请求。 / In-process DBProxy double: Save applies CAS, Enqueue overwrites, and every request is recorded. */
 class RecordingTransport implements DbProxyTransport {
+  readonly supportsRequestTimeout = true; // Immediate in-memory calls have no outstanding I/O.
   readonly saves: DbProxySnapshotWrite[] = [];
   readonly enqueues: DbProxySnapshotWrite[] = [];
   readonly enqueueFailures: DbProxyErrorCode[] = [];

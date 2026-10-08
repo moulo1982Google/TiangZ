@@ -4,7 +4,7 @@ import {
   DbProxyEntityRepository, InMemoryVersionedEntityRepository, MigrateVersionedEntityPayload,
   type VersionedEntityCodec,
 } from "../../app/core/persistence/VersionedEntityRepository";
-import { DbProxyClient, DbProxyErrorCode, DbProxyRemoteError, type DbProxySnapshotWrite } from "@tiangz/dbproxy-sdk";
+import { DbProxyClient, DbProxyErrorCode, DbProxyRemoteError, type DbProxySnapshotWrite, type DbProxyTransport } from "@tiangz/dbproxy-sdk";
 
 test("module configs stage all owners, preserve old snapshots and reject stale commits", () => {
   const fingerprint = "a".repeat(64);
@@ -40,6 +40,12 @@ const codec = (version: number): VersionedEntityCodec<{ value: number }, { value
   migrations: version === 1 ? [] : [{ fromVersion: 1, toVersion: 2, Migrate: (bytes) => encode({ value: decode(bytes).value + 10 }) }],
 });
 
+function migrationClient(overrides: Pick<DbProxyTransport, "load" | "save" | "supportsRequestTimeout">): DbProxyClient {
+  const unused = async (): Promise<never> => { throw new Error("unexpected transport operation"); };
+  return new DbProxyClient({ loadMulti: unused, saveMulti: unused, enqueueSnapshot: unused, enqueueMultiSnapshot: unused,
+    applyTransaction: unused, loadTransaction: unused, applyMultiTransaction: unused, loadMultiTransaction: unused, ...overrides });
+}
+
 test("module codec migration persists once and old versions cannot overwrite upgraded records", async () => {
   const old = new InMemoryVersionedEntityRepository(codec(1));
   const current = new InMemoryVersionedEntityRepository(codec(2));
@@ -57,30 +63,32 @@ test("module codec migration persists once and old versions cannot overwrite upg
 test("DBProxy migration conflict reloads authoritative data without overwriting the winner", async () => {
   let loads = 0;
   let saves = 0;
-  const client = {
-    Load: async () => {
+  const client = migrationClient({
+    supportsRequestTimeout: true,
+    load: async () => {
       loads++;
-      return { schema: codec(1).schema, schemaVersion: loads === 1 ? 1 : 2,
+      return { record: { namespace: codec(1).recordNamespace, key: "counter" }, schema: codec(1).schema, schemaVersion: loads === 1 ? 1 : 2,
         payload: encode({ value: loads === 1 ? 1 : 99 }), revision: BigInt(loads), updatedAtUnixMs: 1n };
     },
-    Save: async (write: { expectedRevision: bigint; schemaVersion: number }) => {
+    save: async (write: DbProxySnapshotWrite) => {
       saves++;
       expect(write.expectedRevision).toBe(1n);
       expect(write.schemaVersion).toBe(2);
       throw new DbProxyRemoteError(DbProxyErrorCode.RevisionConflict, "concurrent writer", 2n);
     },
-  } as unknown as DbProxyClient;
+  });
   const repository = new DbProxyEntityRepository(codec(2), "fixture", client);
   expect(await repository.Load("counter")).toMatchObject({ data: { value: 99 }, revision: 2n });
   expect(saves).toBe(1);
 });
 
 test("DBProxy ambiguous migration retries one write and refuses old writers after upgrade", async () => {
-  let stored = { schema: codec(1).schema, schemaVersion: 1, payload: encode({ value: 1 }), revision: 1n, updatedAtUnixMs: 1n };
+  let stored = { record: { namespace: codec(1).recordNamespace, key: "counter" }, schema: codec(1).schema, schemaVersion: 1, payload: encode({ value: 1 }), revision: 1n, updatedAtUnixMs: 1n };
   const writes: DbProxySnapshotWrite[] = [];
-  const client = {
-    Load: async () => stored,
-    Save: async (write: DbProxySnapshotWrite) => {
+  const client = migrationClient({
+    supportsRequestTimeout: true,
+    load: async () => stored,
+    save: async (write: DbProxySnapshotWrite) => {
       writes.push(write);
       if (writes.length === 1) {
         stored = { ...stored, schemaVersion: write.schemaVersion, payload: Uint8Array.from(write.payload), revision: 2n };
@@ -88,11 +96,12 @@ test("DBProxy ambiguous migration retries one write and refuses old writers afte
       }
       return { disposition: "duplicate", revision: 2n };
     },
-  } as unknown as DbProxyClient;
+  });
   expect(await new DbProxyEntityRepository(codec(2), "fixture", client).Load("counter"))
     .toMatchObject({ data: { value: 11 }, revision: 2n });
   expect(writes).toHaveLength(2);
-  expect(writes[0]).toBe(writes[1]);
+  expect(writes[0]).toEqual(writes[1]);
+  expect(writes[0]).not.toBe(writes[1]);
   await expect(new DbProxyEntityRepository(codec(1), "old", client).SaveSnapshot("counter", { value: 100 }, 2n))
     .rejects.toThrow("unsupported");
   expect(writes).toHaveLength(2);
@@ -101,16 +110,17 @@ test("DBProxy ambiguous migration retries one write and refuses old writers afte
 test("DBProxy migration observes a successful final CAS attempt", async () => {
   let saves = 0;
   let migrated = false;
-  const client = {
-    Load: async () => ({ schema: codec(1).schema, schemaVersion: migrated ? 2 : 1,
+  const client = migrationClient({
+    supportsRequestTimeout: true,
+    load: async () => ({ record: { namespace: codec(1).recordNamespace, key: "counter" }, schema: codec(1).schema, schemaVersion: migrated ? 2 : 1,
       payload: encode({ value: migrated ? 11 : 1 }), revision: BigInt(saves + 1), updatedAtUnixMs: 1n }),
-    Save: async () => {
+    save: async () => {
       saves++;
       if (saves < 3) throw new DbProxyRemoteError(DbProxyErrorCode.RevisionConflict, "concurrent old writer");
       migrated = true;
       return { disposition: "applied", revision: 4n };
     },
-  } as unknown as DbProxyClient;
+  });
   expect(await new DbProxyEntityRepository(codec(2), "fixture", client).Load("counter"))
     .toMatchObject({ data: { value: 11 }, revision: 4n });
   expect(saves).toBe(3);

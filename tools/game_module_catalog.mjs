@@ -266,13 +266,27 @@ async function readModule(root, engineVersion) {
   if (value.native !== undefined) {
     const label = `${manifestFile}: native`;
     requireObject(value.native, label);
-    rejectUnknownKeys(value.native, new Set(["source", "crate", "crateName", "generatedRust", "generatedTypeScript", "configureProjectRoot"]), label);
+    rejectUnknownKeys(value.native, new Set(["source", "crate", "crateName", "generatedRust", "generatedTypeScript", "configureProjectRoot", "workers"]), label);
     const relative = {};
     for (const name of ["source", "crate", "generatedRust", "generatedTypeScript"]) {
       relative[name] = normalizeRelative(requireSafeRelativePath(value.native[name], `native.${name}`, manifestFile));
     }
     if (typeof value.native.crateName !== "string" || !/^[a-z][a-z0-9_-]*$/.test(value.native.crateName)) throw new Error(`${label}.crateName is invalid`);
     relative.crateName = value.native.crateName;
+    if (value.native.workers !== undefined) {
+      if (!Array.isArray(value.native.workers) || value.native.workers.length > 16) throw new Error(`${label}.workers must be an array of at most 16 declarations`);
+      const names = new Set();
+      relative.workers = value.native.workers.map(worker => {
+        requireObject(worker, `${label}.workers`);
+        rejectUnknownKeys(worker, new Set(["name", "capacity", "maxInputBytes", "maxOutputBytes"]), `${label}.workers`);
+        if (typeof worker.name !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(worker.name) || names.has(worker.name)) throw new Error(`${label}: invalid or duplicate worker name`);
+        names.add(worker.name);
+        for (const [key, max] of [["capacity", 1024], ["maxInputBytes", 16 * 1024 * 1024], ["maxOutputBytes", 16 * 1024 * 1024]]) {
+          if (!Number.isSafeInteger(worker[key]) || worker[key] < 1 || worker[key] > max) throw new Error(`${label}: invalid worker ${key}`);
+        }
+        return { ...worker };
+      });
+    }
     if (value.native.configureProjectRoot !== undefined) {
       if (typeof value.native.configureProjectRoot !== "boolean") throw new Error(`${label}.configureProjectRoot must be boolean`);
       relative.configureProjectRoot = value.native.configureProjectRoot;

@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../dist/ai-assistants');
+const args = process.argv.slice(2);
+if (args.length !== 0 && (args.length !== 2 || args[0] !== '--root')) throw Error('Usage: node tools/ai-assistants/check.mjs [--root <artifact directory>]');
+const root = args.length ? path.resolve(args[1]) : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../dist/ai-assistants');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'cindy/ghost.json'), 'utf8'));
 let handler;
 const replies = [];
@@ -19,10 +21,17 @@ async function call(tool, args = {}) {
 const rules = await call('list_design_rules');
 assert.equal(rules.count, rules.rules.length);
 assert.equal(new Set(rules.rules.map(x => x.id)).size, rules.count);
-for (const id of ['execution.timer', 'protocol.inner-identity', 'persistence.no-fallback', 'persistence.unknown-result', 'hotfix.atomic-config', 'validation.evidence']) {
+for (const id of ['execution.timer', 'protocol.inner-identity', 'persistence.no-fallback', 'persistence.unknown-result', 'hotfix.atomic-config', 'validation.evidence',
+  'persistence.operation-budget', 'lifecycle.in-flight-owner', 'routing.optional-directory', 'compatibility.package-identity',
+  'validation.program-contracts', 'deployment.module-owned', 'transport.budget-scope', 'transport.host-event-batch', 'runtime.host-event-admission', 'persistence.readonly-capacity']) {
   assert.ok(rules.rules.some(x => x.id === id), `Missing rule ${id}`);
 }
-assert.equal((await call('get_environment_requirements')).repositories[0].workingVersion, '0.6.0');
+const environment = await call('get_environment_requirements');
+assert.equal(environment.versionStatus, 'not-probed');
+assert.equal(environment.repositories[0].workingVersion, null);
+assert.ok(environment.repositories.every(repository => !repository.branch));
+assert.ok(environment.repositories.some(repository => repository.name === 'TiangZ Developer Tools'));
+assert.ok(environment.repositories[0].versionSources.includes('Cargo.lock'));
 assert.equal((await call('infer_system_archetype', { text: '持续伤害buff' })).archetype, 'buff');
 for (const archetype of ['item', 'buff', 'quest', 'achievement', 'numeric', 'custom']) {
   const result = await call('recommend_system_design', { archetype, name: '验收', owner: 'player' });

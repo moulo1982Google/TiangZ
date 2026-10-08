@@ -23,14 +23,38 @@
     rule("persistence.stable-id", "稳定持久化身份", "持久化业务ID和时间戳，不保存InstanceId或TimerId。", "docs/patterns/lifecycle-and-persistence.md"),
     rule("execution.update", "固定帧更新", "每个固定逻辑帧必须执行的连续逻辑使用Update。", "docs/patterns/timer-update-and-action.md"),
     rule("execution.timer", "稀疏Timer", "游戏业务禁止await时间（含短/零延迟、原生定时器和Promise绕过）；使用所有者方法名Timer，持久化任务与截止时间，恢复不重复扣费。DB/RPC结果等待仍允许。", "docs/patterns/timer-update-and-action.md"),
-    rule("module.ownership", "模块归属", "TiangZ是宿主；SLG/MMORPG业务在Examples或外置模块。Model持有状态，Hotfix只放行为，Handler薄适配；不将业务塞回Core。", "docs/ai/skill-development-contract.md"),
+    rule("module.ownership", "模块归属", "TiangZ是宿主；SLG/MMORPG业务在Examples或外置模块。Model持有状态，Hotfix只放行为，Handler薄适配；不将业务塞回Core。依赖方向复用dependency ruleset 1，类型导入/别名也检查，动态未证明只给warning；Model走Core public，启动/生成ABI仅精确例外，公共模块API须声明直接依赖。路径按平台身份比较，生成锁和实际LSP另验。", "docs/ai/skill-development-contract.md"),
     rule("execution.pump-vs-update", "运行循环不是模拟帧", "按实际注册代码区分RPC、Timer、固定Update与出站队列；SLG不因框架存在帧尾队列就已经具备状态广播。", "docs/ai/skill-development-contract.md"),
     rule("protocol.inner-identity", "内外协议身份", "C协议不能用于Inner RPC，字段相同也需生成S descriptor；不关闭访问校验、不手改协议锁和SDK。", "docs/ai/business-development-manual.md"),
     rule("persistence.no-fallback", "数据库故障不降级", "IsHostDbProxyAvailable仅表示宿主桥存在，不表示进程配置或连接就绪；配置数据库后故障不可回退内存或重置资产。", "docs/ai/business-development-manual.md"),
     rule("persistence.unknown-result", "结果未知重试", "丢ACK保留原操作号与完整事务（含随机结果）重试；多记录一致性使用事务，批量保存不等于原子成功。", "docs/ai/skill-development-contract.md"),
+    rule("persistence.operation-budget", "操作共享期限", "在当前SDK/Host已实现预算时，读取、迁移、编码、退避和同ID同字节重试共用期限；Promise.race不代表物理I/O取消，超时不代表写入回滚。", "docs/ai/skill-development-contract.md"),
+    rule("lifecycle.in-flight-owner", "在途所有权", "Timer取消或owner销毁不代表异步回调结束；热更等待真实收敛，包括本地Actor和unordered Scene，不能只数网络/Spawn。Scene注销后仍跟踪未结束Spawn，真实完成主动释放；watchdog句柄绑定原服务，迟到清理不操作新Runtime同号资源。Spawn同步准入失败只撤回新record，不执行body，原异常保持；Timer注册成功后才一起发布owner/句柄和成功高水位，其他Scope不受影响。销毁立即终结未执行节点，在途调用到真实完成才归还。出队清槽、空闲池有界不等于任务/字节额度。移除句柄不代表Socket/任务释放，验收检查资源归位。", "docs/ai/skill-development-contract.md"),
+    rule("lifecycle.spawn-capacity", "Spawn总量准入", "0.7候选保留每Scope256项，原ProcessHost合计最多4096项，超限同步SceneOverloaded。未开始、取消和owner销毁后的真实在途任务仍占额度；同步失败回滚、成功后才增高水位，迟到完成只归还原Host。不创建无限等待或自动重试；固定Process拒绝指标只统计总额度。不是全部mailbox、任意Promise或堆字节上限。", "docs/design/v0.7-scene-task-capacity.md"),
+    rule("lifecycle.actor-capacity", "Actor任务准入", "0.7候选每Actor最多4096、原ProcessHost合计16384项排队与真实运行调用，RPC/void、ordered/unordered共用；超限在执行前同步1011，先查Actor再查Process。销毁只释放未执行队列，运行任务直到实际结束归还原所有者。单向过载须保留类型/指标，网络关闭仍有效的原物理来源、本地同步准入返回错误；异步错误绑定原来源，不能关闭同号新连接。外壳不能误报坏包；部分批次仍观察已接受任务。send接受不等于最终送达，不自动重放。固定Process指标区分两级拒绝；不代表Scene mailbox或V8堆字节有界。", "docs/design/v0.7-actor-mailbox-capacity.md"),
+    rule("lifecycle.local-scene-capacity", "本地Scene准入", "0.7候选每EntryScene4096、原ProcessHost16384项本地call/send，排队与实际执行共计。先检查存活再查Scene/Process，公开call/send保留1011；busy void返回不是完成，配额挂实际节点。销毁只立即释放未执行项，旧异步完成只归还原所有者。网络入站/Disconnect/Host completion走各自路径，不能借本地额度释放或越过ordered顺序。Actor与Scene嵌套可同时占两类名额，不能相加冒充唯一请求数或堆字节预算。", "docs/design/v0.7-local-scene-capacity.md"),
+    rule("lifecycle.call-deadline", "调用期限资源", "本地RPC先预留当前isolate原生绝对期限，不占远程批次槽；到宿主刷新仍未完成才启动原生waiter。此前完成的调用同步关闭资源，已启动waiter真实退出后才返回；延后注册失败不能撤销已执行目标。保留旧参数/错误转换。调用超时不取消业务，mailbox名额、ordered顺序和热更仍等实际完成。内部期限不能替代游戏TimerSystem；停机需独立定义期限准入失败路径，不能因满额跳过stop。", "docs/design/v0.7-host-deadlines.md"),
+    rule("lifecycle.shutdown-deadline", "停机专用期限", "每isolate独立预留1个停机期限，不竞争普通调用或远程批次；并发stop共用清理和结果。快速结束同步关闭，已启动waiter真实退出后返回。创建异常仍执行/观察清理，双重失败均保留，异常回退由原Rust外层drain期限兜底。超时不等于业务取消，stop钩子的RPC仍走普通准入，专用资源不供游戏定时。", "docs/design/v0.7-shutdown-deadline.md"),
+    rule("lifecycle.deadline-handles", "期限句柄所有权", "内部期限由原isolate专属表持有，不消耗Deno通用编号；安全整数Number不可截断为uint32、持久化或跨isolate传递。编号不复用，普通与停机各自独立，耗尽明确拒绝并归还本次预留，不能回绕覆盖旧句柄。关闭/Runtime清理请求取消，实际waiter最后引用才归还。验证真实V8、超uint32/最后安全整数与Runtime清理，live归零不能证明编号长期安全。", "docs/design/v0.7-deadline-handles.md"),
+    rule("lifecycle.connection-response", "断线迟到响应", "来源断开而Scene仍存活时，原Promise按真实结束排空，但不能再排队迟到响应或回填连接ID缓存。等待绑定来源失效状态，不依赖短期墓碑寿命；最后释放核对状态身份，保留同号新等待和其他连接。未回包不代表业务或事务未执行，不自动重放事实；来源指标不冒充任务计数。", "docs/design/v0.7-late-responses.md"),
+    rule("routing.optional-directory", "按需逻辑目录", "已持有Actor地址时直接路由；LocationDirectory是可选逻辑所有者目录，不是地图坐标或MMORPG必装服务。MapHost/AOI留在领域模块。", "docs/design/capability-ownership.md"),
+    rule("compatibility.package-identity", "独立版本身份", "框架0.7不改变各插件的版本序列；分别核对Core、VSIX、AI清单和宿主实际依赖，同名类型不能替代当前Host声明身份。", "docs/ai/skill-development-contract.md"),
+    rule("validation.program-contracts", "共享类型契约", "生命周期/Timer/Hotfix使用共享Program ruleset 2与当前Host的TS API/Core/生成声明。Hotfix字段、构造和static禁令只认当前Core装饰器；同名业务函数不是证据，缺类型环境的稳定导入候选仅报未证明warning。模块Host按声明选Hotfix范围。默认参数接受undefined，动态warning只是未证明。普通tsc不自动接入；模块实时检查仅由受信任工作区的已保存声明选择Host worker，配置未保存或环境不可用须明确提示，不能替代生成锁和完整构建。", "docs/design/v0.7-program-contracts.md"),
+    rule("deployment.module-owned", "模块部署配置", "地图实例部署归MMORPG模块，经runtime.pack.json信封与模块校验；声明包漏实例或新旧显式值冲突必须失败，修改后重建重启。简单房间可直接连接Scene，无需Location/MapHost。", "docs/design/v0.7-map-deployment.md"),
+    rule("transport.budget-scope", "字节预算范围", "Writer与主动Inner Host共享出站额度，复制前预留、最后引用释放、排队不续期。入站额度仅覆盖已解码Rust帧及等待/热更延后，控制通知不占。KCP另限C缓存、ACK扩容峰值和输出引用，纯ACK满额度仍可回收；callback失败必须终结对应Session，不能静默丢可靠数据。按真实所有者验证，三项均不代表全进程、V8/TS mailbox或其他副本内存上限。", "docs/reference/transport-backend.md"),
+    rule("transport.host-event-batch", "Host批次副本", "Rust向V8交付另限含头部64 MiB单批，复制前检查，满批先Update再续。控制/数据各最多暂存一条原事件，保留FIFO、ingress守卫和深度，退回恢复公平计数；数据积压/停机时完成通知继续流动。拆批不截断结果、不伪造业务过载，非法单事件复制前明确失败。单批上限不代表TS backing buffer总量、completion总量或RSS；需真实Process/V8证据。", "docs/design/v0.7-host-event-batches.md"),
+    rule("transport.host-operation-admission", "远程共享准入", "0.7候选call/send/sleep共用未提交65536项与含头64 MiB成本，业务帧遵循2..1048576字节格式。先检查再建路由/等待者，容量拒绝保留1011，只拒绝新项。回复名额跨提交保留；借用帧不得修改，flush发现长度变化只终结本项。排队、回复与原生包按各自所有权回收并用固定Process指标观测；send接受不等于可靠送达或允许重放，也不代表V8堆、全部远程在途或原生排队期限有界。", "docs/design/v0.7-host-operation-admission.md"),
+    rule("transport.remote-deadline", "远程排队期限", "接受已编码帧后用Host共享单调毫秒，采样时刻与剩余时间覆盖打包、复制、排队和实际传输，保留uint32转换与共享准入。未开始call/send到期不等网络槽，Host sleep不占网络槽，不能伤及其他接受项。物理传输持有原数据到实际结束；超时不撤回对端业务，控制背压/TS忙碌仍可延迟通知，不是严格实时保证。内部时钟不供游戏定时，桥接改变须重建重启。", "docs/design/v0.7-remote-operation-deadlines.md"),
+    rule("transport.native-scene-batches", "Native批次元数据", "每Process共享65536个Scene批次保留槽，复制/分配前整批准入，整批Future和容器销毁才归还；部分完成不提前减数，取消/失败释放原所有者。满额明确拒绝新批，完成通道保留背压，不丢旧完成或重放单向事实。区分槽/峰值/容量/拒绝批次，不能当活跃RPC、物理传输或RSS上限；本地/停机期限与入站控制独立。", "docs/design/v0.7-native-scene-batches.md"),
+    rule("transport.connection-identifiers", "连接编号宽度", "各backend共用原子入口分配1..u32::MAX，Process生命周期内不复用。最后合法号仍可传输，耗尽在登记/发布前明确失败并走既有endpoint监督，不能取低位、回绕或放宽Host/TS桥。KCP线上local_conn另有避碰，不等于Host编号已合法。有限边界测试不冒充海量连接或完整故障转移。", "docs/design/v0.7-connection-id-admission.md"),
+    rule("runtime.control-ingress", "控制入站所有权", "每Process共享65536项未开始Inner RPC/Disconnect，守卫从Native入队保留到实际V8/TS节点开始或销毁后单次确认；搬入忙碌mailbox不归还。RPC明确1011，断线在原连接清理中等待，completion/Shutdown不占额度。聚合确认先验证，只适用于数量槽；旧Model缺入口应启动失败，接收器/isolate退出回收原所有者，不能把数量称为TS字节或对象内存。", "docs/design/v0.7-control-ingress.md"),
+    rule("runtime.host-backing-store", "Host缓冲区存活", "原Process账本随整块Host packed Box安全转交V8，子视图仍持有整块，最后Native/V8引用或GC实际回收才减计数。观测不是总堆、泄漏证明或硬额度，不含业务复制/其他op，不能在请求完成或控制确认时提前释放。满额策略另行保证completion进展，不伪装已执行为未准入；生产不因指标强制GC，当前安全API不适用V8 sandbox。", "docs/design/v0.7-host-backing-store.md"),
+    rule("runtime.host-event-admission", "Host事件驻留准入", "数据/回复执行前预留，批次失败先回滚再拒绝，不执行其中任何项；已执行回复使用原预留交付，确定长度只缩减。守卫随混合批次直到最后Native/V8引用释放，GC未回收继续计费。Disconnect另有独立backing额度并沿用原清理期限；控制开始确认不是backing释放。新调用满额1011，不重放旧事实、不在打包时拒绝已执行结果、不强制GC。逻辑驻留不是RSS，截断文本也须释放原Native大容量。", "docs/design/v0.7-host-event-budget.md"),
+    rule("transport.io-uring-lifetime", "io-uring实际资源", "Future丢弃不等于内核I/O或FD释放。握手关闭守卫成功后转交writer，错误/取消shutdown，正常路径先排空；listener保留pending accept，收割连接不能遗弃它，停机在原总预算内shutdown并消费结果。真实超时Socket、恢复连接和控制通知堵塞须在listener仍活着时验证，计数归零、条件编译或ring创建不代替实际后端。", "docs/design/v0.7-linux-native-validation.md"),
+    rule("persistence.readonly-capacity", "只读容量观测", "dbproxy_capacity只读catalog/分区字节，可选服务器时间扫描有期限；未知估算、缺表与超时不报零，业务时间不授权TTL删除。Outbox消费inbox与投影同事务后ACK，短测不等于长稳。", "docs/ai/skill-development-contract.md"),
     rule("hotfix.atomic-config", "原子发布", "当前保持单Hotfix包与配置进程内原子切换，沿用帧间切换和主动暂停入口、默认3000ms窗口；超时恢复旧版。不是全Pod同时切换，也不保证任何30秒RPC都不超时；Model/协议/Native变化须重建重启。", "docs/design/typescript-hot-reload.md"),
     rule("sync.durable-fact", "事实与持久保证", "latest只覆盖可替代当前状态，抽卡/扣费/结算事实不能静默覆盖；可靠网络队列不等于持久exactly-once。", "docs/patterns/state-replication.md"),
-    rule("validation.evidence", "证据与授权", "分别报告单测、假存储、真实RPC、真实DB恢复、UI和长稳；故障原因及复测留档，Rust重建前旧结果不能算给新版。故障/清库/长稳只在用户授权范围执行。", "docs/ai/business-development-manual.md"),
+    rule("validation.evidence", "证据与授权", "分别报告单测、假存储、真实RPC、真实DB恢复、UI和长稳；故障原因及复测留档，Rust重建前旧结果不能算给新版。矩阵每步有限期限并拥有进程树，超时/中止/未回收不是通过，中止后未运行记skipped。记录Cargo features及实际宿主身份；编译路径须重新编译复测，不能只靠缓存。故障/清库/长稳只在用户授权范围执行。", "docs/ai/business-development-manual.md"),
     rule("execution.coalesced-timer", "合并Timer", "同一所有者下大量定时对象使用最近到期Timer统一调度。", "docs/patterns/timer-update-and-action.md"),
     rule("execution.action-delegation", "Action领域委托", "Action修改哪个领域，就调用哪个领域能力并复用其同步机制。", "docs/patterns/timer-update-and-action.md"),
     rule("data.ts-default", "TypeScript优先", "普通业务状态和行为默认留在Model/Hotfix TypeScript。", "docs/patterns/data-placement.md"),
@@ -51,14 +75,15 @@
   };
 
   var ENVIRONMENT_REQUIREMENTS = {
-    summary: "2026-09-17工作区基线：TiangZ 0.6.0，Node.js 24.x，Rust按rust-toolchain.toml（当前1.97.1）。版本不是在线探测结果，换分支先核对清单。游戏示例已拆到TiangZ-Examples；Docker仅用于需要的本地数据库/容器验证，不是技能运行前提。",
+    summary: "本工具不读取本机文件或网络，不宣称已经探测工作版本。按目标worktree的清单、锁和已安装依赖核对版本；框架0.7升级目标不是插件版本号。游戏示例在TiangZ-Examples；Docker用于需要的容器/存储验证，不是技能运行前提。",
+    versionStatus: "not-probed",
     repositories: [
       {
         name: "TiangZ",
         url: "https://github.com/moulo1982Google/TiangZ.git",
-        branch: "main",
-        workingVersion: "0.6.0",
-        stableBaseline: "0.3.10"
+        workingVersion: null,
+        versionSources: ["Cargo.toml", "package.json", "Cargo.lock", "package-lock.json"],
+        note: "读取用户选定worktree；本地候选依赖的通过结果不能冒充默认npm ci或发布标签验证。"
       },
       {
         name: "TiangZ Native Language",
@@ -66,11 +91,16 @@
         note: "以当前检出的package.json与扩展清单为准，Core与VS Code扩展可能分开记版本；从同一兼容源码构建，不声明未核验的最新发布版本。"
       },
       {
+        name: "TiangZ Developer Tools",
+        url: "https://github.com/moulo1982Google/tiangz-developer-tools.git",
+        note: "分别核对Core/VSIX清单及宿主安装依赖；复用确定性CLI/LS规则，AI建议不替代编译和检查。"
+      },
+      {
         name: "TiangZ DBProxy",
         url: "https://github.com/moulo1982Google/TiangZ-DBProxy.git",
-        branch: "main",
-        workingPackageVersion: "0.6.0",
-        note: "持久化开发建议与 TiangZ main 配套使用；不要把旧 release tag 当作当前工作分支。"
+        workingPackageVersion: null,
+        versionSources: ["Cargo.toml", "package.json", "sdk/typescript/src/index.ts"],
+        note: "与所选TiangZ宿主实际依赖配套；发布tag、本地候选和工作分支分别记录，不能靠目录名推断兼容。"
       }
     ],
     prerequisites: {

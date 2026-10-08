@@ -1,7 +1,7 @@
 import type { MaybePromise } from "../async";
 import { HotfixBindingStore } from "../hotReload/HotfixSystem";
 import { utf8Decode, utf8Encode } from "../protocol/binary";
-import type { EntryScene } from "./types";
+import type { EntryScene } from "./EntryScene";
 
 type SceneClass<TScene extends EntryScene> = new (...args: any[]) => TScene;
 
@@ -197,6 +197,18 @@ function decodeQueryComponent(value: string): string {
 
 interface HostHttpBridge {
   respond(requestId: number, status: number, headersJson: string, body: Uint8Array): boolean;
+  isPending(requestId: number): boolean;
+  discard(requestId: number): void;
+}
+
+/** 仅在开始业务前检查调用方是否仍等待。 / Checks caller interest only before starting business work. */
+export function isHttpRequestPending(requestId: number): boolean {
+  return hostHttp().isPending(requestId);
+}
+
+/** 丢弃未执行节点或释放已完成请求，不能取消正在运行的业务。 / Discards unstarted work or releases completed work, never cancels running business. */
+export function discardHttpRequest(requestId: number): void {
+  hostHttp().discard(requestId);
 }
 
 /**

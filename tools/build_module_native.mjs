@@ -4,7 +4,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
 import { moduleNativeFingerprint } from "./module_native.mjs";
-import { assertNativeDenoIdentity } from "./module_native_dependencies.mjs";
+import { assertNativeDenoIdentity, assertNativeHostIdentity } from "./module_native_dependencies.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
@@ -26,7 +26,9 @@ const catalog = await loadGameModuleCatalog({ projectRoot: root,
 const modules = catalog.modules.filter((module) => module.native);
 if (!modules.length) { process.stdout.write("no module Native crates\n"); process.exit(0); }
 const directory = path.join(root, "temp", "module-native-build", catalog.graphHash);
-const targetDirectory = path.join(root, "temp", "module-native-target");
+// 组合宿主与普通宿主同名，必须隔离输出；否则 Cargo fresh 会复用被另一构建覆盖的 TiangZ。
+// Composite and plain hosts share a binary name; isolate outputs to prevent stale Cargo reuse after overwrites.
+const targetDirectory = path.join(process.env.CARGO_TARGET_DIR ? path.resolve(root, process.env.CARGO_TARGET_DIR, "module-native") : path.join(root, "temp", "module-native-target"), catalog.graphHash);
 await mkdir(directory, { recursive: true });
 const fingerprint = await moduleNativeFingerprint(catalog);
 const dependencies = [];
@@ -49,6 +51,8 @@ await writeFile(path.join(directory, "Cargo.toml"), manifest);
 const bridge = path.join(directory, "bridge.rs");
 await writeFile(bridge,
   `pub(crate) const FINGERPRINT: &str = ${quote(fingerprint)};\n` +
+  `pub(crate) fn workers() -> Vec<crate::native_worker::WorkerSpec> { vec![${modules.flatMap((module, index) => (module.native.relative.workers ?? []).map(worker =>
+    `crate::native_worker::WorkerSpec { name: ${quote(`${module.id}::${worker.name}`)}, capacity: ${worker.capacity}, max_input_bytes: ${worker.maxInputBytes}, max_output_bytes: ${worker.maxOutputBytes}, compute: tiangz_module_${index}::native_data::worker_${worker.name} }`)).join(",")}] }\n` +
   `pub(crate) fn extensions() -> Vec<deno_core::Extension> { vec![${modules.map((_, index) => `tiangz_module_${index}::extension()`).join(",")}] }\n` +
   `pub(crate) fn configure_project_root(root: &std::path::Path) -> anyhow::Result<()> { let _ = root; ${modules.map((module, index) => module.native.relative.configureProjectRoot ? `tiangz_module_${index}::configure_project_root(root).map_err(|error| anyhow::anyhow!("module {} resource root: {}", ${quote(module.id)}, error))?;` : "").join("\n")} Ok(()) }\n` +
   `pub(crate) fn bootstraps() -> &'static [(&'static str, &'static str)] { &[${modules.map((module, index) => `(${quote(module.id)}, tiangz_module_${index}::BOOTSTRAP)`).join(",")}] }\n`);
@@ -61,6 +65,7 @@ const metadata = JSON.parse(run("cargo", ["metadata", "--format-version", "1", "
     "--filter-platform", hostTarget.trim(),
     ...(args.includes("--offline") ? ["--offline"] : []), ...(args.includes("--locked") ? ["--locked"] : [])], { capture: true }));
 assertNativeDenoIdentity(metadata, modules);
+assertNativeHostIdentity(metadata, await realpath(root));
 if (process.platform === "win32") {
   const v8 = metadata.packages.find((item) => item.name === "v8");
   if (v8) {

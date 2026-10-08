@@ -1,3 +1,5 @@
+> 本轮发布：`v0.7.0-rc1`，从 `feat/v0.7` 合入主线的预发行版本。历史 RC 标签、测试资格和制品保持原身份；本次发布后验证计划见 [RELEASE-v0.7.0-rc1.md](RELEASE-v0.7.0-rc1.md)。
+
 # TiangZ
 [![verify](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml)
 [![security](https://github.com/moulo1982Google/TiangZ/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/moulo1982Google/TiangZ/actions/workflows/security.yml)
@@ -5,7 +7,7 @@
 [![tag](https://img.shields.io/github/v/tag/moulo1982Google/TiangZ?label=tag&sort=semver)](https://github.com/moulo1982Google/TiangZ/tags)
 [![license](https://img.shields.io/github/license/moulo1982Google/TiangZ?label=license)](LICENSE)
 
-TiangZ 是 Rust Runtime + TypeScript 的模块化游戏服务端框架。当前版本为 `0.6.2`（2026-09-23 发布，标签 `v0.6.2`）。
+TiangZ 是 Rust Runtime + TypeScript 的模块化游戏服务端框架。当前版本为 `0.7.0-rc1`，本次为预发行版本；上一正式版 `v0.6.5` 于 2026-09-30 发布。
 
 MMORPG 不再是内置宿主：服务端模块、协议、配置、Native 游戏数据与六个客户端都在同级 TiangZ-Examples。TiangZ-ModuleGame 和 TiangZ-WoW335 显式依赖该 MMORPG 模块；SLG 不需要安装它。
 
@@ -38,6 +40,8 @@ VS Code Developer Tools 提供创建、检查和导航入口；不安装插件�
 | app/generated、src/generated | 生成物，不手改 |
 
 一个 OS Process 只有一个 V8 和一条 TS 业务线程；它可以承载多个 Scene。玩家等 Actor 通过 InstanceId 定位并进入 mailbox，不通过遍历地图寻找。Model 定义稳定类型和状态，Hotfix 实现行为；Model、协议和 Native 变化需要重建并重启。
+
+模块可通过 `native.workers` 声明专用 Rust 计算线程，提供有界字符串输入/输出和 Promise facade。它是 Process 级资源，多个 Scene 共用容量与不可逆 drain；热更和停机会等待已准入计算及 V8 结果交付。使用边界见 [Native worker](docs/design/native-workers.md)，0.6.5 与 0.7 的整合记录见 [源码对齐](docs/design/v0.7-merge-0.6.5.md)。
 
 ## 使用 MMORPG 示例
 
