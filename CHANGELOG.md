@@ -1,6 +1,10 @@
 # 版本记录
 
-## 未发布（0.7，RC1 之后）
+## 0.7.0 — 2026-10-08（正式版，标签 `v0.7.0`）
+
+在 `v0.7.0-rc1` 之上加入下列 Scene HTTP、outerIp 域名与异步结果唤醒，直接发布为正式版（不再发 rc2 的 GitHub 发布；已推送的底层仓库 `v0.7.0-rc2` 标签保留）。依赖改为固定标签：DBProxy `v0.7.0`（0.7.0，无代码改动）、Developer Tools `v0.16.1`（Core 0.16.1，含 HTTP Handler 热更规则，替代原先固定的 198afe8f 提交）、Native Language `v0.17.1`（Core 0.17.1，无代码改动）。两个工具仓库已有自己 2026-07 的旧 `v0.7.0` 标签，因此用各自版本号作标签。随包 AI 插件 0.3.0 用 Developer Core 0.16.1 重新构建 MCP。以后的缺陷按 0.7.x 小版本修补。
+
+注意：宿主为正式版 0.7.0 后，引擎范围上限写 `0.7.0` 的模块（如 `[0.6.x, 0.7.0)`）不再被接受（预发行 0.7.0-rc* 按 semver 小于 0.7.0，所以以前能过）。需要在 0.7 上运行的模块请把范围改为 `[0.7.0, 0.8.0)` 等。本仓库测试夹具已同样调整。
 
 非破坏性新增；已有配置、模块和业务代码无需修改。需求来自苟道三国登录改造（F4：生产环境用 HTTP 接口返回 Login 地址，以后工具类接口也会用到）。
 
@@ -26,6 +30,7 @@
 
 - 空闲/低负载 Process 中，DBProxy、模块 Native worker、event_stream 的异步结果与 async Handler 回包不再多等一个 idle tick（Windows adaptive 实测约 60ms → 约 1ms）；worker 计算期间同进程其他请求不再因推进 JS 等计时器排队约 16ms。
 - 宿主内部修改：结果可取后叫醒主循环、推进 JS 不设计时器、Update 后补取 async 回包。协议、配置、Stable API、TS 写法不变；需重建宿主并重启。契约见 docs/design/async-result-wake.md。
+- 合入 0.7 集成线后完整矩阵首轮 full 8/9：`test:module-native-runtime` 生成的验收工程用 `#[path]` 单独引入 `native_worker.rs`，缺少它新调用的 `host_wake`，编译报 E0433。测试生成代码同时引入 `host_wake.rs` 后该项通过；产品代码未改。
 
 
 ## 0.6.5 — 模块异步 Native worker（2026-09-30，标签 `v0.6.5`）
