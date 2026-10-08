@@ -12,7 +12,7 @@
 
 实验中走过的弯路（保留供复测者避免）：给 `poll_event_loop` 传自定义 waker 无效——op 完成只唤醒 deno 的 tokio 本地任务；只发唤醒信号无效——`recv_timeout` 在队列为空时继续睡；推进时用 0ms 超时无效——tokio 计时器仍按 1ms 粒度驻留，Windows 上照样约 16ms；实验驱动用同步方式读进程 CPU 会卡客户端约 150ms，使各场景最大值失真，须异步读取。
 
-复测：`cargo test --bin TiangZ -- host_wake dbproxy native_worker host::tests process::tests`；端到端延迟对比用实验 worktree 的 `tools/async_op_latency_probe.mjs`（自带 memory 模式 DBProxy）。证据见设计文档验证记录。
+复测：`cargo test --bin TiangZ -- host_wake dbproxy native_worker host::tests process::tests`；端到端对比需在真实 Process 中用 starter 模块夹具测修复前后的空闲 RTT（同步/async Handler、NativeWorkers、Repository、HostStreamConsumer），并在并发负载下分别测游戏进程与 DBProxy 进程的每请求 CPU。驱动脚本是一次性实验工具，未入库；数值见设计文档验证记录。
 
 源码落地：双亲合并`c06b244`已快进原`feat/v0.7`，原工作区完整Rust/KCP和启动包重建、真实模块宿主启动/停止通过，Host SHA3d390885...；生成/依赖锁无漂移。原目录证据`temp/v07-065-integration-main/`与隔离矩阵分开，不把旧二进制当新Rust结果。MSVC既有链接警告保留、未push，见[源码对齐](../design/v0.7-merge-0.6.5.md)。
 

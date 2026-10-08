@@ -30,7 +30,7 @@
 
 ## 验证记录（2026-10-08，Windows 10 / 7950X，debug 构建）
 
-证据在本 worktree 的 `target/loop-wake-evidence/`（gitignore）：单元测试、Clippy、`verify:quick` 日志与端到端报告。端到端用实验分支 `test/async-op-latency-main` 的驱动派生脚本，夹具为 starter 模块 + 官方 `native.workers` + 自带 memory 模式 DBProxy（v0.7.0-rc1），不连任何已有数据库；基线为同一 rc1 源码、未启用任何修复的组合宿主。
+端到端测量使用一次性驱动脚本（未入库）：真实 Process + starter 模块夹具 + 官方 `native.workers` + 测试自带的 memory 模式 DBProxy（v0.7.0-rc1），不连任何已有数据库；基线为同一 rc1 源码、未启用任何修复的组合宿主。原始日志不随仓库保留，下文记录数值。
 
 - Rust：`cargo test --bin TiangZ` 235/235（新增 4 项：信号合并与等待语义、推进不等待、DBProxy 与 worker“先可取后叫醒”），`cargo clippy --bin TiangZ --tests -- -D warnings` 与 `cargo fmt --check` 通过。
 - `npm run verify:quick`：34/35。唯一失败为 `soak control memory and bounded reports` 中依赖 PowerShell 7 的用例（`spawn pwsh ENOENT`）；本机只有 Windows PowerShell 5.1，未改动的 rc1 源码同样失败，与本改动无关，同步骤其余 19 项通过。未运行完整 `verify`。
@@ -47,7 +47,18 @@
 
 low-latency 模式由约 18ms 降至 0.3–1.0ms。空闲 10 秒进程 CPU 与持续同步请求的每请求 CPU 无明显变化（Windows CPU 计数粒度约 15.6ms）。
 
-20 条连接背靠背 DBProxy 读（各 3 轮）：rc1 10.5k–11.0k 次/秒、p99 14.6–15.5ms、每请求 204–246µs；本实现 16.3k–18.5k 次/秒、p99 1.8–2.1ms、每请求 239–261µs。每请求 CPU 约高 10–15%，来源不是“补取回包”（实验分支单独开关对比：补取前后均约 230µs），而是结果到达即推进，高负载下每轮批次变小。推进轮数从 4 降为 2 后吞吐由 15.5k–16.4k 回升（4 轮时每轮都跑满轮询）。
+20 条连接背靠背 DBProxy 读（memory 模式）：rc1 10.5k–11.0k 次/秒、p99 14.3–15.5ms；本实现 16.3k–19.2k 次/秒、p99 1.7–2.1ms。
+
+按进程/线程的粗测（各 2 轮；Windows CPU 计数粒度约 15.6ms），单位为每请求 CPU 微秒：
+
+| | rc1 | 本实现 |
+|---|---|---|
+| 游戏进程合计 | 236–248 | 242–243 |
+| 其中 V8 业务线程 | 56–64 | 52–53 |
+| 其中其余 Rust 线程（网络收发、DBProxy 客户端等） | 181–188 | 192–193 |
+| DBProxy 进程 | 70–78 | 86–91 |
+
+游戏进程每请求 CPU 基本不变；DBProxy 进程约高 15%，推断为请求不再在游戏侧积攒一个 idle tick 后成批到达，服务端每批更小、摊薄变少。早先只测游戏进程时一度得到“约高 10–15%”，多轮复测后判断在本机波动范围内（rc1 自身 204–248µs）。“补取回包”本身不增加 CPU（单独开关对比前后均约 230µs）。推进轮数从 4 降为 2 后吞吐由 15.5k–16.4k 回升（4 轮时高负载下每轮都跑满轮询）。线程名在本机不可读，V8 业务线程按“唯一明显最忙的线程”判定。
 
 真实后端（专用 Docker 容器 PostgreSQL 18.6 + Redis 8.8.1，仅绑定回环；基线与本实现各用新数据库与独立 Redis 逻辑库；event_stream 用独立逻辑库与各自消费组），空闲 adaptive RTT 中位数 / p99：
 
@@ -59,6 +70,6 @@ low-latency 模式由约 18ms 降至 0.3–1.0ms。空闲 10 秒进程 CPU 与�
 
 rc1 的 59ms 中已包含真实存储耗时（约 2–7ms），被 idle tick 掩盖；本实现后剩下的就是存储本身的耗时。low-latency 下 rc1 约 17–19ms。全部请求成功，DBProxy 日志无错误，两个消费组均已在 Redis 中创建。
 
-未覆盖：Linux 与 release 构建；完整 `npm run verify`；高负载下按忙闲合并叫醒以降低每请求 CPU 的优化。
+未覆盖：Linux 与 release 构建；完整 `npm run verify`；真实 PostgreSQL/Redis 后端下的 CPU；高负载下按忙闲合并叫醒以降低 DBProxy 侧每请求 CPU 的优化。
 
 合入 `release/v0.7.0-rc1`（合并提交 d30d8498，含 HTTP 集成）后复测：Rust `cargo test --bin TiangZ` 258/258，`cargo clippy --all-targets -- -D warnings` 与 `cargo fmt --check` 通过；`npm run verify:quick` check 8/8、quick 34/35，唯一失败仍为依赖 PowerShell 7 的 `spawn pwsh ENOENT` 用例。宿主 SHA-256 f9396f93…（debug）。`v0.7.0-rc1` 标签仍指向 bf25dddf，本修正随下一个 0.7 版本发布。
