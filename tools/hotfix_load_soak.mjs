@@ -8,6 +8,11 @@ import { build } from "esbuild";
 import { createHash } from "node:crypto";
 import { immutableCandidateFromOutput } from "./build_result.mjs";
 import { resolveModuleRuntimeBinary } from "./module_runtime_binary.mjs";
+import { installActorQuotaFixture } from "./hotfix_actor_quota_fixture.mjs";
+import { installLocalSceneQuotaFixture } from "./hotfix_local_scene_quota_fixture.mjs";
+import { installHostOperationFixture } from "./hotfix_host_operation_fixture.mjs";
+import { installRemoteDeadlineFixture } from "./hotfix_remote_deadline_fixture.mjs";
+import { installControlIngressFixture } from "./hotfix_control_ingress_fixture.mjs";
 
 // 独立本机夹具；所有写入都在本轮临时工程，保留报告和失败现场。
 // Isolated local fixture; writes stay in this run's temporary project, retaining evidence.
@@ -122,24 +127,41 @@ message S2S_WorkResponse // IResponse
   uint32 count = 1;
 }
 `);
-  await writeFile(path.join(module, "src/model/counter/CounterScene.ts"), `import { EntryScene, entryScene, DbProxyEntityRepository } from "#tiangz/core";
+  await writeFile(path.join(module, "src/model/counter/CounterScene.ts"), `import { EntryScene, entryScene, DbProxyEntityRepository, ActorUnit, actor, Scene, scene } from "#tiangz/core";
+@actor({ mailbox: "ordered" })
+export class DrainActor extends ActorUnit {}
+@scene({ sceneType: "DrainScene" })
+export class DrainScene extends Scene {}
 @entryScene()
 export class CounterScene extends EntryScene {
   protected override readonly mailbox = "unordered" as const;
   holdResolve: (() => void) | null = null;
   completed = 0;
+  drainActor: DrainActor | undefined;
+  detachedState = 0;
+  detachedValue = 0;
+  spawnQuotaOwners: DrainScene[] = [];
+  spawnQuotaRelease: (() => void) | undefined;
+  disconnectedClients = 0;
+  protected override onDisconnect(_connectionId: number): void { this.disconnectedClients += 1; }
   readonly repository = new DbProxyEntityRepository<number, number>({
     recordNamespace: ${JSON.stringify(`hotfix-fault-${path.basename(directory)}`)}, schema: "hotfix-fault", schemaVersion: 1,
     Capture: value => value, Encode: value => new Uint8Array([value]), Decode: bytes => bytes[0]!
   }, "hotfix-fault");
 }
 `);
-  await writeFile(handlerPath, `import { rpcHandler, type SceneRpcHandler } from "#tiangz/model";
-import { CounterScene, CounterComponent, StarterProtocol, type C2S_Increment, type S2C_Increment } from "#tiangz/module";
+  const modelIndex = path.join(module, "src/model/index.ts");
+  await writeFile(modelIndex, (await readFile(modelIndex, "utf8"))
+    .replace('import { CounterScene }', 'import { CounterScene, DrainActor, DrainScene }')
+    .replace('export { CounterScene,', 'export { CounterScene, DrainActor, DrainScene,')
+    .replace('modelExports: { CounterScene,', 'modelExports: { CounterScene, DrainActor, DrainScene,'));
+  await writeFile(handlerPath, `import { rpcHandler, TimerSystem, type SceneRpcHandler } from "#tiangz/model";
+import { CounterScene, CounterComponent, DrainActor, DrainScene, StarterProtocol, type C2S_Increment, type S2C_Increment } from "#tiangz/module";
 @rpcHandler(CounterScene, StarterProtocol.Increment)
 @rpcHandler(CounterScene, StarterProtocol.Work)
 export class IncrementHandler implements SceneRpcHandler<CounterScene, C2S_Increment, S2C_Increment> {
   async handle(scene: CounterScene, request: C2S_Increment): Promise<S2C_Increment> {
+    const codeVersion = 10;
     if (request.mode === 1) {
       if (scene.holdResolve) throw new Error("fixture already held");
       await new Promise<void>(resolve => { scene.holdResolve = resolve; });
@@ -150,8 +172,93 @@ export class IncrementHandler implements SceneRpcHandler<CounterScene, C2S_Incre
     if (request.mode === 9) return { count: scene.completed };
     if (request.mode === 13) return { count: (await scene.repository.Load("probe"))?.data ?? 0 };
     if (request.mode === 15) return { count: Number((await scene.repository.Load("ack-loss"))?.revision ?? 0n) };
+    if (request.mode === 18) return { count: scene.detachedValue };
+    if (request.mode === 19) return { count: scene.detachedState };
+    if (request.mode === 33) return { count: scene.disconnectedClients };
+    // 夹具刻意只观察结果，不用 Tasks.Spawn 代替 mailbox 自己的屏障计数。 / The fixture observes results without masking mailbox activity via Tasks.Spawn.
+    if (request.mode === 16 || request.mode === 17) {
+      if (scene.holdResolve || scene.detachedState === 1) throw new Error("fixture already held");
+      const actor = scene.drainActor ??= scene.SpawnActor(99, DrainActor);
+      scene.detachedState = 1;
+      void Promise.resolve(scene.RunLocalActorMailbox(actor, async current => {
+        await new Promise<void>(resolve => { scene.holdResolve = resolve; });
+        if (current.IsDisposed) return 0;
+        const encoded = scene.GetComponent(CounterComponent).Increment();
+        scene.completed++;
+        return Math.floor(encoded / 32) * 32 + codeVersion + (encoded % 32) % 10;
+      })).then(value => { scene.detachedValue = value; scene.detachedState = 2; }, () => { scene.detachedState = 3; });
+      if (request.mode === 17) { scene.DespawnActor(99); scene.drainActor = undefined; }
+      return { count: 0 };
+    }
+    if (request.mode === 20) {
+      scene.detachedState = 1;
+      void scene.scenes.call(scene.scenes.byName("local-target"), StarterProtocol.Work, { mode: 1 })
+        .then(() => { scene.detachedState = 2; }, () => { scene.detachedState = 3; });
+      return { count: 0 };
+    }
+    if (request.mode === 21 || request.mode === 22) return scene.scenes.call(scene.scenes.byName("local-target"), StarterProtocol.Work, { mode: request.mode === 21 ? 3 : 2 });
+    if (request.mode === 23) {
+      if (scene.holdResolve || scene.detachedState === 1) throw new Error("fixture already held");
+      const owner = scene.SpawnChildScene("drain-task", DrainScene);
+      scene.detachedState = 1;
+      await new Promise<void>(started => {
+        owner.Tasks.Spawn("held-result", async ({ signal }) => {
+          started();
+          await new Promise<void>(resolve => { scene.holdResolve = resolve; });
+          // 仅向仍存活的夹具记录结果；已取消时不再执行子 Scene 业务。 / Report to the live fixture without performing cancelled child Scene work.
+          scene.detachedState = signal.aborted ? 2 : 3;
+        });
+      });
+      if (!scene.DespawnChildScene("drain-task") || !owner.IsDisposed) throw new Error("child Scene must be disposed before acknowledgement");
+      return { count: 0 };
+    }
+    if (request.mode === 24) {
+      const owner = scene.SpawnChildScene("failed-task-admission", DrainScene);
+      const timers = TimerSystem.Instance, original = timers.NewOnceTimer;
+      const failure = new Error("injected watchdog registration failure");
+      scene.detachedState = 0;
+      try {
+        // 只在此同步夹具栈内注入注册失败，返回请求前恢复原服务方法。 / Inject only within this synchronous fixture stack and restore before returning.
+        timers.NewOnceTimer = () => { throw failure; };
+        try {
+          owner.Tasks.Spawn("must-not-run", () => { scene.detachedState = 99; });
+          throw new Error("Spawn must propagate watchdog failure");
+        } catch (error) { if (error !== failure) throw error; }
+      } finally { timers.NewOnceTimer = original; }
+      return { count: owner.Tasks.InFlightCount };
+    }
+    if (request.mode === 25) return { count: scene.DespawnChildScene("failed-task-admission") ? 1 : 0 };
+    if (request.mode === 26) {
+      if (scene.spawnQuotaOwners.length) throw new Error("spawn quota fixture already active");
+      const result = new Promise<void>(resolve => { scene.spawnQuotaRelease = resolve; });
+      for (let i = 0; i < 17; i++) {
+        const owner = scene.SpawnChildScene("spawn-quota-" + i, DrainScene);
+        scene.spawnQuotaOwners.push(owner);
+        if (i < 16) for (let task = 0; task < 256; task++) owner.Tasks.Spawn("held-quota", () => result);
+      }
+      return { count: scene.spawnQuotaOwners.reduce((count, owner) => count + owner.Tasks.InFlightCount, 0) };
+    }
+    if (request.mode === 27) {
+      scene.spawnQuotaOwners[16]!.Tasks.Spawn("probe-quota", () => { scene.detachedValue += 1; });
+      return { count: 1 };
+    }
+    if (request.mode === 28) {
+      scene.spawnQuotaRelease?.(); scene.spawnQuotaRelease = undefined;
+      return { count: 0 };
+    }
+    if (request.mode === 29) return { count: scene.spawnQuotaOwners.reduce((count, owner) => count + owner.Tasks.InFlightCount, 0) };
+    if (request.mode === 30) return { count: scene.detachedValue };
+    if (request.mode === 31) {
+      let removed = 0;
+      for (let i = 0; i < 16; i++) if (scene.DespawnChildScene("spawn-quota-" + i)) removed++;
+      return { count: removed };
+    }
+    if (request.mode === 32) {
+      for (let i = 0; i < 17; i++) scene.DespawnChildScene("spawn-quota-" + i);
+      scene.spawnQuotaOwners.length = 0;
+      return { count: 0 };
+    }
     if ((request.mode ?? 0) >= 1000) return scene.scenes.call(scene.scenes.byName("counter"), StarterProtocol.Work, { mode: (request.mode ?? 0) - 1000 }, { timeoutMs: 30000 });
-    const codeVersion = 10;
     if (request.mode === 4) await scene.scenes.call(scene.scenes.byName("worker"), StarterProtocol.Work, { mode: 1 }, { timeoutMs: 30000 });
     if (request.mode === 10 && (await scene.repository.Load("probe"))?.data !== 42) throw new Error("stored fixture value changed");
     if (request.mode === 11) await scene.repository.SaveSnapshot("probe", 42, 0n);
@@ -163,6 +270,11 @@ export class IncrementHandler implements SceneRpcHandler<CounterScene, C2S_Incre
   }
 }
 `);
+  await installActorQuotaFixture(module);
+  await installLocalSceneQuotaFixture(module);
+  await installHostOperationFixture(module);
+  await installRemoteDeadlineFixture(module);
+  await installControlIngressFixture(module);
   await run(["tools/game_project.mjs", "protocol-update", "--project", project]);
   await run(["tools/game_project.mjs", "build", "--project", project]);
   const candidates = [path.join(directory, "pair-1"), path.join(directory, "pair-2")];
@@ -180,13 +292,15 @@ export class IncrementHandler implements SceneRpcHandler<CounterScene, C2S_Incre
   await build({ stdin: { contents: `import "../modules/starter/generated/typescript/Core/Net/BrowserWebSocketTransport";
 import { RpcSocket } from "../modules/starter/generated/typescript/Core/Net/RpcSocket";
 import { StarterClient } from "../modules/starter/generated/typescript/starter/protocol/clients";
+import { StarterProtocol as InternalProtocol } from "../modules/starter/src/model/generated/protocol/starter/protocol/rpcs";
+export const innerWorkProtocol = InternalProtocol.Work;
 export async function connect(port) {
   const socket = new RpcSocket({ transport: "websocket", host: "127.0.0.1", port }, { defaultTimeoutMs: ${rpcTimeoutMs} });
   const client = new StarterClient(socket);
   const timer = setInterval(() => socket.update(), 10);
   const close = () => { clearInterval(timer); socket.close(); };
   try { await socket.connect(); } catch(error) { close(); throw error; }
-  return { call: (mode = 0) => client.increment({ mode }), close };
+  return { call: (mode = 0) => client.increment({ mode }), sendQuota: (actorIndex = 0) => client.actorQuota({ actorIndex }), sendLocalQuota: (sceneIndex = 0) => client.localQuota({ sceneIndex }), closed: () => socket.state === "closed", close };
 }`, resolveDir: path.join(project, "tools"), sourcefile: "load-client.ts", loader: "ts" }, outfile: probe, bundle: true, platform: "node", format: "esm", target: "node22", logLevel: "silent" });
   const { connect } = await import(pathToFileURL(probe).href);
   const binary = await resolveModuleRuntimeBinary({ engineRoot: engine, modulesDirectory: path.join(project, "modules") });

@@ -52,7 +52,15 @@ MapHost send Gate.MapReady
 MapHost return EnterMap response
 ```
 
-如果本地 `send` 等待 Gate Handler，而 Gate ordered mailbox 正在等待 MapHost RPC，就会形成调用环。框架的单向 `send` 只保证目标 mailbox 接受消息，不等待执行；异步错误由目标 Scene 记录。
+如果本地 `send` 等待 Gate Handler，而 Gate ordered mailbox 正在等待 MapHost RPC，就会形成调用环。框架的本地单向 `send` 只接受到目标 Scene 的当前 mailbox 跳，不等待最终执行；远程 `send` 先进入本地 Host 发送队列，也没有对端业务接收/完成回执。后续失败由所属路径记录，返回不能当作最终送达保证。
+
+0.7 候选为 Actor mailbox 增加固定准入界限：每 Actor 4096 项、每 Process 16384 项，排队和真实运行中的 RPC/单向调用一起计数。超限在执行前拒绝，RPC 返回 `SceneOverloaded`（1011）；本地同步准入失败抛出该错误，网络单向消息关闭仍有效的原来源连接。销毁 Actor 只能立即取消未执行队列，正在等待的调用仍占额度直到真正结束。
+
+本地 `send` 若已进入忙碌 Scene，后续 Actor 跳转仍可能拒绝；其返回不表示最终送达或事务完成。不可丢失的业务事实需要 RPC 结果确认、幂等或持久 Outbox，不能在过载后无限重试或假定未回包就未执行。这组数量界限不限制 DTO/闭包/ArrayBuffer 的实际堆大小，部署时应观察固定 Process 的任务数、峰值和两级拒绝指标，详见[Actor 容量与验收](../design/v0.7-actor-mailbox-capacity.md)。
+
+本地 EntryScene 的 `call/send` 另有每目标 **4096**、每 Process **16384** 项准入，仍包含排队与实际执行。单向消息返回后，名额跟着目标节点保留；目标销毁只立即终结未执行节点，异步任务实际结束后才归还。公开 `call/send` 超限均保留 1011。网络入站和 Host completion 使用独立路径，不能借这份本地额度完成释放，也不越过 ordered 的业务顺序。一次 Scene 调用再进入 Actor 会持有两类名额，监控不得相加当作唯一业务请求数，详见[本地 Scene 容量](../design/v0.7-local-scene-capacity.md)。
+
+显式设置本地 RPC 的 `timeoutMs` 只限制调用方等待。提前成功或失败会释放自己的宿主期限；期限届满后，已经开始的目标仍按真实完成归还名额，ordered 后续消息和热更都继续等它。不要把超时当作业务取消，也不要使用内部期限桥实现游戏倒计时，详见[调用期限](../design/v0.7-host-deadlines.md)。
 
 ## EntityRoot、Unit 与 Component
 

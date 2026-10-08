@@ -1,3 +1,4 @@
+pub mod buffer_budget;
 pub mod navigation;
 
 #[cfg(feature = "kcp")]

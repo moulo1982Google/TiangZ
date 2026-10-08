@@ -77,16 +77,19 @@ impl Worker {
                             .saturating_add(job.enqueued.elapsed().as_micros() as u64);
                     }
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        (spec.compute)(job.input)
-                    }))
-                    .unwrap_or_else(|_| Err("native worker computation panicked".into()))
-                    .and_then(|output| {
-                        if output.len() <= spec.max_output_bytes {
-                            Ok(output)
-                        } else {
-                            Err("native worker output too large".into())
+                        // 业务错误也会跨V8边界；超限用固定诊断替换，panic诊断保持独立。
+                        // Compute errors also cross V8; replace oversized values with fixed diagnostics, preserving panic diagnostics.
+                        match (spec.compute)(job.input) {
+                            Ok(output) if output.len() > spec.max_output_bytes => {
+                                Err("native worker output too large".into())
+                            }
+                            Err(error) if error.len() > spec.max_output_bytes => {
+                                Err("native worker error too large".into())
+                            }
+                            result => result,
                         }
-                    });
+                    }))
+                    .unwrap_or_else(|_| Err("native worker computation panicked".into()));
                     {
                         let mut stats = state.stats.lock().unwrap();
                         stats.compute_micros = stats
@@ -478,6 +481,50 @@ mod tests {
             runtime.op_state().borrow().borrow::<Registry>().pending(),
             0
         );
+    }
+
+    /// 业务错误同样按UTF-8字节限长；拒绝大错误后仍可使用原容量。 / Bounds compute errors by UTF-8 bytes and retains capacity after rejecting a large error.
+    #[tokio::test]
+    async fn bounds_compute_errors_without_losing_capacity() {
+        let worker = Worker::new(WorkerSpec {
+            name: "error-size",
+            capacity: 1,
+            max_input_bytes: 16,
+            max_output_bytes: 24,
+            compute: |input| match input.as_str() {
+                "large" => Err("界".repeat(9)),
+                "exact" => Err("界".repeat(8)),
+                _ => Ok(input),
+            },
+        })
+        .unwrap();
+        assert_eq!(
+            worker
+                .submit("large".into())
+                .unwrap()
+                .await
+                .unwrap()
+                .unwrap_err(),
+            "native worker error too large"
+        );
+        assert_eq!(
+            worker
+                .submit("exact".into())
+                .unwrap()
+                .await
+                .unwrap()
+                .unwrap_err(),
+            "界".repeat(8)
+        );
+        assert_eq!(
+            worker.submit("ok".into()).unwrap().await.unwrap().unwrap(),
+            "ok"
+        );
+        worker.drain().await;
+        let stats = worker.shared.stats.lock().unwrap();
+        assert_eq!(stats.pending, 0);
+        assert_eq!(stats.completed, 3);
+        assert_eq!(stats.failed, 2);
     }
 
     #[tokio::test(flavor = "current_thread")]

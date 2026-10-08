@@ -20,6 +20,7 @@ import { MailBoxComponent } from "./MailBoxComponent";
 import { EntityRoot } from "./root";
 import { ActorUnit, Unit, UnitComponent } from "./Unit";
 import { Session, SessionComponent } from "./Session";
+import type { SceneTaskScope } from "./SceneTaskSystem";
 import {
   TimerSystem,
   type TimerCancelledContext,
@@ -58,10 +59,11 @@ interface ActorRuntime {
   ref: ActorRef;
   instance: ActorRuntimeEntity<any[]>;
   mailBox: MailBoxComponent;
-  queue: PendingActorCall[];
+  queue: (PendingActorCall | undefined)[];
   queueHead: number;
   recycledQueueItems: PendingActorCall[];
   running: boolean;
+  pendingCount: number;
   timers: Set<TimerId>;
 }
 
@@ -83,9 +85,28 @@ export interface ActorMailboxMetricsSnapshot {
 }
 
 export class ProcessHost {
+  private static readonly MAX_RECYCLED_MAILBOX_ITEMS = 64;
+  private static readonly MAX_SCENE_TASKS = 4096;
+  private static readonly MAX_TASKS_PER_ACTOR = 4096;
+  private static readonly MAX_ACTOR_TASKS = 16384;
+  private static readonly MAX_LOCAL_CALLS_PER_SCENE = 4096;
+  private static readonly MAX_LOCAL_SCENE_CALLS = 16384;
   readonly Root = new EntityRoot();
   private readonly scenes = new Map<SceneId, SceneRuntime>();
+  private readonly retiredTaskScopes = new Set<SceneTaskScope>();
+  private sceneTaskCount = 0;
+  private sceneTaskMaxCount = 0;
+  private sceneTaskRejections = 0;
   private readonly actorsByInstanceId = new Map<InstanceId, ActorRuntime>();
+  private actorMailboxPendingCount = 0;
+  private actorMailboxMaxPendingCount = 0;
+  private actorMailboxActorRejections = 0;
+  private actorMailboxProcessRejections = 0;
+  private localSceneMailboxCount = 0;
+  private localSceneMailboxMaxCount = 0;
+  private localSceneMailboxSceneRejections = 0;
+  private localSceneMailboxProcessRejections = 0;
+  private controlIngressReleases = { count: 0 };
   private readonly actorMailboxMetrics = {
     fastPathCalls: 0,
     queuedCalls: 0,
@@ -99,13 +120,105 @@ export class ProcessHost {
 
   constructor(public readonly processId = "process-1") {}
 
-  /** 聚合本Process全部入口Scene和动态子Scene的Spawn任务，供Hotfix屏障与Runtime Pump使用。 / Aggregates Spawn tasks from every entry and dynamic child Scene for the Hotfix barrier and Runtime Pump. */
-  get SceneTaskInFlightCount(): number {
-    let count = 0;
-    for (const scene of this.scenes.values()) {
-      count += scene.instance.__taskInFlightCount();
+  /** 启动前绑定原 isolate 的确认计数，迟到清理也不查找新的 Runtime。 / Binds the original isolate's acknowledgement counter before startup, including late cleanup. */
+  __bindControlIngressReleases(counter: { count: number }): void { this.controlIngressReleases = counter; }
+
+  /** 控制节点开始或被丢弃时仅确认一次，实际名额由 Native 归还。 / Acknowledges each control at start or discard; Native releases the actual slot. */
+  __releaseControlIngress(): void { this.controlIngressReleases.count += 1; }
+
+  /** 跨 mailbox 的单次确认只捕获原计数器，不附带 Scene、节点或帧。 / A mailbox acknowledgement captures only its original counter, never a Scene, node or frame. */
+  __controlIngressAcknowledgement(): () => void {
+    const counter = this.controlIngressReleases;
+    let pending = true;
+    return () => { if (pending) { pending = false; counter.count += 1; } };
+  }
+
+  /** 包括已接受的排队/在途调用；移除 Actor 路由不能提前归还运行中的调用。 / Includes admitted queued/in-flight calls; removing Actor routing never settles a running call. */
+  get ActorMailboxPendingCount(): number { return this.actorMailboxPendingCount; }
+
+  /** 本地 Scene 调用包括排队和实际等待，目标注销不能提前释放运行中的调用。 / Local Scene calls include queued and actual waits; target removal cannot release executing calls early. */
+  get LocalSceneMailboxPendingCount(): number { return this.localSceneMailboxCount; }
+
+  /** @internal 先检查目标 Scene 再检查 Process；归还闭包绑定原 Host 且幂等。 / Checks the target Scene before the Process; the idempotent release belongs to the original Host. */
+  __admitLocalSceneMailbox(sceneId: SceneId, scenePending: number): () => void {
+    if (scenePending >= ProcessHost.MAX_LOCAL_CALLS_PER_SCENE) {
+      this.localSceneMailboxSceneRejections += 1;
+      throw new RpcError(SystemErrCode.SceneOverloaded,
+        `local scene mailbox capacity exceeded: ${sceneId} limit=${ProcessHost.MAX_LOCAL_CALLS_PER_SCENE}`);
     }
-    return count;
+    if (this.localSceneMailboxCount >= ProcessHost.MAX_LOCAL_SCENE_CALLS) {
+      this.localSceneMailboxProcessRejections += 1;
+      throw new RpcError(SystemErrCode.SceneOverloaded,
+        `process local scene mailbox capacity exceeded: ${this.processId} limit=${ProcessHost.MAX_LOCAL_SCENE_CALLS}`);
+    }
+    this.localSceneMailboxCount += 1;
+    this.localSceneMailboxMaxCount = Math.max(this.localSceneMailboxMaxCount, this.localSceneMailboxCount);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.localSceneMailboxCount -= 1;
+    };
+  }
+
+  /** 仅统计本地 Scene 调用；网络入站和 Actor 各自记账，不重复聚合为请求总数。 / Counts only local Scene calls; network ingress and Actors have separate accounting, not an additive request total. */
+  LocalSceneMailboxMetrics() {
+    return {
+      localSceneMailboxInFlight: this.localSceneMailboxCount,
+      localSceneMailboxCapacity: ProcessHost.MAX_LOCAL_SCENE_CALLS,
+      localSceneMailboxPerSceneCapacity: ProcessHost.MAX_LOCAL_CALLS_PER_SCENE,
+      localSceneMailboxMaxInFlight: this.localSceneMailboxMaxCount,
+      localSceneMailboxSceneRejections: this.localSceneMailboxSceneRejections,
+      localSceneMailboxProcessRejections: this.localSceneMailboxProcessRejections,
+    };
+  }
+
+  /** 聚合入口、动态及已注销但尚未排空 Scene 的任务；路由注销不提前释放。 / Counts entry, dynamic, and removed Scenes' tasks until actual drain, independent of routing lifetime. */
+  get SceneTaskInFlightCount(): number {
+    return this.sceneTaskCount;
+  }
+
+  /** @internal 任务接受是同步事务；释放闭包始终绑定原 Host，失败回滚、真实完成归还。 / Task acceptance is synchronous; rollback and actual completion release only the original Host. */
+  __admitSceneTask<T>(accept: (release: () => void) => T): T {
+    if (this.sceneTaskCount >= ProcessHost.MAX_SCENE_TASKS) {
+      this.sceneTaskRejections += 1;
+      throw new RpcError(SystemErrCode.SceneOverloaded,
+        `process scene task capacity exceeded: ${this.processId} limit=${ProcessHost.MAX_SCENE_TASKS}`);
+    }
+    this.sceneTaskCount += 1;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      this.sceneTaskCount -= 1;
+    };
+    try {
+      const result = accept(release);
+      this.sceneTaskMaxCount = Math.max(this.sceneTaskMaxCount, this.sceneTaskCount);
+      return result;
+    } catch (error) { release(); throw error; }
+  }
+
+  /** 进程 Spawn 额度快照；拒绝数仅记录 Process 总量限制。 / Process Spawn quota snapshot; rejections count the Process-wide limit only. */
+  SceneTaskMetrics() {
+    return {
+      sceneTaskInFlight: this.sceneTaskCount,
+      sceneTaskCapacity: ProcessHost.MAX_SCENE_TASKS,
+      sceneTaskMaxInFlight: this.sceneTaskMaxCount,
+      sceneTaskRejections: this.sceneTaskRejections,
+    };
+  }
+
+  /** Actor 任务包含排队与实际执行，拒绝按先触达的所有者界限归类。 / Actor tasks include queued and executing work; rejections belong to the first reached ownership limit. */
+  ActorMailboxTaskMetrics() {
+    return {
+      actorMailboxInFlight: this.actorMailboxPendingCount,
+      actorMailboxCapacity: ProcessHost.MAX_ACTOR_TASKS,
+      actorMailboxPerActorCapacity: ProcessHost.MAX_TASKS_PER_ACTOR,
+      actorMailboxMaxInFlight: this.actorMailboxMaxPendingCount,
+      actorMailboxActorRejections: this.actorMailboxActorRejections,
+      actorMailboxProcessRejections: this.actorMailboxProcessRejections,
+    };
   }
 
   Dispose(): void {
@@ -218,6 +331,7 @@ export class ProcessHost {
         queueHead: 0,
         recycledQueueItems: [],
         running: false,
+        pendingCount: 0,
         timers: new Set(),
       };
       scene.actors.set(actorId, runtime);
@@ -348,6 +462,11 @@ export class ProcessHost {
     } finally {
       this.Root.Remove(sceneInstanceId);
       this.scenes.delete(sceneId);
+      if (scene.instance.__taskInFlightCount() > 0) {
+        const scope = scene.instance.Tasks;
+        this.retiredTaskScopes.add(scope);
+        scope.__onIdle(() => { this.retiredTaskScopes.delete(scope); });
+      }
     }
     return true;
   }
@@ -386,6 +505,7 @@ export class ProcessHost {
       pending.reject?.(error);
       this.recycleActorCall(actor, pending);
     }
+    actor.recycledQueueItems.length = 0;
     try {
       actor.instance.__dispose();
     } catch (disposeError) {
@@ -487,10 +607,11 @@ export class ProcessHost {
     if (!actor || this.Root.Get(instanceId) !== actor.instance) {
       return Promise.reject(new RpcError(SystemErrCode.ActorLocationNotFound, `actor instance not found: ${instanceId}`));
     }
+    this.admitActorCall(actor);
 
     if (actor.mailBox.MailboxType === "unordered") {
       this.actorMailboxMetrics.fastPathCalls += 1;
-      const result = this.executeActorCall(actor, run);
+      const result = this.runUnorderedActorCall(actor, run);
       if (isPromiseLike(result)) this.actorMailboxMetrics.asyncCalls += 1;
       return result;
     }
@@ -498,27 +619,7 @@ export class ProcessHost {
     if (!actor.running) {
       this.actorMailboxMetrics.fastPathCalls += 1;
       actor.running = true;
-      try {
-        const result = this.executeActorCall(actor, run);
-        if (isPromiseLike(result)) {
-          this.actorMailboxMetrics.asyncCalls += 1;
-          return Promise.resolve(result).then(
-            (value) => {
-              this.finishActorCall(actor);
-              return value;
-            },
-            (error) => {
-              this.finishActorCall(actor);
-              throw error;
-            },
-          );
-        }
-        this.finishActorCall(actor);
-        return result;
-      } catch (error) {
-        this.finishActorCall(actor);
-        throw error;
-      }
+      return this.runOrderedActorCall(actor, run);
     }
 
     this.actorMailboxMetrics.queuedCalls += 1;
@@ -543,10 +644,11 @@ export class ProcessHost {
     if (!actor || this.Root.Get(instanceId) !== actor.instance) {
       return Promise.reject(new RpcError(SystemErrCode.ActorLocationNotFound, `actor instance not found: ${instanceId}`));
     }
+    this.admitActorCall(actor);
 
     if (actor.mailBox.MailboxType === "unordered") {
       this.actorMailboxMetrics.oneWayFastPathCalls += 1;
-      const result = this.executeActorCall(actor, run);
+      const result = this.runUnorderedActorCall(actor, run);
       if (isPromiseLike(result)) this.actorMailboxMetrics.oneWayAsyncCalls += 1;
       return result;
     }
@@ -554,26 +656,7 @@ export class ProcessHost {
     if (!actor.running) {
       this.actorMailboxMetrics.oneWayFastPathCalls += 1;
       actor.running = true;
-      try {
-        const result = this.executeActorCall(actor, run);
-        if (isPromiseLike(result)) {
-          this.actorMailboxMetrics.oneWayAsyncCalls += 1;
-          return Promise.resolve(result).then(
-            () => {
-              this.finishActorCall(actor);
-            },
-            (error) => {
-              this.finishActorCall(actor);
-              throw error;
-            },
-          );
-        }
-        this.finishActorCall(actor);
-        return result;
-      } catch (error) {
-        this.finishActorCall(actor);
-        throw error;
-      }
+      return this.runOrderedActorCall(actor, run, true);
     }
 
     this.actorMailboxMetrics.oneWayQueuedCalls += 1;
@@ -584,6 +667,29 @@ export class ProcessHost {
   /** 返回 Actor mailbox 热路径计数；只读快照不会改变队列。 / Returns Actor mailbox hot-path counters without changing queues. */
   MailboxMetrics(): ActorMailboxMetricsSnapshot {
     return { ...this.actorMailboxMetrics };
+  }
+
+  /** 业务执行或排队前同步准入；满额不创建等待队列、不执行回调。 / Admits before execution or queueing; capacity rejection creates no waiter and runs no callback. */
+  private admitActorCall(actor: ActorRuntime): void {
+    if (actor.pendingCount >= ProcessHost.MAX_TASKS_PER_ACTOR) {
+      this.actorMailboxActorRejections += 1;
+      throw new RpcError(SystemErrCode.SceneOverloaded,
+        `actor mailbox capacity exceeded: ${actor.ref.sceneId}/${actor.ref.actorId} limit=${ProcessHost.MAX_TASKS_PER_ACTOR}`);
+    }
+    if (this.actorMailboxPendingCount >= ProcessHost.MAX_ACTOR_TASKS) {
+      this.actorMailboxProcessRejections += 1;
+      throw new RpcError(SystemErrCode.SceneOverloaded,
+        `process actor mailbox capacity exceeded: ${this.processId} limit=${ProcessHost.MAX_ACTOR_TASKS}`);
+    }
+    actor.pendingCount += 1;
+    this.actorMailboxPendingCount += 1;
+    this.actorMailboxMaxPendingCount = Math.max(this.actorMailboxMaxPendingCount, this.actorMailboxPendingCount);
+  }
+
+  /** 仅终结原调用时归还原 Actor 与 Host；不能按已重用的路由重新查找。 / Releases only the original Actor and Host on actual settlement, never a reused route. */
+  private releaseActorCall(actor: ActorRuntime): void {
+    actor.pendingCount -= 1;
+    this.actorMailboxPendingCount -= 1;
   }
 
   private requireActorRuntime(instanceId: InstanceId): ActorRuntime {
@@ -609,6 +715,43 @@ export class ProcessHost {
     return result;
   }
 
+  /** 快速 ordered 调用只完成一次，再排空队列；后续排空异常不能重复归还当前调用。 / Completes a fast ordered call once before draining; a drain failure must not release it twice. */
+  private runOrderedActorCall<T>(
+    actor: ActorRuntime,
+    run: (instance: ActorRuntimeEntity<any[]>) => MaybePromise<T>,
+    oneWay = false,
+  ): MaybePromise<T> {
+    let result: MaybePromise<T>;
+    try { result = this.executeActorCall(actor, run); }
+    catch (error) { this.finishActorCall(actor); throw error; }
+    if (isPromiseLike(result)) {
+      if (oneWay) this.actorMailboxMetrics.oneWayAsyncCalls += 1;
+      else this.actorMailboxMetrics.asyncCalls += 1;
+      return Promise.resolve(result).then(
+        value => { this.finishActorCall(actor); return value; },
+        error => { this.finishActorCall(actor); throw error; },
+      );
+    }
+    this.finishActorCall(actor);
+    return result;
+  }
+
+  /** unordered 调用也持有 Process 在途计数，直到实际结果终结。 / Unordered calls retain Process activity until their actual result settles. */
+  private runUnorderedActorCall<T>(
+    actor: ActorRuntime,
+    run: (instance: ActorRuntimeEntity<any[]>) => MaybePromise<T>,
+  ): MaybePromise<T> {
+    let asynchronous = false;
+    try {
+      const result = this.executeActorCall(actor, run);
+      if (isPromiseLike(result)) {
+        asynchronous = true;
+        return Promise.resolve(result).finally(() => { this.releaseActorCall(actor); });
+      }
+      return result;
+    } finally { if (!asynchronous) this.releaseActorCall(actor); }
+  }
+
   private requireCurrentActor(actor: ActorRuntime): void {
     if (
       this.actorsByInstanceId.get(actor.ref.instanceId) !== actor ||
@@ -621,6 +764,7 @@ export class ProcessHost {
   }
 
   private finishActorCall(actor: ActorRuntime): void {
+    this.releaseActorCall(actor);
     if (this.actorQueueLength(actor) > 0) {
       this.drainOrdered(actor);
     } else {
@@ -694,7 +838,9 @@ export class ProcessHost {
 
   private dequeueActorCall(actor: ActorRuntime): PendingActorCall | undefined {
     if (actor.queueHead >= actor.queue.length) return undefined;
-    const pending = actor.queue[actor.queueHead++];
+    const pending = actor.queue[actor.queueHead];
+    // 出队即断开旧槽引用，在途任务继续由实际执行路径持有。 / Clear the old slot while the real execution path retains in-flight ownership.
+    actor.queue[actor.queueHead++] = undefined;
     if (actor.queueHead === actor.queue.length) {
       actor.queue.length = 0;
       actor.queueHead = 0;
@@ -710,10 +856,14 @@ export class ProcessHost {
   }
 
   private recycleActorCall(actor: ActorRuntime, pending: PendingActorCall): void {
+    this.releaseActorCall(actor);
     pending.run = undefined;
     pending.resolve = undefined;
     pending.reject = undefined;
-    actor.recycledQueueItems.push(pending);
+    if (this.actorsByInstanceId.get(actor.ref.instanceId) === actor &&
+      actor.recycledQueueItems.length < ProcessHost.MAX_RECYCLED_MAILBOX_ITEMS) {
+      actor.recycledQueueItems.push(pending);
+    }
   }
 
   private actorQueueLength(actor: ActorRuntime): number {

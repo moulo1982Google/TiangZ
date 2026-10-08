@@ -1,16 +1,40 @@
 //! 协调有界宿主队列、单 V8 业务线程、端点、Update 与停机。 / Coordinates bounded host queues, one V8 business thread, endpoints, updates, and shutdown.
 
-use std::collections::BTreeMap;
+pub(crate) mod control_ingress;
+mod host_events;
+mod observability;
+use host_events::HostEventBatch;
+use observability::{
+    GameMetricsSnapshot, MailboxMetricsSnapshot, NativeDataMetricsSnapshot, SceneMetricsSnapshot,
+    maybe_log_metrics,
+};
+
+#[cfg(test)]
+mod control_ingress_tests;
+#[cfg(test)]
+#[path = "process_endpoint_tests.rs"]
+mod endpoint_tests;
+#[cfg(test)]
+mod host_batch_tests;
+#[cfg(test)]
+mod host_event_budget_tests;
+#[cfg(test)]
+mod ingress_buffer_tests;
+#[cfg(test)]
+#[path = "process_lifecycle_tests.rs"]
+mod lifecycle_tests;
+
 use std::collections::{HashMap, VecDeque};
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sysinfo::{Pid, ProcessesToUpdate, System};
@@ -19,13 +43,7 @@ use tokio::sync::{mpsc as tokio_mpsc, watch};
 
 use crate::config::{ProcessConfig, ProcessSchedulingMode, RuntimeConfig, SceneConfig};
 use crate::data_pack::{LoadedRuntimeDataPack, load_runtime_data_packs};
-use crate::health::{
-    GameObservabilitySnapshot, HealthServer, LatencyObservabilitySnapshot,
-    MailboxObservabilitySnapshot, NativeDataObservabilitySnapshot, ProcessHealthState,
-    ProcessObservabilitySnapshot, ProcessQueueStageObservabilitySnapshot, SceneCustomMetricKind,
-    SceneCustomMetricSnapshot, SceneObservabilitySnapshot,
-    TransportDiagnosticObservabilitySnapshot, TransportOverloadStageObservabilitySnapshot,
-};
+use crate::health::{HealthServer, ProcessHealthState};
 use crate::host::{
     BinaryOutboundBatch, HostSceneCompletion, call_js_push_host_events, call_js_start_process,
     call_js_stop_process, call_js_update_binary, configure_host_scene_bridge, create_runtime,
@@ -36,14 +54,14 @@ use crate::inspector::ProcessInspector;
 use crate::shutdown::{
     ParentControlCommand, receive_parent_control, spawn_parent_control_receiver,
 };
-use crate::transport::{init_remote_transport, snapshot_remote_transport};
+use crate::transport::init_remote_transport;
 #[cfg(test)]
 use crate::transport_backend::{
     CONNECTION_OUTBOUND_BYTE_CAPACITY, ConnectionKind, ConnectionWriter, validate_frame_access,
 };
 use crate::transport_backend::{
     ConnectionQueueError, ConnectionWriteBatch, ConnectionWriters, EndpointContext,
-    WRITE_BATCH_BYTE_CAPACITY, WRITE_BATCH_FRAME_CAPACITY, create_io_backend,
+    WRITE_BATCH_BYTE_CAPACITY, WRITE_BATCH_FRAME_CAPACITY, create_io_backend, stop_endpoints,
     try_queue_connection_batch, try_queue_connection_frame,
 };
 
@@ -51,7 +69,7 @@ const DEFAULT_PROCESS_EVENT_QUEUE_CAPACITY: usize = 4096;
 const PROCESS_CONTROL_QUEUE_DIVISOR: usize = 4;
 const MAX_CONSECUTIVE_CONTROL_EVENTS: usize = 32;
 const MAX_PENDING_INGRESS_CONTROL_EVENTS: usize = 128;
-const EVENT_HEADER_BYTES: usize = 13;
+const MAX_RETURNED_PROCESS_EVENTS: usize = 2;
 const BACKPRESSURE_RETRY_MS: u64 = 1;
 
 #[derive(Clone, Copy)]
@@ -109,12 +127,16 @@ impl RuntimeScheduling {
 #[derive(Debug)]
 pub(crate) enum ProcessEvent {
     Frame {
+        backing_reservation: Option<crate::host::event_admission::EventReservation>,
+        control_reservation: Option<control_ingress::ControlReservation>,
         scene_index: u32,
         connection_id: u64,
         internal: bool,
         frame: Bytes,
     },
     Disconnect {
+        backing_reservation: Option<crate::host::event_admission::EventReservation>,
+        control_reservation: Option<control_ingress::ControlReservation>,
         scene_index: u32,
         connection_id: u64,
     },
@@ -169,6 +191,45 @@ impl ProcessEventKind {
 }
 
 impl ProcessEvent {
+    /// 守卫随整个 backing store 转交，不能按业务完成或控制确认释放。 / Transfers guards with the whole backing store, independently of business completion or control acknowledgement.
+    fn take_backing_reservation(
+        &mut self,
+    ) -> Option<crate::host::event_admission::EventReservation> {
+        match self {
+            Self::Frame {
+                backing_reservation,
+                ..
+            }
+            | Self::Disconnect {
+                backing_reservation,
+                ..
+            } => backing_reservation.take(),
+            Self::HostSceneCompletion(completion) => completion.backing_reservation.take(),
+            Self::Shutdown => None,
+        }
+    }
+
+    /// 只对 TS 尚未开始的控制工作计数，完成/停机消息不竞争其名额。 / Counts only unstarted TS controls; completion and shutdown messages never compete for these slots.
+    fn control_reservation_mut(
+        &mut self,
+    ) -> Option<&mut Option<control_ingress::ControlReservation>> {
+        match self {
+            Self::Frame {
+                internal,
+                frame,
+                control_reservation,
+                ..
+            } if *internal && crate::transport::inner_frame_rpc_id(frame).is_some() => {
+                Some(control_reservation)
+            }
+            Self::Disconnect {
+                control_reservation,
+                ..
+            } => Some(control_reservation),
+            _ => None,
+        }
+    }
+
     fn kind(&self) -> ProcessEventKind {
         match self {
             Self::Frame { .. } => ProcessEventKind::Frame,
@@ -237,178 +298,6 @@ struct UpdateResult {
     pending_ingress: bool,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct NativeDataMetricsSnapshot {
-    scalar_gets: u64,
-    scalar_sets: u64,
-    batch_calls: u64,
-    live_entities: u32,
-    live_units: u32,
-    #[serde(default)]
-    live_items: u32,
-    #[serde(default)]
-    pool_capacity_bytes: u64,
-    #[serde(default)]
-    scratch_capacity_bytes: u64,
-    #[serde(default)]
-    scratch_growths: u64,
-    #[serde(default)]
-    native_refs: BTreeMap<String, u64>,
-    encoded_frames: u64,
-    encoded_items: u64,
-    encoded_bytes: u64,
-    #[serde(default)]
-    aoi_worlds: u32,
-    #[serde(default)]
-    aoi_entries: u32,
-    #[serde(default)]
-    aoi_grids: u32,
-    #[serde(default)]
-    aoi_candidate_relations: u64,
-    #[serde(default)]
-    aoi_visible_relations: u64,
-    #[serde(default)]
-    aoi_lingering_relations: u64,
-    #[serde(default)]
-    aoi_rejected_relations: u64,
-    #[serde(default)]
-    aoi_relocations: u64,
-    #[serde(default)]
-    aoi_visibility_changes: u64,
-    #[serde(default)]
-    aoi_filter_overrides: u64,
-    #[serde(default)]
-    navigation_assets: u32,
-    #[serde(default)]
-    navigation_worlds: u32,
-    #[serde(default)]
-    numeric_replication: Vec<NativeNumericReplicationMetricsSnapshot>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct NativeNumericReplicationMetricsSnapshot {
-    numeric_type: u32,
-    changes: u64,
-    encoded_records: u64,
-    recipient_deliveries: u64,
-    logical_bytes: u64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GameMetricsSnapshot {
-    fixed_update_ms: u64,
-    frame_count: u64,
-    skipped_fixed_updates: u64,
-    update_targets: usize,
-    update_calls: u64,
-    update_failures: u64,
-    timers: usize,
-    #[serde(default)]
-    coroutine_lock_waiters: usize,
-    #[serde(default)]
-    coroutine_lock_timeouts: u64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SceneMetricsSnapshot {
-    scene: String,
-    scene_type: String,
-    processed_frames: u64,
-    failed_frames: u64,
-    #[serde(default)]
-    protocol_successes: u64,
-    #[serde(default)]
-    business_errors: u64,
-    #[serde(default)]
-    system_errors: u64,
-    #[serde(default)]
-    decode_errors: u64,
-    #[serde(default)]
-    handler_not_found: u64,
-    #[serde(default)]
-    message_handler_failures: u64,
-    ingress_queue_length: usize,
-    max_ingress_queue_length: usize,
-    #[serde(default)]
-    last_ingress_pump_frames: u64,
-    #[serde(default)]
-    last_ingress_pump_cost_ms: f64,
-    last_update_cost_ms: f64,
-    last_handler_cost_ms: f64,
-    max_handler_cost_ms: f64,
-    total_handler_cost_ms: f64,
-    #[serde(default)]
-    async_in_flight: usize,
-    #[serde(default)]
-    max_async_in_flight: usize,
-    #[serde(default)]
-    mailbox: MailboxMetricsSnapshot,
-    #[serde(default)]
-    latencies: Vec<LatencyMetricSnapshot>,
-    #[serde(default)]
-    custom_metrics: Vec<CustomMetricSnapshot>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MailboxMetricsSnapshot {
-    #[serde(default)]
-    fast_path_calls: u64,
-    #[serde(default)]
-    queued_calls: u64,
-    #[serde(default)]
-    async_calls: u64,
-    #[serde(default)]
-    one_way_fast_path_calls: u64,
-    #[serde(default)]
-    one_way_queued_calls: u64,
-    #[serde(default)]
-    one_way_async_calls: u64,
-    #[serde(default)]
-    queued_depth: u64,
-    #[serde(default)]
-    max_queued_depth: u64,
-}
-
-#[derive(Debug, Deserialize)]
-struct CustomMetricSnapshot {
-    name: String,
-    #[serde(default)]
-    labels: BTreeMap<String, String>,
-    #[serde(default)]
-    values: BTreeMap<String, f64>,
-    #[serde(default)]
-    kinds: BTreeMap<String, CustomMetricKind>,
-}
-
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum CustomMetricKind {
-    Counter,
-    #[default]
-    Gauge,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LatencyMetricSnapshot {
-    name: String,
-    msgcode: Option<u16>,
-    count: u64,
-    avg_ms: f64,
-    p50_ms: f64,
-    p95_ms: f64,
-    p99_ms: f64,
-    max_ms: f64,
-    sum_ms: f64,
-    bounds_ms: Vec<f64>,
-    bucket_counts: Vec<u64>,
-}
-
 #[derive(Default)]
 struct V8GcMetrics {
     count: u64,
@@ -440,6 +329,14 @@ extern "C" fn v8_gc_epilogue(
 }
 
 pub(crate) struct ProcessQueueStats {
+    pub(crate) host_backing_store: Arc<crate::host::event_buffer::HostBackingStoreStats>,
+    pub(crate) host_events: Arc<crate::host::event_admission::EventAdmission>,
+    pub(crate) control_admission: Arc<control_ingress::ControlAdmission>,
+    pub(crate) host_scene_batches: Arc<crate::host::scene_operations::BatchAdmission>,
+    pub(crate) admission: Arc<crate::transport_backend::admission::ConnectionAdmission>,
+    pub(crate) outbound_buffers: Arc<tiangz_transport::buffer_budget::BufferBudget>,
+    pub(crate) ingress_buffers: Arc<tiangz_transport::buffer_budget::BufferBudget>,
+    pub(crate) kcp_buffers: Arc<tiangz_transport::buffer_budget::BufferBudget>,
     capacity: usize,
     depth: AtomicUsize,
     max_depth: AtomicUsize,
@@ -455,6 +352,8 @@ pub(crate) struct ProcessQueueStats {
     runtime_updates: AtomicU64,
     runtime_events: AtomicU64,
     max_runtime_batch: AtomicUsize,
+    max_host_event_batch_bytes: AtomicUsize,
+    host_event_batch_splits: AtomicU64,
     transport_read_ops: AtomicU64,
     transport_read_frames: AtomicU64,
     transport_read_bytes: AtomicU64,
@@ -479,8 +378,33 @@ struct ProcessQueueStageStats {
 }
 
 impl ProcessQueueStats {
+    /// 未显式配置的夹具和默认状态沿用同一套网络默认值。 / Uses the network defaults for fixtures and default state.
     fn new(capacity: usize) -> Self {
+        Self::with_network_limits(capacity, &crate::config::ProcessNetworkConfig::default())
+    }
+
+    /// Process 只创建一次准入所有者，端点通过共享统计句柄使用它。 / Creates one admission owner per process, shared through the endpoint statistics handle.
+    fn with_network_limits(capacity: usize, network: &crate::config::ProcessNetworkConfig) -> Self {
         Self {
+            host_scene_batches: crate::host::scene_operations::BatchAdmission::new(),
+            control_admission: control_ingress::ControlAdmission::new(),
+            host_backing_store: Arc::default(),
+            host_events: crate::host::event_admission::EventAdmission::new(),
+            outbound_buffers: tiangz_transport::buffer_budget::BufferBudget::new(
+                network.max_outbound_buffered_bytes,
+            ),
+            ingress_buffers: tiangz_transport::buffer_budget::BufferBudget::new(
+                network.max_ingress_buffered_bytes,
+            ),
+            kcp_buffers: tiangz_transport::buffer_budget::BufferBudget::new(
+                network.max_kcp_buffered_bytes,
+            ),
+            admission: Arc::new(
+                crate::transport_backend::admission::ConnectionAdmission::new(
+                    network.max_accepted_connections,
+                    network.max_pending_handshakes,
+                ),
+            ),
             capacity,
             depth: AtomicUsize::default(),
             max_depth: AtomicUsize::default(),
@@ -496,6 +420,8 @@ impl ProcessQueueStats {
             runtime_updates: AtomicU64::default(),
             runtime_events: AtomicU64::default(),
             max_runtime_batch: AtomicUsize::default(),
+            max_host_event_batch_bytes: AtomicUsize::default(),
+            host_event_batch_splits: AtomicU64::default(),
             transport_read_ops: AtomicU64::default(),
             transport_read_frames: AtomicU64::default(),
             transport_read_bytes: AtomicU64::default(),
@@ -544,19 +470,22 @@ impl ProcessQueueStats {
     }
 
     fn queued(&self, kind: ProcessEventKind, class: ProcessIngressClass) {
+        // 包含两条通道各自的暂存队首；仍滤掉并发 try_send 失败前的瞬时计数。
+        // Include both retained lane heads, still capping transient failed try_send attempts.
+        let observed_capacity = self.capacity.saturating_add(MAX_RETURNED_PROCESS_EVENTS);
         let depth = self.depth.fetch_add(1, Ordering::Relaxed) + 1;
         self.max_depth
-            .fetch_max(depth.min(self.capacity), Ordering::Relaxed);
+            .fetch_max(depth.min(observed_capacity), Ordering::Relaxed);
         let stage = self.stage(kind);
         let stage_depth = stage.depth.fetch_add(1, Ordering::Relaxed) + 1;
         stage
             .max_depth
-            .fetch_max(stage_depth.min(self.capacity), Ordering::Relaxed);
+            .fetch_max(stage_depth.min(observed_capacity), Ordering::Relaxed);
         let ingress_stage = self.ingress_stage(class);
         let ingress_depth = ingress_stage.depth.fetch_add(1, Ordering::Relaxed) + 1;
         ingress_stage
             .max_depth
-            .fetch_max(ingress_depth.min(self.capacity), Ordering::Relaxed);
+            .fetch_max(ingress_depth.min(observed_capacity), Ordering::Relaxed);
     }
 
     fn dequeue(&self, kind: ProcessEventKind, class: ProcessIngressClass) {
@@ -633,55 +562,97 @@ pub(crate) enum ProcessIngressTrySendError {
 }
 
 struct ProcessEventReceiver {
+    host_events: Arc<crate::host::event_admission::EventAdmission>,
+    control_admission: Arc<control_ingress::ControlAdmission>,
     control_receiver: mpsc::Receiver<ProcessEvent>,
     data_receiver: mpsc::Receiver<ProcessEvent>,
     wake_receiver: mpsc::Receiver<()>,
     consecutive_control: usize,
+    previous_consecutive_control: usize,
+    pending_control: Option<ProcessEvent>,
+    pending_data: Option<ProcessEvent>,
 }
 
 impl ProcessEventReceiver {
-    fn try_recv_control(&mut self) -> std::result::Result<ProcessEvent, mpsc::TryRecvError> {
-        match self.control_receiver.try_recv() {
-            Ok(event) => {
-                self.consecutive_control = self.consecutive_control.saturating_add(1);
-                Ok(event)
-            }
-            Err(error) => Err(error),
+    fn new(
+        control_receiver: mpsc::Receiver<ProcessEvent>,
+        data_receiver: mpsc::Receiver<ProcessEvent>,
+        wake_receiver: mpsc::Receiver<()>,
+        control_admission: Arc<control_ingress::ControlAdmission>,
+        host_events: Arc<crate::host::event_admission::EventAdmission>,
+    ) -> Self {
+        Self {
+            control_receiver,
+            host_events,
+            control_admission,
+            data_receiver,
+            wake_receiver,
+            consecutive_control: 0,
+            previous_consecutive_control: 0,
+            pending_control: None,
+            pending_data: None,
         }
+    }
+
+    fn received(&mut self, event: ProcessEvent) -> ProcessEvent {
+        self.previous_consecutive_control = self.consecutive_control;
+        self.consecutive_control = match event.ingress_class() {
+            ProcessIngressClass::Control => self.consecutive_control.saturating_add(1),
+            ProcessIngressClass::Data => 0,
+        };
+        event
+    }
+
+    /// 只退回最近取出的事件；深度和 ingress 守卫保留，公平计数恢复。 / Returns only the last received event, retaining depth/ingress ownership and restoring fairness.
+    fn return_front(&mut self, event: ProcessEvent) {
+        let pending = match event.ingress_class() {
+            ProcessIngressClass::Control => &mut self.pending_control,
+            ProcessIngressClass::Data => &mut self.pending_data,
+        };
+        assert!(
+            pending.is_none(),
+            "process ingress already has a returned event"
+        );
+        *pending = Some(event);
+        self.consecutive_control = self.previous_consecutive_control;
+    }
+
+    fn take_data(&mut self) -> std::result::Result<ProcessEvent, mpsc::TryRecvError> {
+        self.pending_data
+            .take()
+            .map(Ok)
+            .unwrap_or_else(|| self.data_receiver.try_recv())
+    }
+
+    fn try_recv_control(&mut self) -> std::result::Result<ProcessEvent, mpsc::TryRecvError> {
+        let event = self
+            .pending_control
+            .take()
+            .map(Ok)
+            .unwrap_or_else(|| self.control_receiver.try_recv())?;
+        Ok(self.received(event))
     }
 
     fn try_recv(&mut self) -> std::result::Result<ProcessEvent, mpsc::TryRecvError> {
         let force_data = self.consecutive_control >= MAX_CONSECUTIVE_CONTROL_EVENTS;
         if force_data {
-            match self.data_receiver.try_recv() {
+            match self.take_data() {
                 Ok(event) => {
-                    self.consecutive_control = 0;
-                    return Ok(event);
+                    return Ok(self.received(event));
                 }
                 Err(mpsc::TryRecvError::Disconnected) | Err(mpsc::TryRecvError::Empty) => {}
             }
         }
-        match self.control_receiver.try_recv() {
+        match self.try_recv_control() {
             Ok(event) => {
-                self.consecutive_control = self.consecutive_control.saturating_add(1);
                 return Ok(event);
             }
             Err(mpsc::TryRecvError::Disconnected) | Err(mpsc::TryRecvError::Empty) => {}
         }
-        match self.data_receiver.try_recv() {
-            Ok(event) => {
-                self.consecutive_control = 0;
-                Ok(event)
-            }
+        match self.take_data() {
+            Ok(event) => Ok(self.received(event)),
             Err(mpsc::TryRecvError::Empty) => Err(mpsc::TryRecvError::Empty),
-            Err(mpsc::TryRecvError::Disconnected) => match self.control_receiver.try_recv() {
-                Ok(event) => {
-                    self.consecutive_control = self.consecutive_control.saturating_add(1);
-                    Ok(event)
-                }
-                Err(mpsc::TryRecvError::Empty) => Err(mpsc::TryRecvError::Empty),
-                Err(mpsc::TryRecvError::Disconnected) => Err(mpsc::TryRecvError::Disconnected),
-            },
+            Err(mpsc::TryRecvError::Disconnected) => self.try_recv_control(),
         }
     }
 
@@ -714,8 +685,16 @@ impl ProcessEventReceiver {
     }
 }
 
+impl Drop for ProcessEventReceiver {
+    /// 接收器退出时唤醒尚未入队的断线，不能只依赖 channel 发送失败。 / Wakes disconnects waiting before the channel when its receiver exits.
+    fn drop(&mut self) {
+        self.control_admission.close();
+        self.host_events.close();
+    }
+}
+
 impl ProcessEventSender {
-    /// 为真实传输测试提供可观察的事件队列，不启动 V8。 / Provide an observable event queue for real transport tests without V8.
+    /// 为真实传输测试提供有预算的事件队列，不启动 V8。 / Provides a budgeted event queue for real transport tests without V8.
     #[cfg(test)]
     pub(crate) fn test_channel() -> (Self, mpsc::Receiver<ProcessEvent>) {
         let (sender, receiver) = mpsc::sync_channel(128);
@@ -731,14 +710,53 @@ impl ProcessEventSender {
         )
     }
 
-    /// 内部RPC使用控制流保留队列并在队满时立即失败，调用方必须把明确错误回复给来源进程。
-    /// Inner RPC uses the reserved control queue and fails immediately when full. The caller must
+    /// 首次入队前接管帧预算；重试和延后队列保留同一 Bytes 所有权。 / Admits once before enqueue; retries and deferred queues retain the same Bytes owner.
+    fn reserve_frame(
+        &self,
+        mut event: ProcessEvent,
+    ) -> std::result::Result<ProcessEvent, ProcessIngressTrySendError> {
+        if let ProcessEvent::Frame {
+            frame,
+            backing_reservation,
+            ..
+        } = &mut event
+        {
+            debug_assert!(backing_reservation.is_none());
+            *backing_reservation = Some(
+                self.stats
+                    .host_events
+                    .try_reserve(frame.len())
+                    .ok_or(ProcessIngressTrySendError::Overloaded)?,
+            );
+            *frame = self
+                .stats
+                .ingress_buffers
+                .try_hold_bytes(std::mem::take(frame))
+                .ok_or(ProcessIngressTrySendError::Overloaded)?;
+        }
+        Ok(event)
+    }
+
+    /// 内部RPC使用控制流保留队列，在帧数或共享字节额度满时立即失败，调用方必须把明确错误回复给来源进程。
+    /// Inner RPC uses the reserved control queue and fails immediately at count or byte capacity. The caller must
     /// return an explicit error to the source process instead of occupying a pending RPC waiter.
     pub(crate) fn try_send_control(
         &self,
         event: ProcessEvent,
     ) -> std::result::Result<(), ProcessIngressTrySendError> {
         debug_assert_eq!(event.ingress_class(), ProcessIngressClass::Control);
+        let mut event = self.reserve_frame(event)?;
+        if let ProcessEvent::Disconnect {
+            backing_reservation,
+            ..
+        } = &mut event
+        {
+            *backing_reservation = Some(self.stats.host_events.try_disconnect()?);
+        }
+        if let Some(reservation) = event.control_reservation_mut() {
+            debug_assert!(reservation.is_none());
+            *reservation = Some(self.stats.control_admission.try_reserve()?);
+        }
         let kind = event.kind();
         let class = ProcessIngressClass::Control;
         self.stats.queued(kind, class);
@@ -761,9 +779,36 @@ impl ProcessEventSender {
 
     pub(crate) async fn send(
         &self,
-        mut event: ProcessEvent,
+        event: ProcessEvent,
         deadline: Option<tokio::time::Instant>,
     ) -> Result<(), String> {
+        let mut event = self
+            .reserve_frame(event)
+            .map_err(|_| "process ingress or host event byte budget is full".to_string())?;
+        let disconnect = matches!(event, ProcessEvent::Disconnect { .. });
+        if let ProcessEvent::Disconnect {
+            backing_reservation,
+            ..
+        } = &mut event
+        {
+            *backing_reservation = Some(self.stats.host_events.reserve_disconnect(deadline).await?);
+        }
+        if let Some(reservation) = event.control_reservation_mut() {
+            debug_assert!(reservation.is_none());
+            *reservation = Some(if disconnect {
+                self.stats
+                    .control_admission
+                    .reserve_disconnect(deadline)
+                    .await?
+            } else {
+                self.stats
+                    .control_admission
+                    .try_reserve()
+                    .map_err(|error| {
+                        format!("process control ingress admission failed: {error:?}")
+                    })?
+            });
+        }
         let kind = event.kind();
         let class = event.ingress_class();
         let mut counted_backpressure = false;
@@ -859,8 +904,22 @@ pub async fn run_runtime_config(
     resolved_config: &Path,
     config: RuntimeConfig,
 ) -> Result<()> {
+    run_runtime_config_with_backend(root, resolved_config, config, create_io_backend).await
+}
+
+/// 后端工厂在原有初始化位置调用，使隔离测试可验证同一生产监督/回滚路径。 / Calls the backend factory at the original initialization point so isolated tests exercise production supervision/rollback.
+async fn run_runtime_config_with_backend(
+    root: &Path,
+    resolved_config: &Path,
+    config: RuntimeConfig,
+    backend_factory: impl FnOnce(
+        &crate::config::ProcessNetworkConfig,
+    ) -> Result<Arc<dyn crate::transport_backend::IoBackend>>,
+) -> Result<()> {
     let runtime_data_packs = load_runtime_data_packs(resolved_config, &config.process.data_packs)?;
-    init_remote_transport();
+    init_remote_transport(Duration::from_millis(
+        config.process.network.write_timeout_ms,
+    ));
     let runtime_bundles = RuntimeBundles::load(root)?;
 
     tracing::info!(
@@ -890,7 +949,10 @@ pub async fn run_runtime_config(
     let (data_tx, data_rx) = mpsc::sync_channel::<ProcessEvent>(data_queue_capacity);
     let (wake_tx, wake_rx) = mpsc::sync_channel::<()>(1);
     let (runtime_control_tx, runtime_control_rx) = mpsc::channel::<RuntimeControl>();
-    let queue_stats = Arc::new(ProcessQueueStats::new(event_queue_capacity));
+    let queue_stats = Arc::new(ProcessQueueStats::with_network_limits(
+        event_queue_capacity,
+        &config.process.network,
+    ));
     let writers: ConnectionWriters = Arc::new(Mutex::new(HashMap::new()));
     let event_tx = ProcessEventSender {
         control_sender: control_tx,
@@ -898,12 +960,13 @@ pub async fn run_runtime_config(
         wake_sender: wake_tx,
         stats: Arc::clone(&queue_stats),
     };
-    let event_rx = ProcessEventReceiver {
-        control_receiver: control_rx,
-        data_receiver: data_rx,
-        wake_receiver: wake_rx,
-        consecutive_control: 0,
-    };
+    let event_rx = ProcessEventReceiver::new(
+        control_rx,
+        data_rx,
+        wake_rx,
+        Arc::clone(&queue_stats.control_admission),
+        Arc::clone(&queue_stats.host_events),
+    );
     let runtime_stale_after = config
         .process
         .observability
@@ -938,22 +1001,39 @@ pub async fn run_runtime_config(
     let completion_sink: crate::host::HostSceneCompletionSink =
         Arc::new(move |completion| completion_sender.try_send_completion(completion));
 
-    let io_backend = create_io_backend(&config.process.network)?;
+    let io_backend = backend_factory(&config.process.network)?;
     tracing::info!(
         target: "tiangz::transport",
         process = %config.process.name,
         io_backend = io_backend.name(),
         "process I/O backend selected"
     );
+    let stop_budget = Duration::from_millis(config.process.lifecycle.stop_timeout_ms);
+    let mut endpoints = FuturesUnordered::new();
     for (scene_index, scene) in config.scenes.iter().cloned().enumerate() {
-        io_backend.start_endpoint(EndpointContext {
+        let endpoint = io_backend.start_endpoint(EndpointContext {
+            shutdown_timeout: stop_budget,
+            write_timeout: Duration::from_millis(config.process.network.write_timeout_ms),
             scene_index: scene_index as u32,
             scene,
             event_tx: event_tx.clone(),
             writers: Arc::clone(&writers),
             next_connection_id: Arc::clone(&next_connection_id),
             stats: Arc::clone(&queue_stats),
-        })?;
+        });
+        match endpoint {
+            Ok(endpoint) => endpoints.push(endpoint),
+            Err(error) => {
+                health_state.mark_stopping();
+                if let Err(cleanup) = stop_endpoints(&mut endpoints, stop_budget).await {
+                    tracing::warn!(target: "tiangz::transport", error = ?cleanup, "endpoint startup rollback failed");
+                }
+                if let Some(server) = health_server {
+                    server.stop().await;
+                }
+                return Err(error).context("failed to start process endpoints");
+            }
+        }
     }
     health_state.mark_endpoints_ready();
 
@@ -990,15 +1070,30 @@ pub async fn run_runtime_config(
     let mut parent_control = spawn_parent_control_receiver();
     let shutdown_signal = wait_for_shutdown_signal();
     tokio::pin!(shutdown_signal);
+    let mut supervision_error = None;
     let runtime_exited_early = loop {
         tokio::select! {
             result = &mut shutdown_signal => {
-                result?;
+                supervision_error = result.err();
                 break false;
             }
             _ = &mut runtime_exit_rx => break true,
+            result = endpoints.next(), if !endpoints.is_empty() => {
+                supervision_error = Some(match result {
+                    Some(Err(error)) => error,
+                    _ => anyhow::anyhow!("network endpoint exited unexpectedly"),
+                });
+                break false;
+            }
             command = receive_parent_control(&mut parent_control) => {
-                match command? {
+                let command = match command {
+                    Ok(command) => command,
+                    Err(error) => {
+                        supervision_error = Some(error);
+                        break false;
+                    }
+                };
+                match command {
                     ParentControlCommand::Shutdown => break false,
                     ParentControlCommand::Reload(candidate_directory) | ParentControlCommand::ReloadConfig(candidate_directory) => {
                         let candidate_directory = if candidate_directory.is_absolute() {
@@ -1007,13 +1102,16 @@ pub async fn run_runtime_config(
                             root.join(candidate_directory)
                         };
                         let (response, completed) = tokio::sync::oneshot::channel();
-                        runtime_control_tx
+                        if runtime_control_tx
                             .send(RuntimeControl::ReloadHotfix {
                                 candidate_directory,
                                 requested_at: Instant::now(),
                                 response,
                             })
-                            .map_err(|_| anyhow::anyhow!("V8 runtime control channel is stopped"))?;
+                            .is_err() {
+                            supervision_error = Some(anyhow::anyhow!("V8 runtime control channel is stopped"));
+                            break false;
+                        }
                         tokio::spawn(async move {
                             match completed.await {
                                 Ok(Ok(report)) => tracing::info!(
@@ -1032,6 +1130,9 @@ pub async fn run_runtime_config(
         }
     };
     health_state.mark_stopping();
+    for endpoint in endpoints.iter() {
+        endpoint.request_stop();
+    }
     shutdown_all_connections(&writers);
     let shutdown_send_error = if !runtime_exited_early {
         event_tx
@@ -1042,18 +1143,25 @@ pub async fn run_runtime_config(
     } else {
         None
     };
-    let runtime_result = tokio::task::spawn_blocking(move || runtime_thread.join())
-        .await
-        .context("failed to join process runtime task")?
-        .map_err(|_| anyhow::anyhow!("process runtime thread panicked"))?;
+    let (runtime_join, network_result) = tokio::join!(
+        tokio::task::spawn_blocking(move || runtime_thread.join()),
+        stop_endpoints(&mut endpoints, stop_budget),
+    );
     if let Some(server) = health_server {
         server.stop().await;
     }
+    if let Some(error) = supervision_error {
+        return Err(error).context("process supervision failed; shutdown completed");
+    }
+    let runtime_result = runtime_join
+        .context("failed to join process runtime task")?
+        .map_err(|_| anyhow::anyhow!("process runtime thread panicked"))?;
     if runtime_exited_early {
         runtime_result.context("V8 runtime failed before process shutdown was requested")?;
         bail!("V8 runtime exited unexpectedly before process shutdown was requested");
     }
     runtime_result?;
+    network_result?;
     if let Some(error) = shutdown_send_error {
         return Err(error).context("failed to deliver shutdown to V8 runtime");
     }
@@ -1109,7 +1217,13 @@ fn run_process_runtime(
         .enable_all()
         .build()
         .context("failed to create JS event loop runtime")?;
-    configure_host_scene_bridge(host_runtime.clone(), completion_sink);
+    configure_host_scene_bridge(
+        host_runtime.clone(),
+        completion_sink,
+        Arc::clone(&queue_stats.outbound_buffers),
+        Arc::clone(&queue_stats.host_scene_batches),
+        Arc::clone(&queue_stats.host_events),
+    );
     crate::event_stream::configure(&process, host_runtime.clone())?;
     crate::dbproxy::configure(&process, host_runtime)?;
     js_event_loop
@@ -1140,6 +1254,12 @@ fn run_process_runtime(
         )
         .context("failed to create V8 runtime")?
     };
+    runtime
+        .op_state()
+        .borrow_mut()
+        .put(control_ingress::PublishedControls::new(Arc::clone(
+            &queue_stats.control_admission,
+        )));
     runtime.v8_isolate().add_gc_prologue_callback(
         v8_gc_prologue,
         gc_metrics_ptr,
@@ -1353,19 +1473,23 @@ fn run_process_runtime(
             continue;
         }
 
-        let mut packed_events = vec![0; 4];
-        let mut event_count = 0_u32;
+        let mut events = HostEventBatch::new();
+        let mut batch_full = false;
         let mut shutdown_requested = false;
         let wait_ms = scheduling.idle_tick_ms;
         let batch_capacity = scheduling.batch_capacity(queue_stats.depth.load(Ordering::Relaxed));
         // 内部RPC请求也可能是新业务；暂存有界请求，完成通知仍走控制通道。
         // Inner RPC requests can start new business too; defer them boundedly while completions flow.
         if drain_started.is_none() {
-            while event_count < batch_capacity as u32 {
+            while events.len() < batch_capacity as u32 {
                 let Some(event) = deferred_control.pop_front() else {
                     break;
                 };
-                push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
+                if let Some(event) = events.try_push(event, &queue_stats)? {
+                    deferred_control.push_front(event);
+                    batch_full = true;
+                    break;
+                }
             }
         }
         if pending_ingress || drain_started.is_some() {
@@ -1373,11 +1497,11 @@ fn run_process_runtime(
             // disconnect, and completion responses cannot be rejected behind a data backlog.
             // Bound reinjection so the TS pump retains capacity to drain its existing queue.
             let control_capacity = batch_capacity.min(MAX_PENDING_INGRESS_CONTROL_EVENTS);
-            while event_count < control_capacity as u32 {
+            while !batch_full && events.len() < control_capacity as u32 {
                 match event_rx.try_recv_control() {
                     Ok(event) => {
-                        queue_stats.dequeue(event.kind(), event.ingress_class());
                         if drain_started.is_some() && matches!(&event, ProcessEvent::Frame { .. }) {
+                            queue_stats.dequeue(event.kind(), event.ingress_class());
                             deferred_control.push_back(event);
                             if deferred_control.len() >= MAX_PENDING_INGRESS_CONTROL_EVENTS {
                                 pause_overflow = true;
@@ -1386,22 +1510,26 @@ fn run_process_runtime(
                             continue;
                         }
                         if matches!(&event, ProcessEvent::Shutdown) {
+                            queue_stats.dequeue(event.kind(), event.ingress_class());
                             shutdown_requested = true;
                             break;
                         }
-                        push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
+                        if !push_received_event(&mut events, &mut event_rx, event, &queue_stats)? {
+                            break;
+                        }
                     }
                     Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
                 }
             }
-        } else if event_count == 0 {
+        } else if events.len() == 0 {
             match event_rx.recv_timeout(Duration::from_millis(wait_ms)) {
                 Ok(event) => {
-                    queue_stats.dequeue(event.kind(), event.ingress_class());
                     if matches!(&event, ProcessEvent::Shutdown) {
+                        queue_stats.dequeue(event.kind(), event.ingress_class());
                         shutdown_requested = true;
                     } else {
-                        push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
+                        batch_full =
+                            !push_received_event(&mut events, &mut event_rx, event, &queue_stats)?;
                     }
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -1410,20 +1538,23 @@ fn run_process_runtime(
         }
 
         let coalesce_deadline = scheduling
-            .coalesce_deadline(queue_stats.depth.load(Ordering::Relaxed) + event_count as usize);
-        while !pending_ingress
+            .coalesce_deadline(queue_stats.depth.load(Ordering::Relaxed) + events.len() as usize);
+        while !batch_full
+            && !pending_ingress
             && drain_started.is_none()
             && !shutdown_requested
-            && event_count < batch_capacity as u32
+            && events.len() < batch_capacity as u32
         {
             match event_rx.try_recv() {
                 Ok(event) => {
-                    queue_stats.dequeue(event.kind(), event.ingress_class());
                     if matches!(&event, ProcessEvent::Shutdown) {
+                        queue_stats.dequeue(event.kind(), event.ingress_class());
                         shutdown_requested = true;
                         break;
                     }
-                    push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
+                    if !push_received_event(&mut events, &mut event_rx, event, &queue_stats)? {
+                        break;
+                    }
                 }
                 Err(mpsc::TryRecvError::Empty) => {
                     if Instant::now() >= coalesce_deadline {
@@ -1439,8 +1570,7 @@ fn run_process_runtime(
             &mut runtime,
             &entrypoints,
             &writers,
-            &mut packed_events,
-            event_count,
+            events,
             &process_name,
             &mut last_metrics_log,
             &queue_stats,
@@ -1472,21 +1602,26 @@ fn run_process_runtime(
     let stop_deadline =
         Instant::now() + Duration::from_millis(process.lifecycle.stop_timeout_ms + 1000);
     let stop_result = loop {
-        let mut completions = vec![0; 4];
-        let mut count = 0;
+        let mut completions = HostEventBatch::new();
         // 关闭监听后只接收已有RPC的完成事件；新业务帧不进入停机中的Scene。 / After listeners close, drain existing RPC completions without admitting business frames.
         for _ in 0..MAX_PENDING_INGRESS_CONTROL_EVENTS {
             let Ok(event) = event_rx.try_recv_control() else {
                 break;
             };
-            queue_stats.dequeue(event.kind(), event.ingress_class());
             if matches!(&event, ProcessEvent::HostSceneCompletion(_)) {
-                push_event(&mut completions, &mut count, event, &queue_stats)?;
+                if !push_received_event(&mut completions, &mut event_rx, event, &queue_stats)? {
+                    break;
+                }
+            } else {
+                queue_stats.dequeue(event.kind(), event.ingress_class());
             }
         }
-        if count > 0 {
-            completions[0..4].copy_from_slice(&count.to_le_bytes());
-            call_js_push_host_events(&mut runtime, &entrypoints, completions)?;
+        if completions.len() > 0 {
+            call_js_push_host_events(
+                &mut runtime,
+                &entrypoints,
+                completions.into_payload(&queue_stats),
+            )?;
         }
         pump_js_event_loop_once(&js_event_loop, &mut runtime)?;
         // 停机模式的Update只提交RPC队列，不运行游戏Tick。 / Shutdown updates submit RPC queues without running gameplay ticks.
@@ -1612,8 +1747,7 @@ fn flush_runtime_batch(
     runtime: &mut deno_core::JsRuntime,
     entrypoints: &crate::host::JsEntrypoints,
     writers: &ConnectionWriters,
-    packed_events: &mut Vec<u8>,
-    event_count: u32,
+    events: HostEventBatch,
     process_name: &str,
     last_metrics_log: &mut Instant,
     queue_stats: &ProcessQueueStats,
@@ -1625,6 +1759,7 @@ fn flush_runtime_batch(
     health_state: &ProcessHealthState,
     hotfix_draining: bool,
 ) -> Result<(bool, bool)> {
+    let event_count = events.len();
     queue_stats.runtime_updates.fetch_add(1, Ordering::Relaxed);
     queue_stats
         .runtime_events
@@ -1633,9 +1768,7 @@ fn flush_runtime_batch(
         .max_runtime_batch
         .fetch_max(event_count as usize, Ordering::Relaxed);
     if event_count > 0 {
-        packed_events[0..4].copy_from_slice(&event_count.to_le_bytes());
-        let batch = std::mem::replace(packed_events, vec![0; 4]);
-        call_js_push_host_events(runtime, entrypoints, batch)?;
+        call_js_push_host_events(runtime, entrypoints, events.into_payload(queue_stats))?;
     }
     pump_js_event_loop_once(js_event_loop, runtime)?;
 
@@ -1727,551 +1860,28 @@ fn shutdown_all_connections(writers: &ConnectionWriters) {
     }
 }
 
-// Metrics are sampled from independent owners; a parameter object would be an
-// allocation-oriented facade with no stronger invariant.
-#[allow(clippy::too_many_arguments)]
-fn maybe_log_metrics(
-    process_name: &str,
-    metrics: &[SceneMetricsSnapshot],
-    game_metrics: Option<&GameMetricsSnapshot>,
-    native_data_metrics: Option<&NativeDataMetricsSnapshot>,
-    actor_mailbox_metrics: &MailboxMetricsSnapshot,
-    last_metrics_log: &mut Instant,
-    queue_stats: &ProcessQueueStats,
-    runtime: &mut deno_core::JsRuntime,
-    system: &mut System,
-    process_pid: Pid,
-    gc_metrics: &V8GcMetrics,
-    last_process_cpu_time_ms: &mut u64,
-    last_resource_sample_at: &mut Instant,
-    writers: &ConnectionWriters,
-    health_state: &ProcessHealthState,
-) {
-    if last_metrics_log.elapsed() < Duration::from_secs(5) {
-        return;
-    }
-    *last_metrics_log = Instant::now();
-    system.refresh_processes(ProcessesToUpdate::Some(&[process_pid]), false);
-    let (cpu_time_ms, rss_bytes) = system
-        .process(process_pid)
-        .map(|process| (process.accumulated_cpu_time(), process.memory()))
-        .unwrap_or_default();
-    let resource_elapsed_ms = last_resource_sample_at.elapsed().as_secs_f64() * 1000.0;
-    let cpu_delta_ms = cpu_time_ms.saturating_sub(*last_process_cpu_time_ms) as f64;
-    let cpu_percent = if resource_elapsed_ms > 0.0 {
-        cpu_delta_ms / resource_elapsed_ms * 100.0
-    } else {
-        0.0
-    };
-    *last_process_cpu_time_ms = cpu_time_ms;
-    *last_resource_sample_at = Instant::now();
-    let heap = runtime.v8_isolate().get_heap_statistics();
-    let timestamp_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let active_connections = writers
-        .lock()
-        .expect("connection writers lock poisoned")
-        .len() as u64;
-    let dropped_logs = crate::logging::dropped_lines();
-    let remote_transport = snapshot_remote_transport();
-    tracing::info!(target: "tiangz::metrics",
-        "[process-metrics] process={process_name} cpu_percent={cpu_percent:.2} cpu_time_ms={cpu_time_ms} rss_bytes={rss_bytes} v8_heap_used_bytes={} v8_heap_total_bytes={} v8_gc_count={} v8_gc_ms={:.3} timestamp_ms={timestamp_ms} dropped_logs={} inbound_frames={} host_completions={} disconnects={} runtime_updates={} runtime_events={} max_runtime_batch={} outbound_batches={} outbound_recipients={} outbound_bridge_bytes={} outbound_logical_bytes={} transport_read_ops={} transport_read_frames={} transport_read_bytes={} transport_write_ops={} transport_write_frames={} transport_write_bytes={}",
-        heap.used_heap_size(),
-        heap.total_heap_size(),
-        gc_metrics.count,
-        gc_metrics.total_duration.as_secs_f64() * 1000.0,
-        dropped_logs as u64,
-        queue_stats.inbound_frames.load(Ordering::Relaxed),
-        queue_stats.host_completions.load(Ordering::Relaxed),
-        queue_stats.disconnects.load(Ordering::Relaxed),
-        queue_stats.runtime_updates.load(Ordering::Relaxed),
-        queue_stats.runtime_events.load(Ordering::Relaxed),
-        queue_stats.max_runtime_batch.load(Ordering::Relaxed),
-        queue_stats.outbound_batches.load(Ordering::Relaxed),
-        queue_stats.outbound_recipients.load(Ordering::Relaxed),
-        queue_stats.outbound_bridge_bytes.load(Ordering::Relaxed),
-        queue_stats.outbound_logical_bytes.load(Ordering::Relaxed),
-        queue_stats.transport_read_ops.load(Ordering::Relaxed),
-        queue_stats.transport_read_frames.load(Ordering::Relaxed),
-        queue_stats.transport_read_bytes.load(Ordering::Relaxed),
-        queue_stats.transport_write_ops.load(Ordering::Relaxed),
-        queue_stats.transport_write_frames.load(Ordering::Relaxed),
-        queue_stats.transport_write_bytes.load(Ordering::Relaxed),
-    );
-    if let Some(game) = game_metrics {
-        tracing::info!(target: "tiangz::metrics",
-            "[game-metrics] process={process_name} fixed_update_ms={} frame_count={} skipped_fixed_updates={} update_targets={} update_calls={} update_failures={} timers={} coroutine_lock_waiters={} coroutine_lock_timeouts={}",
-            game.fixed_update_ms,
-            game.frame_count,
-            game.skipped_fixed_updates,
-            game.update_targets,
-            game.update_calls,
-            game.update_failures,
-            game.timers,
-            game.coroutine_lock_waiters,
-            game.coroutine_lock_timeouts,
-        );
-    }
-    tracing::info!(target: "tiangz::metrics",
-        "[actor-mailbox-metrics] process={process_name} fast_path={} queued={} async={} one_way_fast_path={} one_way_queued={} one_way_async={} depth={} max_depth={}",
-        actor_mailbox_metrics.fast_path_calls,
-        actor_mailbox_metrics.queued_calls,
-        actor_mailbox_metrics.async_calls,
-        actor_mailbox_metrics.one_way_fast_path_calls,
-        actor_mailbox_metrics.one_way_queued_calls,
-        actor_mailbox_metrics.one_way_async_calls,
-        actor_mailbox_metrics.queued_depth,
-        actor_mailbox_metrics.max_queued_depth,
-    );
-    if let Some(native) = native_data_metrics {
-        tracing::info!(target: "tiangz::metrics",
-            "[native-data-metrics] process={process_name} scalar_gets={} scalar_sets={} batch_calls={} live_entities={} live_units={} live_items={} pool_capacity_bytes={} scratch_capacity_bytes={} scratch_growths={} native_refs={} encoded_frames={} encoded_items={} encoded_bytes={} aoi_worlds={} aoi_entries={} aoi_grids={} aoi_candidate_relations={} aoi_visible_relations={} aoi_lingering_relations={} aoi_rejected_relations={} aoi_relocations={} aoi_visibility_changes={} aoi_filter_overrides={}",
-            native.scalar_gets,
-            native.scalar_sets,
-            native.batch_calls,
-            native.live_entities,
-            native.live_units,
-            native.live_items,
-            native.pool_capacity_bytes,
-            native.scratch_capacity_bytes,
-            native.scratch_growths,
-            native.native_refs.values().sum::<u64>(),
-            native.encoded_frames,
-            native.encoded_items,
-            native.encoded_bytes,
-            native.aoi_worlds,
-            native.aoi_entries,
-            native.aoi_grids,
-            native.aoi_candidate_relations,
-            native.aoi_visible_relations,
-            native.aoi_lingering_relations,
-            native.aoi_rejected_relations,
-            native.aoi_relocations,
-            native.aoi_visibility_changes,
-            native.aoi_filter_overrides,
-        );
-    }
-    for metric in metrics {
-        tracing::info!(target: "tiangz::metrics",
-            "[metrics:{process_name}] scene={} type={} processed={} failed={} protocol_successes={} business_errors={} system_errors={} decode_errors={} handler_not_found={} message_handler_failures={} ts_queue={} ts_max_queue={} ingress_pump_frames={} ingress_pump_ms={:.2} mailbox_fast={} mailbox_queued={} mailbox_async={} mailbox_one_way_fast={} mailbox_one_way_queued={} mailbox_one_way_async={} mailbox_depth={} mailbox_max_depth={} async_in_flight={} max_async_in_flight={} rust_queue={} rust_max_queue={} backpressure={} slow_disconnects={} update_ms={:.2} handler_ms={:.2} max_handler_ms={:.2} total_handler_ms={:.2}",
-            metric.scene,
-            metric.scene_type,
-            metric.processed_frames,
-            metric.failed_frames,
-            metric.protocol_successes,
-            metric.business_errors,
-            metric.system_errors,
-            metric.decode_errors,
-            metric.handler_not_found,
-            metric.message_handler_failures,
-            metric.ingress_queue_length,
-            metric.max_ingress_queue_length,
-            metric.last_ingress_pump_frames,
-            metric.last_ingress_pump_cost_ms,
-            metric.mailbox.fast_path_calls,
-            metric.mailbox.queued_calls,
-            metric.mailbox.async_calls,
-            metric.mailbox.one_way_fast_path_calls,
-            metric.mailbox.one_way_queued_calls,
-            metric.mailbox.one_way_async_calls,
-            metric.mailbox.queued_depth,
-            metric.mailbox.max_queued_depth,
-            metric.async_in_flight,
-            metric.max_async_in_flight,
-            queue_stats
-                .depth
-                .load(Ordering::Relaxed)
-                .min(queue_stats.capacity),
-            queue_stats.max_depth.load(Ordering::Relaxed),
-            queue_stats.backpressure_waits.load(Ordering::Relaxed),
-            queue_stats.slow_client_disconnects.load(Ordering::Relaxed),
-            metric.last_update_cost_ms,
-            metric.last_handler_cost_ms,
-            metric.max_handler_cost_ms,
-            metric.total_handler_cost_ms,
-        );
-        for latency in &metric.latencies {
-            tracing::info!(target: "tiangz::latency",
-                "[latency:{process_name}] scene={} type={} name={} msgcode={} count={} avg_ms={:.3} p50_ms={:.3} p95_ms={:.3} p99_ms={:.3} max_ms={:.3}",
-                metric.scene,
-                metric.scene_type,
-                latency.name,
-                latency
-                    .msgcode
-                    .map(|value| value.to_string())
-                    .unwrap_or_else(|| "-".to_string()),
-                latency.count,
-                latency.avg_ms,
-                latency.p50_ms,
-                latency.p95_ms,
-                latency.p99_ms,
-                latency.max_ms,
-            );
-        }
-        for custom in &metric.custom_metrics {
-            let fields = custom
-                .labels
-                .iter()
-                .map(|(name, value)| format!("{name}={value}"))
-                .chain(
-                    custom
-                        .values
-                        .iter()
-                        .map(|(name, value)| format!("{name}={value}")),
-                )
-                .collect::<Vec<_>>()
-                .join(" ");
-            tracing::info!(target: "tiangz::metrics",
-                "[custom-metrics:{process_name}] scene={} type={} name={} timestamp_ms={} {}",
-                metric.scene, metric.scene_type, custom.name, timestamp_ms, fields,
-            );
-        }
-    }
-
-    let mut scene_snapshots = Vec::with_capacity(metrics.len());
-    for metric in metrics {
-        let mut latency_snapshots = Vec::with_capacity(metric.latencies.len());
-        for latency in &metric.latencies {
-            latency_snapshots.push(LatencyObservabilitySnapshot {
-                name: latency.name.clone(),
-                msgcode: latency.msgcode.map(|msgcode| msgcode.to_string()),
-                count: latency.count,
-                sum_ms: latency.sum_ms,
-                bounds_ms: latency.bounds_ms.clone(),
-                bucket_counts: latency.bucket_counts.clone(),
-            });
-        }
-        scene_snapshots.push(SceneObservabilitySnapshot {
-            scene: metric.scene.clone(),
-            scene_type: metric.scene_type.clone(),
-            processed_frames: metric.processed_frames,
-            failed_frames: metric.failed_frames,
-            protocol_successes: metric.protocol_successes,
-            business_errors: metric.business_errors,
-            system_errors: metric.system_errors,
-            decode_errors: metric.decode_errors,
-            handler_not_found: metric.handler_not_found,
-            message_handler_failures: metric.message_handler_failures,
-            ingress_queue_length: metric.ingress_queue_length as u64,
-            max_ingress_queue_length: metric.max_ingress_queue_length as u64,
-            last_ingress_pump_frames: metric.last_ingress_pump_frames,
-            last_ingress_pump_cost_ms: metric.last_ingress_pump_cost_ms,
-            async_in_flight: metric.async_in_flight as u64,
-            max_async_in_flight: metric.max_async_in_flight as u64,
-            mailbox: MailboxObservabilitySnapshot {
-                fast_path_calls: metric.mailbox.fast_path_calls,
-                queued_calls: metric.mailbox.queued_calls,
-                async_calls: metric.mailbox.async_calls,
-                one_way_fast_path_calls: metric.mailbox.one_way_fast_path_calls,
-                one_way_queued_calls: metric.mailbox.one_way_queued_calls,
-                one_way_async_calls: metric.mailbox.one_way_async_calls,
-                queued_depth: metric.mailbox.queued_depth,
-                max_queued_depth: metric.mailbox.max_queued_depth,
-            },
-            last_update_cost_ms: metric.last_update_cost_ms,
-            last_handler_cost_ms: metric.last_handler_cost_ms,
-            max_handler_cost_ms: metric.max_handler_cost_ms,
-            total_handler_cost_ms: metric.total_handler_cost_ms,
-            latencies: latency_snapshots,
-            custom_metrics: metric
-                .custom_metrics
-                .iter()
-                .map(|item| SceneCustomMetricSnapshot {
-                    name: item.name.clone(),
-                    labels: item.labels.clone(),
-                    values: item.values.clone(),
-                    kinds: item
-                        .kinds
-                        .iter()
-                        .map(|(key, kind)| {
-                            let kind = match kind {
-                                CustomMetricKind::Counter => SceneCustomMetricKind::Counter,
-                                CustomMetricKind::Gauge => SceneCustomMetricKind::Gauge,
-                            };
-                            (key.clone(), kind)
-                        })
-                        .collect(),
-                })
-                .collect(),
-        });
-    }
-
-    let game_snapshot = game_metrics.map(|game| GameObservabilitySnapshot {
-        fixed_update_ms: game.fixed_update_ms,
-        frame_count: game.frame_count,
-        skipped_fixed_updates: game.skipped_fixed_updates,
-        update_targets: game.update_targets as u64,
-        update_calls: game.update_calls,
-        update_failures: game.update_failures,
-        timers: game.timers as u64,
-        coroutine_lock_waiters: game.coroutine_lock_waiters as u64,
-        coroutine_lock_timeouts: game.coroutine_lock_timeouts,
-    });
-    let native_snapshot = native_data_metrics.map(|native| NativeDataObservabilitySnapshot {
-        scalar_gets: native.scalar_gets,
-        scalar_sets: native.scalar_sets,
-        batch_calls: native.batch_calls,
-        live_entities: native.live_entities as u64,
-        live_units: native.live_units as u64,
-        live_items: native.live_items as u64,
-        pool_capacity_bytes: native.pool_capacity_bytes,
-        scratch_capacity_bytes: native.scratch_capacity_bytes,
-        scratch_growths: native.scratch_growths,
-        native_refs: native.native_refs.clone(),
-        encoded_frames: native.encoded_frames,
-        encoded_items: native.encoded_items,
-        encoded_bytes: native.encoded_bytes,
-        aoi_worlds: native.aoi_worlds as u64,
-        aoi_entries: native.aoi_entries as u64,
-        aoi_grids: native.aoi_grids as u64,
-        aoi_candidate_relations: native.aoi_candidate_relations,
-        aoi_visible_relations: native.aoi_visible_relations,
-        aoi_lingering_relations: native.aoi_lingering_relations,
-        aoi_rejected_relations: native.aoi_rejected_relations,
-        aoi_relocations: native.aoi_relocations,
-        aoi_visibility_changes: native.aoi_visibility_changes,
-        aoi_filter_overrides: native.aoi_filter_overrides,
-        navigation_assets: native.navigation_assets as u64,
-        navigation_worlds: native.navigation_worlds as u64,
-        numeric_replication: native
-            .numeric_replication
-            .iter()
-            .map(
-                |item| crate::health::NativeNumericReplicationObservabilitySnapshot {
-                    numeric_type: item.numeric_type,
-                    changes: item.changes,
-                    encoded_records: item.encoded_records,
-                    recipient_deliveries: item.recipient_deliveries,
-                    logical_bytes: item.logical_bytes,
-                },
-            )
-            .collect(),
-    });
-
-    health_state.set_observability_snapshot(ProcessObservabilitySnapshot {
-        native_workers: runtime
-            .op_state()
-            .borrow()
-            .borrow::<crate::native_worker::Registry>()
-            .snapshot(),
-        sample_timestamp_ms: timestamp_ms as u64,
-        cpu_percent,
-        cpu_time_ms,
-        rss_bytes,
-        v8_heap_used_bytes: heap.used_heap_size() as u64,
-        v8_heap_total_bytes: heap.total_heap_size() as u64,
-        v8_gc_count: gc_metrics.count,
-        v8_gc_ms: gc_metrics.total_duration.as_secs_f64() * 1000.0,
-        dropped_logs: dropped_logs as u64,
-        backpressure_waits: queue_stats.backpressure_waits.load(Ordering::Relaxed),
-        slow_client_disconnects: queue_stats.slow_client_disconnects.load(Ordering::Relaxed),
-        inbound_frames: queue_stats.inbound_frames.load(Ordering::Relaxed),
-        host_completions: queue_stats.host_completions.load(Ordering::Relaxed),
-        disconnects: queue_stats.disconnects.load(Ordering::Relaxed),
-        runtime_updates: queue_stats.runtime_updates.load(Ordering::Relaxed),
-        runtime_events: queue_stats.runtime_events.load(Ordering::Relaxed),
-        max_runtime_batch: queue_stats.max_runtime_batch.load(Ordering::Relaxed) as u64,
-        outbound_batches: queue_stats.outbound_batches.load(Ordering::Relaxed),
-        outbound_recipients: queue_stats.outbound_recipients.load(Ordering::Relaxed),
-        outbound_bridge_bytes: queue_stats.outbound_bridge_bytes.load(Ordering::Relaxed),
-        outbound_logical_bytes: queue_stats.outbound_logical_bytes.load(Ordering::Relaxed),
-        transport_read_ops: queue_stats.transport_read_ops.load(Ordering::Relaxed),
-        transport_read_frames: queue_stats.transport_read_frames.load(Ordering::Relaxed),
-        transport_read_bytes: queue_stats.transport_read_bytes.load(Ordering::Relaxed),
-        transport_write_ops: queue_stats.transport_write_ops.load(Ordering::Relaxed),
-        transport_write_frames: queue_stats.transport_write_frames.load(Ordering::Relaxed),
-        transport_write_bytes: queue_stats.transport_write_bytes.load(Ordering::Relaxed),
-        active_connections,
-        remote_transport_active_connections: remote_transport
-            .as_ref()
-            .map(|snapshot| snapshot.active_connections)
-            .unwrap_or_default(),
-        remote_transport_opened_connections: remote_transport
-            .as_ref()
-            .map(|snapshot| snapshot.opened_connections)
-            .unwrap_or_default(),
-        remote_transport_pending_calls: remote_transport
-            .as_ref()
-            .map(|snapshot| snapshot.pending_calls)
-            .unwrap_or_default(),
-        remote_transport_max_pending_calls: remote_transport
-            .as_ref()
-            .map(|snapshot| snapshot.max_pending_calls)
-            .unwrap_or_default(),
-        remote_transport_overload_rejections: remote_transport
-            .as_ref()
-            .map(|snapshot| snapshot.overload_rejections)
-            .unwrap_or_default(),
-        remote_transport_timed_out_calls: remote_transport
-            .as_ref()
-            .map(|snapshot| snapshot.timed_out_calls)
-            .unwrap_or_default(),
-        remote_transport_disconnected_calls: remote_transport
-            .as_ref()
-            .map(|snapshot| snapshot.disconnected_calls)
-            .unwrap_or_default(),
-        remote_transport_late_responses: remote_transport
-            .as_ref()
-            .map(|snapshot| snapshot.late_responses)
-            .unwrap_or_default(),
-        remote_transport_idle_closes: remote_transport
-            .as_ref()
-            .map(|snapshot| snapshot.idle_closes)
-            .unwrap_or_default(),
-        remote_transport_overload_stages: remote_transport
-            .as_ref()
-            .map(|snapshot| {
-                snapshot
-                    .overload_stages
-                    .iter()
-                    .map(|stage| TransportOverloadStageObservabilitySnapshot {
-                        stage: stage.stage.to_string(),
-                        rejections: stage.rejections,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default(),
-        remote_transport_diagnostics: remote_transport
-            .as_ref()
-            .map(|snapshot| {
-                snapshot
-                    .diagnostics
-                    .iter()
-                    .map(|diagnostic| TransportDiagnosticObservabilitySnapshot {
-                        msgcode: diagnostic.msgcode,
-                        source: diagnostic.source.clone(),
-                        target: diagnostic.target.clone(),
-                        traffic: diagnostic.traffic.to_string(),
-                        stage: diagnostic.stage.to_string(),
-                        overloads: diagnostic.overloads,
-                        timeouts: diagnostic.timeouts,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default(),
-        queue_depth: queue_stats.depth.load(Ordering::Relaxed) as u64,
-        queue_capacity: queue_stats.capacity as u64,
-        queue_max_depth: queue_stats.max_depth.load(Ordering::Relaxed) as u64,
-        queue_stages: ProcessEventKind::ALL
-            .into_iter()
-            .map(|kind| {
-                let stage = queue_stats.stage(kind);
-                ProcessQueueStageObservabilitySnapshot {
-                    stage: kind.name().to_string(),
-                    depth: stage.depth.load(Ordering::Relaxed) as u64,
-                    max_depth: stage.max_depth.load(Ordering::Relaxed) as u64,
-                    backpressure_waits: stage.backpressure_waits.load(Ordering::Relaxed),
-                    backpressure_wait_ms: stage.backpressure_wait_ns.load(Ordering::Relaxed) as f64
-                        / 1_000_000.0,
-                    max_backpressure_wait_ms: stage.max_backpressure_wait_ns.load(Ordering::Relaxed)
-                        as f64
-                        / 1_000_000.0,
-                }
-            })
-            .chain(ProcessIngressClass::ALL.into_iter().map(|class| {
-                let stage = queue_stats.ingress_stage(class);
-                ProcessQueueStageObservabilitySnapshot {
-                    stage: class.name().to_string(),
-                    depth: stage.depth.load(Ordering::Relaxed) as u64,
-                    max_depth: stage.max_depth.load(Ordering::Relaxed) as u64,
-                    backpressure_waits: stage.backpressure_waits.load(Ordering::Relaxed),
-                    backpressure_wait_ms: stage.backpressure_wait_ns.load(Ordering::Relaxed) as f64
-                        / 1_000_000.0,
-                    max_backpressure_wait_ms: stage.max_backpressure_wait_ns.load(Ordering::Relaxed)
-                        as f64
-                        / 1_000_000.0,
-                }
-            }))
-            .collect(),
-        scenes: scene_snapshots,
-        actor_mailbox: MailboxObservabilitySnapshot {
-            fast_path_calls: actor_mailbox_metrics.fast_path_calls,
-            queued_calls: actor_mailbox_metrics.queued_calls,
-            async_calls: actor_mailbox_metrics.async_calls,
-            one_way_fast_path_calls: actor_mailbox_metrics.one_way_fast_path_calls,
-            one_way_queued_calls: actor_mailbox_metrics.one_way_queued_calls,
-            one_way_async_calls: actor_mailbox_metrics.one_way_async_calls,
-            queued_depth: actor_mailbox_metrics.queued_depth,
-            max_queued_depth: actor_mailbox_metrics.max_queued_depth,
-        },
-        game: game_snapshot,
-        native_data: native_snapshot,
-        dbproxy: crate::dbproxy::metrics_snapshot(),
-    });
-}
-
-fn push_event(
-    packed_events: &mut Vec<u8>,
-    event_count: &mut u32,
+/// 满批退回接收通道队首，只有实际接受后才扣队列深度。 / Returns a full-batch event to its lane head, decrementing depth only after acceptance.
+fn push_received_event(
+    events: &mut HostEventBatch,
+    receiver: &mut ProcessEventReceiver,
     event: ProcessEvent,
     queue_stats: &ProcessQueueStats,
-) -> Result<()> {
-    match event {
-        ProcessEvent::Frame {
-            scene_index,
-            connection_id,
-            internal,
-            frame,
-        } => {
-            queue_stats.inbound_frames.fetch_add(1, Ordering::Relaxed);
-            let event_type = if internal && crate::transport::inner_frame_rpc_id(&frame).is_some() {
-                5
-            } else {
-                1
-            };
-            push_packed_event(
-                packed_events,
-                event_type,
-                connection_id,
-                scene_index,
-                &frame,
-            )?;
+) -> Result<bool> {
+    let kind = event.kind();
+    let class = event.ingress_class();
+    match events.try_push(event, queue_stats) {
+        Ok(Some(event)) => {
+            receiver.return_front(event);
+            return Ok(false);
         }
-        ProcessEvent::Disconnect {
-            scene_index,
-            connection_id,
-        } => {
-            queue_stats.disconnects.fetch_add(1, Ordering::Relaxed);
-            push_packed_event(packed_events, 2, connection_id, scene_index, &[])?;
+        Err(error) => {
+            queue_stats.dequeue(kind, class);
+            return Err(error);
         }
-        ProcessEvent::HostSceneCompletion(completion) => {
-            queue_stats.host_completions.fetch_add(1, Ordering::Relaxed);
-            let (event_type, payload) = match completion.result {
-                Ok(frame) => (3, frame),
-                Err(error) => (4, error.into_bytes()),
-            };
-            push_packed_event(
-                packed_events,
-                event_type,
-                completion.operation_id as u64,
-                0,
-                &payload,
-            )?;
-        }
-        ProcessEvent::Shutdown => bail!("shutdown event cannot enter a host event batch"),
+        Ok(None) => {}
     }
-    *event_count += 1;
-    Ok(())
-}
-
-fn push_packed_event(
-    packed_events: &mut Vec<u8>,
-    event_type: u8,
-    connection_id: u64,
-    scene_index: u32,
-    payload: &[u8],
-) -> Result<()> {
-    let connection_id = u32::try_from(connection_id).context("connection id exceeds uint32")?;
-    let payload_len = u32::try_from(payload.len()).context("host event payload exceeds uint32")?;
-    packed_events.reserve(EVENT_HEADER_BYTES + payload.len());
-    packed_events.push(event_type);
-    packed_events.extend_from_slice(&connection_id.to_le_bytes());
-    packed_events.extend_from_slice(&scene_index.to_le_bytes());
-    packed_events.extend_from_slice(&payload_len.to_le_bytes());
-    packed_events.extend_from_slice(payload);
-    Ok(())
+    queue_stats.dequeue(kind, class);
+    Ok(true)
 }
 
 fn flush_outbound(
@@ -2358,6 +1968,9 @@ fn flush_outbound(
             if error == ConnectionQueueError::Closed {
                 tracing::debug!(target: "tiangz::transport", connection_id,
                     "removing connection whose outbound receiver is closed");
+            } else if error == ConnectionQueueError::ProcessByteLimit {
+                tracing::warn!(target: "tiangz::transport", connection_id, reason = %error,
+                    "closing connection: shared process outbound payload budget exceeded");
             } else {
                 queue_stats
                     .slow_client_disconnects
@@ -2374,6 +1987,52 @@ fn flush_outbound(
 mod tests {
     use super::*;
 
+    #[test]
+    fn process_buffer_pressure_closes_rejected_recipient_without_blaming_slow_clients() {
+        let network = crate::config::ProcessNetworkConfig {
+            max_outbound_buffered_bytes: 2,
+            ..Default::default()
+        };
+        let stats = ProcessQueueStats::with_network_limits(16, &network);
+        let writers = Arc::new(Mutex::new(HashMap::new()));
+        let mut receivers = Vec::new();
+        let mut shutdowns = Vec::new();
+        for id in 1..=2 {
+            let (sender, receiver) = tokio::sync::mpsc::channel(1);
+            let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+            writers.lock().unwrap().insert(
+                id,
+                ConnectionWriter {
+                    process_buffer_budget: stats.outbound_buffers.clone(),
+                    sender,
+                    shutdown_tx,
+                    queued_bytes: Arc::new(AtomicUsize::new(0)),
+                    queued_frames: Arc::new(AtomicUsize::new(0)),
+                },
+            );
+            receivers.push(receiver);
+            shutdowns.push(shutdown_rx);
+        }
+        flush_outbound(
+            vec![BinaryOutboundBatch {
+                connection_ids: vec![1, 2],
+                frame: Bytes::from_static(&[0, 1]),
+            }],
+            &writers,
+            &stats,
+        )
+        .unwrap();
+        assert_eq!(writers.lock().unwrap().len(), 1);
+        assert!(writers.lock().unwrap().contains_key(&1));
+        assert!(!*shutdowns[0].borrow());
+        assert!(*shutdowns[1].borrow());
+        assert_eq!(stats.slow_client_disconnects.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.outbound_buffers.snapshot().used_bytes, 2);
+        assert_eq!(stats.outbound_buffers.snapshot().rejections, 1);
+        drop(receivers);
+        assert_eq!(stats.outbound_buffers.snapshot().used_bytes, 0);
+    }
+
     #[tokio::test]
     async fn bounded_process_queue_applies_backpressure() {
         let (control_sender, control_receiver) = mpsc::sync_channel(1);
@@ -2386,16 +2045,19 @@ mod tests {
             wake_sender,
             stats: Arc::clone(&stats),
         };
-        let mut receiver = ProcessEventReceiver {
+        let mut receiver = ProcessEventReceiver::new(
             control_receiver,
             data_receiver,
             wake_receiver,
-            consecutive_control: 0,
-        };
+            Arc::clone(&stats.control_admission),
+            Arc::clone(&stats.host_events),
+        );
 
         sender
             .send(
                 ProcessEvent::Disconnect {
+                    backing_reservation: None,
+                    control_reservation: None,
                     scene_index: 0,
                     connection_id: 1,
                 },
@@ -2408,6 +2070,8 @@ mod tests {
             second_sender
                 .send(
                     ProcessEvent::Disconnect {
+                        backing_reservation: None,
+                        control_reservation: None,
                         scene_index: 0,
                         connection_id: 2,
                     },
@@ -2449,17 +2113,20 @@ mod tests {
             wake_sender,
             stats: Arc::clone(&stats),
         };
-        let mut receiver = ProcessEventReceiver {
+        let mut receiver = ProcessEventReceiver::new(
             control_receiver,
             data_receiver,
             wake_receiver,
-            consecutive_control: 0,
-        };
+            Arc::clone(&stats.control_admission),
+            Arc::clone(&stats.host_events),
+        );
 
         for connection_id in 1..=(MAX_CONSECUTIVE_CONTROL_EVENTS as u64 + 1) {
             sender
                 .send(
                     ProcessEvent::Disconnect {
+                        backing_reservation: None,
+                        control_reservation: None,
                         scene_index: 0,
                         connection_id,
                     },
@@ -2471,6 +2138,8 @@ mod tests {
         sender
             .send(
                 ProcessEvent::Frame {
+                    backing_reservation: None,
+                    control_reservation: None,
                     internal: true,
                     scene_index: 0,
                     connection_id: 999,
@@ -2497,12 +2166,16 @@ mod tests {
         let frame = Bytes::from_static(&[0x9c, 0x40, 0xd0, 0x05, 0x01]);
         assert_eq!(crate::transport::inner_frame_rpc_id(&frame), Some(1));
         let outer = ProcessEvent::Frame {
+            backing_reservation: None,
+            control_reservation: None,
             scene_index: 0,
             connection_id: 1,
             internal: false,
             frame: frame.clone(),
         };
         let inner = ProcessEvent::Frame {
+            backing_reservation: None,
+            control_reservation: None,
             scene_index: 0,
             connection_id: 2,
             internal: true,
@@ -2526,12 +2199,16 @@ mod tests {
         };
         sender
             .try_send_control(ProcessEvent::Disconnect {
+                backing_reservation: None,
+                control_reservation: None,
                 scene_index: 0,
                 connection_id: 1,
             })
             .unwrap();
 
         let result = sender.try_send_control(ProcessEvent::Disconnect {
+            backing_reservation: None,
+            control_reservation: None,
             scene_index: 0,
             connection_id: 2,
         });
@@ -2550,6 +2227,9 @@ mod tests {
         writers.lock().unwrap().insert(
             7,
             ConnectionWriter {
+                process_buffer_budget: tiangz_transport::buffer_budget::BufferBudget::new(
+                    64 * 1024 * 1024,
+                ),
                 sender,
                 queued_bytes: Arc::new(AtomicUsize::new(CONNECTION_OUTBOUND_BYTE_CAPACITY)),
                 queued_frames: Arc::new(AtomicUsize::new(0)),
@@ -2591,6 +2271,9 @@ mod tests {
             writers.lock().unwrap().insert(
                 7,
                 ConnectionWriter {
+                    process_buffer_budget: tiangz_transport::buffer_budget::BufferBudget::new(
+                        64 * 1024 * 1024,
+                    ),
                     sender,
                     queued_bytes: Arc::clone(&queued_bytes),
                     queued_frames: Arc::clone(&queued_frames),
@@ -2623,6 +2306,9 @@ mod tests {
         writers.lock().unwrap().insert(
             7,
             ConnectionWriter {
+                process_buffer_budget: tiangz_transport::buffer_budget::BufferBudget::new(
+                    64 * 1024 * 1024,
+                ),
                 sender,
                 queued_bytes: Arc::new(AtomicUsize::new(0)),
                 queued_frames: Arc::new(AtomicUsize::new(0)),
@@ -2646,6 +2332,9 @@ mod tests {
             writers.lock().unwrap().insert(
                 connection_id,
                 ConnectionWriter {
+                    process_buffer_budget: tiangz_transport::buffer_budget::BufferBudget::new(
+                        64 * 1024 * 1024,
+                    ),
                     sender,
                     queued_bytes: Arc::new(AtomicUsize::new(0)),
                     queued_frames: Arc::new(AtomicUsize::new(0)),
@@ -2686,6 +2375,9 @@ mod tests {
         writers.lock().unwrap().insert(
             7,
             ConnectionWriter {
+                process_buffer_budget: tiangz_transport::buffer_budget::BufferBudget::new(
+                    64 * 1024 * 1024,
+                ),
                 sender,
                 queued_bytes: Arc::clone(&queued_bytes),
                 queued_frames: Arc::clone(&queued_frames),
@@ -2714,12 +2406,14 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(queued_frames.load(Ordering::Relaxed), 3);
+        assert_eq!(queued_bytes.load(Ordering::Relaxed), 6);
         assert_eq!(receiver.try_recv().unwrap().frames[0].as_ref(), [0, 1]);
         assert_eq!(receiver.try_recv().unwrap().frames[0].as_ref(), [0, 2]);
         assert_eq!(receiver.try_recv().unwrap().frames[0].as_ref(), [0, 3]);
         assert!(receiver.try_recv().is_err());
-        assert_eq!(queued_frames.load(Ordering::Relaxed), 3);
-        assert_eq!(queued_bytes.load(Ordering::Relaxed), 6);
+        assert_eq!(queued_frames.load(Ordering::Relaxed), 0);
+        assert_eq!(queued_bytes.load(Ordering::Relaxed), 0);
     }
 
     #[test]
@@ -2730,6 +2424,9 @@ mod tests {
         writers.lock().unwrap().insert(
             7,
             ConnectionWriter {
+                process_buffer_budget: tiangz_transport::buffer_budget::BufferBudget::new(
+                    64 * 1024 * 1024,
+                ),
                 sender,
                 queued_bytes: Arc::new(AtomicUsize::new(0)),
                 queued_frames: Arc::new(AtomicUsize::new(0)),
@@ -2764,9 +2461,25 @@ mod tests {
 
     #[test]
     fn packs_host_events_with_payload_length() {
-        let mut packed = vec![0; 4];
-        push_packed_event(&mut packed, 1, 7, 3, &[10, 11]).unwrap();
-        packed[0..4].copy_from_slice(&1_u32.to_le_bytes());
+        let stats = ProcessQueueStats::default();
+        let mut batch = HostEventBatch::new();
+        assert!(
+            batch
+                .try_push(
+                    ProcessEvent::Frame {
+                        backing_reservation: Some(stats.host_events.try_reserve(2).unwrap()),
+                        control_reservation: None,
+                        connection_id: 7,
+                        scene_index: 3,
+                        internal: false,
+                        frame: Bytes::from_static(&[10, 11]),
+                    },
+                    &stats
+                )
+                .unwrap()
+                .is_none()
+        );
+        let packed = batch.into_payload(&stats).bytes;
 
         assert_eq!(&packed[0..4], &1_u32.to_le_bytes());
         assert_eq!(packed[4], 1);
@@ -2774,98 +2487,5 @@ mod tests {
         assert_eq!(&packed[9..13], &3_u32.to_le_bytes());
         assert_eq!(&packed[13..17], &2_u32.to_le_bytes());
         assert_eq!(&packed[17..], &[10, 11]);
-    }
-
-    #[test]
-    fn parses_game_metrics_from_ts_update() {
-        let result: UpdateResult = serde_json::from_str(
-            r#"{
-                "metrics": [],
-                "game": {
-                    "fixedUpdateMs": 50,
-                    "frameCount": 123,
-                    "skippedFixedUpdates": 2,
-                    "updateTargets": 4,
-                    "updateCalls": 492,
-                    "updateFailures": 0,
-                    "timers": 3,
-                    "coroutineLockWaiters": 2,
-                    "coroutineLockTimeouts": 7
-                },
-                "actorMailbox": {
-                    "queuedCalls": 8,
-                    "oneWayQueuedCalls": 9,
-                    "queuedDepth": 2,
-                    "maxQueuedDepth": 12
-                },
-                "pendingAsync": false,
-                "pendingIngress": true
-            }"#,
-        )
-        .unwrap();
-
-        let game = result.game.unwrap();
-        assert_eq!(game.fixed_update_ms, 50);
-        assert_eq!(game.frame_count, 123);
-        assert_eq!(game.skipped_fixed_updates, 2);
-        assert_eq!(game.update_targets, 4);
-        assert_eq!(game.update_calls, 492);
-        assert_eq!(game.update_failures, 0);
-        assert_eq!(game.timers, 3);
-        assert_eq!(game.coroutine_lock_waiters, 2);
-        assert_eq!(game.coroutine_lock_timeouts, 7);
-        assert_eq!(result.actor_mailbox.queued_calls, 8);
-        assert_eq!(result.actor_mailbox.one_way_queued_calls, 9);
-        assert_eq!(result.actor_mailbox.queued_depth, 2);
-        assert_eq!(result.actor_mailbox.max_queued_depth, 12);
-        assert!(result.pending_ingress);
-    }
-
-    #[test]
-    fn parses_custom_scene_metrics_from_ts_update() {
-        let result: UpdateResult = serde_json::from_str(
-            r#"{
-                "metrics": [{
-                    "scene": "map_1",
-                    "sceneType": "MapHost",
-                    "processedFrames": 1,
-                    "failedFrames": 0,
-                    "ingressQueueLength": 0,
-                    "maxIngressQueueLength": 1,
-                    "lastIngressPumpFrames": 17,
-                    "lastIngressPumpCostMs": 4.5,
-                    "lastUpdateCostMs": 0.1,
-                    "lastHandlerCostMs": 0.1,
-                    "maxHandlerCostMs": 0.1,
-                    "totalHandlerCostMs": 0.1,
-                    "asyncInFlight": 0,
-                    "maxAsyncInFlight": 1,
-                    "latencies": [],
-                    "customMetrics": [{
-                        "name": "map_broadcast",
-                        "values": {
-                            "in_flight": 1,
-                            "pending_units": 12,
-                            "coalesced_frames_total": 34
-                        },
-                        "kinds": { "coalesced_frames_total": "counter" }
-                    }]
-                }],
-                "pendingAsync": false
-            }"#,
-        )
-        .expect("custom scene metrics must deserialize");
-
-        assert_eq!(result.metrics[0].last_ingress_pump_frames, 17);
-        assert_eq!(result.metrics[0].last_ingress_pump_cost_ms, 4.5);
-        let custom = &result.metrics[0].custom_metrics[0];
-        assert_eq!(custom.name, "map_broadcast");
-        assert_eq!(custom.values.get("in_flight"), Some(&1.0));
-        assert_eq!(custom.values.get("pending_units"), Some(&12.0));
-        assert_eq!(custom.values.get("coalesced_frames_total"), Some(&34.0));
-        assert!(matches!(
-            custom.kinds.get("coalesced_frames_total"),
-            Some(CustomMetricKind::Counter)
-        ));
     }
 }

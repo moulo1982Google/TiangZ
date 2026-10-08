@@ -1,6 +1,6 @@
 [package]
 name = "TiangZ"
-version = "0.6.5"
+version = "0.7.0-rc1"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/moulo1982Google/TiangZ"
@@ -13,7 +13,7 @@ path = "src/transport_lib.rs"
 [features]
 default = ["mimalloc-allocator"]
 mimalloc-allocator = ["dep:mimalloc"]
-io-uring = ["dep:tokio-uring"]
+io-uring = ["dep:tokio-uring", "dep:socket2"]
 kcp = []
 
 [dependencies]
@@ -33,9 +33,9 @@ serde_json = "1"
 sha2 = "0.10"
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-tungstenite = "0.30"
-tiangz-dbproxy-client = { git = "https://github.com/moulo1982Google/TiangZ-DBProxy.git", tag = "v0.6.2" }
-tiangz-dbproxy-core = { git = "https://github.com/moulo1982Google/TiangZ-DBProxy.git", tag = "v0.6.2" }
-tiangz-dbproxy-protocol = { git = "https://github.com/moulo1982Google/TiangZ-DBProxy.git", tag = "v0.6.2" }
+tiangz-dbproxy-client = { git = "https://github.com/moulo1982Google/TiangZ-DBProxy.git", tag = "v0.7.0-rc1" }
+tiangz-dbproxy-core = { git = "https://github.com/moulo1982Google/TiangZ-DBProxy.git", tag = "v0.7.0-rc1" }
+tiangz-dbproxy-protocol = { git = "https://github.com/moulo1982Google/TiangZ-DBProxy.git", tag = "v0.7.0-rc1" }
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
@@ -46,6 +46,7 @@ sysinfo = { version = "0.39.6", default-features = false, features = ["system"] 
 
 [target.'cfg(target_os = "linux")'.dependencies]
 tokio-uring = { version = "0.5.0", optional = true }
+socket2 = { version = "0.6.5", optional = true }
 
 [dev-dependencies]
 tempfile = "3"

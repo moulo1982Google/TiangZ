@@ -12,6 +12,9 @@ const engine = path.resolve(import.meta.dirname, "..");
 await mkdir(path.join(engine, "temp"), { recursive: true });
 const temporary = await mkdtemp(path.join(engine, "temp", "project-dev-"));
 const project = path.join(temporary, "game with spaces");
+// 验证热更完成事件时显式保留该日志目标，不受调用终端的 RUST_LOG 影响。
+// Keep the Hotfix completion events required by this fixture regardless of the caller's RUST_LOG.
+const runtimeEnvironment = { ...process.env, RUST_LOG: "warn,tiangz::hotfix=info", TIANGZ_TEST_PAIRED_TOKEN: "paired-fixture" };
 let child;
 let exited;
 let logs = "";
@@ -68,7 +71,7 @@ export async function connect(port: number) {
 `);
   const output = path.join(temporary, "dev-probe.mjs");
   await build({ entryPoints: [probe], outfile: output, bundle: true, platform: "node", format: "esm", target: "node22", logLevel: "silent" });
-  child = spawn(process.execPath, ["tools/game_project.mjs", "dev", "--project", project], { cwd: engine, env: { ...process.env, TIANGZ_TEST_PAIRED_TOKEN: "paired-fixture" }, windowsHide: true, detached: process.platform !== "win32", stdio: ["pipe", "pipe", "pipe"] });
+  child = spawn(process.execPath, ["tools/game_project.mjs", "dev", "--project", project], { cwd: engine, env: runtimeEnvironment, windowsHide: true, detached: process.platform !== "win32", stdio: ["pipe", "pipe", "pipe"] });
   child.stdout.on("data", bytes => { logs += bytes; });
   child.stderr.on("data", bytes => { logs += bytes; });
   child.on("error", error => { logs += error.message; });
@@ -152,7 +155,7 @@ export async function connect(port: number) {
   const checkEnds = [...logs.matchAll(/^\[tiangz-dev-check\] end\r?$/gm)].length;
   assert.ok(checkBegins >= 3, "initial build, successful Hotfix and rejected candidate each delimit diagnostics");
   assert.equal(checkEnds, checkBegins, "failed checks also close their diagnostic cycle");
-  child = spawn(process.execPath, ["tools/dev_runtime.mjs", "--project", project], { cwd: engine, env: { ...process.env, TIANGZ_TEST_PAIRED_TOKEN: "paired-fixture" }, windowsHide: true, detached: process.platform !== "win32", stdio: ["pipe", "pipe", "pipe"] });
+  child = spawn(process.execPath, ["tools/dev_runtime.mjs", "--project", project], { cwd: engine, env: runtimeEnvironment, windowsHide: true, detached: process.platform !== "win32", stdio: ["pipe", "pipe", "pipe"] });
   child.stdout.on("data", bytes => { logs += bytes; });
   child.stderr.on("data", bytes => { logs += bytes; });
   exited = new Promise(resolve => child.once("close", resolve));

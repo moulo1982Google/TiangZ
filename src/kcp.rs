@@ -1,10 +1,17 @@
 //! 使用 Rust 独占缓冲区和显式参数配置包装固定版本的 C KCP 实现。 / Wraps the pinned C KCP implementation with owned Rust buffers and explicit profiles.
 
-use std::collections::VecDeque;
+#[cfg(test)]
+mod buffer_tests;
+mod buffers;
+
+use crate::buffer_budget::BufferBudget;
+use buffers::{CacheReservation, OutputQueue, SESSION_BUFFER_LIMIT};
 use std::ffi::{c_char, c_int, c_long, c_void};
 use std::ptr::NonNull;
+use std::sync::Arc;
 
 use anyhow::{Result, bail};
+use bytes::Bytes;
 
 #[repr(C)]
 struct IKcpcb {
@@ -38,6 +45,10 @@ unsafe extern "C" {
         disable_congestion_control: c_int,
     ) -> c_int;
     fn ets_kcp_set_min_rto(kcp: *mut IKcpcb, min_rto: u32);
+    fn ets_kcp_initial_buffer_bound(mtu: u32) -> u64;
+    fn ets_kcp_buffer_bound(kcp: *const IKcpcb) -> u64;
+    fn ets_kcp_send_buffer_bound(kcp: *const IKcpcb, length: u32) -> u64;
+    fn ets_kcp_input_buffer_bound(kcp: *const IKcpcb, pushes: u32) -> u64;
     #[cfg(test)]
     fn ets_kcp_get_min_rto(kcp: *const IKcpcb) -> u32;
 }
@@ -79,14 +90,11 @@ impl KcpConfig {
     }
 }
 
-#[derive(Default)]
-struct OutputQueue {
-    datagrams: VecDeque<Vec<u8>>,
-}
-
 pub struct KcpSession {
     kcp: NonNull<IKcpcb>,
     output: Box<OutputQueue>,
+    cache: CacheReservation,
+    mss: usize,
 }
 
 // KCP state has exclusive ownership and its C callback only touches the boxed
@@ -96,24 +104,58 @@ unsafe impl Send for KcpSession {}
 
 impl KcpSession {
     pub fn new(conv: u32, config: KcpConfig) -> Result<Self> {
+        Self::new_with_budget(conv, config, BufferBudget::new(SESSION_BUFFER_LIMIT))
+    }
+
+    /// 会话仍受独立 4 MiB 限额，并共享调用方的进程额度。 / Retains a 4 MiB per-session limit while sharing the caller's process budget.
+    pub fn new_with_budget(
+        conv: u32,
+        config: KcpConfig,
+        process: Arc<BufferBudget>,
+    ) -> Result<Self> {
+        Self::new_with_limits(conv, config, process, SESSION_BUFFER_LIMIT)
+    }
+
+    fn new_with_limits(
+        conv: u32,
+        config: KcpConfig,
+        process: Arc<BufferBudget>,
+        session_limit: usize,
+    ) -> Result<Self> {
         validate_config(config)?;
-        let mut output = Box::<OutputQueue>::default();
+        let mut output = Box::new(OutputQueue::new(process, session_limit));
+        let initial =
+            usize::try_from(unsafe { ets_kcp_initial_buffer_bound(u32::from(config.mtu)) })?;
+        let cache = CacheReservation::new(&output.session, &output.process, initial)?;
         let user = (&mut *output) as *mut OutputQueue as *mut c_void;
         let kcp = NonNull::new(unsafe { ikcp_create(conv, user) })
             .ok_or_else(|| anyhow::anyhow!("ikcp_create failed"))?;
 
-        let mut session = Self { kcp, output };
+        let mut session = Self {
+            kcp,
+            output,
+            cache,
+            mss: usize::from(config.mtu) - 24,
+        };
         unsafe {
             ikcp_setoutput(session.kcp.as_ptr(), Some(kcp_output));
         }
         session.apply_config(config)?;
+        session.reconcile_cache();
         Ok(session)
     }
 
     pub fn send(&mut self, payload: &[u8]) -> Result<()> {
+        self.output.check()?;
         let length = c_int::try_from(payload.len())?;
+        let bound = unsafe { ets_kcp_send_buffer_bound(self.kcp.as_ptr(), length as u32) };
+        if bound == 0 {
+            bail!("KCP message exceeds the pinned implementation's fragment limit");
+        }
+        self.cache.resize(usize::try_from(bound)?)?;
         let result =
             unsafe { ikcp_send(self.kcp.as_ptr(), payload.as_ptr().cast::<c_char>(), length) };
+        self.reconcile_cache();
         if result < 0 {
             bail!("ikcp_send failed with code {result}");
         }
@@ -121,7 +163,11 @@ impl KcpSession {
     }
 
     pub fn input(&mut self, datagram: &[u8]) -> Result<()> {
+        self.output.check()?;
         let length = c_long::try_from(datagram.len())?;
+        let pushes = input_push_count(datagram, self.mss)?;
+        let bound = unsafe { ets_kcp_input_buffer_bound(self.kcp.as_ptr(), pushes) };
+        self.cache.resize(usize::try_from(bound)?)?;
         let result = unsafe {
             ikcp_input(
                 self.kcp.as_ptr(),
@@ -129,14 +175,18 @@ impl KcpSession {
                 length,
             )
         };
+        self.reconcile_cache();
         if result < 0 {
             bail!("ikcp_input rejected datagram with code {result}");
         }
         Ok(())
     }
 
-    pub fn update(&mut self, now_ms: u32) {
+    /// 输出回调拒绝须显式终结 Session，不允许静默丢掉可靠报文。 / Output callback rejection terminates the session explicitly instead of silently losing reliable data.
+    pub fn update(&mut self, now_ms: u32) -> Result<()> {
+        self.output.check()?;
         unsafe { ikcp_update(self.kcp.as_ptr(), now_ms) };
+        self.output.check()
     }
 
     pub fn next_update_ms(&self, now_ms: u32) -> u32 {
@@ -144,6 +194,7 @@ impl KcpSession {
     }
 
     pub fn receive(&mut self) -> Result<Option<Vec<u8>>> {
+        self.output.check()?;
         let length = unsafe { ikcp_peeksize(self.kcp.as_ptr()) };
         if length < 0 {
             return Ok(None);
@@ -156,6 +207,7 @@ impl KcpSession {
                 length,
             )
         };
+        self.reconcile_cache();
         if received < 0 {
             bail!("ikcp_recv failed with code {received}");
         }
@@ -163,8 +215,15 @@ impl KcpSession {
         Ok(Some(payload))
     }
 
-    pub fn take_output(&mut self) -> Option<Vec<u8>> {
+    /// 返回的字节（含克隆/切片）保留额度至最后引用释放。 / Returned bytes, clones and slices retain their quota until the final reference drops.
+    pub fn take_output(&mut self) -> Option<Bytes> {
         self.output.datagrams.pop_front()
+    }
+
+    fn reconcile_cache(&mut self) {
+        let bound = unsafe { ets_kcp_buffer_bound(self.kcp.as_ptr()) };
+        self.cache
+            .shrink_to(usize::try_from(bound).expect("admitted KCP cache fits usize"));
     }
 
     fn apply_config(&mut self, config: KcpConfig) -> Result<()> {
@@ -234,15 +293,59 @@ unsafe extern "C" fn kcp_output(
     _kcp: *mut IKcpcb,
     user: *mut c_void,
 ) -> c_int {
-    if buffer.is_null() || user.is_null() || length < 0 {
+    if user.is_null() {
+        return -1;
+    }
+    let output = unsafe { &mut *user.cast::<OutputQueue>() };
+    if buffer.is_null() || length < 0 {
+        output.failure = Some("invalid C output buffer".into());
         return -1;
     }
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let bytes = unsafe { std::slice::from_raw_parts(buffer.cast::<u8>(), length as usize) };
-        let output = unsafe { &mut *user.cast::<OutputQueue>() };
-        output.datagrams.push_back(bytes.to_vec());
+        output.push(bytes)
     }));
-    if result.is_ok() { 0 } else { -1 }
+    match result {
+        Ok(Ok(())) => 0,
+        Ok(Err(error)) => {
+            if output.failure.is_none() {
+                output.failure = Some(error.to_string());
+            }
+            -1
+        }
+        Err(_) => {
+            output.failure = Some("output callback panicked".into());
+            -1
+        }
+    }
+}
+
+// Validate before C allocation: every PUSH segment must fit the configured MSS used by the bound.
+fn input_push_count(mut datagram: &[u8], mss: usize) -> Result<u32> {
+    if datagram.len() < 24 {
+        bail!("KCP datagram is shorter than a segment header");
+    }
+    let mut pushes = 0_u32;
+    while datagram.len() >= 24 {
+        let length = u32::from_le_bytes(datagram[20..24].try_into().unwrap()) as usize;
+        if length > datagram.len() - 24 {
+            bail!("KCP segment payload is truncated");
+        }
+        match datagram[4] {
+            81 => {
+                if length > mss {
+                    bail!("KCP segment exceeds configured MSS");
+                }
+                pushes = pushes
+                    .checked_add(1)
+                    .ok_or_else(|| anyhow::anyhow!("too many KCP segments"))?;
+            }
+            82..=84 => {}
+            _ => bail!("invalid KCP segment command"),
+        }
+        datagram = &datagram[24 + length..];
+    }
+    Ok(pushes)
 }
 
 #[cfg(test)]
@@ -259,8 +362,8 @@ mod tests {
 
         let mut received = Vec::new();
         for now_ms in (0..2_000).step_by(10) {
-            left.update(now_ms);
-            right.update(now_ms);
+            left.update(now_ms).unwrap();
+            right.update(now_ms).unwrap();
             transfer_output(&mut left, &mut right);
             transfer_output(&mut right, &mut left);
             while let Some(message) = right.receive().unwrap() {
@@ -287,8 +390,8 @@ mod tests {
         let mut actual = None;
 
         for now_ms in (0..10_000).step_by(10) {
-            left.update(now_ms);
-            right.update(now_ms);
+            left.update(now_ms).unwrap();
+            right.update(now_ms).unwrap();
             while let Some(datagram) = left.take_output() {
                 if !dropped_first_datagram {
                     dropped_first_datagram = true;
@@ -324,7 +427,7 @@ mod tests {
         let mut session = KcpSession::new(11, outer).unwrap();
         assert_eq!(session.min_rto_ms(), 30);
         session.send(&vec![1_u8; 4096]).unwrap();
-        session.update(0);
+        session.update(0).unwrap();
         while let Some(datagram) = session.take_output() {
             assert!(datagram.len() <= 470);
         }

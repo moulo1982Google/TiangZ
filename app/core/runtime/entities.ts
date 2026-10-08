@@ -885,6 +885,11 @@ export abstract class Scene extends Entity {
     return this.taskScope;
   }
 
+  /** @internal SceneTaskScope 使用所有者的原 Process 额度。 / SceneTaskScope uses its owner's original Process quota. */
+  __admitSceneTask<T>(accept: (release: () => void) => T): T {
+    return this.sceneContext.__admitSceneTask(accept);
+  }
+
   /** 供ProcessHost聚合所有入口与动态Scene的后台任务，不为无任务Scene创建门面。 / Lets ProcessHost aggregate tasks across entry and dynamic Scenes without allocating empty scopes. */
   __taskInFlightCount(): number {
     return this.taskScope?.InFlightCount ?? 0;

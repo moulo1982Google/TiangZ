@@ -25,7 +25,7 @@ use tiangz_dbproxy_core::{
     TransactionRecordReceipt, TransactionalRecordWrite, TransactionalWrite,
     TransactionalWriteOutcome,
 };
-use tiangz_dbproxy_protocol::{ProtocolError, wire};
+use tiangz_dbproxy_protocol::wire;
 use tokio::{runtime::Handle, sync::Mutex};
 
 use crate::config::ProcessConfig;
@@ -38,6 +38,9 @@ const MAX_DBPROXY_ENDPOINTS: usize = 8;
 
 #[path = "dbproxy_latency.rs"]
 mod latency;
+
+#[path = "dbproxy_request.rs"]
+mod request;
 
 thread_local! {
     static DBPROXY_BRIDGE: RefCell<Option<DbProxyBridge>> = const { RefCell::new(None) };
@@ -68,8 +71,8 @@ fn maybe_drop_test_response(kind: &str) -> std::result::Result<(), JsErrorBox> {
     Ok(())
 }
 
-/// 一组按需建立的客户端连接；连接边界不确定时整组重建。
-/// One lazily connected group of client connections, rebuilt as a whole after an ambiguous failure.
+/// 一组按需建立的客户端连接；单连接恢复由 SDK 负责，健康连接不整组丢弃。
+/// One lazily connected group; the SDK repairs individual connections without discarding healthy peers.
 #[derive(Clone)]
 struct PoolSlot {
     label: &'static str,
@@ -111,10 +114,6 @@ impl PoolSlot {
         );
         *pool = Some(connected.clone());
         Ok(connected)
-    }
-
-    async fn invalidate(&self) {
-        *self.pool.lock().await = None;
     }
 }
 
@@ -309,47 +308,58 @@ fn record_request_failure(counter: &AtomicU64) -> Option<u64> {
 }
 
 impl DbProxyBridge {
-    /// 连接边界不确定时只重连并重放一次；调用方提供的幂等ID保持不变。
-    /// Reconnects and replays once after an ambiguous connection failure while preserving the caller's idempotency ID.
-    async fn execute<T, F, Fut>(&self, operation: F) -> std::result::Result<T, ClientError>
+    /// 在调用方预算内执行一次 Host 操作，传输重连重试由 SDK 持有原操作身份。
+    /// Executes one host operation within the caller's budget; the SDK owns transport retry identity.
+    async fn execute<T, F, Fut>(
+        &self,
+        deadline_ms: Option<f64>,
+        operation: F,
+    ) -> std::result::Result<T, ClientError>
     where
         T: Send + 'static,
-        F: Fn(DbProxyClientPool) -> Fut + Send + 'static,
+        F: FnOnce(DbProxyClientPool) -> Fut + Send + 'static,
         Fut: Future<Output = std::result::Result<T, ClientError>> + Send + 'static,
     {
-        self.execute_in(self.pool.clone(), operation).await
+        self.execute_in(self.pool.clone(), deadline_ms, operation)
+            .await
     }
 
     /// 排队写走专用连接（若已配置），不与读取和直接写入争用连接。
     /// Queued writes use their dedicated connections when configured, never contending with reads or direct writes.
-    async fn execute_queued<T, F, Fut>(&self, operation: F) -> std::result::Result<T, ClientError>
+    async fn execute_queued<T, F, Fut>(
+        &self,
+        deadline_ms: Option<f64>,
+        operation: F,
+    ) -> std::result::Result<T, ClientError>
     where
         T: Send + 'static,
-        F: Fn(DbProxyClientPool) -> Fut + Send + 'static,
+        F: FnOnce(DbProxyClientPool) -> Fut + Send + 'static,
         Fut: Future<Output = std::result::Result<T, ClientError>> + Send + 'static,
     {
         let slot = self
             .queued_pool
             .clone()
             .unwrap_or_else(|| self.pool.clone());
-        self.execute_in(slot, operation).await
+        self.execute_in(slot, deadline_ms, operation).await
     }
 
     async fn execute_in<T, F, Fut>(
         &self,
         slot: PoolSlot,
+        deadline_ms: Option<f64>,
         operation: F,
     ) -> std::result::Result<T, ClientError>
     where
         T: Send + 'static,
-        F: Fn(DbProxyClientPool) -> Fut + Send + 'static,
+        F: FnOnce(DbProxyClientPool) -> Fut + Send + 'static,
         Fut: Future<Output = std::result::Result<T, ClientError>> + Send + 'static,
     {
         let config = self.config.clone();
-        self.host_runtime
-            .spawn(async move { execute_on_host(&config, &slot, operation).await })
-            .await
-            .map_err(|_| ClientError::UnexpectedResponse("DBProxy host task terminated"))?
+        let deadline = request::deadline(config.request_timeout, deadline_ms)?;
+        request::execute(&self.host_runtime, deadline, move |deadline| async move {
+            execute_on_host(&config, &slot, deadline, operation).await
+        })
+        .await
     }
 }
 
@@ -358,21 +368,16 @@ impl DbProxyBridge {
 async fn execute_on_host<T, F, Fut>(
     config: &ClientConfig,
     slot: &PoolSlot,
+    deadline: tokio::time::Instant,
     operation: F,
 ) -> std::result::Result<T, ClientError>
 where
-    F: Fn(DbProxyClientPool) -> Fut,
+    F: FnOnce(DbProxyClientPool) -> Fut,
     Fut: Future<Output = std::result::Result<T, ClientError>>,
 {
     let pool = slot.get(config).await?;
-    match operation(pool).await {
-        Err(error) if is_reconnectable(&error) => {
-            slot.invalidate().await;
-            let pool = slot.get(config).await?;
-            operation(pool).await
-        }
-        result => result,
-    }
+    request::check_deadline(deadline)?;
+    operation(pool).await
 }
 
 /// 为当前Process线程安装DBProxy配置。配置缺失时Bridge保持禁用；启用时令牌必须来自环境变量。
@@ -445,9 +450,9 @@ pub async fn warm() -> std::result::Result<(), ClientError> {
     let Some(bridge) = bridge else {
         return Ok(());
     };
-    bridge.execute(|_| async { Ok(()) }).await?;
+    bridge.execute(None, |_| async { Ok(()) }).await?;
     if bridge.queued_pool.is_some() {
-        bridge.execute_queued(|_| async { Ok(()) }).await?;
+        bridge.execute_queued(None, |_| async { Ok(()) }).await?;
     }
     Ok(())
 }
@@ -456,16 +461,6 @@ fn bridge() -> std::result::Result<DbProxyBridge, JsErrorBox> {
     DBPROXY_BRIDGE
         .with(|slot| slot.borrow().clone())
         .ok_or_else(|| JsErrorBox::generic("DBProxy is not configured for this Process"))
-}
-
-fn is_reconnectable(error: &ClientError) -> bool {
-    matches!(
-        error,
-        ClientError::RequestTimeout
-            | ClientError::ConnectionUnusable
-            | ClientError::ConnectionClosed
-            | ClientError::Protocol(ProtocolError::Io(_))
-    )
 }
 
 #[derive(Serialize)]
@@ -671,11 +666,12 @@ struct HostLoadMultiTransactionResponse {
 async fn op_host_dbproxy_load(
     #[string] namespace: String,
     #[string] key: String,
+    deadline_ms: Option<f64>,
 ) -> std::result::Result<HostLoadResponse, JsErrorBox> {
     let record =
         RecordKey::new(namespace, key).map_err(|error| JsErrorBox::generic(error.to_string()))?;
     let result = bridge()?
-        .execute(move |pool| {
+        .execute(deadline_ms, move |pool| {
             let record = record.clone();
             async move { pool.load(&record).await }
         })
@@ -696,10 +692,11 @@ async fn op_host_dbproxy_load(
 #[serde]
 async fn op_host_dbproxy_load_multi(
     #[string] records_json: String,
+    deadline_ms: Option<f64>,
 ) -> std::result::Result<HostLoadMultiResponse, JsErrorBox> {
     let records = parse_record_keys(&records_json)?;
     let result = bridge()?
-        .execute(move |pool| {
+        .execute(deadline_ms, move |pool| {
             let records = records.clone();
             async move { pool.load_multi(&records).await }
         })
@@ -731,6 +728,7 @@ async fn op_host_dbproxy_save(
     #[buffer] payload: JsBuffer,
     #[string] expected_revision: String,
     #[string] updated_at_unix_ms: String,
+    deadline_ms: Option<f64>,
 ) -> std::result::Result<HostWriteResponse, JsErrorBox> {
     let request = SnapshotWrite {
         request_id,
@@ -743,7 +741,7 @@ async fn op_host_dbproxy_save(
         updated_at_unix_ms: parse_u64(&updated_at_unix_ms, "updatedAtUnixMs")?,
     };
     let result = bridge()?
-        .execute(move |pool| {
+        .execute(deadline_ms, move |pool| {
             let request = request.clone();
             async move { pool.save(request).await }
         })
@@ -763,10 +761,11 @@ async fn op_host_dbproxy_save(
 #[serde]
 async fn op_host_dbproxy_save_multi(
     #[string] writes_json: String,
+    deadline_ms: Option<f64>,
 ) -> std::result::Result<HostBatchWriteResponse, JsErrorBox> {
     let requests = parse_snapshot_writes(&writes_json)?;
     let result = bridge()?
-        .execute(move |pool| {
+        .execute(deadline_ms, move |pool| {
             let requests = requests.clone();
             async move { pool.save_multi(&requests).await }
         })
@@ -810,6 +809,7 @@ async fn op_host_dbproxy_enqueue_snapshot(
     schema_version: u32,
     #[buffer] payload: JsBuffer,
     #[string] updated_at_unix_ms: String,
+    deadline_ms: Option<f64>,
 ) -> std::result::Result<HostEnqueueResponse, JsErrorBox> {
     let request = SnapshotWrite {
         request_id,
@@ -822,7 +822,7 @@ async fn op_host_dbproxy_enqueue_snapshot(
         updated_at_unix_ms: parse_u64(&updated_at_unix_ms, "updatedAtUnixMs")?,
     };
     let result = bridge()?
-        .execute_queued(move |pool| {
+        .execute_queued(deadline_ms, move |pool| {
             let request = request.clone();
             async move { pool.enqueue_snapshot(request).await }
         })
@@ -843,10 +843,11 @@ async fn op_host_dbproxy_enqueue_snapshot(
 #[serde]
 async fn op_host_dbproxy_enqueue_multi_snapshot(
     #[string] writes_json: String,
+    deadline_ms: Option<f64>,
 ) -> std::result::Result<HostBatchEnqueueResponse, JsErrorBox> {
     let requests = parse_snapshot_writes(&writes_json)?;
     let result = bridge()?
-        .execute_queued(move |pool| {
+        .execute_queued(deadline_ms, move |pool| {
             let requests = requests.clone();
             async move { pool.enqueue_multi_snapshot(&requests).await }
         })
@@ -880,18 +881,18 @@ async fn op_host_dbproxy_enqueue_multi_snapshot(
 #[serde]
 async fn op_host_dbproxy_apply_transaction(
     #[string] operation_id: String,
-    #[string] namespace: String,
-    #[string] key: String,
+    #[serde] record: HostRecordKeyInput,
     #[string] schema: String,
     schema_version: u32,
     #[string] expected_revision: String,
     #[buffer] payload: JsBuffer,
     #[buffer] operation_result: JsBuffer,
     #[string] updated_at_unix_ms: String,
+    deadline_ms: Option<f64>,
 ) -> std::result::Result<HostTransactionResponse, JsErrorBox> {
     let request = TransactionalWrite {
         operation_id,
-        record: RecordKey::new(namespace, key)
+        record: RecordKey::new(record.namespace, record.key)
             .map_err(|error| JsErrorBox::generic(error.to_string()))?,
         schema,
         schema_version,
@@ -901,7 +902,7 @@ async fn op_host_dbproxy_apply_transaction(
         updated_at_unix_ms: parse_u64(&updated_at_unix_ms, "updatedAtUnixMs")?,
     };
     let result = bridge()?
-        .execute(move |pool| {
+        .execute(deadline_ms, move |pool| {
             let request = request.clone();
             async move { pool.apply_transaction(request).await }
         })
@@ -934,11 +935,12 @@ async fn op_host_dbproxy_load_transaction(
     #[string] operation_id: String,
     #[string] namespace: String,
     #[string] key: String,
+    deadline_ms: Option<f64>,
 ) -> std::result::Result<HostLoadTransactionResponse, JsErrorBox> {
     let record =
         RecordKey::new(namespace, key).map_err(|error| JsErrorBox::generic(error.to_string()))?;
     let result = bridge()?
-        .execute(move |pool| {
+        .execute(deadline_ms, move |pool| {
             let operation_id = operation_id.clone();
             let record = record.clone();
             async move { pool.load_transaction(&operation_id, &record).await }
@@ -968,6 +970,7 @@ async fn op_host_dbproxy_apply_multi_transaction(
     #[string] operation_id: String,
     #[string] writes_json: String,
     #[buffer] operation_result: JsBuffer,
+    deadline_ms: Option<f64>,
 ) -> std::result::Result<HostMultiTransactionResponse, JsErrorBox> {
     let writes = parse_multi_record_writes(&writes_json)?;
     let request = MultiRecordTransactionalWrite {
@@ -976,7 +979,7 @@ async fn op_host_dbproxy_apply_multi_transaction(
         result: operation_result.to_vec(),
     };
     let result = bridge()?
-        .execute(move |pool| {
+        .execute(deadline_ms, move |pool| {
             let request = request.clone();
             async move { pool.apply_multi_transaction(request).await }
         })
@@ -1021,6 +1024,7 @@ async fn op_host_dbproxy_commit_records(
     #[string] appends_json: String,
     #[string] events_json: String,
     #[buffer] operation_result: JsBuffer,
+    deadline_ms: Option<f64>,
 ) -> std::result::Result<HostMultiTransactionResponse, JsErrorBox> {
     let request = MultiRecordTransactionalWrite {
         operation_id,
@@ -1063,7 +1067,7 @@ async fn op_host_dbproxy_commit_records(
         outbox_events,
     };
     let result = bridge()?
-        .execute(move |pool| {
+        .execute(deadline_ms, move |pool| {
             let request = request.clone();
             let effects = effects.clone();
             async move { pool.commit_records(request, effects).await }
@@ -1094,10 +1098,11 @@ async fn op_host_dbproxy_commit_records(
 async fn op_host_dbproxy_load_multi_transaction(
     #[string] operation_id: String,
     #[string] records_json: String,
+    deadline_ms: Option<f64>,
 ) -> std::result::Result<HostLoadMultiTransactionResponse, JsErrorBox> {
     let records = parse_record_keys(&records_json)?;
     let result = bridge()?
-        .execute(move |pool| {
+        .execute(deadline_ms, move |pool| {
             let operation_id = operation_id.clone();
             let records = records.clone();
             async move { pool.load_multi_transaction(&operation_id, &records).await }
@@ -1271,9 +1276,27 @@ fn parse_u64(value: &str, name: &str) -> std::result::Result<u64, JsErrorBox> {
         .map_err(|_| JsErrorBox::range_error(format!("{name} must be a uint64 decimal string")))
 }
 
+/// 为 TS 请求预算提供进程单调时间，不依赖墙钟。 / Supplies monotonic time for TS request budgets, independent of wall-clock changes.
+#[op2(fast)]
+fn op_host_dbproxy_now_ms() -> f64 {
+    request::monotonic_now_ms()
+}
+
+/// 读取配置上限而不暴露凭据；未启用持久化时沿用默认预算。 / Returns the configured ceiling without credentials, using the default when persistence is disabled.
+#[op2(fast)]
+fn op_host_dbproxy_request_timeout_ms() -> f64 {
+    DBPROXY_BRIDGE.with(|slot| {
+        slot.borrow().as_ref().map_or(5000.0, |bridge| {
+            bridge.config.request_timeout.as_millis() as f64
+        })
+    })
+}
+
 deno_core::extension!(
     dbproxy_host,
     ops = [
+        op_host_dbproxy_now_ms,
+        op_host_dbproxy_request_timeout_ms,
         op_host_dbproxy_load,
         op_host_dbproxy_load_multi,
         op_host_dbproxy_save,
@@ -1310,46 +1333,49 @@ pub const BOOTSTRAP_SOURCE: &str = r#"
   globalThis.__hostDbProxy = Object.freeze({
     // The linked Rust SDK rejects peers without supports_outbox_relay during handshake.
     supportsOutboxRelay: true,
-    load: (namespace, key) => core.ops.op_host_dbproxy_load(text(namespace, "namespace"), text(key, "key")),
-    loadMulti: (records) => core.ops.op_host_dbproxy_load_multi(
-      text(JSON.stringify(records), "records"),
+    supportsRequestTimeout: true,
+    monotonicNowMs: () => core.ops.op_host_dbproxy_now_ms(),
+    get requestTimeoutMs() { return core.ops.op_host_dbproxy_request_timeout_ms(); },
+    load: (namespace, key, deadlineMs) => core.ops.op_host_dbproxy_load(text(namespace, "namespace"), text(key, "key"), deadlineMs),
+    loadMulti: (records, deadlineMs) => core.ops.op_host_dbproxy_load_multi(
+      text(JSON.stringify(records), "records"), deadlineMs,
     ),
-    save: (request) => core.ops.op_host_dbproxy_save(
+    save: (request, deadlineMs) => core.ops.op_host_dbproxy_save(
       text(request.requestId, "requestId"), text(request.namespace, "namespace"), text(request.key, "key"),
       text(request.schema, "schema"), u32(request.schemaVersion, "schemaVersion"), bytes(request.payload, "payload"),
-      String(request.expectedRevision ?? ""), text(String(request.updatedAtUnixMs), "updatedAtUnixMs"),
+      String(request.expectedRevision ?? ""), text(String(request.updatedAtUnixMs), "updatedAtUnixMs"), deadlineMs,
     ),
-    saveMulti: (writes) => core.ops.op_host_dbproxy_save_multi(
+    saveMulti: (writes, deadlineMs) => core.ops.op_host_dbproxy_save_multi(
       text(JSON.stringify(writes.map((write) => ({
         ...write,
         payload: Array.from(bytes(write.payload, "payload")),
         expectedRevision: write.expectedRevision === undefined ? undefined : String(write.expectedRevision),
         updatedAtUnixMs: text(String(write.updatedAtUnixMs), "updatedAtUnixMs"),
-      }))), "writes"),
+      }))), "writes"), deadlineMs,
     ),
-    enqueueSnapshot: (request) => core.ops.op_host_dbproxy_enqueue_snapshot(
+    enqueueSnapshot: (request, deadlineMs) => core.ops.op_host_dbproxy_enqueue_snapshot(
       text(request.requestId, "requestId"), text(request.namespace, "namespace"), text(request.key, "key"),
       text(request.schema, "schema"), u32(request.schemaVersion, "schemaVersion"), bytes(request.payload, "payload"),
-      text(String(request.updatedAtUnixMs), "updatedAtUnixMs"),
+      text(String(request.updatedAtUnixMs), "updatedAtUnixMs"), deadlineMs,
     ),
-    enqueueMultiSnapshot: (writes) => core.ops.op_host_dbproxy_enqueue_multi_snapshot(
+    enqueueMultiSnapshot: (writes, deadlineMs) => core.ops.op_host_dbproxy_enqueue_multi_snapshot(
       text(JSON.stringify(writes.map((write) => ({
         ...write,
         payload: Array.from(bytes(write.payload, "payload")),
         expectedRevision: undefined,
         updatedAtUnixMs: text(String(write.updatedAtUnixMs), "updatedAtUnixMs"),
-      }))), "writes"),
+      }))), "writes"), deadlineMs,
     ),
-    applyTransaction: (request) => core.ops.op_host_dbproxy_apply_transaction(
-      text(request.operationId, "operationId"), text(request.namespace, "namespace"), text(request.key, "key"),
+    applyTransaction: (request, deadlineMs) => core.ops.op_host_dbproxy_apply_transaction(
+      text(request.operationId, "operationId"), { namespace: text(request.namespace, "namespace"), key: text(request.key, "key") },
       text(request.schema, "schema"), u32(request.schemaVersion, "schemaVersion"),
       text(String(request.expectedRevision), "expectedRevision"), bytes(request.payload, "payload"),
-      bytes(request.result, "result"), text(String(request.updatedAtUnixMs), "updatedAtUnixMs"),
+      bytes(request.result, "result"), text(String(request.updatedAtUnixMs), "updatedAtUnixMs"), deadlineMs,
     ),
-    loadTransaction: (operationId, namespace, key) => core.ops.op_host_dbproxy_load_transaction(
-      text(operationId, "operationId"), text(namespace, "namespace"), text(key, "key"),
+    loadTransaction: (operationId, namespace, key, deadlineMs) => core.ops.op_host_dbproxy_load_transaction(
+      text(operationId, "operationId"), text(namespace, "namespace"), text(key, "key"), deadlineMs,
     ),
-    applyMultiTransaction: (request) => core.ops.op_host_dbproxy_apply_multi_transaction(
+    applyMultiTransaction: (request, deadlineMs) => core.ops.op_host_dbproxy_apply_multi_transaction(
       text(request.operationId, "operationId"),
       text(JSON.stringify(request.writes.map((write) => ({
         record: write.record,
@@ -1359,22 +1385,26 @@ pub const BOOTSTRAP_SOURCE: &str = r#"
         payload: Array.from(bytes(write.payload, "payload")),
         updatedAtUnixMs: text(String(write.updatedAtUnixMs), "updatedAtUnixMs"),
       }))), "writes"),
-      bytes(request.result, "result"),
+      bytes(request.result, "result"), deadlineMs,
     ),
-    commitRecords: (request) => core.ops.op_host_dbproxy_commit_records(
+    commitRecords: (request, deadlineMs) => core.ops.op_host_dbproxy_commit_records(
       text(request.operationId, "operationId"),
       JSON.stringify(request.writes.map(w => ({ ...w, expectedRevision: String(w.expectedRevision), updatedAtUnixMs: String(w.updatedAtUnixMs), payload: Array.from(bytes(w.payload, "payload")) }))),
       JSON.stringify(request.appends.map(a => ({ record: a.record, schema: a.schema, schemaVersion: a.schemaVersion, expectedRevision: "0", updatedAtUnixMs: String(a.occurredAtUnixMs), payload: Array.from(bytes(a.payload, "payload")) }))),
       JSON.stringify(request.outboxEvents.map(e => ({ ...e, occurredAtUnixMs: String(e.occurredAtUnixMs), payload: Array.from(bytes(e.payload, "payload")) }))),
-      bytes(request.result, "result"),
+      bytes(request.result, "result"), deadlineMs,
     ),
-    loadMultiTransaction: (operationId, records) => core.ops.op_host_dbproxy_load_multi_transaction(
+    loadMultiTransaction: (operationId, records, deadlineMs) => core.ops.op_host_dbproxy_load_multi_transaction(
       text(operationId, "operationId"),
-      text(JSON.stringify(records), "records"),
+      text(JSON.stringify(records), "records"), deadlineMs,
     ),
   });
 })();
 "#;
+
+#[cfg(test)]
+#[path = "dbproxy_budget_tests.rs"]
+mod budget_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1420,11 +1450,5 @@ mod tests {
             assert_eq!(record_request_failure(&failures), None);
         }
         assert_eq!(failures.load(Ordering::Relaxed), 108);
-    }
-
-    #[test]
-    fn reconnectable_errors_exclude_remote_business_rejections() {
-        assert!(is_reconnectable(&ClientError::ConnectionClosed));
-        assert!(!is_reconnectable(&ClientError::InvalidConfig("test")));
     }
 }

@@ -42,7 +42,7 @@
 - `scene.Events.Publish(syncDescriptor, event)`同步发布当前Scene的事后通知；失败监听器会记录并继续。
 - `scene.Events.Check(vetoDescriptor, event)`同步运行操作前否决链并返回第一个非放行错误码。
 - `defineSyncEvent/defineVetoEvent`定义稳定事件描述；`@syncEventHandler/@vetoEventHandler`按稳定`id`注册Hotfix监听器。所有Event Handler都禁止异步。
-- `scene.Tasks.Spawn(name, body)`启动调用方不等待的短任务，异常统一记录并纳入Hotfix排空；`Cancel(id)`只发送协作取消信号。
+- `scene.Tasks.Spawn(name, body)`启动调用方不等待的短任务，异常统一记录并纳入Hotfix排空；`Cancel(id)`只发送协作取消信号。0.7 候选保留每 Scope 256 项并限制每 Process 总计 4096 项，超限同步抛 `RpcError(SceneOverloaded)`。取消/Scene 销毁后仍占用至实际结束，准入同步失败撤回当次额度，见[任务容量契约](../design/v0.7-scene-task-capacity.md)。这不约束任意业务 Promise 或全部 mailbox。
 
 完整约束和示例见[运行时基础能力](../design/runtime-foundations.md)。
 

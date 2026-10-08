@@ -329,7 +329,7 @@ export class ProtocolRegistry {
             if (this.metrics) {
               this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
             }
-            this.logMessageHandlerError(msgcode, error, requestContext);
+            this.handleMessageFailure(msgcode, error, requestContext);
             return undefined;
           },
         );
@@ -342,23 +342,27 @@ export class ProtocolRegistry {
       if (this.metrics) {
         this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
       }
-      this.logMessageHandlerError(msgcode, error, requestContext);
+      this.handleMessageFailure(msgcode, error, requestContext);
     }
     return undefined;
   }
 
-  private logMessageHandlerError(
+  /** 单向消息没有错误响应；过载保留类型供入站边界关闭来源或本地准入拒绝。 / One-way messages have no error reply; overload keeps its type for source closure or local admission rejection. */
+  private handleMessageFailure(
     msgcode: number,
     error: unknown,
     context: ProtocolContext,
   ): void {
     const message = error instanceof Error ? error.message : String(error);
+    const overloaded = error instanceof RpcError && error.code === SystemErrCode.SceneOverloaded;
+    const code = overloaded ? SystemErrCode.SceneOverloaded : SystemErrCode.HandlerFailed;
     this.logSystemError(
-      SystemErrCode.HandlerFailed,
+      code,
       `message handler failed for msgcode ${msgcode}: ${message}`,
       context,
     );
-    this.recordOutcome("message-handler-failed", SystemErrCode.HandlerFailed, context);
+    this.recordOutcome("message-handler-failed", code, context);
+    if (overloaded) throw error;
   }
 
   private rpcSuccessResponse(

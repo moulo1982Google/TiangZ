@@ -4,7 +4,7 @@ import process from "node:process";
 
 import ts from "typescript";
 import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
-import { resolveModuleApi } from "./game_module_imports.mjs";
+import { dependencyDiagnostics } from "./dependency_rules.mjs";
 import { hotfixClassDiagnostics, restrictedDecoratorKind } from "./hotfix_class_rules.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -22,6 +22,7 @@ const modelRoots = [
   path.join(root, "app", "model"),
   path.join(root, "app", "generated", "model"),
   path.join(root, "app", "generated", "bootstrap"),
+  path.join(root, "app", "generated", "hotfix"),
 ];
 const errors = [];
 const configFile = ts.readConfigFile(path.join(root, "tsconfig.json"), ts.sys.readFile);
@@ -33,45 +34,38 @@ for (const module of moduleCatalog.modules) {
     moduleFiles.push(...await collect(directory));
   }
 }
+const hotfixFiles = await collect(hotfixRoot);
 const program = ts.createProgram(
-  [...new Set([...parsed.fileNames, decoratorFixture, ...moduleFiles])],
+  [...new Set([...parsed.fileNames, decoratorFixture, ...moduleFiles, ...hotfixFiles])],
   parsed.options,
 );
 const checker = program.getTypeChecker();
 
 verifyDecoratorAliasFixture(program, checker);
 
-for (const file of await collect(hotfixRoot)) {
-  const tree = program.getSourceFile(file) ?? ts.createSourceFile(
-    file,
-    await readFile(file, "utf8"),
-    ts.ScriptTarget.Latest,
-    true,
-  );
-  inspectImports(file, tree, true);
+for (const file of hotfixFiles) {
+  const tree = program.getSourceFile(file);
+  if (!tree) throw new Error(`Hotfix source is missing from the selected Program: ${file}`);
+  inspectImports(tree);
   inspectHotfixClasses(file, tree, checker);
 }
 for (const modelRoot of modelRoots) {
   for (const file of await collect(modelRoot)) {
-    const tree = ts.createSourceFile(
+    const tree = program.getSourceFile(file) ?? ts.createSourceFile(
       file,
       await readFile(file, "utf8"),
       ts.ScriptTarget.Latest,
       true,
     );
-    inspectImports(file, tree, false);
+    inspectImports(tree);
   }
 }
 for (const module of moduleCatalog.modules) {
   for (const directory of module.entries.hotfixRoots) {
     for (const file of await collect(directory)) {
-      const tree = program.getSourceFile(file) ?? ts.createSourceFile(
-        file,
-        await readFile(file, "utf8"),
-        ts.ScriptTarget.Latest,
-        true,
-      );
-      inspectModuleImports(module, file, tree, true);
+      const tree = program.getSourceFile(file);
+      if (!tree) throw new Error(`Hotfix source is missing from the selected Program: ${file}`);
+      inspectModuleImports(module, tree);
       inspectHotfixClasses(file, tree, checker);
     }
   }
@@ -83,7 +77,7 @@ for (const module of moduleCatalog.modules) {
         ts.ScriptTarget.Latest,
         true,
       );
-      inspectModuleImports(module, file, tree, false);
+      inspectModuleImports(module, tree);
     }
   }
 }
@@ -95,71 +89,28 @@ if (errors.length > 0) {
   process.stdout.write("Model/Hotfix boundary verified\n");
 }
 
-function inspectImports(file, tree, hotfix) {
-  for (const statement of tree.statements) {
-    if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement)) continue;
-    const specifier = statement.moduleSpecifier;
-    if (!specifier || !ts.isStringLiteral(specifier)) continue;
-    const value = specifier.text;
-    if (hotfix) {
-      if (value === "#tiangz/model") continue;
-      if (!value.startsWith(".")) {
-        errors.push(`${relative(file)}: Hotfix只能导入#tiangz/model或同层Hotfix模块: ${value}`);
-        continue;
-      }
-      const target = path.resolve(path.dirname(file), value);
-      if (!isWithin(target, hotfixRoot) && !isWithin(target, path.join(root, "app", "generated", "hotfix"))) {
-        errors.push(`${relative(file)}: Hotfix禁止深层导入Model/Core/Generated Model: ${value}`);
-      }
-      continue;
-    }
-    if (value.includes("/hotfix") || value.startsWith("#tiangz/hotfix")) {
-      errors.push(`${relative(file)}: Model/Core禁止依赖Hotfix: ${value}`);
-    }
-  }
+function inspectImports(tree) {
+  reportDependencies(dependencyDiagnostics(program, [tree], { root }));
 }
 
-function inspectModuleImports(module, file, tree, hotfix) {
-  for (const statement of tree.statements) {
-    if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement)) continue;
-    const specifier = statement.moduleSpecifier;
-    if (!specifier || !ts.isStringLiteral(specifier)) continue;
-    const value = specifier.text;
-    if (hotfix && (value === "#tiangz/model" || value === "#tiangz/module")) continue;
-    if (value.startsWith("#tiangz/modules/")) {
-      try { resolveModuleApi(moduleCatalog, module, value); }
-      catch (error) { errors.push(`${relative(file)}: ${error.message}`); }
-      continue;
-    }
-    if (!hotfix && (value === "#tiangz/core" || value === "#tiangz/model" || value === "#tiangz/domains")) continue;
-    // 宿主生成的协议编解码器需要三项内部 ABI；手写模块仍只能使用 Stable 入口。
-    // Host-generated codecs use these three internal ABI files; handwritten modules still require Stable imports.
-    const generatedTarget = path.resolve(path.dirname(file), value).replace(/\.ts$/, "");
-    // 类型扩充必须定位原始声明；仅模块生成的 .d.ts 可以引用通用领域声明。
-    // Declaration augmentation targets the original type; only generated .d.ts may reference shared domain declarations.
-    if (!hotfix && file.endsWith("System.d.ts") && file.replaceAll("\\", "/").includes("/generated/bootstrap/systems/")
-      && tree.text.startsWith("// Generated by tools/codegen_module_systems.mjs.")
-      && isWithin(generatedTarget, path.join(root, "app/model/domains"))) continue;
-    if (!hotfix && module.protocol && isWithin(file, module.protocol.serverOutput) &&
-      ["protocol/binary", "protocol/message", "protocol/rpc", "broadcast/index"].some(name => generatedTarget === path.join(root, "app", "core", name))) continue;
-    if (!value.startsWith(".")) {
-      errors.push(
-        `${relative(file)}: 游戏模块${hotfix ? "Hotfix" : "Model"}只能使用稳定入口或同层相对导入: ${value}`,
-      );
-      continue;
-    }
-    const target = path.resolve(path.dirname(file), value);
-    const roots = hotfix ? module.entries.hotfixRoots : module.entries.modelRoots;
-    if (!roots.some((directory) => isWithin(target, directory))) {
-      errors.push(
-        `${relative(file)}: 游戏模块${hotfix ? "Hotfix" : "Model"}相对导入越过声明边界: ${value}`,
-      );
-    }
+function inspectModuleImports(module, tree) {
+  reportDependencies(dependencyDiagnostics(program, [tree], { root, catalog: moduleCatalog, module }));
+}
+
+function reportDependencies(diagnostics) {
+  for (const item of diagnostics) {
+    const text = `${relative(item.file)}:${item.line}:${item.column}: [${item.code}] ${item.message}`;
+    if (item.severity === "error") errors.push(text);
+    else console.warn(`warning ${text}`);
   }
 }
 
 function inspectHotfixClasses(file, tree, typeChecker) {
-  for (const item of hotfixClassDiagnostics(tree, typeChecker)) errors.push(`${relative(file)}:${item.line}:${item.column}: ${item.message}`);
+  for (const item of hotfixClassDiagnostics(tree, typeChecker)) {
+    const text = `${relative(file)}:${item.line}:${item.column}: [${item.code}] ${item.message}`;
+    if (item.severity === "error") errors.push(text);
+    else console.warn(`warning ${text}`);
+  }
 }
 
 function verifyDecoratorAliasFixture(typeProgram, typeChecker) {
@@ -173,12 +124,16 @@ function verifyDecoratorAliasFixture(typeProgram, typeChecker) {
     ts.forEachChild(node, visit);
   };
   visit(source);
-  for (const className of ["AliasHandler", "NamespaceHandler"]) {
+  for (const className of ["AliasHandler", "NamespaceHandler", "ExtensionHandler"]) {
     if (recognized.get(className) !== "Handler") {
       throw new Error(`Hotfix decorator alias self-test failed: ${className}`);
     }
   }
   if (recognized.get("UnrelatedDecoratorClass") !== undefined) throw new Error("Hotfix decorator self-test failed: unrelated same-name decorator must not be treated as Core");
+  const diagnostics = hotfixClassDiagnostics(source, typeChecker);
+  if (diagnostics.length !== 7 || diagnostics.some(item => item.code !== "tiangz.hotfix.instance-state" || item.severity !== "error")) {
+    throw new Error(`Hotfix member fixture failed: ${JSON.stringify(diagnostics)}`);
+  }
 }
 
 async function collect(directory) {
@@ -189,11 +144,6 @@ async function collect(directory) {
     else if (entry.isFile() && entry.name.endsWith(".ts")) files.push(fullPath);
   }
   return files;
-}
-
-function isWithin(candidate, directory) {
-  const value = path.relative(directory, candidate);
-  return value === "" || (!value.startsWith("..") && !path.isAbsolute(value));
 }
 
 function relative(file) {

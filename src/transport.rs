@@ -8,12 +8,15 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use bytes::Bytes;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpStream, tcp::OwnedReadHalf, tcp::OwnedWriteHalf};
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::{TcpStream, tcp::OwnedReadHalf};
 use tokio::sync::{mpsc, oneshot};
 #[cfg(test)]
 use tokio::time::timeout;
 use tokio::time::{Instant, sleep_until, timeout_at};
+
+#[cfg(test)]
+mod buffer_tests;
 
 const MAX_FRAME_LEN: usize = 1024 * 1024;
 const ACTOR_LOCATION_ENVELOPE_MSGCODE: u16 = 29_999;
@@ -327,8 +330,24 @@ struct PendingCall {
 
 struct SocketSession {
     generation: u64,
-    call_outbound_tx: mpsc::Sender<Bytes>,
-    send_outbound_tx: mpsc::Sender<Bytes>,
+    call_outbound_tx: mpsc::Sender<WriterFrame>,
+    send_outbound_tx: mpsc::Sender<WriterFrame>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
+}
+
+#[derive(Debug)]
+struct WriterFrame {
+    frame: Bytes,
+    deadline: Instant,
+}
+
+impl Drop for SocketSession {
+    /// 失效的 Socket 不得留下读写任务或排队帧。 / A closed session must not leave readers, writers or queued frames behind.
+    fn drop(&mut self) {
+        for task in &self.tasks {
+            task.abort();
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -354,7 +373,7 @@ enum SocketEvent {
 }
 
 /// 只初始化一次进程级远程 Scene 传输管理器。 / Initializes the process-wide remote Scene transport manager exactly once.
-pub fn init_remote_transport() {
+pub fn init_remote_transport(write_timeout: Duration) {
     if REMOTE_TRANSPORT.get().is_some() {
         return;
     }
@@ -372,6 +391,7 @@ pub fn init_remote_transport() {
             call_rx,
             send_rx,
             Arc::clone(&metrics),
+            write_timeout,
         ));
         tokio::spawn(log_transport_metrics(metrics));
     }
@@ -381,29 +401,49 @@ pub(crate) fn snapshot_remote_transport() -> Option<RemoteTransportMetricsSnapsh
     REMOTE_TRANSPORT.get().map(|transport| transport.snapshot())
 }
 
+/// 将 Host 未开始或等待超时归入固定阶段，不逐条输出过期单向消息。 / Records Host queue/wait expiry in fixed stages without per-message logging of expired one-way work.
+pub(crate) fn record_host_scene_timeout(
+    source: &str,
+    target: &str,
+    frame: &[u8],
+    one_way: bool,
+    stage: &'static str,
+) {
+    if let Some(transport) = REMOTE_TRANSPORT.get() {
+        let traffic = if one_way {
+            TransportTrafficClass::Send
+        } else {
+            TransportTrafficClass::Call
+        };
+        transport.metrics.timed_out(
+            &TransportContext::new(source.into(), target.into(), frame, traffic),
+            stage,
+        );
+    }
+}
+
 /// 发送一个多路复用内部 RPC，并且只等待其 rpcId 对应的完成事件。
 ///
 /// 本 Future 等待时，同一 TCP 连接上的其他调用仍可继续。
-/// 取消会移除等待者，但无法撤回已经写给对端的数据帧。
+/// 停止等待不能撤回已经入队或写给对端的数据；传输仍按原期限回收实际所有权。
 ///
 /// Sends one multiplexed inner RPC and waits only for its rpcId completion.
 ///
 /// Other calls on the same TCP connection continue while this future is
-/// pending. Cancellation removes the pending waiter but cannot recall a frame
-/// already written to the peer.
+/// pending. Stopping this wait cannot recall queued or peer-received data;
+/// transport retains actual ownership until settlement under the original deadline.
 pub async fn call_remote_scene(
     source_name: String,
     target_name: String,
     target_ip: String,
     target_port: u16,
     frame: Bytes,
-    call_timeout: Duration,
+    deadline: Instant,
 ) -> CallResult {
     let Some(transport) = REMOTE_TRANSPORT.get().cloned() else {
         return Err("remote scene transport is not initialized".to_string());
     };
     let address = format!("{target_ip}:{target_port}");
-    let deadline = Instant::now() + call_timeout;
     let (response_tx, response_rx) = oneshot::channel();
 
     let command = TransportCommand {
@@ -446,13 +486,12 @@ pub async fn send_remote_scene(
     target_ip: String,
     target_port: u16,
     frame: Bytes,
-    send_timeout: Duration,
+    deadline: Instant,
 ) -> SendResult {
     let Some(transport) = REMOTE_TRANSPORT.get().cloned() else {
         return Err("remote scene transport is not initialized".to_string());
     };
     let address = format!("{target_ip}:{target_port}");
-    let deadline = Instant::now() + send_timeout;
     let (result_tx, result_rx) = oneshot::channel();
     let command = TransportCommand {
         context: TransportContext::new(
@@ -492,6 +531,7 @@ async fn run_transport_manager(
     mut call_rx: mpsc::Receiver<TransportCommand>,
     mut send_rx: mpsc::Receiver<TransportCommand>,
     metrics: Arc<RemoteTransportMetrics>,
+    write_timeout: Duration,
 ) {
     let mut connections = HashMap::<String, ConnectionHandle>::new();
     let mut call_open = true;
@@ -504,7 +544,7 @@ async fn run_transport_manager(
             match send_rx.try_recv() {
                 Ok(command) => {
                     consecutive_calls = 0;
-                    dispatch_transport_command(&mut connections, command, &metrics);
+                    dispatch_transport_command(&mut connections, command, &metrics, write_timeout);
                     continue;
                 }
                 Err(mpsc::error::TryRecvError::Disconnected) => send_open = false,
@@ -547,7 +587,7 @@ async fn run_transport_manager(
         let Some(command) = command else {
             continue;
         };
-        dispatch_transport_command(&mut connections, command, &metrics);
+        dispatch_transport_command(&mut connections, command, &metrics, write_timeout);
     }
 }
 
@@ -555,6 +595,7 @@ fn dispatch_transport_command(
     connections: &mut HashMap<String, ConnectionHandle>,
     command: TransportCommand,
     metrics: &Arc<RemoteTransportMetrics>,
+    write_timeout: Duration,
 ) {
     let traffic = command.completion.traffic_class();
     // Call与Send必须拥有独立Socket；只拆队列仍会让目标reader在数据背压时阻塞后续RPC。
@@ -579,6 +620,7 @@ fn dispatch_transport_command(
                 call_rx,
                 send_rx,
                 Arc::clone(metrics),
+                write_timeout,
             ));
             let sender = match traffic {
                 TransportTrafficClass::Call => {
@@ -628,6 +670,7 @@ async fn run_connection(
     mut call_rx: mpsc::Receiver<ConnectionCommand>,
     mut send_rx: mpsc::Receiver<ConnectionCommand>,
     metrics: Arc<RemoteTransportMetrics>,
+    write_timeout: Duration,
 ) {
     let (event_tx, mut event_rx) = mpsc::channel(CONNECTION_QUEUE_CAPACITY);
     let mut session: Option<SocketSession> = None;
@@ -693,6 +736,7 @@ async fn run_connection(
                         &mut deadlines,
                         &mut last_activity,
                         &metrics,
+                        write_timeout,
                     )
                     .await;
                     continue;
@@ -742,6 +786,7 @@ async fn run_connection(
                             &mut deadlines,
                             &mut last_activity,
                             &metrics,
+                            write_timeout,
                         ).await;
                     }
                     None => call_open = false,
@@ -762,6 +807,7 @@ async fn run_connection(
                             &mut deadlines,
                             &mut last_activity,
                             &metrics,
+                            write_timeout,
                         ).await;
                     }
                     None => send_open = false,
@@ -798,6 +844,7 @@ async fn handle_command(
     deadlines: &mut BinaryHeap<Reverse<(Instant, u32)>>,
     last_activity: &mut Instant,
     metrics: &RemoteTransportMetrics,
+    write_timeout: Duration,
 ) {
     let ConnectionCommand {
         context,
@@ -883,6 +930,10 @@ async fn handle_command(
         }
     }
 
+    let frame = WriterFrame {
+        frame,
+        deadline: deadline.min(Instant::now() + write_timeout),
+    };
     match completion {
         CommandCompletion::Call(response_tx) => {
             let rpc_id = rpc_id.expect("call command must carry rpcId");
@@ -981,7 +1032,7 @@ fn handle_socket_event(
                     metrics.rejected(RemoteTransportOverloadStage::TargetIngress, &call.context);
                     *last_activity = Instant::now();
                     let _ = call.response_tx.send(Err(format!(
-                        "[scene-overloaded] scene {target_name} control ingress queue is full"
+                        "[scene-overloaded] scene {target_name} ingress capacity is exhausted"
                     )));
                 } else {
                     metrics.late_responses.fetch_add(1, Ordering::Relaxed);
@@ -1038,8 +1089,8 @@ fn start_socket_session(
     let (reader, writer) = stream.into_split();
     let (call_outbound_tx, call_outbound_rx) = mpsc::channel(CONNECTION_CALL_QUEUE_CAPACITY);
     let (send_outbound_tx, send_outbound_rx) = mpsc::channel(CONNECTION_SEND_QUEUE_CAPACITY);
-    tokio::spawn(read_responses(reader, generation, event_tx.clone()));
-    tokio::spawn(write_requests(
+    let reader_task = tokio::spawn(read_responses(reader, generation, event_tx.clone()));
+    let writer_task = tokio::spawn(write_requests(
         writer,
         generation,
         call_outbound_rx,
@@ -1050,6 +1101,7 @@ fn start_socket_session(
         generation,
         call_outbound_tx,
         send_outbound_tx,
+        tasks: vec![reader_task, writer_task],
     }
 }
 
@@ -1078,11 +1130,11 @@ async fn read_responses(
     }
 }
 
-async fn write_requests(
-    mut writer: OwnedWriteHalf,
+async fn write_requests<W: AsyncWrite + Unpin>(
+    mut writer: W,
     generation: u64,
-    mut call_rx: mpsc::Receiver<Bytes>,
-    mut send_rx: mpsc::Receiver<Bytes>,
+    mut call_rx: mpsc::Receiver<WriterFrame>,
+    mut send_rx: mpsc::Receiver<WriterFrame>,
     event_tx: mpsc::Sender<SocketEvent>,
 ) {
     let mut frames = Vec::<Bytes>::with_capacity(INNER_WRITE_BATCH_FRAME_CAPACITY);
@@ -1099,8 +1151,9 @@ async fn write_requests(
     .await
     {
         frames.clear();
-        let mut packet_bytes = 4 + frame.len();
-        frames.push(frame);
+        let mut deadline = frame.deadline;
+        let mut packet_bytes = 4 + frame.frame.len();
+        frames.push(frame.frame);
         while frames.len() < INNER_WRITE_BATCH_FRAME_CAPACITY
             && packet_bytes < INNER_WRITE_BATCH_BYTE_CAPACITY
         {
@@ -1113,10 +1166,24 @@ async fn write_requests(
             ) else {
                 break;
             };
-            packet_bytes += 4 + frame.len();
-            frames.push(frame);
+            packet_bytes += 4 + frame.frame.len();
+            deadline = deadline.min(frame.deadline);
+            frames.push(frame.frame);
         }
-        if let Err(error) = write_frames_vectored(&mut writer, &frames).await {
+        // 出队不能重置期限；批次受最早的操作/写出期限约束。
+        // Dequeue never resets deadlines; the earliest operation/write deadline governs the batch.
+        let written = if deadline <= Instant::now() {
+            Err("inner connection write timed out before write".to_string())
+        } else {
+            timeout_at(deadline, write_frames_vectored(&mut writer, &frames))
+                .await
+                .map_err(|_| "inner connection write timed out".to_string())
+                .and_then(|result| result)
+        };
+        // 成功和失败都立即释放当前批次，不能跨下一次 recv 保留预算。
+        // Release this batch before waiting for more input or reporting a failed write.
+        frames.clear();
+        if let Err(error) = written {
             let _ = event_tx
                 .send(SocketEvent::Closed { generation, error })
                 .await;
@@ -1126,12 +1193,12 @@ async fn write_requests(
 }
 
 async fn next_writer_frame(
-    call_rx: &mut mpsc::Receiver<Bytes>,
-    send_rx: &mut mpsc::Receiver<Bytes>,
+    call_rx: &mut mpsc::Receiver<WriterFrame>,
+    send_rx: &mut mpsc::Receiver<WriterFrame>,
     call_open: &mut bool,
     send_open: &mut bool,
     consecutive_calls: &mut usize,
-) -> Option<(Bytes, TransportTrafficClass)> {
+) -> Option<(WriterFrame, TransportTrafficClass)> {
     loop {
         if !*call_open && !*send_open {
             return None;
@@ -1184,12 +1251,12 @@ async fn next_writer_frame(
 }
 
 fn try_next_writer_frame(
-    call_rx: &mut mpsc::Receiver<Bytes>,
-    send_rx: &mut mpsc::Receiver<Bytes>,
+    call_rx: &mut mpsc::Receiver<WriterFrame>,
+    send_rx: &mut mpsc::Receiver<WriterFrame>,
     call_open: &mut bool,
     send_open: &mut bool,
     consecutive_calls: &mut usize,
-) -> Option<(Bytes, TransportTrafficClass)> {
+) -> Option<(WriterFrame, TransportTrafficClass)> {
     if !*call_open && !*send_open {
         return None;
     }
@@ -1242,8 +1309,8 @@ async fn read_frame(reader: &mut OwnedReadHalf) -> CallResult {
     Ok(frame)
 }
 
-async fn write_frames_vectored(
-    writer: &mut OwnedWriteHalf,
+async fn write_frames_vectored<W: AsyncWrite + Unpin>(
+    writer: &mut W,
     frames: &[Bytes],
 ) -> Result<(), String> {
     let lengths = frames
@@ -1626,6 +1693,7 @@ mod tests {
             generation: 7,
             call_outbound_tx,
             send_outbound_tx,
+            tasks: Vec::new(),
         });
         let (response_tx, response_rx) = oneshot::channel();
         let context = TransportContext::new(
@@ -1662,7 +1730,7 @@ mod tests {
         assert!(
             result
                 .unwrap_err()
-                .contains("control ingress queue is full")
+                .contains("[scene-overloaded] scene map-1 ingress capacity is exhausted")
         );
         assert!(pending.is_empty());
         assert_eq!(metrics.pending_calls.load(Ordering::Relaxed), 0);
@@ -1675,9 +1743,19 @@ mod tests {
         let (call_tx, mut call_rx) = mpsc::channel(64);
         let (send_tx, mut send_rx) = mpsc::channel(8);
         for index in 0..(MAX_CONSECUTIVE_CALLS + 1) {
-            call_tx.try_send(Bytes::from(vec![index as u8])).unwrap();
+            call_tx
+                .try_send(WriterFrame {
+                    frame: Bytes::from(vec![index as u8]),
+                    deadline: Instant::now() + Duration::from_secs(1),
+                })
+                .unwrap();
         }
-        send_tx.try_send(Bytes::from_static(b"send")).unwrap();
+        send_tx
+            .try_send(WriterFrame {
+                frame: Bytes::from_static(b"send"),
+                deadline: Instant::now() + Duration::from_secs(1),
+            })
+            .unwrap();
         drop(call_tx);
         drop(send_tx);
 
@@ -1704,7 +1782,7 @@ mod tests {
         )
         .expect("send frame should be available after fairness threshold");
         assert_eq!(traffic, TransportTrafficClass::Send);
-        assert_eq!(frame, Bytes::from_static(b"send"));
+        assert_eq!(frame.frame, Bytes::from_static(b"send"));
     }
 
     /// 验证公平探测观察到最后一个队列关闭时正常退出，而不是进入全分支禁用的select。
@@ -2109,6 +2187,7 @@ mod tests {
                 call_rx,
                 send_rx,
                 Arc::clone(&metrics),
+                Duration::from_secs(10),
             ));
             while let Some(command) = command_rx.recv().await {
                 let result = match command.completion.traffic_class() {

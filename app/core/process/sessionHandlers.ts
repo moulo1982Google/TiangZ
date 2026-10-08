@@ -4,7 +4,7 @@ import type { ProtocolContext } from "../protocol/registry";
 import type { AnyRpcDescriptor, RpcDescriptor } from "../protocol/rpc";
 import type { AnyMessageDescriptor } from "../protocol/message";
 import type { Session } from "../runtime/Session";
-import type { EntryScene } from "./types";
+import type { EntryScene } from "./EntryScene";
 import { HotfixBindingStore } from "../hotReload/HotfixSystem";
 
 type SceneClass<TScene extends EntryScene> = new (...args: any[]) => TScene;
