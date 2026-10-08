@@ -49,4 +49,14 @@ low-latency 模式由约 18ms 降至 0.3–1.0ms。空闲 10 秒进程 CPU 与�
 
 20 条连接背靠背 DBProxy 读（各 3 轮）：rc1 10.5k–11.0k 次/秒、p99 14.6–15.5ms、每请求 204–246µs；本实现 16.3k–18.5k 次/秒、p99 1.8–2.1ms、每请求 239–261µs。每请求 CPU 约高 10–15%，来源不是“补取回包”（实验分支单独开关对比：补取前后均约 230µs），而是结果到达即推进，高负载下每轮批次变小。推进轮数从 4 降为 2 后吞吐由 15.5k–16.4k 回升（4 轮时每轮都跑满轮询）。
 
-未覆盖：Linux 与 release 构建；PostgreSQL/Redis 后端端到端；event_stream 真实 Redis；高负载下按忙闲合并叫醒以降低每请求 CPU 的优化。
+真实后端（专用 Docker 容器 PostgreSQL 18.6 + Redis 8.8.1，仅绑定回环；基线与本实现各用新数据库与独立 Redis 逻辑库；event_stream 用独立逻辑库与各自消费组），空闲 adaptive RTT 中位数 / p99：
+
+| 场景 | rc1 | 本实现 |
+|---|---|---|
+| Repository.Load（postgresRedis） | 59.3 / 67.0ms | 2.4 / 6.4ms |
+| Repository.SaveSnapshot（postgresRedis） | 59.5 / 67.0ms | 6.8 / 13.5ms |
+| HostStreamConsumer.Poll（Redis 消费组） | 59.1 / 66.0ms | 1.4 / 6.3ms |
+
+rc1 的 59ms 中已包含真实存储耗时（约 2–7ms），被 idle tick 掩盖；本实现后剩下的就是存储本身的耗时。low-latency 下 rc1 约 17–19ms。全部请求成功，DBProxy 日志无错误，两个消费组均已在 Redis 中创建。
+
+未覆盖：Linux 与 release 构建；完整 `npm run verify`；高负载下按忙闲合并叫醒以降低每请求 CPU 的优化。
