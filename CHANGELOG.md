@@ -9,6 +9,7 @@
 - Scene 配置 `http`：为 Scene 开一个独立 HTTP 端口，请求进入该 Scene 的 mailbox。Rust 负责请求体上限（默认 64 KiB）、读体与回复共享期限（默认 10 秒，分别返回 408/504）、并发上限（默认 256，返回 503）、可选 Bearer 令牌（令牌不进入 V8）和跨域预检。
 - Stable API `httpHandler(SceneCtor, method, path)`、`HttpError`、`jsonResponse` 及类型 `HttpMethod`、`HttpRequest`、`HttpResponse`、`SceneHttpHandler`、`SceneHttpConfig`；Handler 可热更，路由精确匹配，缺失路径 404、方法不符 405。
 - 新增直接依赖 `hyper`（http1/server）、`hyper-util`、`http-body-util`；均已在依赖树中，未引入新的第三方包。
+- 连接准入与请求号隔离（评审修正）：新增 `http.maxConnections`（默认 max(1024, maxInFlight)，上限 16384），在创建连接任务前准入，名额覆盖连接整个生命周期，满额新连接立即关闭；回复写出连续 10 秒无进展断开，每连接读缓冲软上限 64 KiB。HTTP 请求号改由 HTTP 入口独立分配并在 u32 内回绕、跳过在途号，不再消耗游戏连接号（此前持续 HTTP 流量会耗尽连接号并使游戏端口停止接入）。
 
 ### 验证
 

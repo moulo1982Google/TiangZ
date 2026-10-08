@@ -34,6 +34,7 @@ export interface SceneHttpConfig {
   maxBodyBytes?: number;
   requestTimeoutMs?: number;
   maxInFlight?: number;
+  maxConnections?: number;
   authTokenEnv?: string;
   corsAllowOrigins?: string[];
 }

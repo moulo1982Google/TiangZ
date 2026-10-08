@@ -141,9 +141,9 @@ pub(crate) enum ProcessEvent {
         connection_id: u64,
     },
     HostSceneCompletion(HostSceneCompletion),
-    /// Scene HTTP 端口收到的一个请求；`request_id` 与连接号同一编号空间，回复经 `op_host_http_respond`。
-    /// One request from a Scene HTTP port; `request_id` shares the connection-id space and the reply
-    /// returns through `op_host_http_respond`.
+    /// Scene HTTP 端口收到的一个请求；`request_id` 由 HTTP 回复表独立分配（不占连接号），回复经 `op_host_http_respond`。
+    /// One request from a Scene HTTP port; `request_id` comes from the HTTP reply table (not the
+    /// connection-id space) and the reply returns through `op_host_http_respond`.
     HttpRequest {
         backing_reservation: Option<crate::host::event_admission::EventReservation>,
         scene_index: u32,
@@ -1108,7 +1108,6 @@ async fn run_runtime_config_with_backend(
         &config.scenes,
         &crate::http_endpoint::HttpIngress {
             event_tx: event_tx.clone(),
-            next_request_id: Arc::clone(&next_connection_id),
             pending: http_pending.clone(),
             health: Arc::clone(&health_state),
         },

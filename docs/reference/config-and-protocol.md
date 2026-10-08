@@ -252,6 +252,7 @@ Rust Core使用强类型`NativeDataObservabilityConfig`负责字段默认值、�
 | `maxBodyBytes` | usize? | 请求体上限，默认 65536，最大 1048576；超出返回 413 |
 | `requestTimeoutMs` | u64? | 读取请求体与等待 Handler 回复共享的期限，默认 10000，范围 100..120000；读体超时返回 408 并关闭连接，Handler 等待超时返回 504，迟到的回复被丢弃 |
 | `maxInFlight` | usize? | 同时在处理和排队的请求上限，默认 256，最大 4096；超出返回 503 |
+| `maxConnections` | usize? | 同时存活的连接上限（含 keep-alive 空闲和未发完请求头的连接），默认取 1024 与 `maxInFlight` 中较大者，范围 `maxInFlight`..16384；满额时新连接被立即关闭，不创建处理任务 |
 | `authTokenEnv` | string? | 设置后每个请求必须带 `Authorization: Bearer <令牌>`，否则返回 401。令牌从该环境变量读取，变量缺失时拒绝启动；令牌只在 Rust 比对，转发给 TS 的请求不含 Authorization 头 |
 | `corsAllowOrigins` | string[]? | 允许跨域的来源，`"*"` 或 `scheme://host[:port]`；为空时不输出跨域头。`OPTIONS` 预检由宿主直接回答，不进入 TS |
 
@@ -265,7 +266,7 @@ Rust Core使用强类型`NativeDataObservabilityConfig`负责字段默认值、�
 }
 ```
 
-处理流程：Rust（hyper，HTTP/1.1）读取请求并完成鉴权、限长和并发检查，然后把请求作为数据入口事件放进目标 Scene 的 mailbox，与协议消息遵循相同的 ordered/unordered 语义；进程队列或宿主事件字节预算不足时立即返回 503。TS 按“方法 + 路径”精确匹配 `httpHandler`；找不到路径返回 404，路径存在但方法不对返回 405 和 `Allow` 头。Handler 抛出 `HttpError` 时返回其状态码，其他异常记录日志并返回 500，不向调用方泄露异常内容。所有响应默认带 `Cache-Control: no-store`。当前不支持 HTTPS（由 Nginx 等反向代理终止）、路径参数、流式请求/响应和 WebSocket 升级。进程未就绪（启动中、停机中，或业务线程心跳超过 `staleAfterMs`）时直接返回 503，不进入 TS；停机时先停止接收，等待中的请求返回 503，连接按 `lifecycle.stopTimeoutMs` 有界排空。已经开始的业务不会因调用方超时或断开而取消，并发名额保留到业务真实完成；排队期间已过期的请求不执行 Handler。
+处理流程：Rust（hyper，HTTP/1.1）读取请求并完成鉴权、限长和并发检查，然后把请求作为数据入口事件放进目标 Scene 的 mailbox，与协议消息遵循相同的 ordered/unordered 语义；进程队列或宿主事件字节预算不足时立即返回 503。TS 按“方法 + 路径”精确匹配 `httpHandler`；找不到路径返回 404，路径存在但方法不对返回 405 和 `Allow` 头。Handler 抛出 `HttpError` 时返回其状态码，其他异常记录日志并返回 500，不向调用方泄露异常内容。所有响应默认带 `Cache-Control: no-store`。当前不支持 HTTPS（由 Nginx 等反向代理终止）、路径参数、流式请求/响应和 WebSocket 升级。进程未就绪（启动中、停机中，或业务线程心跳超过 `staleAfterMs`）时直接返回 503，不进入 TS；停机时先停止接收，等待中的请求返回 503，连接按 `lifecycle.stopTimeoutMs` 有界排空。已经开始的业务不会因调用方超时或断开而取消，并发名额保留到业务真实完成；排队期间已过期的请求不执行 Handler。每条连接都有期限：请求头（含 keep-alive 空闲）10 秒内必须发完，回复写出连续 10 秒无进展即断开，请求头远超 64 KiB 时返回 431；连接名额随连接关闭释放。HTTP 请求号由 HTTP 入口独立分配并在 u32 内回绕，不占用游戏连接号。
 
 监听地址、服务间地址和客户端地址是三个不同概念，不能把 `0.0.0.0` 写入 `knownScenes`、MapHost Endpoint 或登录响应。云服务器的公网 IP 通常是云厂商的 EIP/NAT，不会出现在虚机的 `ip addr` 中，因此必须通过部署配置显式填写，不要在 Runtime 中自动猜测公网 IP。
 

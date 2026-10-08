@@ -538,6 +538,12 @@ pub struct SceneHttpConfig {
     pub request_timeout_ms: u64,
     #[serde(default = "default_http_max_in_flight")]
     pub max_in_flight: usize,
+    /// 同时存活的连接上限（含 keep-alive 空闲与半包连接）；超出的新连接立即关闭。
+    /// 省略时取 1024 与 `maxInFlight` 中较大者。
+    /// Live connection limit including idle keep-alive and incomplete ones; new connections beyond it
+    /// are closed at once. Defaults to the larger of 1024 and `maxInFlight`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connections: Option<usize>,
     /// 设置后每个请求必须携带 `Authorization: Bearer <令牌>`；令牌只在 Rust 读取，不进入 V8。
     /// When set, every request must carry `Authorization: Bearer <token>`; the token is read in Rust
     /// only and never enters V8.
@@ -554,10 +560,18 @@ impl SceneHttpConfig {
     pub fn bind_ip<'a>(&'a self, scene: &'a SceneConfig) -> &'a str {
         self.bind_ip.as_deref().unwrap_or_else(|| scene.bind_ip())
     }
+
+    /// 返回实际连接上限。 / Returns the effective connection limit.
+    pub fn max_connections(&self) -> usize {
+        self.max_connections
+            .unwrap_or(DEFAULT_HTTP_MAX_CONNECTIONS.max(self.max_in_flight))
+    }
 }
 
 pub const MAX_HTTP_BODY_BYTES: usize = 1024 * 1024;
 pub const MAX_HTTP_IN_FLIGHT: usize = 4096;
+pub const DEFAULT_HTTP_MAX_CONNECTIONS: usize = 1024;
+pub const MAX_HTTP_CONNECTIONS: usize = 16384;
 
 impl SceneConfig {
     /// 返回实际监听地址；0.0.0.0 只允许出现在这里，不能作为路由地址返回。
@@ -1414,6 +1428,18 @@ fn validate_scene_http(scene: &SceneConfig, http: &SceneHttpConfig) -> Result<()
             scene.name
         );
     }
+    // 连接少于并发名额时并发上限永远达不到，按配置错误拒绝。
+    // Fewer connections than in-flight slots would make maxInFlight unreachable, so reject it.
+    if http
+        .max_connections
+        .is_some_and(|value| !(http.max_in_flight..=MAX_HTTP_CONNECTIONS).contains(&value))
+    {
+        bail!(
+            "scene {} http.maxConnections must be between maxInFlight ({}) and {MAX_HTTP_CONNECTIONS}",
+            scene.name,
+            http.max_in_flight
+        );
+    }
     if http
         .auth_token_env
         .as_deref()
@@ -2019,6 +2045,7 @@ mod tests {
         assert_eq!(http.max_body_bytes, 64 * 1024);
         assert_eq!(http.request_timeout_ms, 10_000);
         assert_eq!(http.max_in_flight, 256);
+        assert_eq!(http.max_connections(), DEFAULT_HTTP_MAX_CONNECTIONS);
         assert_eq!(http.bind_ip(&scene), "127.0.0.1");
         let config = RuntimeConfig {
             process: process(None),
@@ -2046,6 +2073,17 @@ mod tests {
         let mut oversized = http_scene("a", 7100, 7180);
         oversized.http.as_mut().unwrap().max_body_bytes = MAX_HTTP_BODY_BYTES + 1;
         assert!(http_config_error(vec![oversized], None).contains("maxBodyBytes"));
+        let mut wide = http_scene("a", 7100, 7180);
+        wide.http.as_mut().unwrap().max_in_flight = MAX_HTTP_IN_FLIGHT;
+        assert_eq!(
+            wide.http.as_ref().unwrap().max_connections(),
+            MAX_HTTP_IN_FLIGHT
+        );
+        for invalid in [MAX_HTTP_IN_FLIGHT - 1, MAX_HTTP_CONNECTIONS + 1] {
+            let mut scene = wide.clone();
+            scene.http.as_mut().unwrap().max_connections = Some(invalid);
+            assert!(http_config_error(vec![scene], None).contains("maxConnections"));
+        }
         let mut bad_origin = http_scene("a", 7100, 7180);
         bad_origin.http.as_mut().unwrap().cors_allow_origins = vec!["example.com".to_string()];
         assert!(http_config_error(vec![bad_origin], None).contains("corsAllowOrigins"));

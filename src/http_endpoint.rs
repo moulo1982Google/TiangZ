@@ -7,9 +7,11 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::future::Future;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::task::Poll;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -25,6 +27,7 @@ use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use serde::Serialize;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot, watch};
 use tokio::task::JoinSet;
@@ -36,7 +39,14 @@ use crate::process::{ProcessEvent, ProcessEventSender};
 /// 单个响应体上限；工具接口不应返回更大的内容。 / Per-response body limit; tool endpoints should not return more.
 pub const MAX_HTTP_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
 const MAX_RESPONSE_HEADERS: usize = 64;
+/// 读请求头期限；hyper 也用它关闭 keep-alive 空闲连接。 / Header read bound; hyper also closes idle keep-alive connections with it.
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(10);
+/// 写出连续无进展的期限。 / Bound on a write making no progress.
+const WRITE_STALL_TIMEOUT: Duration = Duration::from_secs(10);
+/// 每连接读缓冲软上限（hyper 可多读一次），请求头远超时返回 431；与 maxConnections 一起限定连接内存。
+/// Soft per-connection read buffer cap (hyper may overshoot by one read); far larger heads get 431.
+/// Together with maxConnections it bounds connection memory.
+const MAX_CONNECTION_READ_BUFFER_BYTES: usize = 64 * 1024;
 const CORS_MAX_AGE_SECONDS: &str = "600";
 const CORS_ALLOW_METHODS: &str = "GET, POST, PUT, PATCH, DELETE";
 const CORS_DEFAULT_ALLOW_HEADERS: &str = "authorization, content-type";
@@ -54,10 +64,34 @@ pub(crate) struct HttpReply {
 }
 
 /// 执行许可独立于 HTTP 等待方；只有真实完成、丢弃未执行工作或 Runtime 退出才释放。
+/// 请求号在本表内分配，不占用游戏连接号。
 /// Execution permits outlive HTTP waiters until real completion, queued discard, or runtime exit.
+/// Request ids are allocated here and never consume game connection ids.
 #[derive(Clone, Default)]
 pub(crate) struct HttpPendingRequests {
-    inner: Arc<Mutex<HashMap<u64, PendingRequest>>>,
+    inner: Arc<Mutex<PendingTable>>,
+}
+
+#[derive(Default)]
+struct PendingTable {
+    entries: HashMap<u64, PendingRequest>,
+    /// 最近分配的请求号；在 1..=u32::MAX 内回绕，跳过仍在表内的号。
+    /// Last allocated id; wraps within 1..=u32::MAX and skips ids still in the table.
+    last_id: u32,
+}
+
+impl PendingTable {
+    /// 表内条目受并发许可限制，远少于 u32 号空间，因此总能找到空闲号。
+    /// Entries are bounded by admission permits, far below the u32 space, so a free id always exists.
+    fn allocate_id(&mut self) -> u64 {
+        loop {
+            self.last_id = self.last_id.checked_add(1).unwrap_or(1);
+            let candidate = u64::from(self.last_id);
+            if !self.entries.contains_key(&candidate) {
+                return candidate;
+            }
+        }
+    }
 }
 
 struct PendingRequest {
@@ -76,7 +110,7 @@ struct ResponseWaiter {
 impl Drop for ResponseWaiter {
     fn drop(&mut self) {
         if self.submitted {
-            if let Some(entry) = self.pending.lock().get_mut(&self.request_id) {
+            if let Some(entry) = self.pending.lock().entries.get_mut(&self.request_id) {
                 entry.sender.take();
             }
         } else {
@@ -86,21 +120,25 @@ impl Drop for ResponseWaiter {
 }
 
 impl HttpPendingRequests {
+    /// 分配请求号并登记；号与登记在同一把锁内完成，不会与在途请求重号。
+    /// Allocates an id and registers under one lock, so it never collides with a live request.
     fn register(
         &self,
-        request_id: u64,
         permit: OwnedSemaphorePermit,
-    ) -> (oneshot::Receiver<HttpReply>, ResponseWaiter) {
+    ) -> (u64, oneshot::Receiver<HttpReply>, ResponseWaiter) {
         let (sender, receiver) = oneshot::channel();
-        let previous = self.lock().insert(
+        let mut table = self.lock();
+        let request_id = table.allocate_id();
+        table.entries.insert(
             request_id,
             PendingRequest {
                 sender: Some(sender),
                 _permit: permit,
             },
         );
-        debug_assert!(previous.is_none(), "HTTP request ids must never be reused");
+        drop(table);
         (
+            request_id,
             receiver,
             ResponseWaiter {
                 pending: self.clone(),
@@ -113,6 +151,7 @@ impl HttpPendingRequests {
     /// 只查询回复方是否仍在等待，不改变执行所有权。 / Queries the live waiter without changing execution ownership.
     fn is_pending(&self, request_id: u64) -> bool {
         self.lock()
+            .entries
             .get(&request_id)
             .and_then(|entry| entry.sender.as_ref())
             .is_some_and(|sender| !sender.is_closed())
@@ -121,13 +160,13 @@ impl HttpPendingRequests {
     /// 仅用于保证不会执行的排队工作；不得用于取消运行中的 Handler。
     /// Only for queued work guaranteed never to execute, not for cancelling a running handler.
     fn discard(&self, request_id: u64) -> bool {
-        self.lock().remove(&request_id).is_some()
+        self.lock().entries.remove(&request_id).is_some()
     }
 
     /// 交付回复；请求已超时或已停机时返回 false，回复被丢弃。
     /// Delivers a reply; returns false when the request already timed out or shut down.
     fn complete(&self, request_id: u64, reply: HttpReply) -> bool {
-        let entry = self.lock().remove(&request_id);
+        let entry = self.lock().entries.remove(&request_id);
         entry.is_some_and(|entry| {
             entry
                 .sender
@@ -137,18 +176,23 @@ impl HttpPendingRequests {
 
     /// 监听停止只关闭回复，不提前释放仍可能执行的业务。 / Listener shutdown closes replies without releasing execution permits.
     fn close_response_senders(&self) {
-        for entry in self.lock().values_mut() {
+        for entry in self.lock().entries.values_mut() {
             entry.sender.take();
         }
     }
 
     /// 仅在 Runtime 已终止、事件不可能再执行后调用。 / Call only after runtime termination makes further execution impossible.
     pub(crate) fn clear(&self) {
-        self.lock().clear();
+        self.lock().entries.clear();
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<u64, PendingRequest>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, PendingTable> {
         self.inner.lock().expect("http pending map poisoned")
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.lock().entries.len()
     }
 }
 
@@ -344,13 +388,11 @@ impl HttpEndpoints {
     }
 }
 
-/// 所有 HTTP 端点共享的进程入口：事件队列、编号来源、回复表与就绪状态。
-/// Process ingress shared by every HTTP endpoint: event queue, id source, reply table, and readiness.
+/// 所有 HTTP 端点共享的进程入口：事件队列、回复表（兼请求号来源）与就绪状态。
+/// Process ingress shared by every HTTP endpoint: event queue, reply table (also the id source), and readiness.
 #[derive(Clone)]
 pub(crate) struct HttpIngress {
     pub(crate) event_tx: ProcessEventSender,
-    /// 与连接号共用，保证请求号不与任何连接冲突。 / Shared with connection ids so request ids never collide.
-    pub(crate) next_request_id: Arc<AtomicU64>,
     pub(crate) pending: HttpPendingRequests,
     pub(crate) health: Arc<ProcessHealthState>,
 }
@@ -362,6 +404,10 @@ struct EndpointState {
     expected_authorization: Option<String>,
     ingress: HttpIngress,
     in_flight: Arc<Semaphore>,
+    /// 存活连接许可；accept 后、创建连接任务前获取，随连接任务结束释放。
+    /// Live-connection permits, taken after accept and before spawning, released when the task ends.
+    connections: Arc<Semaphore>,
+    write_stall_timeout: Duration,
     shutdown: watch::Receiver<Option<tokio::time::Instant>>,
 }
 
@@ -425,6 +471,8 @@ fn start_http_endpoints_with_env(
             expected_authorization,
             ingress: ingress.clone(),
             in_flight: Arc::new(Semaphore::new(config.max_in_flight)),
+            connections: Arc::new(Semaphore::new(config.max_connections())),
+            write_stall_timeout: WRITE_STALL_TIMEOUT,
             shutdown: shutdown.subscribe(),
         });
         prepared.push((listener, state));
@@ -459,7 +507,14 @@ async fn run_listener(
             },
             accepted = listener.accept() => match accepted {
                 Ok((stream, peer)) => {
-                    connections.spawn(serve_connection(stream, peer, Arc::clone(&state), shutdown.clone()));
+                    // 先准入再建任务；满额时立即关闭，不占用任务、缓冲或等待名额。
+                    // Admit before spawning; at capacity close at once without a task, buffers, or a wait slot.
+                    let Ok(permit) = Arc::clone(&state.connections).try_acquire_owned() else {
+                        tracing::debug!(target: "tiangz::http", scene = %state.scene_name, %peer, "http connection limit reached; closing");
+                        drop(stream);
+                        continue;
+                    };
+                    connections.spawn(serve_connection(stream, peer, Arc::clone(&state), shutdown.clone(), permit));
                 }
                 Err(error) if matches!(error.kind(), std::io::ErrorKind::Interrupted | std::io::ErrorKind::ConnectionAborted) => {},
                 Err(error) => {
@@ -522,12 +577,17 @@ async fn wait_for_shutdown(
     }
 }
 
+/// 连接许可持有到本任务结束；读头（含 keep-alive 空闲）、读体与写出都有期限，连接不会无限存活。
+/// Holds the connection permit until the task ends; header reads (including keep-alive idle), body
+/// reads, and writes are all bounded, so no connection lives indefinitely.
 async fn serve_connection(
     stream: TcpStream,
     peer: SocketAddr,
     state: Arc<EndpointState>,
     mut shutdown: watch::Receiver<Option<tokio::time::Instant>>,
+    _connection_permit: OwnedSemaphorePermit,
 ) {
+    let io = WriteStallGuard::new(stream, state.write_stall_timeout);
     let service = service_fn(move |request| {
         let state = Arc::clone(&state);
         async move { Ok::<_, Infallible>(handle_request(request, peer, &state).await) }
@@ -535,7 +595,8 @@ async fn serve_connection(
     let connection = http1::Builder::new()
         .timer(TokioTimer::new())
         .header_read_timeout(HEADER_READ_TIMEOUT)
-        .serve_connection(TokioIo::new(stream), service);
+        .max_buf_size(MAX_CONNECTION_READ_BUFFER_BYTES)
+        .serve_connection(TokioIo::new(io), service);
     tokio::pin!(connection);
     let result = tokio::select! {
         result = connection.as_mut() => result,
@@ -546,6 +607,102 @@ async fn serve_connection(
     };
     if let Err(error) = result {
         tracing::debug!(target: "tiangz::http", %peer, %error, "http connection closed with error");
+    }
+}
+
+/// 写出连续无进展超过期限即报错断开，防止不读回复的客户端永久占用连接与回复缓冲。
+/// Fails a write that makes no progress within the bound, so a client that never reads its reply
+/// cannot hold the connection and reply buffer forever.
+struct WriteStallGuard<S> {
+    inner: S,
+    stall_timeout: Duration,
+    stalled_since: Option<Pin<Box<tokio::time::Sleep>>>,
+}
+
+impl<S> WriteStallGuard<S> {
+    fn new(inner: S, stall_timeout: Duration) -> Self {
+        Self {
+            inner,
+            stall_timeout,
+            stalled_since: None,
+        }
+    }
+
+    /// 有进展即清除计时；Pending 时从首次阻塞起计时。 / Progress clears the timer; Pending counts from the first stall.
+    fn guard<T>(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+        result: Poll<std::io::Result<T>>,
+    ) -> Poll<std::io::Result<T>> {
+        if result.is_ready() {
+            self.stalled_since = None;
+            return result;
+        }
+        let stall_timeout = self.stall_timeout;
+        let timer = self
+            .stalled_since
+            .get_or_insert_with(|| Box::pin(tokio::time::sleep(stall_timeout)));
+        if timer.as_mut().poll(cx).is_ready() {
+            return Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "HTTP response write stalled",
+            )));
+        }
+        Poll::Pending
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for WriteStallGuard<S> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_read(cx, buf)
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for WriteStallGuard<S> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        let this = self.get_mut();
+        let result = Pin::new(&mut this.inner).poll_write(cx, buf);
+        this.guard(cx, result)
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> Poll<std::io::Result<usize>> {
+        let this = self.get_mut();
+        let result = Pin::new(&mut this.inner).poll_write_vectored(cx, bufs);
+        this.guard(cx, result)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.inner.is_write_vectored()
+    }
+
+    fn poll_flush(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        let result = Pin::new(&mut this.inner).poll_flush(cx);
+        this.guard(cx, result)
+    }
+
+    fn poll_shutdown(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        let result = Pin::new(&mut this.inner).poll_shutdown(cx);
+        this.guard(cx, result)
     }
 }
 
@@ -664,21 +821,7 @@ async fn forward_to_scene(
     if tokio::time::Instant::now() >= deadline {
         return error_response(StatusCode::GATEWAY_TIMEOUT, "request timeout");
     }
-    let Ok(request_id) =
-        ingress
-            .next_request_id
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
-                (1..=u32::MAX as u64)
-                    .contains(&value)
-                    .then_some(value.saturating_add(1))
-            })
-    else {
-        return error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "request id space exhausted",
-        );
-    };
-    let (receiver, mut waiter) = ingress.pending.register(request_id, permit);
+    let (request_id, receiver, mut waiter) = ingress.pending.register(permit);
     let event = ProcessEvent::HttpRequest {
         scene_index: state.scene_index,
         request_id,
@@ -828,13 +971,13 @@ mod tests {
     fn pending_reply_is_delivered_once() {
         let pending = HttpPendingRequests::default();
         let permits = Arc::new(Semaphore::new(1));
-        let (mut receiver, _waiter) =
-            pending.register(7, permits.clone().try_acquire_owned().unwrap());
+        let (id, mut receiver, _waiter) =
+            pending.register(permits.clone().try_acquire_owned().unwrap());
         let reply = || build_reply(200, "[]", b"").unwrap();
-        assert!(pending.complete(7, reply()));
-        assert!(!pending.complete(7, reply()));
+        assert!(pending.complete(id, reply()));
+        assert!(!pending.complete(id, reply()));
         assert_eq!(receiver.try_recv().unwrap().status, StatusCode::OK);
-        let (receiver, _waiter) = pending.register(8, permits.clone().try_acquire_owned().unwrap());
+        let (_, receiver, _waiter) = pending.register(permits.clone().try_acquire_owned().unwrap());
         pending.clear();
         assert!(receiver.blocking_recv().is_err());
         assert_eq!(permits.available_permits(), 1);
@@ -844,45 +987,61 @@ mod tests {
     fn waiter_cancellation_preserves_only_submitted_execution() {
         let pending = HttpPendingRequests::default();
         let permits = Arc::new(Semaphore::new(1));
-        let (receiver, waiter) = pending.register(1, permits.clone().try_acquire_owned().unwrap());
-        assert!(pending.is_pending(1));
+        let (id, receiver, waiter) = pending.register(permits.clone().try_acquire_owned().unwrap());
+        assert!(pending.is_pending(id));
         drop(waiter);
         assert_eq!(permits.available_permits(), 1);
         assert!(receiver.blocking_recv().is_err());
-        assert!(pending.lock().is_empty());
+        assert_eq!(pending.len(), 0);
 
-        let (receiver, mut waiter) =
-            pending.register(2, permits.clone().try_acquire_owned().unwrap());
+        let (id, receiver, mut waiter) =
+            pending.register(permits.clone().try_acquire_owned().unwrap());
         waiter.submitted = true;
         drop(receiver);
         assert!(
-            !pending.is_pending(2),
+            !pending.is_pending(id),
             "closed receiver must be visible before guard cleanup"
         );
         drop(waiter);
         assert_eq!(permits.available_permits(), 0);
-        assert!(!pending.complete(2, build_reply(200, "[]", b"late").unwrap()));
+        assert!(!pending.complete(id, build_reply(200, "[]", b"late").unwrap()));
         assert_eq!(permits.available_permits(), 1);
-        assert!(!pending.discard(2));
+        assert!(!pending.discard(id));
+    }
+
+    #[test]
+    fn request_ids_wrap_within_u32_and_skip_live_requests() {
+        let pending = HttpPendingRequests::default();
+        let permits = Arc::new(Semaphore::new(3));
+        let permit = || permits.clone().try_acquire_owned().unwrap();
+        let (first, _first_receiver, _first_waiter) = pending.register(permit());
+        assert_eq!(first, 1);
+        pending.lock().last_id = u32::MAX - 1;
+        let (last, _last_receiver, _last_waiter) = pending.register(permit());
+        assert_eq!(last, u64::from(u32::MAX));
+        // 回绕后跳过仍在途的 1，不重号也不报耗尽。 / After wrapping, live id 1 is skipped instead of reused or exhausted.
+        let (wrapped, _wrapped_receiver, _wrapped_waiter) = pending.register(permit());
+        assert_eq!(wrapped, 2);
+        assert_eq!(pending.len(), 3);
     }
 
     #[test]
     fn closing_replies_retains_execution_until_discard_or_runtime_exit() {
         let pending = HttpPendingRequests::default();
         let permits = Arc::new(Semaphore::new(2));
-        let (first, mut first_waiter) =
-            pending.register(1, permits.clone().try_acquire_owned().unwrap());
-        let (second, mut second_waiter) =
-            pending.register(2, permits.clone().try_acquire_owned().unwrap());
+        let (first_id, first, mut first_waiter) =
+            pending.register(permits.clone().try_acquire_owned().unwrap());
+        let (_, second, mut second_waiter) =
+            pending.register(permits.clone().try_acquire_owned().unwrap());
         first_waiter.submitted = true;
         second_waiter.submitted = true;
         pending.close_response_senders();
         assert!(first.blocking_recv().is_err());
         assert!(second.blocking_recv().is_err());
-        assert!(!pending.is_pending(1));
+        assert!(!pending.is_pending(first_id));
         assert_eq!(permits.available_permits(), 0);
-        assert!(pending.discard(1));
-        assert!(!pending.discard(1));
+        assert!(pending.discard(first_id));
+        assert!(!pending.discard(first_id));
         assert_eq!(permits.available_permits(), 1);
         pending.clear();
         assert_eq!(permits.available_permits(), 2);
@@ -900,8 +1059,10 @@ mod tests {
         runtime
             .execute_script("http-bootstrap", BOOTSTRAP_SOURCE)
             .unwrap();
-        let (mut receiver, mut waiter) =
-            pending.register(1, permits.clone().try_acquire_owned().unwrap());
+        // 新表从 1 开始分配，脚本中的编号与之对应。 / A fresh table allocates from 1, matching the ids in the scripts.
+        let (id, mut receiver, mut waiter) =
+            pending.register(permits.clone().try_acquire_owned().unwrap());
+        assert_eq!(id, 1);
         waiter.submitted = true;
         runtime.execute_script("invalid-http-reply", r#"
             if (!__hostHttp.isPending(1)) throw new Error('missing waiter');
@@ -921,8 +1082,9 @@ mod tests {
         );
         assert_eq!(permits.available_permits(), 1);
 
-        let (receiver, mut waiter) =
-            pending.register(2, permits.clone().try_acquire_owned().unwrap());
+        let (id, receiver, mut waiter) =
+            pending.register(permits.clone().try_acquire_owned().unwrap());
+        assert_eq!(id, 2);
         waiter.submitted = true;
         drop(receiver);
         runtime.execute_script("discard-http-request", r#"
@@ -978,9 +1140,7 @@ mod tests {
     }
 
     /// 返回已就绪的测试入口与数据队列接收端。 / Returns a ready test ingress and the data-queue receiver.
-    fn test_ingress(
-        first_request_id: u64,
-    ) -> (HttpIngress, std::sync::mpsc::Receiver<ProcessEvent>) {
+    fn test_ingress() -> (HttpIngress, std::sync::mpsc::Receiver<ProcessEvent>) {
         let (event_tx, receiver) = test_process_event_channel(16);
         let health = Arc::new(ProcessHealthState::starting(Duration::from_secs(60)));
         health.mark_endpoints_ready();
@@ -988,7 +1148,6 @@ mod tests {
         (
             HttpIngress {
                 event_tx,
-                next_request_id: Arc::new(AtomicU64::new(first_request_id)),
                 pending: HttpPendingRequests::default(),
                 health,
             },
@@ -1014,6 +1173,8 @@ mod tests {
             expected_authorization: None,
             ingress,
             in_flight: Arc::new(Semaphore::new(1)),
+            connections: Arc::new(Semaphore::new(4)),
+            write_stall_timeout: WRITE_STALL_TIMEOUT,
             shutdown,
         })
     }
@@ -1034,7 +1195,7 @@ mod tests {
 
     #[tokio::test]
     async fn aborted_forward_retains_admission_until_queued_discard() {
-        let (ingress, receiver) = test_ingress(1);
+        let (ingress, receiver) = test_ingress();
         let (_shutdown, signal) = watch::channel(None);
         let state = test_state(ingress, signal);
         let task_state = state.clone();
@@ -1061,7 +1222,7 @@ mod tests {
 
     #[tokio::test]
     async fn full_or_closed_ingress_rolls_back_entire_registration() {
-        let (mut ingress, _) = test_ingress(1);
+        let (mut ingress, _) = test_ingress();
         let (event_tx, receiver) = test_process_event_channel(1);
         ingress.event_tx = event_tx;
         ingress
@@ -1083,7 +1244,7 @@ mod tests {
         )
         .await;
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-        assert!(state.ingress.pending.lock().is_empty());
+        assert!(state.ingress.pending.len() == 0);
         assert_eq!(state.in_flight.available_permits(), 1);
         drop(receiver);
         let response = forward_to_scene(
@@ -1094,62 +1255,166 @@ mod tests {
         )
         .await;
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-        assert!(state.ingress.pending.lock().is_empty());
+        assert!(state.ingress.pending.len() == 0);
         assert_eq!(state.in_flight.available_permits(), 1);
     }
 
     #[tokio::test]
-    async fn last_request_id_is_usable_and_exhaustion_never_wraps() {
-        let (ingress, receiver) = test_ingress(u32::MAX as u64);
+    async fn last_request_id_is_usable_and_then_wraps_to_one() {
+        let (ingress, receiver) = test_ingress();
+        ingress.pending.lock().last_id = u32::MAX - 1;
         let (_shutdown, signal) = watch::channel(None);
         let state = test_state(ingress, signal);
-        let task_state = state.clone();
-        let task = tokio::spawn(async move {
-            forward_to_scene(
-                &task_state,
-                Bytes::new(),
-                task_state.in_flight.clone().try_acquire_owned().unwrap(),
-                tokio::time::Instant::now() + Duration::from_secs(60),
-            )
-            .await
-        });
-        let ProcessEvent::HttpRequest { request_id, .. } = next_event(&receiver).await else {
-            panic!("expected HTTP event");
-        };
-        assert_eq!(request_id, u32::MAX as u64);
-        assert!(
-            state
-                .ingress
-                .pending
-                .complete(request_id, build_reply(200, "[]", b"").unwrap())
-        );
-        assert_eq!(task.await.unwrap().status(), StatusCode::OK);
-        for exhausted in [u32::MAX as u64 + 1, u64::MAX, 0] {
-            state
-                .ingress
-                .next_request_id
-                .store(exhausted, Ordering::Relaxed);
-            let response = forward_to_scene(
-                &state,
-                Bytes::new(),
-                state.in_flight.clone().try_acquire_owned().unwrap(),
-                tokio::time::Instant::now() + Duration::from_secs(60),
-            )
-            .await;
-            assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-            assert_eq!(
-                state.ingress.next_request_id.load(Ordering::Relaxed),
-                exhausted
+        for expected in [u64::from(u32::MAX), 1] {
+            let task_state = state.clone();
+            let task = tokio::spawn(async move {
+                forward_to_scene(
+                    &task_state,
+                    Bytes::new(),
+                    task_state.in_flight.clone().try_acquire_owned().unwrap(),
+                    tokio::time::Instant::now() + Duration::from_secs(60),
+                )
+                .await
+            });
+            let ProcessEvent::HttpRequest { request_id, .. } = next_event(&receiver).await else {
+                panic!("expected HTTP event");
+            };
+            assert_eq!(request_id, expected);
+            assert!(
+                state
+                    .ingress
+                    .pending
+                    .complete(request_id, build_reply(200, "[]", b"").unwrap())
             );
-            assert!(state.ingress.pending.lock().is_empty());
+            assert_eq!(task.await.unwrap().status(), StatusCode::OK);
             assert_eq!(state.in_flight.available_permits(), 1);
         }
+    }
+
+    /// 连接满额时新连接立即关闭且不进入 Scene；旧连接结束后名额恢复。
+    /// At capacity a new connection closes at once without reaching the Scene; capacity returns once an old one ends.
+    #[tokio::test]
+    async fn connection_limit_closes_excess_connections_before_spawning() {
+        let port = free_port();
+        let (ingress, receiver) = test_ingress();
+        let endpoints = start_http_endpoints_with_env(
+            &[scene_with_http(
+                port,
+                serde_json::json!({
+                    "port": 1, "maxInFlight": 1, "maxConnections": 1, "authTokenEnv": "TEST_TOKEN",
+                }),
+            )],
+            &ingress,
+            &test_env,
+        )
+        .unwrap();
+        let mut holder = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        holder.write_all(b"GET / HTTP/1.1\r\nHost:").await.unwrap();
+        // 等待持有者确实占住名额，避免与其 accept 竞争。 / Wait until the holder owns the slot to avoid racing its accept.
+        let probe = "GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n";
+        let rejected = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let response = raw_request_lossy(port, probe).await;
+                if response.is_empty() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        assert!(
+            rejected.is_ok(),
+            "excess connection must be closed without a response"
+        );
+        drop(holder);
+        let admitted = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let response = raw_request_lossy(port, probe).await;
+                if response.starts_with("HTTP/1.1 401") {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        assert!(
+            admitted.is_ok(),
+            "capacity must return after the holder closes"
+        );
+        assert!(receiver.try_recv().is_err());
+        endpoints.stop(Duration::from_secs(2)).await.unwrap();
+    }
+
+    /// 对端不读时写出在期限后失败，而不是永久挂起。 / A write to a peer that never reads fails after the bound instead of hanging.
+    #[tokio::test]
+    async fn stalled_write_fails_after_the_bound_and_progress_resets_it() {
+        // 保留不读的对端，使写出只会阻塞而不是报对端关闭。 / Keep the unread peer alive so writes block instead of failing as closed.
+        let (_unread_peer, server) = tokio::io::duplex(16);
+        let mut guarded = WriteStallGuard::new(server, Duration::from_millis(50));
+        let started = tokio::time::Instant::now();
+        let error = tokio::time::timeout(Duration::from_secs(2), guarded.write_all(&[0; 1024]))
+            .await
+            .expect("stalled write must not hang")
+            .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() >= Duration::from_millis(50));
+
+        // 慢但持续的读取方每次都推进写出，总耗时超过期限也不应失败。
+        // A slow but steady reader keeps progressing, so the write succeeds even though it outlasts the bound.
+        let (mut reader, server) = tokio::io::duplex(16);
+        let mut guarded = WriteStallGuard::new(server, Duration::from_millis(50));
+        let drain = tokio::spawn(async move {
+            let mut buffer = [0; 16];
+            let mut total = 0;
+            while total < 256 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                total += reader.read(&mut buffer).await.unwrap();
+            }
+        });
+        let started = tokio::time::Instant::now();
+        tokio::time::timeout(Duration::from_secs(2), guarded.write_all(&[1; 256]))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(started.elapsed() > Duration::from_millis(50));
+        drain.await.unwrap();
+    }
+
+    /// 超出连接读缓冲的请求头被 hyper 拒绝，不会无限占用内存。 / Request heads beyond the read buffer are rejected by hyper instead of growing memory.
+    #[tokio::test]
+    async fn oversized_request_head_is_rejected() {
+        let port = free_port();
+        let (ingress, receiver) = test_ingress();
+        let endpoints = start_http_endpoints(
+            &[scene_with_http(port, serde_json::json!({ "port": 1 }))],
+            &ingress,
+        )
+        .unwrap();
+        // hyper 只在缓冲满后停止继续读取，单次读取可略超上限，因此用数倍长度验证拒绝。
+        // hyper stops reading only once the buffer is full and one read may overshoot, so test with several times the cap.
+        let huge = "a".repeat(MAX_CONNECTION_READ_BUFFER_BYTES * 4);
+        let response = tokio::time::timeout(
+            Duration::from_secs(2),
+            raw_request_lossy(
+                port,
+                &format!("GET / HTTP/1.1\r\nHost: x\r\nX-Big: {huge}\r\nConnection: close\r\n\r\n"),
+            ),
+        )
+        .await
+        .expect("oversized head must close the connection promptly");
+        // 服务端未读完就关闭时，平台可能以 reset 代替 431。 / Closing with unread input may surface as a reset instead of 431.
+        assert!(
+            response.is_empty() || response.starts_with("HTTP/1.1 431"),
+            "{response}"
+        );
+        assert!(receiver.try_recv().is_err());
+        endpoints.stop(Duration::from_secs(2)).await.unwrap();
     }
 
     /// 在同一个 Runtime 内检查停机后的实际 Socket 与许可。 / Checks actual sockets and permits while the same runtime remains alive.
     #[tokio::test]
     async fn incomplete_body_times_out_and_shutdown_joins_connections() {
-        let (ingress, receiver) = test_ingress(1);
+        let (ingress, receiver) = test_ingress();
         let (shutdown, signal) = watch::channel(None);
         let state = test_state(ingress, signal.clone());
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1223,7 +1488,7 @@ mod tests {
             .build()
             .unwrap();
         let _guard = runtime.enter();
-        let (ingress, _receiver) = test_ingress(1);
+        let (ingress, _receiver) = test_ingress();
         let error = start_http_endpoints_with_env(
             &[scene_with_http(
                 free_port(),
@@ -1240,7 +1505,7 @@ mod tests {
 
     #[tokio::test]
     async fn partial_startup_failure_releases_bound_ports_before_returning() {
-        let (ingress, _receiver) = test_ingress(1);
+        let (ingress, _receiver) = test_ingress();
         for missing_token in [false, true] {
             let port = free_port();
             let first = scene_with_http(port, serde_json::json!({ "port": 1 }));
@@ -1263,7 +1528,7 @@ mod tests {
 
     #[tokio::test]
     async fn supervision_preserves_failure_and_stop_joins_other_listeners() {
-        let (ingress, _receiver) = test_ingress(1);
+        let (ingress, _receiver) = test_ingress();
         let mut endpoints = start_http_endpoints(&[], &ingress).unwrap();
         let permits = Arc::new(Semaphore::new(1));
         let permit = permits.clone().try_acquire_owned().unwrap();
@@ -1288,7 +1553,7 @@ mod tests {
 
     #[tokio::test]
     async fn supervision_reports_panics_and_unexpected_listener_exit() {
-        let (ingress, _receiver) = test_ingress(1);
+        let (ingress, _receiver) = test_ingress();
         for panic in [false, true] {
             let mut endpoints = start_http_endpoints(&[], &ingress).unwrap();
             endpoints.tasks.spawn(async move {
@@ -1312,7 +1577,7 @@ mod tests {
 
     #[tokio::test]
     async fn empty_or_normally_stopped_endpoints_do_not_signal_failure() {
-        let (ingress, _receiver) = test_ingress(1);
+        let (ingress, _receiver) = test_ingress();
         let mut endpoints = start_http_endpoints(&[], &ingress).unwrap();
         assert!(
             tokio::time::timeout(Duration::from_millis(10), endpoints.wait_failure())
@@ -1331,7 +1596,7 @@ mod tests {
 
     #[tokio::test]
     async fn request_stop_only_tightens_shared_deadline() {
-        let (ingress, _receiver) = test_ingress(1);
+        let (ingress, _receiver) = test_ingress();
         let endpoints = start_http_endpoints(&[], &ingress).unwrap();
         let mut signal = endpoints.shutdown.subscribe();
         let now = tokio::time::Instant::now();
@@ -1367,6 +1632,15 @@ mod tests {
         String::from_utf8(response).unwrap()
     }
 
+    /// 容忍写入失败和 reset，返回关闭前收到的内容。 / Tolerates write failures and resets, returning what arrived before closure.
+    async fn raw_request_lossy(port: u16, request: &str) -> String {
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let _ = stream.write_all(request.as_bytes()).await;
+        let mut response = Vec::new();
+        let _ = stream.read_to_end(&mut response).await;
+        String::from_utf8_lossy(&response).into_owned()
+    }
+
     fn decode_payload(payload: &[u8]) -> (serde_json::Value, Vec<u8>) {
         let meta_len = u32::from_le_bytes(payload[..4].try_into().unwrap()) as usize;
         let meta = serde_json::from_slice(&payload[4..4 + meta_len]).unwrap();
@@ -1376,7 +1650,8 @@ mod tests {
     #[tokio::test]
     async fn forwards_request_to_scene_and_returns_reply() {
         let port = free_port();
-        let (ingress, receiver) = test_ingress(41);
+        let (ingress, receiver) = test_ingress();
+        ingress.pending.lock().last_id = 40;
         let endpoints = start_http_endpoints(
             &[scene_with_http(
                 port,
@@ -1435,7 +1710,7 @@ mod tests {
     #[tokio::test]
     async fn rejects_without_entering_scene() {
         let port = free_port();
-        let (ingress, receiver) = test_ingress(1);
+        let (ingress, receiver) = test_ingress();
         let endpoints = start_http_endpoints_with_env(
             &[scene_with_http(
                 port,
@@ -1498,7 +1773,7 @@ mod tests {
     #[tokio::test]
     async fn strips_token_and_times_out_without_reply() {
         let port = free_port();
-        let (ingress, receiver) = test_ingress(1);
+        let (ingress, receiver) = test_ingress();
         let pending = ingress.pending.clone();
         let endpoints = start_http_endpoints_with_env(
             &[scene_with_http(
@@ -1531,19 +1806,12 @@ mod tests {
         let forwarded = meta["headers"].to_string().to_ascii_lowercase();
         assert!(!forwarded.contains("authorization") && !forwarded.contains("secret"));
         assert!(!pending.is_pending(request_id));
-        assert_eq!(
-            pending.lock().len(),
-            1,
-            "timeout must retain execution admission"
-        );
+        assert_eq!(pending.len(), 1, "timeout must retain execution admission");
         assert!(
             !pending.complete(request_id, build_reply(200, "[]", b"").unwrap()),
             "a late reply must be dropped"
         );
-        assert!(
-            pending.lock().is_empty(),
-            "late completion must release admission"
-        );
+        assert!(pending.len() == 0, "late completion must release admission");
         endpoints.stop(Duration::from_secs(2)).await.unwrap();
     }
 }
