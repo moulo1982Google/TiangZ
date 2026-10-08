@@ -60,3 +60,5 @@ low-latency 模式由约 18ms 降至 0.3–1.0ms。空闲 10 秒进程 CPU 与�
 rc1 的 59ms 中已包含真实存储耗时（约 2–7ms），被 idle tick 掩盖；本实现后剩下的就是存储本身的耗时。low-latency 下 rc1 约 17–19ms。全部请求成功，DBProxy 日志无错误，两个消费组均已在 Redis 中创建。
 
 未覆盖：Linux 与 release 构建；完整 `npm run verify`；高负载下按忙闲合并叫醒以降低每请求 CPU 的优化。
+
+合入 `release/v0.7.0-rc1`（合并提交 d30d8498，含 HTTP 集成）后复测：Rust `cargo test --bin TiangZ` 258/258，`cargo clippy --all-targets -- -D warnings` 与 `cargo fmt --check` 通过；`npm run verify:quick` check 8/8、quick 34/35，唯一失败仍为依赖 PowerShell 7 的 `spawn pwsh ENOENT` 用例。宿主 SHA-256 f9396f93…（debug）。`v0.7.0-rc1` 标签仍指向 bf25dddf，本修正随下一个 0.7 版本发布。
