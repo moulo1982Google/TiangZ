@@ -1,5 +1,9 @@
 # 2026-09-16：先选业务工程，再写模块
 
+## 2026-10-09：FFI 回调持有裸指针，不等于可以修改共享引用
+
+稳定的 Box 只保证地址和生命期。只要还有普通共享引用在用（例如调用 V8 期间触发 GC 回调），回调就不能从裸指针构造 `&mut` 去改非 `UnsafeCell` 字段，同线程也不行。用 `Cell`/`RefCell` 做内部可变；不要用 unsafe 强转、删除指标或换锁来掩盖。真实 V8 回归只验证集成，不等于 Miri 证明。诊断探针在 Windows 回环上快速建连会遇到客户端 `set_nodelay` 返回 10022，先核对服务端计数，不要把它当作引擎故障。见 [TCP 诊断](../testing/tcp-task-diagnostics.md)。 / A stable Box guarantees address and lifetime only; reentrant FFI writes need interior mutability while a shared reference is live.
+
 ## 2026-10-08：异步结果在空闲进程里多等一个 tick
 
 现象：空闲 Process（adaptive）中，async Handler（即使不 await）回包约 59–61ms，DBProxy 读写与模块 NativeWorkers 结果约 60ms，low-latency 约 18ms；同步 Handler 约 0.5ms。worker 计算期间，同进程其他请求 p99 约 16ms。现有 Scene 指标即可看到：`handler_ms=60 max_handler_ms=66` 而 Handler 本身几乎不耗时。有持续流量时被网络帧叫醒掩盖，压测不易发现。
