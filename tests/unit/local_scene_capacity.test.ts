@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { EntryScene } from "../../app/core/process/EntryScene";
+import { EntryScene, entrySceneInternals } from "../../app/core/process/EntryScene";
 import { ProcessRuntime } from "../../app/core/process/ProcessRuntime";
 import { entryScene } from "../../app/core/process/registry";
 import type { RuntimeEntrySceneConfig } from "../../app/core/process/types";
@@ -145,7 +145,7 @@ test("disposing an ordered Scene releases unexecuted void and RPC nodes but not 
     await expect(target.dispatchLocalCall(frame(5000))).rejects.toMatchObject({ code: SystemErrCode.SceneNotFound });
     gate.resolve(); expect(await running).toMatchObject({ code: SystemErrCode.SceneNotFound });
     expect(f.host.LocalSceneMailboxPendingCount).toBe(0);
-    expect(Reflect.get(target, "recycledMailboxTasks")).toHaveLength(0);
+    expect(entrySceneInternals(target).recycledMailboxTasks).toHaveLength(0);
   } finally { gate.resolve(); await running; await Promise.all(pending); await f.runtime.stop(); }
 });
 

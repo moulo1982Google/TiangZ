@@ -60,7 +60,7 @@ export abstract class ActorUnit<
   TAwakeArgs extends unknown[] = [],
 > extends Unit<TAwakeArgs> implements ActorRuntimeEntity<TAwakeArgs> {
   readonly [ACTOR_RUNTIME_ENTITY] = true as const;
-  private actorLocationFenceToken = 0n;
+  #actorLocationFenceToken = 0n;
   protected readonly ctx: ActorContext;
 
   constructor(ctx: ActorContext) {
@@ -77,12 +77,12 @@ export abstract class ActorUnit<
     if (typeof token !== "bigint" || token < 0n || token > 0xffff_ffff_ffff_ffffn) {
       throw new Error(`invalid actor location fence token: ${token}`);
     }
-    this.actorLocationFenceToken = token;
+    this.#actorLocationFenceToken = token;
   }
 
   /** 校验外部路由代次；普通服务端Actor调用不携带该值。 / Validates an external route generation; ordinary server Actor calls carry none. */
   __matchesActorLocationFenceToken(token: bigint): boolean {
-    return token > 0n && token === this.actorLocationFenceToken;
+    return token > 0n && token === this.#actorLocationFenceToken;
   }
 
   /** 通过自身Mailbox调度一次性Timer。 / Schedules a one-shot Timer through this Unit's mailbox. */
@@ -172,7 +172,7 @@ export abstract class ActorUnit<
 
 @component()
 export class UnitComponent extends Component {
-  private readonly units = new Map<number, Unit<any[]>>();
+  readonly #units = new Map<number, Unit<any[]>>();
 
   /**
    * 以统一API创建Unit；@actor + ActorUnit走Actor路由，普通Unit走本地Entity所有权。
@@ -190,7 +190,7 @@ export class UnitComponent extends Component {
     if (!Number.isSafeInteger(unitId) || unitId <= 0) {
       throw new Error(`invalid unit id: ${unitId}`);
     }
-    if (this.units.has(unitId)) {
+    if (this.#units.has(unitId)) {
       throw new Error(`unit already exists: ${unitId}`);
     }
 
@@ -230,24 +230,24 @@ export class UnitComponent extends Component {
     if (unit.DomainScene() !== this.DomainScene()) {
       throw new Error(`unit ${unit.UnitId} belongs to another domain scene`);
     }
-    if (this.units.has(unit.UnitId)) {
+    if (this.#units.has(unit.UnitId)) {
       throw new Error(`unit already exists: ${unit.UnitId}`);
     }
-    this.units.set(unit.UnitId, unit);
+    this.#units.set(unit.UnitId, unit);
     unit.__setParent(this);
     return unit;
   }
 
   /** 按业务UnitId返回Unit，不执行Actor路由或目录查询。 / Returns a Unit by business UnitId without Actor routing or directory lookup. */
   Get<T extends Unit<any[]> = Unit<any[]>>(unitId: number): T | undefined {
-    return this.units.get(unitId) as T | undefined;
+    return this.#units.get(unitId) as T | undefined;
   }
 
   /** 获取当前Unit的稳定数组快照，可按运行时类过滤。 / Takes a stable Unit snapshot, optionally filtered by runtime class. */
   GetAll<T extends Unit<any[]> = Unit<any[]>>(
     ctor?: abstract new (...args: any[]) => T,
   ): readonly T[] {
-    const values = [...this.units.values()];
+    const values = [...this.#units.values()];
     return (ctor
       ? values.filter((unit): unit is T => unit instanceof ctor)
       : values) as T[];
@@ -255,10 +255,10 @@ export class UnitComponent extends Component {
 
   /** 从统一索引及其真实所有权路径移除Unit。Actor路由和本地Entity都立即失效。 / Removes a Unit from the shared index and its actual ownership path, invalidating Actor routing or local Entity identity immediately. */
   Remove(unitId: number): Unit<any[]> | undefined {
-    const unit = this.units.get(unitId);
+    const unit = this.#units.get(unitId);
     if (!unit) return undefined;
 
-    this.units.delete(unitId);
+    this.#units.delete(unitId);
     if (unit instanceof ActorUnit) {
       this.DomainScene<Scene>().DespawnActor(unitId);
     } else {
@@ -269,15 +269,15 @@ export class UnitComponent extends Component {
 
   /** 仅供ProcessHost在Actor Unit销毁时同步移除UnitId索引。 / Lets ProcessHost remove the UnitId index when an Actor Unit is despawned. */
   __detach(unitId: number): void {
-    this.units.delete(unitId);
+    this.#units.delete(unitId);
   }
 
   get Count(): number {
-    return this.units.size;
+    return this.#units.size;
   }
 
   protected override OnDestroy(): void {
-    for (const unitId of [...this.units.keys()]) this.Remove(unitId);
-    this.units.clear();
+    for (const unitId of [...this.#units.keys()]) this.Remove(unitId);
+    this.#units.clear();
   }
 }

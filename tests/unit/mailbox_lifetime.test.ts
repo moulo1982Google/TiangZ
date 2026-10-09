@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 import type { MaybePromise } from "../../app/core/async";
-import { EntryScene } from "../../app/core/process/EntryScene";
+import { EntryScene, entrySceneInternals } from "../../app/core/process/EntryScene";
 import { ProcessRuntime } from "../../app/core/process/ProcessRuntime";
 import { entryScene } from "../../app/core/process/registry";
 import type { RuntimeEntrySceneConfig } from "../../app/core/process/types";
@@ -26,8 +26,10 @@ const Transfer = defineRpc({ ...Work, name: "MailboxLifetime.Transfer", requestC
   routing: "actor-location", duringTransfer: "queue" });
 const rpcFrame = (value: number) => packFrame(Work.requestCode, Work.requestCodec.encode({ value, rpcId: value + 1 }));
 const messageFrame = (value: number) => packFrame(Message.msgcode, Message.codec.encode({ value }));
-const array = (owner: object, name: string): unknown[] => Reflect.get(owner, name) as unknown[];
-const connectionState = (owner: object): object => Reflect.get(owner, "connections") as object;
+// EntryScene 内部状态是 ES 私有字段，经测试入口读取。 / EntryScene internals are ES private; read them through the test entry.
+const internal = (owner: object): object => owner instanceof EntryScene ? entrySceneInternals(owner) : owner;
+const array = (owner: object, name: string): unknown[] => Reflect.get(internal(owner), name) as unknown[];
+const connectionState = (owner: object): object => Reflect.get(internal(owner), "connections") as object;
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>(complete => { resolve = complete; });
@@ -239,7 +241,7 @@ test.each([false, true])("Scene disposal prevents late network output and termin
   runtime.pushHostFrame(0, 1, transfer
     ? packFrame(Transfer.requestCode, Transfer.requestCodec.encode({ rpcId: 1, value: 0 })) : rpcFrame(0));
   expect(scene.__pumpMailbox(1)).toBe(1);
-  const running = Reflect.get(scene, "orderedTask") as Promise<void>;
+  const running = Reflect.get(internal(scene), "orderedTask") as Promise<void>;
   try {
     expect(running).toBeInstanceOf(Promise);
     expect(scene.__canCommitHotfix()).toBe(false);
@@ -250,7 +252,7 @@ test.each([false, true])("Scene disposal prevents late network output and termin
     expect(array(scene, "dataIngress")).toHaveLength(0);
     expect(array(scene, "controlIngress")).toHaveLength(0);
     expect((Reflect.get(connectionState(scene), "asyncIngressSources") as Map<number, unknown>).size).toBe(0);
-    expect((Reflect.get(scene, "actorTransferBuffers") as Map<number, unknown>).size).toBe(0);
+    expect((Reflect.get(internal(scene), "actorTransferBuffers") as Map<number, unknown>).size).toBe(0);
     if (!transfer) expect(scene.__canCommitHotfix()).toBe(false);
     gate.resolve(); await running;
     expect(scene.__completeUpdate(0, false).outbound).toHaveLength(0);
@@ -296,8 +298,8 @@ test.each([
   runtime.pushHostFrame(0, 77, rpcFrame(0));
   scene.__pumpMailbox(1);
   const running = unordered
-    ? [...(Reflect.get(scene, "unorderedTasks") as Set<Promise<void>>)][0]!
-    : Reflect.get(scene, "orderedTask") as Promise<void>;
+    ? [...(Reflect.get(internal(scene), "unorderedTasks") as Set<Promise<void>>)][0]!
+    : Reflect.get(internal(scene), "orderedTask") as Promise<void>;
   let now: ReturnType<typeof vi.spyOn> | undefined;
   try {
     expect(scene.seen).toEqual([0]);
@@ -318,7 +320,7 @@ test("a disconnected request cannot remove the pending response state of a reuse
   const first = deferred(), next = deferred();
   scene.waits.set(0, first.promise); scene.waits.set(1, next.promise);
   runtime.pushHostFrame(0, 77, rpcFrame(0)); scene.__pumpMailbox(1);
-  const pending = Reflect.get(scene, "unorderedTasks") as Set<Promise<void>>;
+  const pending = Reflect.get(internal(scene), "unorderedTasks") as Set<Promise<void>>;
   const old = [...pending][0]!;
   runtime.pushHostDisconnect(0, 77); scene.__pumpMailbox(1);
   const baseline = performance.now();
@@ -345,7 +347,7 @@ test("disconnecting one source preserves another source's actual response", asyn
   scene.waits.set(0, first.promise); scene.waits.set(1, other.promise);
   runtime.pushHostFrame(0, 77, rpcFrame(0)); runtime.pushHostFrame(0, 78, rpcFrame(1));
   scene.__pumpMailbox(2);
-  const running = [...(Reflect.get(scene, "unorderedTasks") as Set<Promise<void>>)];
+  const running = [...(Reflect.get(internal(scene), "unorderedTasks") as Set<Promise<void>>)];
   try {
     runtime.pushHostDisconnect(0, 77); scene.__pumpMailbox(1);
     first.resolve(); other.resolve(); await Promise.all(running);
@@ -365,7 +367,7 @@ test("one completed request cannot release another active request's shared sourc
   scene.waits.set(0, first.promise); scene.waits.set(1, second.promise);
   runtime.pushHostFrame(0, 77, rpcFrame(0)); runtime.pushHostFrame(0, 77, rpcFrame(1));
   scene.__pumpMailbox(2);
-  const [firstCall, secondCall] = [...(Reflect.get(scene, "unorderedTasks") as Set<Promise<void>>)];
+  const [firstCall, secondCall] = [...(Reflect.get(internal(scene), "unorderedTasks") as Set<Promise<void>>)];
   let now: ReturnType<typeof vi.spyOn> | undefined;
   try {
     first.resolve(); await firstCall;
