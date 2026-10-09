@@ -1,5 +1,15 @@
 # 版本记录
 
+## 未发布
+
+### 修正
+
+- **V8 GC 统计不再违反 Rust 引用规则。** `flush_runtime_batch` 持有统计对象的共享引用时可能触发 V8 GC，GC 回调却从裸指针构造可变引用写入同一对象（0.6.4 起存在，同线程也不允许）。统计字段改为 `Cell`，回调只取共享引用；Box 与 isolate 的创建、注销、销毁顺序和指标名称不变。新增真实 V8 GC 回归测试（触发、收尾、注销后不再写入）。没有证据表明它与 2026-09 苟道三国登录长稳中的原生崩溃有关。
+
+### 测试与工具
+
+- 新增只在 Linux 测试中编译的 TCP 生命周期探针 `process::transport_diagnostics`（默认 ignored，显式运行）和 GDB 监视脚本 `tools/diagnostics/watch_tcp_state.py`，用于定位原生 TCP 任务异常；正式行为不变。记录见 `docs/testing/tcp-task-diagnostics.md`。
+
 ## 0.7.1 — 2026-10-08（正式版，标签 `v0.7.1`）
 
 修补 0.7.0 发布时记录的问题。依赖：DBProxy `v0.7.0`（不变）、Developer Tools `v0.16.2`（Core 0.16.2）、Native Language `v0.17.2`（Core 0.17.2），两个工具仓库的开发与打包依赖审计已清零；AI 插件 0.3.1 用 Core 0.16.2 重新分发 MCP。协议、配置字段与 Stable API 不变；需重建宿主并重启。

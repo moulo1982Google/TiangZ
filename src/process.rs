@@ -25,7 +25,12 @@ mod ingress_buffer_tests;
 #[cfg(test)]
 #[path = "process_lifecycle_tests.rs"]
 mod lifecycle_tests;
+// 原生 TCP 诊断探针配合 Linux GDB 使用；Windows 回环快速复用端口时客户端 setsockopt 会失败。
+// Native TCP probes pair with Linux GDB; Windows loopback port reuse breaks the client setsockopt.
+#[cfg(all(test, target_os = "linux"))]
+mod transport_diagnostics;
 
+use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
@@ -319,9 +324,11 @@ struct UpdateResult {
 
 #[derive(Default)]
 struct V8GcMetrics {
-    count: u64,
-    total_duration: Duration,
-    started_at: Option<Instant>,
+    // V8可在持有统计共享引用的调用中触发GC；同一业务线程通过Cell更新，不构造别名可变引用。
+    // V8 may collect while a shared metrics reference is live; Cell permits same-thread updates without aliased mutable references.
+    count: Cell<u64>,
+    total_duration: Cell<Duration>,
+    started_at: Cell<Option<Instant>>,
 }
 
 extern "C" fn v8_gc_prologue(
@@ -330,8 +337,10 @@ extern "C" fn v8_gc_prologue(
     _flags: deno_core::v8::GCCallbackFlags,
     data: *mut c_void,
 ) {
-    let metrics = unsafe { &mut *(data as *mut V8GcMetrics) };
-    metrics.started_at = Some(Instant::now());
+    // 注册者保证Box地址稳定且比isolate存活更久，回调只在所属V8线程使用。
+    // The registering owner keeps this Box stable and alive beyond the isolate, on its V8 thread only.
+    let metrics = unsafe { &*data.cast::<V8GcMetrics>() };
+    metrics.started_at.set(Some(Instant::now()));
 }
 
 extern "C" fn v8_gc_epilogue(
@@ -340,10 +349,14 @@ extern "C" fn v8_gc_epilogue(
     _flags: deno_core::v8::GCCallbackFlags,
     data: *mut c_void,
 ) {
-    let metrics = unsafe { &mut *(data as *mut V8GcMetrics) };
-    metrics.count += 1;
+    // 生命周期与线程约束同prologue；只通过Cell写入共享对象。
+    // Follow the prologue lifetime/thread contract and mutate the shared object only through Cell.
+    let metrics = unsafe { &*data.cast::<V8GcMetrics>() };
+    metrics.count.set(metrics.count.get() + 1);
     if let Some(started_at) = metrics.started_at.take() {
-        metrics.total_duration += started_at.elapsed();
+        metrics
+            .total_duration
+            .set(metrics.total_duration.get() + started_at.elapsed());
     }
 }
 
@@ -1384,9 +1397,12 @@ fn run_process_runtime(
             .preflight(&js_event_loop, &mut preflight_runtime)
             .context("isolated Hotfix preflight failed")?;
     }
-    // This state must outlive the V8 isolate because V8 stores its raw pointer.
-    let mut gc_metrics = Box::<V8GcMetrics>::default();
-    let gc_metrics_ptr = (&mut *gc_metrics) as *mut V8GcMetrics as *mut c_void;
+    // 先创建统计Box，确保正常返回及提前失败时都在isolate之后销毁。
+    // Declare the stable metrics Box first so it outlives the isolate on success and early errors.
+    let gc_metrics = Box::<V8GcMetrics>::default();
+    let gc_metrics_ptr = (&*gc_metrics as *const V8GcMetrics)
+        .cast_mut()
+        .cast::<c_void>();
     let mut runtime = {
         let _guard = js_event_loop.enter();
         create_runtime(
@@ -2225,6 +2241,56 @@ fn flush_outbound(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gc_metrics_allow_shared_reads_across_real_v8_callbacks() {
+        // 顺序与正式宿主相同；强制真实GC后读取仍存活的共享引用，并验证注销。
+        // Match host ownership, collect with a live shared reference, and verify callback removal.
+        let metrics = Box::<V8GcMetrics>::default();
+        let data = (&*metrics as *const V8GcMetrics)
+            .cast_mut()
+            .cast::<c_void>();
+        // 与正式宿主相同，V8在已进入的Tokio事件循环中创建。 / As in the host, V8 is created inside an entered Tokio event loop.
+        let event_loop = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let _entered = event_loop.enter();
+        let mut runtime = create_runtime(false, 0).unwrap();
+        runtime.v8_isolate().add_gc_prologue_callback(
+            v8_gc_prologue,
+            data,
+            deno_core::v8::GCType::kGCTypeAll,
+        );
+        runtime.v8_isolate().add_gc_epilogue_callback(
+            v8_gc_epilogue,
+            data,
+            deno_core::v8::GCType::kGCTypeAll,
+        );
+        let collect = |metrics: &V8GcMetrics, runtime: &mut deno_core::JsRuntime| {
+            let before = metrics.count.get();
+            let elapsed = metrics.total_duration.get();
+            runtime.v8_isolate().low_memory_notification();
+            assert!(metrics.count.get() > before);
+            assert!(metrics.total_duration.get() >= elapsed);
+            assert!(metrics.started_at.get().is_none());
+        };
+        for _ in 0..3 {
+            collect(&metrics, &mut runtime);
+        }
+        runtime
+            .v8_isolate()
+            .remove_gc_prologue_callback(v8_gc_prologue, data);
+        runtime
+            .v8_isolate()
+            .remove_gc_epilogue_callback(v8_gc_epilogue, data);
+        let count = metrics.count.get();
+        let elapsed = metrics.total_duration.get();
+        runtime.v8_isolate().low_memory_notification();
+        assert_eq!(metrics.count.get(), count);
+        assert_eq!(metrics.total_duration.get(), elapsed);
+        assert!(metrics.started_at.get().is_none());
+    }
 
     #[test]
     fn http_ingress_retains_host_budget_through_batch_and_rejects_overload() {
