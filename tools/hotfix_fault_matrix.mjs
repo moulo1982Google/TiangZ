@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -710,6 +710,12 @@ try {
   for (const state of processes) {
     try { await stop(state); } catch (error) { report.status = "failed"; report.cleanupError = String(error); process.exitCode = 1; }
     await writeFile(path.join(directory, `${state.name}.log`), state.log);
+    // CI 只上传 temp/test-logs；失败时带出宿主日志尾部以便定位断连等原因。 / CI uploads only temp/test-logs; keep host log tails there on failure.
+    if (report.status === "failed") {
+      const logs = path.join(root, "temp/test-logs");
+      await mkdir(logs, { recursive: true });
+      await writeFile(path.join(logs, `hotfix-faults-${state.name}.log`), state.log.slice(-1024 * 1024));
+    }
   }
   if (proxy) await proxy.close();
   report.processes = processes.map(state => ({ name: state.name, exitCode: state.child.exitCode, forced: state.forced }));
