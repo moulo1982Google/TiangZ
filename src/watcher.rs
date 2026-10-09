@@ -10,7 +10,10 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
-use crate::config::{ProcessRestartConfig, RuntimeConfig, StartMachineConfig, load_runtime_config};
+use crate::config::{
+    ProcessRestartConfig, ProcessRestartPolicy, RuntimeConfig, StartMachineConfig,
+    load_runtime_config,
+};
 use crate::shutdown::{ParentControlCommand, receive_parent_control, spawn_stdin_control_receiver};
 
 struct ManagedChild {
@@ -23,6 +26,10 @@ struct ManagedChild {
     restart: Option<ProcessRestartConfig>,
     restart_attempts: VecDeque<Instant>,
     restart_at: Option<Instant>,
+    /// persistent 策略的连续崩溃次数；稳定运行 stableAfterMs 后清零。 / Consecutive failures for the persistent policy.
+    consecutive_failures: u32,
+    /// 最近一次启动（或尝试启动）的时间，用来判断是否已稳定运行。 / Last start or start attempt, used to detect stable runs.
+    started_at: Instant,
 }
 
 struct ConfiguredProcess {
@@ -121,6 +128,8 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
             restart: process_config.process.lifecycle.restart,
             restart_attempts: VecDeque::new(),
             restart_at: None,
+            consecutive_failures: 0,
+            started_at: Instant::now(),
         });
     }
 
@@ -173,10 +182,10 @@ fn validate_unique_process_identities(processes: &[ConfiguredProcess]) -> Result
     Ok(())
 }
 
-/// 同时等待运维停机信号与子进程状态；仅为显式配置的进程执行有界重启。
+/// 同时等待运维停机信号与子进程状态；仅为显式配置的进程重启（bounded 有界、persistent 持续隔离）。
 ///
-/// Waits for operator shutdown or child state changes and performs bounded
-/// restarts only for processes that explicitly opt in.
+/// Waits for operator shutdown or child state changes and restarts only processes that opt in
+/// (bounded within a budget, or persistent with escalating backoff that isolates the child).
 async fn wait_for_watcher_trigger(
     root: &Path,
     exe: &Path,
@@ -245,7 +254,9 @@ async fn wait_for_watcher_trigger(
                     child.observed_exit = Some(status);
                     child.control = None;
                     if schedule_restart(child) {
-                        tracing::error!(target: "tiangz::watcher", process = %child.name, %status, "child process exited unexpectedly; bounded restart scheduled");
+                        let delay_ms = child.restart_at.map_or(0, |at| at.saturating_duration_since(Instant::now()).as_millis());
+                        tracing::error!(target: "tiangz::watcher", process = %child.name, %status, policy = ?child.restart.as_ref().map(|r| r.policy),
+                            consecutive_failures = child.consecutive_failures, delay_ms, "child process exited unexpectedly; restart scheduled");
                         continue;
                     }
                     tracing::error!(target: "tiangz::watcher", process = %child.name, %status, "child process exited unexpectedly; restart disabled or exhausted");
@@ -272,11 +283,25 @@ fn spawn_child(exe: &Path, root: &Path, arg: &Path) -> Result<(Child, Option<Chi
     Ok((child, control))
 }
 
+/// 安排一次重启并返回 true；bounded 预算耗尽或未配置重启时返回 false（调用方整组收束）。
+/// persistent 永远返回 true，只隔离该进程。
+/// Schedules a restart; false means no restart (bounded budget exhausted or none configured). Persistent always restarts.
 fn schedule_restart(child: &mut ManagedChild) -> bool {
     let Some(restart) = &child.restart else {
         return false;
     };
     let now = Instant::now();
+    if restart.policy == ProcessRestartPolicy::Persistent {
+        let (delay, failures) = persistent_restart_delay(
+            &restart.backoff_schedule_ms,
+            Duration::from_millis(restart.stable_after_ms),
+            child.consecutive_failures,
+            now.saturating_duration_since(child.started_at),
+        );
+        child.consecutive_failures = failures;
+        child.restart_at = Some(now + delay);
+        return true;
+    }
     let window = Duration::from_millis(restart.window_ms);
     while child
         .restart_attempts
@@ -293,12 +318,29 @@ fn schedule_restart(child: &mut ManagedChild) -> bool {
     true
 }
 
+/// persistent 退避：上次运行达到 stable_after 时先清零；第 n 次连续崩溃用第 n 项，超出用最后一项。返回（等待时长，新的连续次数）。
+/// Persistent backoff: reset after a stable run, then use the n-th entry (last entry repeats). Returns (delay, failures).
+fn persistent_restart_delay(
+    schedule: &[u64],
+    stable_after: Duration,
+    failures: u32,
+    ran_for: Duration,
+) -> (Duration, u32) {
+    let failures = if ran_for >= stable_after { 0 } else { failures };
+    let index = (failures as usize).min(schedule.len().saturating_sub(1));
+    let delay = schedule.get(index).copied().unwrap_or(1_000);
+    (Duration::from_millis(delay), failures.saturating_add(1))
+}
+
 fn restart_child(
     child: &mut ManagedChild,
     exe: &Path,
     root: &Path,
     hotfix_candidate: Option<&Path>,
 ) -> Result<()> {
+    // 启动失败也算一次短命运行，连续次数继续累加，不会因旧的长运行时间被清零。
+    // A failed spawn counts as a short run, so it escalates instead of resetting.
+    child.started_at = Instant::now();
     let (process, control) = spawn_child(exe, root, &child.arg)?;
     child.child = process;
     child.control = control;
@@ -548,6 +590,29 @@ fn add_ip_token(ips: &mut HashSet<String>, token: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn persistent_backoff_escalates_repeats_last_and_resets_after_stable_run() {
+        let schedule = [1_000, 5_000, 30_000, 120_000];
+        let stable = Duration::from_secs(600);
+        let crashed_quickly = Duration::from_secs(2);
+        let mut failures = 0;
+        let mut delays = Vec::new();
+        for _ in 0..6 {
+            let (delay, next) =
+                persistent_restart_delay(&schedule, stable, failures, crashed_quickly);
+            delays.push(delay.as_millis());
+            failures = next;
+        }
+        assert_eq!(delays, [1_000, 5_000, 30_000, 120_000, 120_000, 120_000]);
+        assert_eq!(failures, 6);
+        // 稳定运行满 10 分钟后再崩溃，从第一档重新开始。 / A crash after a stable run starts over.
+        let (delay, next) = persistent_restart_delay(&schedule, stable, failures, stable);
+        assert_eq!((delay.as_millis(), next), (1_000, 1));
+        // 单项退避表一直使用该项。 / A single-entry schedule always uses that entry.
+        let (delay, _) = persistent_restart_delay(&[2_000], stable, 9, crashed_quickly);
+        assert_eq!(delay.as_millis(), 2_000);
+    }
 
     fn configured(name: &str, origin_server_id: u16, worker_id: u8) -> ConfiguredProcess {
         let config: RuntimeConfig = serde_json::from_value(serde_json::json!({

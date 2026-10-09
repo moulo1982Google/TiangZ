@@ -227,12 +227,32 @@ pub struct HotfixOperationsConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessRestartConfig {
+    /// 省略为 bounded（与 0.7.1 相同）；persistent 永不因该进程停止整组。 / Defaults to bounded; persistent never stops the group for this child.
+    #[serde(default)]
+    pub policy: ProcessRestartPolicy,
     #[serde(default = "default_restart_max_attempts")]
     pub max_attempts: u32,
     #[serde(default = "default_restart_window_ms")]
     pub window_ms: u64,
     #[serde(default = "default_restart_backoff_ms")]
     pub backoff_ms: u64,
+    /// persistent：第 n 次连续崩溃用第 n 项退避，超出后一直用最后一项。 / Persistent backoff per consecutive failure; the last entry repeats.
+    #[serde(default = "default_restart_backoff_schedule_ms")]
+    pub backoff_schedule_ms: Vec<u64>,
+    /// persistent：重启后连续运行这么久，连续崩溃计数清零。 / Persistent: running this long resets the consecutive-failure count.
+    #[serde(default = "default_restart_stable_after_ms")]
+    pub stable_after_ms: u64,
+}
+
+/// 子进程意外退出后的重启策略。 / Restart policy after an unexpected child exit.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProcessRestartPolicy {
+    /// 时间窗内有限次数、固定退避；预算耗尽后整组失败收束。 / Limited attempts per window; the group stops when exhausted.
+    #[default]
+    Bounded,
+    /// 按退避表一直重试，只隔离该进程。 / Retries forever with escalating backoff, isolating the child.
+    Persistent,
 }
 
 impl Default for ProcessLifecycleConfig {
@@ -737,6 +757,14 @@ fn default_restart_backoff_ms() -> u64 {
     1_000
 }
 
+fn default_restart_backoff_schedule_ms() -> Vec<u64> {
+    vec![1_000, 5_000, 30_000, 120_000]
+}
+
+fn default_restart_stable_after_ms() -> u64 {
+    600_000
+}
+
 fn default_dbproxy_auth_token_env() -> String {
     "TIANGZ_DBPROXY_AUTH_TOKEN".to_string()
 }
@@ -1098,6 +1126,20 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
         }
         if !(1_000..=120_000).contains(&restart.backoff_ms) {
             bail!("process lifecycle.restart.backoffMs must be between 1000 and 120000");
+        }
+        let schedule = &restart.backoff_schedule_ms;
+        if !(1..=10).contains(&schedule.len())
+            || schedule
+                .iter()
+                .any(|delay| !(1_000..=600_000).contains(delay))
+            || schedule.windows(2).any(|pair| pair[1] < pair[0])
+        {
+            bail!(
+                "process lifecycle.restart.backoffScheduleMs must have 1..=10 non-decreasing entries between 1000 and 600000"
+            );
+        }
+        if !(10_000..=86_400_000).contains(&restart.stable_after_ms) {
+            bail!("process lifecycle.restart.stableAfterMs must be between 10000 and 86400000");
         }
     }
     if !config.process.network.uring_entries.is_power_of_two()
@@ -2393,6 +2435,78 @@ mod tests {
         assert_eq!(defaults.lifecycle.stop_timeout_ms, 10_000);
         assert_eq!(defaults.lifecycle.hotfix_reload_timeout_ms, 3_000);
         assert!(defaults.lifecycle.restart.is_none());
+        assert_eq!(
+            restart.policy,
+            ProcessRestartPolicy::Bounded,
+            "omitted policy keeps 0.7.1 semantics"
+        );
+    }
+
+    #[test]
+    fn parses_and_validates_persistent_restart_policy() {
+        let parsed: ProcessConfig = serde_json::from_str(
+            r#"{
+                "name": "gate1",
+                "lifecycle": { "restart": { "policy": "persistent", "backoffScheduleMs": [1000, 2000], "stableAfterMs": 30000 } }
+            }"#,
+        )
+        .unwrap();
+        let restart = parsed.lifecycle.restart.clone().unwrap();
+        assert_eq!(restart.policy, ProcessRestartPolicy::Persistent);
+        assert_eq!(restart.backoff_schedule_ms, vec![1_000, 2_000]);
+        assert_eq!(restart.stable_after_ms, 30_000);
+        let defaults: ProcessConfig = serde_json::from_str(
+            r#"{ "name": "gate2", "lifecycle": { "restart": { "policy": "persistent" } } }"#,
+        )
+        .unwrap();
+        let defaulted = defaults.lifecycle.restart.unwrap();
+        assert_eq!(
+            defaulted.backoff_schedule_ms,
+            vec![1_000, 5_000, 30_000, 120_000]
+        );
+        assert_eq!(defaulted.stable_after_ms, 600_000);
+        assert!(
+            serde_json::from_str::<ProcessConfig>(
+                r#"{ "name": "x", "lifecycle": { "restart": { "policy": "forever" } } }"#
+            )
+            .is_err()
+        );
+
+        let validate = |schedule: Vec<u64>, stable_after_ms: u64| {
+            let mut process = process(None);
+            let mut restart = parsed.lifecycle.restart.clone().unwrap();
+            restart.backoff_schedule_ms = schedule;
+            restart.stable_after_ms = stable_after_ms;
+            process.lifecycle.restart = Some(restart);
+            validate_runtime_config(&RuntimeConfig {
+                process,
+                scenes: vec![scene("gate", 7201)],
+                known_scenes: vec![],
+            })
+        };
+        validate(vec![1_000, 5_000, 30_000, 120_000], 600_000).unwrap();
+        for bad in [
+            vec![],
+            vec![999],
+            vec![600_001],
+            vec![5_000, 1_000],
+            vec![1_000; 11],
+        ] {
+            assert!(
+                validate(bad, 600_000)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("backoffScheduleMs")
+            );
+        }
+        for bad in [9_999, 86_400_001] {
+            assert!(
+                validate(vec![1_000], bad)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("stableAfterMs")
+            );
+        }
     }
 
     #[test]
