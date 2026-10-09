@@ -132,6 +132,9 @@ interface PendingLatestActorLocationFrame {
   frame: Uint8Array;
 }
 
+// 由 EntryScene 的 static 块赋值；必须声明在类之前，避免暂时性死区。 / Assigned by the EntryScene static block; declared before the class to avoid the TDZ.
+let readEntrySceneInternals: (scene: EntryScene) => EntrySceneInternals;
+
 export abstract class EntryScene extends Scene {
   private static readonly MAX_RECYCLED_MAILBOX_TASKS = 64;
   private static readonly MAX_UNORDERED_IN_FLIGHT = 4096;
@@ -141,27 +144,27 @@ export abstract class EntryScene extends Scene {
   private static readonly MAX_TRANSFER_WAIT_MS = 3_000;
   private static readonly LATEST_ACTOR_FORWARD_WINDOW_MS = 20;
   protected readonly registry: ProtocolRegistry;
-  private readonly actorRegistry: ProtocolRegistry;
+  readonly #actorRegistry: ProtocolRegistry;
   protected readonly ctx: SceneCallContext;
   readonly scenes: SceneMessageHelper;
-  private readonly processHost: ProcessHost;
+  readonly #processHost: ProcessHost;
   protected readonly actorLocations = new ActorLocationDirectory();
   protected readonly mailbox: SceneMailboxType = "ordered";
-  private readonly httpRoutes = new Map<string, (request: HttpRequest) => MaybePromise<HttpResponse>>();
-  private readonly httpMethodsByPath = new Map<string, string[]>();
-  private readonly controlIngress: (QueuedEvent | undefined)[] = [];
-  private controlIngressHead = 0;
-  private readonly dataIngress: (QueuedEvent | undefined)[] = [];
-  private dataIngressHead = 0;
-  private consecutiveDataIngress = 0;
-  private readonly outboundControl: OutboundBatch[] = [];
-  private readonly outboundReliable: OutboundBatch[] = [];
-  private readonly outboundLatest: OutboundBatch[] = [];
+  readonly #httpRoutes = new Map<string, (request: HttpRequest) => MaybePromise<HttpResponse>>();
+  readonly #httpMethodsByPath = new Map<string, string[]>();
+  readonly #controlIngress: (QueuedEvent | undefined)[] = [];
+  #controlIngressHead = 0;
+  readonly #dataIngress: (QueuedEvent | undefined)[] = [];
+  #dataIngressHead = 0;
+  #consecutiveDataIngress = 0;
+  readonly #outboundControl: OutboundBatch[] = [];
+  readonly #outboundReliable: OutboundBatch[] = [];
+  readonly #outboundLatest: OutboundBatch[] = [];
   /** 去重并保留请求顺序，随本 Scene 的出站帧交付关闭。 / Deduplicates close requests in order and delivers them with this Scene's outbound frames. */
-  private readonly pendingCloses = new Set<number>();
-  private outboundReliableEnqueued = 0;
-  private outboundLatestEnqueued = 0;
-  private readonly outboundLaneDepths = {
+  readonly #pendingCloses = new Set<number>();
+  #outboundReliableEnqueued = 0;
+  #outboundLatestEnqueued = 0;
+  readonly #outboundLaneDepths = {
     control: 0,
     reliable: 0,
     latest: 0,
@@ -171,9 +174,9 @@ export abstract class EntryScene extends Scene {
     maxLatest: 0,
     maxTotal: 0,
   };
-  private mailboxTaskHead = 0;
-  private readonly recycledMailboxTasks: MailboxTask[] = [];
-  private readonly mailboxMetrics = {
+  #mailboxTaskHead = 0;
+  readonly #recycledMailboxTasks: MailboxTask[] = [];
+  readonly #mailboxMetrics = {
     fastPathCalls: 0,
     queuedCalls: 0,
     asyncCalls: 0,
@@ -183,9 +186,9 @@ export abstract class EntryScene extends Scene {
     queuedDepth: 0,
     maxQueuedDepth: 0,
   };
-  private readonly connections = new EntrySceneConnections();
-  private readonly actorTransferBuffers = new Map<number, ActorTransferBuffer>();
-  private readonly actorTransferMetrics = {
+  readonly #connections = new EntrySceneConnections();
+  readonly #actorTransferBuffers = new Map<number, ActorTransferBuffer>();
+  readonly #actorTransferMetrics = {
     started: 0,
     completed: 0,
     cancelled: 0,
@@ -195,14 +198,14 @@ export abstract class EntryScene extends Scene {
     dropped: 0,
     overloaded: 0,
   };
-  private readonly latestActorLocationFrames = new Map<
+  readonly #latestActorLocationFrames = new Map<
     number,
     Map<number, PendingLatestActorLocationFrame>
   >();
-  private latestActorLocationFrameCount = 0;
-  private actorLocationFenceRejections = 0;
-  private latestActorLocationFlushAtMs: number | undefined;
-  private readonly latestActorLocationMetrics = {
+  #latestActorLocationFrameCount = 0;
+  #actorLocationFenceRejections = 0;
+  #latestActorLocationFlushAtMs: number | undefined;
+  readonly #latestActorLocationMetrics = {
     queued: 0,
     coalesced: 0,
     forwarded: 0,
@@ -211,14 +214,14 @@ export abstract class EntryScene extends Scene {
     failedFrames: 0,
     dropped: 0,
   };
-  private readonly unorderedTasks = new Set<Promise<void>>();
-  private orderedTask: Promise<void> | undefined;
-  private mailboxBusy = false;
-  private mailboxClosed = false;
-  private mailboxInFlight = 0;
-  private localMailboxPendingCount = 0;
-  private readonly mailboxTasks: (MailboxTask | undefined)[] = [];
-  private readonly metrics = {
+  readonly #unorderedTasks = new Set<Promise<void>>();
+  #orderedTask: Promise<void> | undefined;
+  #mailboxBusy = false;
+  #mailboxClosed = false;
+  #mailboxInFlight = 0;
+  #localMailboxPendingCount = 0;
+  readonly #mailboxTasks: (MailboxTask | undefined)[] = [];
+  readonly #metrics = {
     processedFrames: 0,
     failedFrames: 0,
     protocolSuccesses: 0,
@@ -236,14 +239,30 @@ export abstract class EntryScene extends Scene {
     totalHandlerCostMs: 0,
     maxAsyncInFlight: 0,
   };
-  private readonly latencies: LatencyRecorder;
-  private readonly knownRpcsByCode = new Map<number, AnyRpcDescriptor>();
-  private readonly knownMessagesByCode = new Map<number, AnyMessageDescriptor>();
-  private readonly registeredRpcHandlers = new Map<number, string>();
-  private readonly registeredMessageHandlers = new Map<number, string>();
-  private lifecycleState: "created" | "started" | "ready" | "stopping" | "stopped" = "created";
-  private stopPromise: Promise<void> | undefined;
-  private sessionComponent: SessionComponent | undefined;
+  readonly #latencies: LatencyRecorder;
+  readonly #knownRpcsByCode = new Map<number, AnyRpcDescriptor>();
+  readonly #knownMessagesByCode = new Map<number, AnyMessageDescriptor>();
+  readonly #registeredRpcHandlers = new Map<number, string>();
+  readonly #registeredMessageHandlers = new Map<number, string>();
+  #lifecycleState: "created" | "started" | "ready" | "stopping" | "stopped" = "created";
+  #stopPromise: Promise<void> | undefined;
+  #sessionComponent: SessionComponent | undefined;
+
+  static {
+    // 内部状态用 ES 私有字段，业务子类同名字段不会与之冲突；引擎测试经此只读入口观察。
+    // Internal state uses ES private fields so same-named subclass fields cannot collide; engine tests observe it here.
+    readEntrySceneInternals = scene => ({
+      get actorRegistry() { return scene.#actorRegistry; },
+      get controlIngress() { return scene.#controlIngress; },
+      get dataIngress() { return scene.#dataIngress; },
+      get recycledMailboxTasks() { return scene.#recycledMailboxTasks; },
+      get connections() { return scene.#connections; },
+      get actorTransferBuffers() { return scene.#actorTransferBuffers; },
+      get unorderedTasks() { return scene.#unorderedTasks; },
+      get orderedTask() { return scene.#orderedTask; },
+      get mailboxTasks() { return scene.#mailboxTasks; },
+    });
+  }
 
   constructor(
     protected readonly config: RuntimeEntrySceneConfig,
@@ -255,30 +274,30 @@ export abstract class EntryScene extends Scene {
       sceneId: config.self.name,
       sceneType: config.self.sceneType,
     }));
-    this.latencies = new LatencyRecorder(config.process.observability?.latency);
-    const latencyMetrics = this.latencies.enabled ? this.latencies : undefined;
+    this.#latencies = new LatencyRecorder(config.process.observability?.latency);
+    const latencyMetrics = this.#latencies.enabled ? this.#latencies : undefined;
     this.ctx = new SceneCallContext(config, config.localRouter, latencyMetrics);
     this.scenes = new SceneMessageHelper(this.ctx);
-    this.processHost = config.processHost;
+    this.#processHost = config.processHost;
     this.registry = new ProtocolRegistry(
       (message) => this.ctx.logger.error("protocol error", { detail: message }),
       latencyMetrics,
       (outcome) => this.recordProtocolOutcome(outcome),
     );
-    this.actorRegistry = new ProtocolRegistry(
+    this.#actorRegistry = new ProtocolRegistry(
       (message) => this.ctx.logger.error("actor protocol error", { detail: message }),
       latencyMetrics,
       (outcome) => this.recordProtocolOutcome(outcome),
     );
     for (const descriptor of knownRpcs) {
-      this.knownRpcsByCode.set(descriptor.requestCode, descriptor);
+      this.#knownRpcsByCode.set(descriptor.requestCode, descriptor);
       this.registry.registerKnownRpc(descriptor);
-      this.actorRegistry.registerKnownRpc(descriptor);
+      this.#actorRegistry.registerKnownRpc(descriptor);
     }
     for (const descriptor of knownMessages) {
-      this.knownMessagesByCode.set(descriptor.msgcode, descriptor);
+      this.#knownMessagesByCode.set(descriptor.msgcode, descriptor);
       this.registry.registerKnownMessage(descriptor);
-      this.actorRegistry.registerKnownMessage(descriptor);
+      this.#actorRegistry.registerKnownMessage(descriptor);
     }
   }
 
@@ -288,7 +307,7 @@ export abstract class EntryScene extends Scene {
       getSessionRpcHandlerBindings(this.constructor).length > 0 ||
       getSessionMessageHandlerBindings(this.constructor).length > 0;
     if (hasSessionHandlers) {
-      this.sessionComponent = this.AddComponent(SessionComponent);
+      this.#sessionComponent = this.AddComponent(SessionComponent);
     }
     this.registerDecoratedRpcHandlers();
     this.registerDecoratedMessageHandlers();
@@ -338,10 +357,10 @@ export abstract class EntryScene extends Scene {
   }
 
   private requireSessionComponent(): SessionComponent {
-    if (!this.sessionComponent) {
+    if (!this.#sessionComponent) {
       throw new Error(`scene ${this.self.name} SessionComponent is not initialized`);
     }
-    return this.sessionComponent;
+    return this.#sessionComponent;
   }
 
   get self(): SceneConfig {
@@ -410,24 +429,24 @@ export abstract class EntryScene extends Scene {
   protected actorTransferMetricSnapshot(): CustomMetricSnapshot {
     let queuedFrames = 0;
     let queuedBytes = 0;
-    for (const buffer of this.actorTransferBuffers.values()) {
+    for (const buffer of this.#actorTransferBuffers.values()) {
       queuedFrames += buffer.frames.length;
       queuedBytes += buffer.bytes;
     }
     return {
       name: "actor_transfer_barrier",
       values: {
-        active: this.actorTransferBuffers.size,
+        active: this.#actorTransferBuffers.size,
         queued_frames: queuedFrames,
         queued_bytes: queuedBytes,
-        started_total: this.actorTransferMetrics.started,
-        completed_total: this.actorTransferMetrics.completed,
-        cancelled_total: this.actorTransferMetrics.cancelled,
-        timed_out_total: this.actorTransferMetrics.timedOut,
-        enqueued_total: this.actorTransferMetrics.enqueued,
-        rejected_total: this.actorTransferMetrics.rejected,
-        dropped_total: this.actorTransferMetrics.dropped,
-        overloaded_total: this.actorTransferMetrics.overloaded,
+        started_total: this.#actorTransferMetrics.started,
+        completed_total: this.#actorTransferMetrics.completed,
+        cancelled_total: this.#actorTransferMetrics.cancelled,
+        timed_out_total: this.#actorTransferMetrics.timedOut,
+        enqueued_total: this.#actorTransferMetrics.enqueued,
+        rejected_total: this.#actorTransferMetrics.rejected,
+        dropped_total: this.#actorTransferMetrics.dropped,
+        overloaded_total: this.#actorTransferMetrics.overloaded,
       },
       kinds: {
         started_total: "counter",
@@ -447,14 +466,14 @@ export abstract class EntryScene extends Scene {
     return {
       name: "actor_latest_forward",
       values: {
-        pending_frames: this.latestActorLocationFrameCount,
-        queued_total: this.latestActorLocationMetrics.queued,
-        coalesced_total: this.latestActorLocationMetrics.coalesced,
-        forwarded_total: this.latestActorLocationMetrics.forwarded,
-        batches_total: this.latestActorLocationMetrics.batches,
-        failed_batches_total: this.latestActorLocationMetrics.failedBatches,
-        failed_frames_total: this.latestActorLocationMetrics.failedFrames,
-        dropped_total: this.latestActorLocationMetrics.dropped,
+        pending_frames: this.#latestActorLocationFrameCount,
+        queued_total: this.#latestActorLocationMetrics.queued,
+        coalesced_total: this.#latestActorLocationMetrics.coalesced,
+        forwarded_total: this.#latestActorLocationMetrics.forwarded,
+        batches_total: this.#latestActorLocationMetrics.batches,
+        failed_batches_total: this.#latestActorLocationMetrics.failedBatches,
+        failed_frames_total: this.#latestActorLocationMetrics.failedFrames,
+        dropped_total: this.#latestActorLocationMetrics.dropped,
       },
       kinds: {
         queued_total: "counter",
@@ -478,14 +497,14 @@ export abstract class EntryScene extends Scene {
    */
   protected beginActorTransfer(connectionId: number): void {
     this.requireMailboxAlive();
-    if (!this.actorTransferBuffers.has(connectionId)) {
-      this.actorTransferBuffers.set(connectionId, {
+    if (!this.#actorTransferBuffers.has(connectionId)) {
+      this.#actorTransferBuffers.set(connectionId, {
         frames: [],
         bytes: 0,
         expiresAtMs: nowMs() + EntryScene.MAX_TRANSFER_WAIT_MS,
         expired: false,
       });
-      this.actorTransferMetrics.started += 1;
+      this.#actorTransferMetrics.started += 1;
     }
   }
 
@@ -497,10 +516,10 @@ export abstract class EntryScene extends Scene {
    * RPCs keep their original rpcId; one-way failures are logged without fake responses.
    */
   protected finishActorTransfer(connectionId: number): void {
-    const buffer = this.actorTransferBuffers.get(connectionId);
+    const buffer = this.#actorTransferBuffers.get(connectionId);
     if (!buffer) return;
-    this.actorTransferBuffers.delete(connectionId);
-    this.actorTransferMetrics.completed += 1;
+    this.#actorTransferBuffers.delete(connectionId);
+    this.#actorTransferMetrics.completed += 1;
     for (const item of buffer.frames) {
       const result = this.dispatchActorLocationFrame(
         connectionId,
@@ -533,10 +552,10 @@ export abstract class EntryScene extends Scene {
   /** 连接关闭时拒绝未执行RPC并丢弃单向消息，避免悬挂Promise。 / Rejects unexecuted RPCs and drops one-way messages when the connection closes. */
   protected cancelActorTransfer(connectionId: number): void {
     this.dropLatestActorLocationFrames(connectionId);
-    const buffer = this.actorTransferBuffers.get(connectionId);
+    const buffer = this.#actorTransferBuffers.get(connectionId);
     if (!buffer) return;
-    this.actorTransferBuffers.delete(connectionId);
-    this.actorTransferMetrics.cancelled += 1;
+    this.#actorTransferBuffers.delete(connectionId);
+    this.#actorTransferMetrics.cancelled += 1;
     for (const item of buffer.frames) {
       item.resolve?.(this.registry.routingErrorResponse(
         item.frame,
@@ -554,42 +573,42 @@ export abstract class EntryScene extends Scene {
   protected onStop(): MaybePromise<void> {}
 
   async __startLifecycle(): Promise<void> {
-    if (this.lifecycleState !== "created") {
-      throw new Error(`scene ${this.self.name} cannot start from ${this.lifecycleState}`);
+    if (this.#lifecycleState !== "created") {
+      throw new Error(`scene ${this.self.name} cannot start from ${this.#lifecycleState}`);
     }
     await this.onStart();
-    this.lifecycleState = "started";
+    this.#lifecycleState = "started";
   }
 
   async __readyLifecycle(): Promise<void> {
-    if (this.lifecycleState !== "started") {
-      throw new Error(`scene ${this.self.name} cannot become ready from ${this.lifecycleState}`);
+    if (this.#lifecycleState !== "started") {
+      throw new Error(`scene ${this.self.name} cannot become ready from ${this.#lifecycleState}`);
     }
     await this.onReady();
-    this.lifecycleState = "ready";
+    this.#lifecycleState = "ready";
   }
 
   __stopLifecycle(): Promise<void> {
-    this.stopPromise ??= this.stopLifecycle();
-    return this.stopPromise;
+    this.#stopPromise ??= this.stopLifecycle();
+    return this.#stopPromise;
   }
 
   private async stopLifecycle(): Promise<void> {
-    if (this.lifecycleState === "stopped") return;
-    if (this.lifecycleState === "created") {
-      this.lifecycleState = "stopped";
+    if (this.#lifecycleState === "stopped") return;
+    if (this.#lifecycleState === "created") {
+      this.#lifecycleState = "stopped";
       return;
     }
-    this.lifecycleState = "stopping";
+    this.#lifecycleState = "stopping";
     try {
       await this.onStop();
     } finally {
-      this.lifecycleState = "stopped";
+      this.#lifecycleState = "stopped";
     }
   }
 
   __disposeRuntime(): void {
-    if (this.pendingCloses.size > 0 && typeof hostCloseConnection === "function") {
+    if (this.#pendingCloses.size > 0 && typeof hostCloseConnection === "function") {
       for (const connectionId of this.drainCloses()) hostCloseConnection(connectionId);
     }
     this.__dispose();
@@ -597,8 +616,8 @@ export abstract class EntryScene extends Scene {
 
   /** 先关闭准入并终结待执行节点；在途 Promise 仍等待真实完成，最后级联析构。 / Closes admission and queued work before disposal; active promises retain their real completion lifetime. */
   override __dispose(): void {
-    if (this.mailboxClosed) return;
-    this.mailboxClosed = true;
+    if (this.#mailboxClosed) return;
+    this.#mailboxClosed = true;
     try { this.discardQueuedWork(); }
     finally { super.__dispose(); }
   }
@@ -613,39 +632,39 @@ export abstract class EntryScene extends Scene {
       else droppedOneWay += 1;
       this.recycleMailboxTask(task);
     }
-    this.recycledMailboxTasks.length = 0;
+    this.#recycledMailboxTasks.length = 0;
     const droppedIngress = this.ingressLength;
-    for (let index = this.controlIngressHead; index < this.controlIngress.length; index += 1) {
-      const item = this.controlIngress[index];
+    for (let index = this.#controlIngressHead; index < this.#controlIngress.length; index += 1) {
+      const item = this.#controlIngress[index];
       if (item) this.releaseControlIngress(item);
     }
-    this.controlIngress.length = 0;
-    for (let index = this.dataIngressHead; index < this.dataIngress.length; index += 1) {
-      const item = this.dataIngress[index];
+    this.#controlIngress.length = 0;
+    for (let index = this.#dataIngressHead; index < this.#dataIngress.length; index += 1) {
+      const item = this.#dataIngress[index];
       if (item?.kind === "http") discardHttpRequest(item.requestId, false);
     }
-    this.dataIngress.length = 0;
-    this.controlIngressHead = this.dataIngressHead = 0;
-    this.outboundControl.length = this.outboundReliable.length = this.outboundLatest.length = 0;
-    this.connections.clear();
+    this.#dataIngress.length = 0;
+    this.#controlIngressHead = this.#dataIngressHead = 0;
+    this.#outboundControl.length = this.#outboundReliable.length = this.#outboundLatest.length = 0;
+    this.#connections.clear();
     this.dropLatestActorLocationFrames();
     // 整个 Scene 退出时无需为失效连接编码回复；唤醒框架等待后由关闭身份拒绝迟到结果。 / On Scene disposal, wake framework waits without encoding replies for dead connections.
-    for (const buffer of this.actorTransferBuffers.values()) {
-      this.actorTransferMetrics.cancelled += 1;
+    for (const buffer of this.#actorTransferBuffers.values()) {
+      this.#actorTransferMetrics.cancelled += 1;
       for (const item of buffer.frames) item.resolve?.(undefined);
       buffer.frames.length = 0;
       buffer.bytes = 0;
     }
-    this.actorTransferBuffers.clear();
+    this.#actorTransferBuffers.clear();
     if (droppedOneWay || droppedIngress) {
       this.ctx.logger.warn("scene disposal discarded unexecuted work", { droppedOneWay, droppedIngress });
     }
   }
 
   pushHostFrame(connectionId: number, frame: Uint8Array): void {
-    if (this.mailboxClosed) return;
-    if (this.connections.isDisconnectedFrame(connectionId)) {
-      this.connections.droppedFramesAfterDisconnect += 1;
+    if (this.#mailboxClosed) return;
+    if (this.#connections.isDisconnectedFrame(connectionId)) {
+      this.#connections.droppedFramesAfterDisconnect += 1;
       return;
     }
     this.enqueueIngress({
@@ -653,15 +672,15 @@ export abstract class EntryScene extends Scene {
       controlPending: false,
       connectionId,
       frame,
-      queuedAtMs: this.latencies.enabled ? nowMs() : 0,
+      queuedAtMs: this.#latencies.enabled ? nowMs() : 0,
     }, false);
   }
 
   pushHostControlFrame(connectionId: number, frame: Uint8Array): void {
-    if (this.mailboxClosed) { this.processHost.__releaseControlIngress(); return; }
-    if (this.connections.isDisconnectedFrame(connectionId)) {
-      this.connections.droppedFramesAfterDisconnect += 1;
-      this.processHost.__releaseControlIngress();
+    if (this.#mailboxClosed) { this.#processHost.__releaseControlIngress(); return; }
+    if (this.#connections.isDisconnectedFrame(connectionId)) {
+      this.#connections.droppedFramesAfterDisconnect += 1;
+      this.#processHost.__releaseControlIngress();
       return;
     }
     this.enqueueIngress({
@@ -669,36 +688,36 @@ export abstract class EntryScene extends Scene {
       controlPending: true,
       connectionId,
       frame,
-      queuedAtMs: this.latencies.enabled ? nowMs() : 0,
+      queuedAtMs: this.#latencies.enabled ? nowMs() : 0,
     }, true);
   }
 
   pushHostDisconnect(connectionId: number): void {
-    if (this.mailboxClosed) { this.processHost.__releaseControlIngress(); return; }
-    this.connections.markDisconnected(connectionId);
+    if (this.#mailboxClosed) { this.#processHost.__releaseControlIngress(); return; }
+    this.#connections.markDisconnected(connectionId);
     this.enqueueIngress({
       kind: "disconnect",
       controlPending: true,
       connectionId,
-      queuedAtMs: this.latencies.enabled ? nowMs() : 0,
+      queuedAtMs: this.#latencies.enabled ? nowMs() : 0,
     }, true);
   }
 
   pushHostHttpRequest(requestId: number, payload: Uint8Array): void {
-    if (this.mailboxClosed) { discardHttpRequest(requestId, false); return; }
+    if (this.#mailboxClosed) { discardHttpRequest(requestId, false); return; }
     this.enqueueIngress({
       kind: "http",
       controlPending: false,
       requestId,
       payload,
-      queuedAtMs: this.latencies.enabled ? nowMs() : 0,
+      queuedAtMs: this.#latencies.enabled ? nowMs() : 0,
     }, false);
   }
 
   private enqueueIngress(event: QueuedEvent, control: boolean): void {
-    (control ? this.controlIngress : this.dataIngress).push(event);
-    this.metrics.maxIngressQueueLength = Math.max(
-      this.metrics.maxIngressQueueLength,
+    (control ? this.#controlIngress : this.#dataIngress).push(event);
+    this.#metrics.maxIngressQueueLength = Math.max(
+      this.#metrics.maxIngressQueueLength,
       this.ingressLength,
     );
   }
@@ -711,14 +730,14 @@ export abstract class EntryScene extends Scene {
   }
 
   __pumpMailbox(maxFrames = 512): number {
-    if (this.mailboxClosed) return 0;
+    if (this.#mailboxClosed) return 0;
     this.expireActorTransfers(nowMs());
     const startedAt = nowMs();
     const processed = this.mailbox === "unordered"
       ? this.drainUnordered(maxFrames)
       : this.drainOrdered(maxFrames);
-    this.metrics.lastIngressPumpFrames = processed;
-    this.metrics.lastIngressPumpCostMs = nowMs() - startedAt;
+    this.#metrics.lastIngressPumpFrames = processed;
+    this.#metrics.lastIngressPumpCostMs = nowMs() - startedAt;
     return processed;
   }
 
@@ -729,12 +748,12 @@ export abstract class EntryScene extends Scene {
   /** 返回本 Scene 是否已排空到可原子切换 Hotfix 的状态。 / Reports whether this Scene is fully drained for an atomic Hotfix switch. */
   __canCommitHotfix(): boolean {
     return this.ingressLength === 0 &&
-      this.latestActorLocationFrameCount === 0 &&
-      this.unorderedTasks.size === 0 &&
-      this.orderedTask === undefined &&
-      this.mailboxInFlight === 0 &&
+      this.#latestActorLocationFrameCount === 0 &&
+      this.#unorderedTasks.size === 0 &&
+      this.#orderedTask === undefined &&
+      this.#mailboxInFlight === 0 &&
       this.Tasks.InFlightCount === 0 &&
-      !this.mailboxBusy &&
+      !this.#mailboxBusy &&
       this.mailboxTaskLength() === 0;
   }
 
@@ -752,12 +771,12 @@ export abstract class EntryScene extends Scene {
    * exposing the process-wide ProcessHost container to business code.
    */
   SpawnChildScene<T extends Scene>(localId: string, ctor: SceneCtor<T>): T {
-    return this.processHost.spawnScene(this.childSceneId(localId), ctor);
+    return this.#processHost.spawnScene(this.childSceneId(localId), ctor);
   }
 
   /** 销毁当前EntryScene拥有的动态子Scene；调用前仍须完成领域清理。 / Despawns an owned child Scene after domain cleanup has completed. */
   DespawnChildScene(localId: string): boolean {
-    return this.processHost.despawnScene(this.childSceneId(localId));
+    return this.#processHost.despawnScene(this.childSceneId(localId));
   }
 
   /**
@@ -769,7 +788,7 @@ export abstract class EntryScene extends Scene {
     actor: TActor,
     body: (current: TActor) => MaybePromise<TResult>,
   ): MaybePromise<TResult> {
-    return this.processHost.runActorMailbox(actor.InstanceId, (current) => {
+    return this.#processHost.runActorMailbox(actor.InstanceId, (current) => {
       if (current !== actor) {
         throw new Error(`actor instance changed: ${actor.InstanceId}`);
       }
@@ -785,7 +804,7 @@ export abstract class EntryScene extends Scene {
     if (!Number.isInteger(connectionId) || connectionId <= 0) {
       throw new Error(`invalid connection id: ${connectionId}`);
     }
-    this.pendingCloses.add(connectionId);
+    this.#pendingCloses.add(connectionId);
   }
 
   /** 为一个客户端连接编码并入队一条 protobuf 消息。 / Encodes and queues one protobuf message for one client connection. */
@@ -822,7 +841,7 @@ export abstract class EntryScene extends Scene {
     if (delivery === "latest") this.onClientLatestFrameQueued([connectionId]);
     else this.onClientSendQueued([connectionId]);
     this.outboundQueue(delivery).push({
-      connectionIdBytes: this.connections.packConnectionId(connectionId),
+      connectionIdBytes: this.#connections.packConnectionId(connectionId),
       frame,
     });
   }
@@ -870,70 +889,70 @@ export abstract class EntryScene extends Scene {
   /** 本地名额由实际调用持有；快速失败可重复回滚，排队 void 的返回不能提前归还。 / The actual call owns local admission; rollback is idempotent and a queued void return cannot release it early. */
   private admitLocalMailboxCall(): () => void {
     this.requireMailboxAlive();
-    const releaseHost = this.processHost.__admitLocalSceneMailbox(this.self.name, this.localMailboxPendingCount);
-    this.localMailboxPendingCount += 1;
+    const releaseHost = this.#processHost.__admitLocalSceneMailbox(this.self.name, this.#localMailboxPendingCount);
+    this.#localMailboxPendingCount += 1;
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      this.localMailboxPendingCount -= 1;
+      this.#localMailboxPendingCount -= 1;
       releaseHost();
     };
   }
 
   /** 返回当前Scene mailbox热路径计数；监控读取不会改变队列。 / Returns Scene mailbox hot-path counters without changing the queue. */
   mailboxMetricsSnapshot(): MailboxMetricsSnapshot {
-    return { ...this.mailboxMetrics, queuedDepth: this.mailboxTaskLength() };
+    return { ...this.#mailboxMetrics, queuedDepth: this.mailboxTaskLength() };
   }
 
   /** 返回当前时点快照，不重置累计计数器。 / Returns a point-in-time snapshot without resetting cumulative counters. */
   metricsSnapshot(): SceneMetricsSnapshot {
-    const asyncInFlight = this.unorderedTasks.size +
-      (this.orderedTask ? 1 : 0) +
+    const asyncInFlight = this.#unorderedTasks.size +
+      (this.#orderedTask ? 1 : 0) +
       this.Tasks.InFlightCount;
-    this.metrics.maxAsyncInFlight = Math.max(
-      this.metrics.maxAsyncInFlight,
+    this.#metrics.maxAsyncInFlight = Math.max(
+      this.#metrics.maxAsyncInFlight,
       asyncInFlight,
       this.Tasks.MaxInFlightCount,
     );
     return {
       scene: this.self.name,
       sceneType: this.self.sceneType,
-      processedFrames: this.metrics.processedFrames,
-      failedFrames: this.metrics.failedFrames,
-      protocolSuccesses: this.metrics.protocolSuccesses,
-      businessErrors: this.metrics.businessErrors,
-      systemErrors: this.metrics.systemErrors,
-      decodeErrors: this.metrics.decodeErrors,
-      handlerNotFound: this.metrics.handlerNotFound,
-      messageHandlerFailures: this.metrics.messageHandlerFailures,
+      processedFrames: this.#metrics.processedFrames,
+      failedFrames: this.#metrics.failedFrames,
+      protocolSuccesses: this.#metrics.protocolSuccesses,
+      businessErrors: this.#metrics.businessErrors,
+      systemErrors: this.#metrics.systemErrors,
+      decodeErrors: this.#metrics.decodeErrors,
+      handlerNotFound: this.#metrics.handlerNotFound,
+      messageHandlerFailures: this.#metrics.messageHandlerFailures,
       ingressQueueLength: this.ingressLength,
-      maxIngressQueueLength: this.metrics.maxIngressQueueLength,
-      lastIngressPumpFrames: this.metrics.lastIngressPumpFrames,
-      lastIngressPumpCostMs: this.metrics.lastIngressPumpCostMs,
-      lastUpdateCostMs: this.metrics.lastUpdateCostMs,
-      lastHandlerCostMs: this.metrics.lastHandlerCostMs,
-      maxHandlerCostMs: this.metrics.maxHandlerCostMs,
-      totalHandlerCostMs: this.metrics.totalHandlerCostMs,
+      maxIngressQueueLength: this.#metrics.maxIngressQueueLength,
+      lastIngressPumpFrames: this.#metrics.lastIngressPumpFrames,
+      lastIngressPumpCostMs: this.#metrics.lastIngressPumpCostMs,
+      lastUpdateCostMs: this.#metrics.lastUpdateCostMs,
+      lastHandlerCostMs: this.#metrics.lastHandlerCostMs,
+      maxHandlerCostMs: this.#metrics.maxHandlerCostMs,
+      totalHandlerCostMs: this.#metrics.totalHandlerCostMs,
       asyncInFlight,
-      maxAsyncInFlight: this.metrics.maxAsyncInFlight,
+      maxAsyncInFlight: this.#metrics.maxAsyncInFlight,
       mailbox: this.mailboxMetricsSnapshot(),
-      latencies: this.latencies.snapshot(),
+      latencies: this.#latencies.snapshot(),
       customMetrics: [
         this.actorLatestForwardMetricSnapshot(),
         {
           name: "outbound_lanes",
           values: {
-            outbound_control_depth: this.outboundLaneDepths.control,
-            outbound_reliable_depth: this.outboundLaneDepths.reliable,
-            outbound_latest_depth: this.outboundLaneDepths.latest,
-            outbound_total_depth: this.outboundLaneDepths.total,
-            outbound_control_depth_max: this.outboundLaneDepths.maxControl,
-            outbound_reliable_depth_max: this.outboundLaneDepths.maxReliable,
-            outbound_latest_depth_max: this.outboundLaneDepths.maxLatest,
-            outbound_total_depth_max: this.outboundLaneDepths.maxTotal,
-            outbound_reliable_enqueued_total: this.outboundReliableEnqueued,
-            outbound_latest_enqueued_total: this.outboundLatestEnqueued,
+            outbound_control_depth: this.#outboundLaneDepths.control,
+            outbound_reliable_depth: this.#outboundLaneDepths.reliable,
+            outbound_latest_depth: this.#outboundLaneDepths.latest,
+            outbound_total_depth: this.#outboundLaneDepths.total,
+            outbound_control_depth_max: this.#outboundLaneDepths.maxControl,
+            outbound_reliable_depth_max: this.#outboundLaneDepths.maxReliable,
+            outbound_latest_depth_max: this.#outboundLaneDepths.maxLatest,
+            outbound_total_depth_max: this.#outboundLaneDepths.maxTotal,
+            outbound_reliable_enqueued_total: this.#outboundReliableEnqueued,
+            outbound_latest_enqueued_total: this.#outboundLatestEnqueued,
           },
           kinds: {
             outbound_control_depth: "gauge",
@@ -948,11 +967,11 @@ export abstract class EntryScene extends Scene {
             outbound_latest_enqueued_total: "counter",
           },
         },
-        this.connections.metricsSnapshot(),
+        this.#connections.metricsSnapshot(),
         {
           name: "actor_location_fence",
           values: {
-            rejected_total: this.actorLocationFenceRejections,
+            rejected_total: this.#actorLocationFenceRejections,
           },
           kinds: {
             rejected_total: "counter",
@@ -963,21 +982,21 @@ export abstract class EntryScene extends Scene {
   }
 
   private drainOutbound(): OutboundBatch[] {
-    const controlDepth = this.outboundControl.length;
-    const reliableDepth = this.outboundReliable.length;
-    const latestDepth = this.outboundLatest.length;
+    const controlDepth = this.#outboundControl.length;
+    const reliableDepth = this.#outboundReliable.length;
+    const latestDepth = this.#outboundLatest.length;
     const totalDepth = controlDepth + reliableDepth + latestDepth;
-    this.outboundLaneDepths.control = controlDepth;
-    this.outboundLaneDepths.reliable = reliableDepth;
-    this.outboundLaneDepths.latest = latestDepth;
-    this.outboundLaneDepths.total = totalDepth;
-    this.outboundLaneDepths.maxControl = Math.max(this.outboundLaneDepths.maxControl, controlDepth);
-    this.outboundLaneDepths.maxReliable = Math.max(this.outboundLaneDepths.maxReliable, reliableDepth);
-    this.outboundLaneDepths.maxLatest = Math.max(this.outboundLaneDepths.maxLatest, latestDepth);
-    this.outboundLaneDepths.maxTotal = Math.max(this.outboundLaneDepths.maxTotal, totalDepth);
-    const control = this.outboundControl.splice(0, this.outboundControl.length);
-    const reliable = this.outboundReliable.splice(0, this.outboundReliable.length);
-    const latest = this.outboundLatest.splice(0, this.outboundLatest.length);
+    this.#outboundLaneDepths.control = controlDepth;
+    this.#outboundLaneDepths.reliable = reliableDepth;
+    this.#outboundLaneDepths.latest = latestDepth;
+    this.#outboundLaneDepths.total = totalDepth;
+    this.#outboundLaneDepths.maxControl = Math.max(this.#outboundLaneDepths.maxControl, controlDepth);
+    this.#outboundLaneDepths.maxReliable = Math.max(this.#outboundLaneDepths.maxReliable, reliableDepth);
+    this.#outboundLaneDepths.maxLatest = Math.max(this.#outboundLaneDepths.maxLatest, latestDepth);
+    this.#outboundLaneDepths.maxTotal = Math.max(this.#outboundLaneDepths.maxTotal, totalDepth);
+    const control = this.#outboundControl.splice(0, this.#outboundControl.length);
+    const reliable = this.#outboundReliable.splice(0, this.#outboundReliable.length);
+    const latest = this.#outboundLatest.splice(0, this.#outboundLatest.length);
     if (reliable.length === 0 && latest.length === 0) return control;
     control.push(...reliable, ...latest);
     return control;
@@ -985,72 +1004,59 @@ export abstract class EntryScene extends Scene {
 
   /** 空队列共用只读值，关闭请求仅交付一次。 / Shares an immutable empty value and hands each close request out once. */
   private drainCloses(): readonly number[] {
-    if (this.pendingCloses.size === 0) return NO_CLOSES;
-    const closes = [...this.pendingCloses];
-    this.pendingCloses.clear();
+    if (this.#pendingCloses.size === 0) return NO_CLOSES;
+    const closes = [...this.#pendingCloses];
+    this.#pendingCloses.clear();
     return closes;
   }
 
   private outboundQueue(delivery: ClientFrameDelivery): OutboundBatch[] {
     if (delivery === "latest") {
-      this.outboundLatestEnqueued += 1;
-      return this.outboundLatest;
+      this.#outboundLatestEnqueued += 1;
+      return this.#outboundLatest;
     }
-    this.outboundReliableEnqueued += 1;
-    return this.outboundReliable;
+    this.#outboundReliableEnqueued += 1;
+    return this.#outboundReliable;
   }
 
   private get ingressLength(): number {
-    return this.controlIngress.length - this.controlIngressHead +
-      this.dataIngress.length - this.dataIngressHead;
+    return this.#controlIngress.length - this.#controlIngressHead +
+      this.#dataIngress.length - this.#dataIngressHead;
   }
 
   private dequeueIngress(): QueuedEvent | undefined {
-    const controlAvailable = this.controlIngressHead < this.controlIngress.length;
-    const dataAvailable = this.dataIngressHead < this.dataIngress.length;
+    const controlAvailable = this.#controlIngressHead < this.#controlIngress.length;
+    const dataAvailable = this.#dataIngressHead < this.#dataIngress.length;
     if (!controlAvailable && !dataAvailable) return undefined;
-    if (controlAvailable && (!dataAvailable || this.consecutiveDataIngress >= EntryScene.MAX_CONSECUTIVE_DATA_INGRESS)) {
-      this.consecutiveDataIngress = 0;
-      return this.dequeueIngressQueue(this.controlIngress, "controlIngressHead");
+    if (controlAvailable && (!dataAvailable || this.#consecutiveDataIngress >= EntryScene.MAX_CONSECUTIVE_DATA_INGRESS)) {
+      this.#consecutiveDataIngress = 0;
+      const item = this.#controlIngress[this.#controlIngressHead]!;
+      this.#controlIngressHead = releaseIngressSlot(this.#controlIngress, this.#controlIngressHead);
+      return item;
     }
-    this.consecutiveDataIngress += 1;
-    return this.dequeueIngressQueue(this.dataIngress, "dataIngressHead");
-  }
-
-  private dequeueIngressQueue(
-    queue: (QueuedEvent | undefined)[],
-    headKey: "controlIngressHead" | "dataIngressHead",
-  ): QueuedEvent {
-    const item = queue[this[headKey]]!;
-    // 帧切片可能引用整个 Host 批次，消费旧槽后不得等数组压缩才释放它。 / A frame can retain a whole Host batch; release the slot without waiting for compaction.
-    queue[this[headKey]++] = undefined;
-    if (this[headKey] === queue.length) {
-      queue.length = 0;
-      this[headKey] = 0;
-    } else if (this[headKey] >= 1024 && this[headKey] * 2 >= queue.length) {
-      queue.splice(0, this[headKey]);
-      this[headKey] = 0;
-    }
+    this.#consecutiveDataIngress += 1;
+    const item = this.#dataIngress[this.#dataIngressHead]!;
+    this.#dataIngressHead = releaseIngressSlot(this.#dataIngress, this.#dataIngressHead);
     return item;
   }
 
   private completeUpdate(startedAt: number, includeMetrics: boolean): SceneUpdateResult {
     this.flushLatestActorLocationFrames();
-    this.metrics.lastUpdateCostMs = nowMs() - startedAt;
+    this.#metrics.lastUpdateCostMs = nowMs() - startedAt;
     return {
       outbound: this.drainOutbound(),
       closes: this.drainCloses(),
       metrics: includeMetrics ? this.metricsSnapshot() : undefined,
-      pendingAsync: this.orderedTask !== undefined ||
-        this.unorderedTasks.size > 0 ||
-        this.mailboxInFlight > 0 || this.mailboxBusy || this.mailboxTaskLength() > 0 ||
+      pendingAsync: this.#orderedTask !== undefined ||
+        this.#unorderedTasks.size > 0 ||
+        this.#mailboxInFlight > 0 || this.#mailboxBusy || this.mailboxTaskLength() > 0 ||
         this.Tasks.InFlightCount > 0,
       pendingIngress: this.ingressLength > 0,
     };
   }
 
   private drainOrdered(maxFrames: number): number {
-    if (this.orderedTask) return 0;
+    if (this.#orderedTask) return 0;
     let processed = 0;
     while (
       this.ingressLength > 0 &&
@@ -1058,7 +1064,7 @@ export abstract class EntryScene extends Scene {
     ) {
       const item = this.dequeueIngress()!;
       // 将确认转交实际 mailbox 节点；回收回调不捕获整个入站帧，普通数据不创建确认。 / Transfers acknowledgement to the actual mailbox node without capturing the ingress frame or allocating a data receipt.
-      const acknowledge = item.controlPending ? this.processHost.__controlIngressAcknowledgement() : undefined;
+      const acknowledge = item.controlPending ? this.#processHost.__controlIngressAcknowledgement() : undefined;
       // mailbox 关闭时节点可能未执行就被回收；按是否已开始如实告知 HTTP 调用方（503 或 500）。
       // A closing mailbox may recycle the node unexecuted; tell the HTTP caller truthfully (503 vs 500).
       let started = false;
@@ -1079,9 +1085,9 @@ export abstract class EntryScene extends Scene {
             this.ctx.logger.error("ordered handler failed", { error });
           })
           .finally(() => {
-            if (this.orderedTask === task) this.orderedTask = undefined;
+            if (this.#orderedTask === task) this.#orderedTask = undefined;
           });
-        this.orderedTask = task;
+        this.#orderedTask = task;
         break;
       }
     }
@@ -1093,7 +1099,7 @@ export abstract class EntryScene extends Scene {
     while (
       this.ingressLength > 0 &&
       processed < maxFrames &&
-      this.unorderedTasks.size < EntryScene.MAX_UNORDERED_IN_FLIGHT
+      this.#unorderedTasks.size < EntryScene.MAX_UNORDERED_IN_FLIGHT
     ) {
       const item = this.dequeueIngress()!;
       // 节点已开始执行；只有没有回复时才会以 500 结束。 / The node has started; it ends with 500 only if it never replied.
@@ -1108,12 +1114,12 @@ export abstract class EntryScene extends Scene {
             })
             .finally(() => {
               release?.();
-              this.unorderedTasks.delete(task);
+              this.#unorderedTasks.delete(task);
             });
-          this.unorderedTasks.add(task);
-          this.metrics.maxAsyncInFlight = Math.max(
-            this.metrics.maxAsyncInFlight,
-            this.unorderedTasks.size,
+          this.#unorderedTasks.add(task);
+          this.#metrics.maxAsyncInFlight = Math.max(
+            this.#metrics.maxAsyncInFlight,
+            this.#unorderedTasks.size,
           );
         } else {
           release?.();
@@ -1130,13 +1136,13 @@ export abstract class EntryScene extends Scene {
   private dispatchMailbox<T>(run: () => MaybePromise<T>, release?: () => void): MaybePromise<T> {
     this.requireMailboxAlive();
     if (this.mailbox === "unordered") {
-      this.mailboxMetrics.fastPathCalls += 1;
+      this.#mailboxMetrics.fastPathCalls += 1;
       const result = this.executeMailboxTask(run, release);
-      if (isPromiseLike(result)) this.mailboxMetrics.asyncCalls += 1;
+      if (isPromiseLike(result)) this.#mailboxMetrics.asyncCalls += 1;
       return result;
     }
-    if (this.mailboxBusy) {
-      this.mailboxMetrics.queuedCalls += 1;
+    if (this.#mailboxBusy) {
+      this.#mailboxMetrics.queuedCalls += 1;
       return new Promise<T>((resolve, reject) => {
         this.enqueueMailboxTask(
           run as () => MaybePromise<unknown>,
@@ -1147,8 +1153,8 @@ export abstract class EntryScene extends Scene {
         );
       });
     }
-    this.mailboxMetrics.fastPathCalls += 1;
-    this.mailboxBusy = true;
+    this.#mailboxMetrics.fastPathCalls += 1;
+    this.#mailboxBusy = true;
     return this.runMailboxTask(run, false, release);
   }
 
@@ -1163,23 +1169,23 @@ export abstract class EntryScene extends Scene {
   private dispatchMailboxVoid(run: () => MaybePromise<unknown>, release?: () => void): MaybePromise<void> {
     this.requireMailboxAlive();
     if (this.mailbox === "unordered") {
-      this.mailboxMetrics.oneWayFastPathCalls += 1;
+      this.#mailboxMetrics.oneWayFastPathCalls += 1;
       const result = this.executeMailboxTask(run, release);
       if (isPromiseLike(result)) {
-        this.mailboxMetrics.oneWayAsyncCalls += 1;
+        this.#mailboxMetrics.oneWayAsyncCalls += 1;
         // unordered 透传已跟踪生命周期的结果，不进入串行队列。
         // Unordered passes through the lifetime-tracked result without entering the serial queue.
         return result as Promise<void>;
       }
       return undefined;
     }
-    if (this.mailboxBusy) {
-      this.mailboxMetrics.oneWayQueuedCalls += 1;
+    if (this.#mailboxBusy) {
+      this.#mailboxMetrics.oneWayQueuedCalls += 1;
       this.enqueueMailboxTask(run, undefined, undefined, true, release);
       return undefined;
     }
-    this.mailboxMetrics.oneWayFastPathCalls += 1;
-    this.mailboxBusy = true;
+    this.#mailboxMetrics.oneWayFastPathCalls += 1;
+    this.#mailboxBusy = true;
     return this.runMailboxTask(run, true, release) as MaybePromise<void>;
   }
 
@@ -1191,8 +1197,8 @@ export abstract class EntryScene extends Scene {
     try {
       const result = this.executeMailboxTask(run, release);
       if (isPromiseLike(result)) {
-        if (oneWay) this.mailboxMetrics.oneWayAsyncCalls += 1;
-        else this.mailboxMetrics.asyncCalls += 1;
+        if (oneWay) this.#mailboxMetrics.oneWayAsyncCalls += 1;
+        else this.#mailboxMetrics.asyncCalls += 1;
       }
       if (isPromiseLike(result)) {
         return Promise.resolve(result).then(
@@ -1220,14 +1226,14 @@ export abstract class EntryScene extends Scene {
     while (true) {
       const next = this.dequeueMailboxTask();
       if (!next) {
-        this.mailboxBusy = false;
+        this.#mailboxBusy = false;
         return;
       }
       try {
         const result = this.executeMailboxTask(next.run!);
         if (isPromiseLike(result)) {
-          if (next.oneWay === true) this.mailboxMetrics.oneWayAsyncCalls += 1;
-          else this.mailboxMetrics.asyncCalls += 1;
+          if (next.oneWay === true) this.#mailboxMetrics.oneWayAsyncCalls += 1;
+          else this.#mailboxMetrics.asyncCalls += 1;
         }
         if (isPromiseLike(result)) {
           void Promise.resolve(result).then(
@@ -1262,37 +1268,37 @@ export abstract class EntryScene extends Scene {
     oneWay = false,
     releaseAdmission?: () => void,
   ): void {
-    const task = this.recycledMailboxTasks.pop() ?? { run };
+    const task = this.#recycledMailboxTasks.pop() ?? { run };
     task.run = run;
     task.resolve = resolve;
     task.reject = reject;
     task.oneWay = oneWay;
     task.releaseAdmission = releaseAdmission;
-    this.mailboxTasks.push(task);
-    this.mailboxMetrics.queuedDepth += 1;
-    this.mailboxMetrics.maxQueuedDepth = Math.max(
-      this.mailboxMetrics.maxQueuedDepth,
-      this.mailboxMetrics.queuedDepth,
+    this.#mailboxTasks.push(task);
+    this.#mailboxMetrics.queuedDepth += 1;
+    this.#mailboxMetrics.maxQueuedDepth = Math.max(
+      this.#mailboxMetrics.maxQueuedDepth,
+      this.#mailboxMetrics.queuedDepth,
     );
   }
 
   private dequeueMailboxTask(): MailboxTask | undefined {
-    if (this.mailboxTaskHead >= this.mailboxTasks.length) return undefined;
-    const task = this.mailboxTasks[this.mailboxTaskHead];
-    this.mailboxTasks[this.mailboxTaskHead++] = undefined;
-    if (this.mailboxTaskHead === this.mailboxTasks.length) {
-      this.mailboxTasks.length = 0;
-      this.mailboxTaskHead = 0;
+    if (this.#mailboxTaskHead >= this.#mailboxTasks.length) return undefined;
+    const task = this.#mailboxTasks[this.#mailboxTaskHead];
+    this.#mailboxTasks[this.#mailboxTaskHead++] = undefined;
+    if (this.#mailboxTaskHead === this.#mailboxTasks.length) {
+      this.#mailboxTasks.length = 0;
+      this.#mailboxTaskHead = 0;
     } else if (
-      this.mailboxTaskHead >= 1024 &&
-      this.mailboxTaskHead * 2 >= this.mailboxTasks.length
+      this.#mailboxTaskHead >= 1024 &&
+      this.#mailboxTaskHead * 2 >= this.#mailboxTasks.length
     ) {
-      this.mailboxTasks.splice(0, this.mailboxTaskHead);
-      this.mailboxTaskHead = 0;
+      this.#mailboxTasks.splice(0, this.#mailboxTaskHead);
+      this.#mailboxTaskHead = 0;
     }
-    this.mailboxMetrics.queuedDepth = Math.max(
+    this.#mailboxMetrics.queuedDepth = Math.max(
       0,
-      this.mailboxMetrics.queuedDepth - 1,
+      this.#mailboxMetrics.queuedDepth - 1,
     );
     return task;
   }
@@ -1305,15 +1311,15 @@ export abstract class EntryScene extends Scene {
     task.resolve = undefined;
     task.reject = undefined;
     task.oneWay = undefined;
-    if (!this.mailboxClosed && this.recycledMailboxTasks.length < EntryScene.MAX_RECYCLED_MAILBOX_TASKS) {
-      this.recycledMailboxTasks.push(task);
+    if (!this.#mailboxClosed && this.#recycledMailboxTasks.length < EntryScene.MAX_RECYCLED_MAILBOX_TASKS) {
+      this.#recycledMailboxTasks.push(task);
     }
   }
 
   /** 只在实际业务完成时检查拥有者；销毁不伪造 Promise 已取消。 / Checks ownership at real completion; disposal does not pretend to cancel a business promise. */
   private executeMailboxTask<T>(run: () => MaybePromise<T>, release?: () => void): MaybePromise<T> {
     this.requireMailboxAlive();
-    this.mailboxInFlight += 1;
+    this.#mailboxInFlight += 1;
     let asynchronous = false;
     try {
       const result = run();
@@ -1321,41 +1327,41 @@ export abstract class EntryScene extends Scene {
         asynchronous = true;
         return Promise.resolve(result)
           .then(value => { this.requireMailboxAlive(); return value; })
-          .finally(() => { this.mailboxInFlight -= 1; release?.(); });
+          .finally(() => { this.#mailboxInFlight -= 1; release?.(); });
       }
       this.requireMailboxAlive();
       return result;
     } finally {
-      if (!asynchronous) { this.mailboxInFlight -= 1; release?.(); }
+      if (!asynchronous) { this.#mailboxInFlight -= 1; release?.(); }
     }
   }
 
   /** 已关闭 Scene 不接受新的本地工作，也不能返回迟到的成功结果。 / Closed Scenes reject new local work and late successful results. */
   private requireMailboxAlive(): void {
-    if (this.mailboxClosed || this.IsDisposed) {
+    if (this.#mailboxClosed || this.IsDisposed) {
       throw new RpcError(SystemErrCode.SceneNotFound, `scene disposed: ${this.self.name}`);
     }
   }
 
   private mailboxTaskLength(): number {
-    return this.mailboxTasks.length - this.mailboxTaskHead;
+    return this.#mailboxTasks.length - this.#mailboxTaskHead;
   }
 
   /** 搬入忙碌 mailbox 不算开始；节点销毁和最终回收重复经过这里也只能确认一次。 / Moving into a busy mailbox is not a start; discard and later recycling acknowledge at most once. */
   private releaseControlIngress(item: QueuedEvent): void {
     if (!item.controlPending) return;
     item.controlPending = false;
-    this.processHost.__releaseControlIngress();
+    this.#processHost.__releaseControlIngress();
   }
 
   private processIngress(item: QueuedEvent): MaybePromise<void> {
     if (item.kind === "http") return this.processHttpRequest(item.requestId, item.payload);
     this.releaseControlIngress(item);
-    if (this.latencies.enabled) {
-      this.latencies.record("ingress.queue", nowMs() - item.queuedAtMs);
+    if (this.#latencies.enabled) {
+      this.#latencies.record("ingress.queue", nowMs() - item.queuedAtMs);
     }
     if (item.kind === "disconnect") {
-      this.connections.forgetConnectionId(item.connectionId);
+      this.#connections.forgetConnectionId(item.connectionId);
       this.cancelActorTransfer(item.connectionId);
       try {
         const result = this.onDisconnect(item.connectionId);
@@ -1368,7 +1374,7 @@ export abstract class EntryScene extends Scene {
               });
             })
             .finally(() => {
-              this.sessionComponent?.Remove(item.connectionId);
+              this.#sessionComponent?.Remove(item.connectionId);
             });
         }
       } catch (error) {
@@ -1377,12 +1383,12 @@ export abstract class EntryScene extends Scene {
           error,
         });
       }
-      this.sessionComponent?.Remove(item.connectionId);
+      this.#sessionComponent?.Remove(item.connectionId);
       return;
     }
 
-    if (this.connections.isDisconnectedFrame(item.connectionId)) {
-      this.connections.droppedFramesAfterDisconnect += 1;
+    if (this.#connections.isDisconnectedFrame(item.connectionId)) {
+      this.#connections.droppedFramesAfterDisconnect += 1;
       return;
     }
 
@@ -1396,13 +1402,13 @@ export abstract class EntryScene extends Scene {
       return;
     }
     if (isPromiseLike(response)) {
-      const source = this.connections.retainAsyncIngressSource(item.connectionId);
+      const source = this.#connections.retainAsyncIngressSource(item.connectionId);
       return Promise.resolve(response)
         .then(
           value => { this.enqueueResponse(item.connectionId, value, source); },
           error => { this.handleIngressFailure(item.connectionId, error, source); },
         )
-        .finally(() => this.connections.releaseAsyncIngressSource(item.connectionId, source));
+        .finally(() => this.#connections.releaseAsyncIngressSource(item.connectionId, source));
     }
     this.enqueueResponse(item.connectionId, response);
   }
@@ -1410,7 +1416,7 @@ export abstract class EntryScene extends Scene {
   /** 仅关闭仍有效的原入站来源，不使用路由 context 或误关同号新连接；其他异常保持原路径。 / Closes only the valid original source, never a routing context or reused connection ID; other failures keep their existing path. */
   private handleIngressFailure(connectionId: number, error: unknown, source?: AsyncIngressSource): void {
     if (error instanceof RpcError && error.code === SystemErrCode.SceneOverloaded) {
-      if (!this.mailboxClosed && !source?.disconnected) this.disconnectClient(connectionId);
+      if (!this.#mailboxClosed && !source?.disconnected) this.disconnectClient(connectionId);
       return;
     }
     throw error;
@@ -1421,14 +1427,14 @@ export abstract class EntryScene extends Scene {
     response: Uint8Array | undefined,
     source?: AsyncIngressSource,
   ): void {
-    if (!response || this.mailboxClosed) return;
-    if (source?.disconnected || (!source && this.connections.isDisconnectedFrame(connectionId))) {
-      this.connections.droppedResponsesAfterDisconnect += 1;
+    if (!response || this.#mailboxClosed) return;
+    if (source?.disconnected || (!source && this.#connections.isDisconnectedFrame(connectionId))) {
+      this.#connections.droppedResponsesAfterDisconnect += 1;
       return;
     }
     this.onClientSendQueued([connectionId]);
-    this.outboundControl.push({
-      connectionIdBytes: this.connections.packConnectionId(connectionId),
+    this.#outboundControl.push({
+      connectionIdBytes: this.#connections.packConnectionId(connectionId),
       frame: response,
     });
   }
@@ -1441,7 +1447,7 @@ export abstract class EntryScene extends Scene {
       ? context
       : { ...context, logger: this.logger };
     const startedAt = nowMs();
-    const msgcode = this.latencies.enabled && frame.length >= 2
+    const msgcode = this.#latencies.enabled && frame.length >= 2
       ? readU16BE(frame, 0)
       : undefined;
     try {
@@ -1450,29 +1456,29 @@ export abstract class EntryScene extends Scene {
         return Promise.resolve(response).then(
           (value) => {
             this.completeHandler(startedAt, false);
-            if (this.latencies.enabled) {
-              this.latencies.record("frame.total", nowMs() - startedAt, msgcode);
+            if (this.#latencies.enabled) {
+              this.#latencies.record("frame.total", nowMs() - startedAt, msgcode);
             }
             return value;
           },
           (error) => {
             this.completeHandler(startedAt, true);
-            if (this.latencies.enabled) {
-              this.latencies.record("frame.total", nowMs() - startedAt, msgcode);
+            if (this.#latencies.enabled) {
+              this.#latencies.record("frame.total", nowMs() - startedAt, msgcode);
             }
             throw error;
           },
         );
       }
       this.completeHandler(startedAt, false);
-      if (this.latencies.enabled) {
-        this.latencies.record("frame.total", nowMs() - startedAt, msgcode);
+      if (this.#latencies.enabled) {
+        this.#latencies.record("frame.total", nowMs() - startedAt, msgcode);
       }
       return response;
     } catch (error) {
       this.completeHandler(startedAt, true);
-      if (this.latencies.enabled) {
-        this.latencies.record("frame.total", nowMs() - startedAt, msgcode);
+      if (this.#latencies.enabled) {
+        this.#latencies.record("frame.total", nowMs() - startedAt, msgcode);
       }
       throw error;
     }
@@ -1513,7 +1519,7 @@ export abstract class EntryScene extends Scene {
     if (msgcode === ActorLocationEnvelopeMsgCode) {
       try {
         const envelope = decodeActorLocationEnvelope(frame);
-        return this.actorRegistry.handle(envelope.frame, {
+        return this.#actorRegistry.handle(envelope.frame, {
           actorInstanceId: envelope.instanceId,
           actorLocationFenceToken: envelope.fenceToken,
           traceId: context.traceId,
@@ -1550,8 +1556,8 @@ export abstract class EntryScene extends Scene {
       return this.registry.handle(frame, context);
     }
 
-    const rpcDescriptor = this.knownRpcsByCode.get(msgcode);
-    const messageDescriptor = this.knownMessagesByCode.get(msgcode);
+    const rpcDescriptor = this.#knownRpcsByCode.get(msgcode);
+    const messageDescriptor = this.#knownMessagesByCode.get(msgcode);
     if (
       rpcDescriptor?.routing !== "actor-location" &&
       messageDescriptor?.routing !== "actor-location"
@@ -1559,11 +1565,11 @@ export abstract class EntryScene extends Scene {
       return this.registry.handle(frame, context);
     }
 
-    const transfer = this.actorTransferBuffers.get(context.connectionId);
+    const transfer = this.#actorTransferBuffers.get(context.connectionId);
     if (transfer) {
       if (transfer.expired) {
-        if (rpcDescriptor) this.actorTransferMetrics.rejected += 1;
-        else this.actorTransferMetrics.dropped += 1;
+        if (rpcDescriptor) this.#actorTransferMetrics.rejected += 1;
+        else this.#actorTransferMetrics.dropped += 1;
         return rpcDescriptor
           ? this.registry.routingErrorResponse(
             frame,
@@ -1577,7 +1583,7 @@ export abstract class EntryScene extends Scene {
         messageDescriptor?.duringTransfer ??
         (rpcDescriptor ? "reject" : "drop");
       if (policy === "reject" || (rpcDescriptor && (policy === "drop" || policy === "latest"))) {
-        this.actorTransferMetrics.rejected += 1;
+        this.#actorTransferMetrics.rejected += 1;
         return this.registry.routingErrorResponse(
           frame,
           SystemErrCode.ActorTransferring,
@@ -1586,7 +1592,7 @@ export abstract class EntryScene extends Scene {
         );
       }
       if (policy === "drop") {
-        this.actorTransferMetrics.dropped += 1;
+        this.#actorTransferMetrics.dropped += 1;
         return undefined;
       }
       if (policy === "latest") {
@@ -1597,7 +1603,7 @@ export abstract class EntryScene extends Scene {
         if (index >= 0) {
           const nextBytes = transfer.bytes + frame.byteLength - transfer.frames[index].frame.byteLength;
           if (nextBytes > EntryScene.MAX_TRANSFER_BYTES_PER_CONNECTION) {
-            this.actorTransferMetrics.overloaded += 1;
+            this.#actorTransferMetrics.overloaded += 1;
             this.registry.reportSystemError(
               SystemErrCode.SceneOverloaded,
               `actor transfer queue is full for connection ${context.connectionId}`,
@@ -1606,10 +1612,10 @@ export abstract class EntryScene extends Scene {
           } else {
             transfer.bytes = nextBytes;
             transfer.frames[index] = queued;
-            this.actorTransferMetrics.enqueued += 1;
+            this.#actorTransferMetrics.enqueued += 1;
           }
         } else if (!this.tryReserveTransferFrame(transfer, frame.byteLength)) {
-          this.actorTransferMetrics.overloaded += 1;
+          this.#actorTransferMetrics.overloaded += 1;
           this.registry.reportSystemError(
             SystemErrCode.SceneOverloaded,
             `actor transfer queue is full for connection ${context.connectionId}`,
@@ -1617,12 +1623,12 @@ export abstract class EntryScene extends Scene {
           );
         } else {
           transfer.frames.push(queued);
-          this.actorTransferMetrics.enqueued += 1;
+          this.#actorTransferMetrics.enqueued += 1;
         }
         return undefined;
       }
       if (!this.tryReserveTransferFrame(transfer, frame.byteLength)) {
-        this.actorTransferMetrics.overloaded += 1;
+        this.#actorTransferMetrics.overloaded += 1;
         return this.registry.routingErrorResponse(
           frame,
           SystemErrCode.SceneOverloaded,
@@ -1632,12 +1638,12 @@ export abstract class EntryScene extends Scene {
       }
       if (!rpcDescriptor) {
         transfer.frames.push({ frame, context, msgcode, messageDescriptor });
-        this.actorTransferMetrics.enqueued += 1;
+        this.#actorTransferMetrics.enqueued += 1;
         return undefined;
       }
       return new Promise<Uint8Array | undefined>((resolve) => {
         transfer.frames.push({ frame, context, msgcode, rpcDescriptor, resolve });
-        this.actorTransferMetrics.enqueued += 1;
+        this.#actorTransferMetrics.enqueued += 1;
       });
     }
 
@@ -1719,11 +1725,11 @@ export abstract class EntryScene extends Scene {
     try {
       forEachActorLocationBatchEntry(frame, (entry) => {
         const msgcode = readU16BE(entry.frame, 0);
-        const descriptor = this.knownMessagesByCode.get(msgcode);
+        const descriptor = this.#knownMessagesByCode.get(msgcode);
         if (descriptor?.routing !== "actor-location" || descriptor.forwarding !== "latest") {
           throw new Error(`nested msgcode ${msgcode} is not a latest ActorLocation message`);
         }
-        const result = this.actorRegistry.handle(entry.frame, {
+        const result = this.#actorRegistry.handle(entry.frame, {
           actorInstanceId: entry.instanceId,
           actorLocationFenceToken: entry.fenceToken,
           traceId: context.traceId,
@@ -1750,14 +1756,14 @@ export abstract class EntryScene extends Scene {
     frame: Uint8Array,
   ): void {
     this.requireMailboxAlive();
-    const byMsgcode = this.latestActorLocationFrames.get(connectionId) ?? new Map();
+    const byMsgcode = this.#latestActorLocationFrames.get(connectionId) ?? new Map();
     const pending = byMsgcode.get(msgcode);
     if (pending) {
       pending.target = target.scene;
       pending.instanceId = target.instanceId;
       pending.fenceToken = target.fenceToken;
       pending.frame = frame;
-      this.latestActorLocationMetrics.coalesced += 1;
+      this.#latestActorLocationMetrics.coalesced += 1;
     } else {
       byMsgcode.set(msgcode, {
         target: target.scene,
@@ -1765,26 +1771,26 @@ export abstract class EntryScene extends Scene {
         fenceToken: target.fenceToken,
         frame,
       });
-      this.latestActorLocationFrameCount += 1;
+      this.#latestActorLocationFrameCount += 1;
     }
-    this.latestActorLocationFrames.set(connectionId, byMsgcode);
-    this.latestActorLocationFlushAtMs ??=
+    this.#latestActorLocationFrames.set(connectionId, byMsgcode);
+    this.#latestActorLocationFlushAtMs ??=
       nowMs() + EntryScene.LATEST_ACTOR_FORWARD_WINDOW_MS;
-    this.latestActorLocationMetrics.queued += 1;
+    this.#latestActorLocationMetrics.queued += 1;
   }
 
   /** 每轮按目标Scene形成一个内部批量帧；发送完成不参与Scene mailbox等待。 / Emits one inner batch per target Scene per update without making the Scene mailbox await transport completion. */
   private flushLatestActorLocationFrames(): void {
-    if (this.latestActorLocationFrameCount === 0) return;
+    if (this.#latestActorLocationFrameCount === 0) return;
     if (
-      this.latestActorLocationFlushAtMs !== undefined &&
-      nowMs() < this.latestActorLocationFlushAtMs
+      this.#latestActorLocationFlushAtMs !== undefined &&
+      nowMs() < this.#latestActorLocationFlushAtMs
     ) return;
     const byScene = new Map<string, {
       target: SceneConfig;
       entries: PendingLatestActorLocationFrame[];
     }>();
-    for (const byMsgcode of this.latestActorLocationFrames.values()) {
+    for (const byMsgcode of this.#latestActorLocationFrames.values()) {
       for (const pending of byMsgcode.values()) {
         const group = byScene.get(pending.target.name) ?? {
           target: pending.target,
@@ -1794,21 +1800,21 @@ export abstract class EntryScene extends Scene {
         byScene.set(pending.target.name, group);
       }
     }
-    this.latestActorLocationFrames.clear();
-    this.latestActorLocationFrameCount = 0;
-    this.latestActorLocationFlushAtMs = undefined;
+    this.#latestActorLocationFrames.clear();
+    this.#latestActorLocationFrameCount = 0;
+    this.#latestActorLocationFlushAtMs = undefined;
 
     for (const group of byScene.values()) {
       const frameCount = group.entries.length;
       try {
         const batch = encodeActorLocationBatchEnvelope(group.entries);
-        this.latestActorLocationMetrics.forwarded += frameCount;
-        this.latestActorLocationMetrics.batches += 1;
+        this.#latestActorLocationMetrics.forwarded += frameCount;
+        this.#latestActorLocationMetrics.batches += 1;
         const delivery = this.ctx.sendFrame(group.target, batch);
         if (isPromiseLike(delivery)) {
           void Promise.resolve(delivery).catch((error) => {
-            this.latestActorLocationMetrics.failedBatches += 1;
-            this.latestActorLocationMetrics.failedFrames += frameCount;
+            this.#latestActorLocationMetrics.failedBatches += 1;
+            this.#latestActorLocationMetrics.failedFrames += frameCount;
             this.ctx.logger.error("latest actor batch forwarding failed", {
               target: group.target.name,
               frameCount,
@@ -1817,8 +1823,8 @@ export abstract class EntryScene extends Scene {
           });
         }
       } catch (error) {
-        this.latestActorLocationMetrics.failedBatches += 1;
-        this.latestActorLocationMetrics.failedFrames += frameCount;
+        this.#latestActorLocationMetrics.failedBatches += 1;
+        this.#latestActorLocationMetrics.failedFrames += frameCount;
         this.ctx.logger.error("latest actor batch encoding failed", {
           target: group.target.name,
           frameCount,
@@ -1830,20 +1836,20 @@ export abstract class EntryScene extends Scene {
 
   private dropLatestActorLocationFrames(connectionId?: number): void {
     if (connectionId !== undefined) {
-      const pending = this.latestActorLocationFrames.get(connectionId);
+      const pending = this.#latestActorLocationFrames.get(connectionId);
       if (!pending) return;
-      this.latestActorLocationFrames.delete(connectionId);
-      this.latestActorLocationFrameCount -= pending.size;
-      this.latestActorLocationMetrics.dropped += pending.size;
-      if (this.latestActorLocationFrameCount === 0) {
-        this.latestActorLocationFlushAtMs = undefined;
+      this.#latestActorLocationFrames.delete(connectionId);
+      this.#latestActorLocationFrameCount -= pending.size;
+      this.#latestActorLocationMetrics.dropped += pending.size;
+      if (this.#latestActorLocationFrameCount === 0) {
+        this.#latestActorLocationFlushAtMs = undefined;
       }
       return;
     }
-    this.latestActorLocationMetrics.dropped += this.latestActorLocationFrameCount;
-    this.latestActorLocationFrames.clear();
-    this.latestActorLocationFrameCount = 0;
-    this.latestActorLocationFlushAtMs = undefined;
+    this.#latestActorLocationMetrics.dropped += this.#latestActorLocationFrameCount;
+    this.#latestActorLocationFrames.clear();
+    this.#latestActorLocationFrameCount = 0;
+    this.#latestActorLocationFlushAtMs = undefined;
   }
 
   private tryReserveTransferFrame(buffer: ActorTransferBuffer, bytes: number): boolean {
@@ -1858,13 +1864,13 @@ export abstract class EntryScene extends Scene {
   }
 
   private expireActorTransfers(currentTimeMs: number): void {
-    for (const [connectionId, buffer] of this.actorTransferBuffers) {
+    for (const [connectionId, buffer] of this.#actorTransferBuffers) {
       if (buffer.expired || currentTimeMs < buffer.expiresAtMs) continue;
       buffer.expired = true;
-      this.actorTransferMetrics.timedOut += 1;
+      this.#actorTransferMetrics.timedOut += 1;
       for (const item of buffer.frames.splice(0)) {
-        if (item.resolve) this.actorTransferMetrics.rejected += 1;
-        else this.actorTransferMetrics.dropped += 1;
+        if (item.resolve) this.#actorTransferMetrics.rejected += 1;
+        else this.#actorTransferMetrics.dropped += 1;
         item.resolve?.(this.registry.routingErrorResponse(
           item.frame,
           SystemErrCode.ActorTransferring,
@@ -1879,38 +1885,38 @@ export abstract class EntryScene extends Scene {
 
   private completeHandler(startedAt: number, failed: boolean): void {
     const cost = nowMs() - startedAt;
-    this.metrics.processedFrames += 1;
-    if (failed) this.metrics.failedFrames += 1;
-    this.metrics.lastHandlerCostMs = cost;
-    this.metrics.maxHandlerCostMs = Math.max(
-      this.metrics.maxHandlerCostMs,
+    this.#metrics.processedFrames += 1;
+    if (failed) this.#metrics.failedFrames += 1;
+    this.#metrics.lastHandlerCostMs = cost;
+    this.#metrics.maxHandlerCostMs = Math.max(
+      this.#metrics.maxHandlerCostMs,
       cost,
     );
-    this.metrics.totalHandlerCostMs += cost;
+    this.#metrics.totalHandlerCostMs += cost;
   }
 
   private recordProtocolOutcome(outcome: ProtocolOutcome): void {
     switch (outcome.kind) {
       case "success":
-        this.metrics.protocolSuccesses += 1;
+        this.#metrics.protocolSuccesses += 1;
         return;
       case "business-error":
-        this.metrics.businessErrors += 1;
+        this.#metrics.businessErrors += 1;
         return;
       case "decode-error":
-        this.metrics.decodeErrors += 1;
+        this.#metrics.decodeErrors += 1;
         break;
       case "handler-not-found":
-        this.metrics.handlerNotFound += 1;
+        this.#metrics.handlerNotFound += 1;
         break;
       case "message-handler-failed":
-        this.metrics.messageHandlerFailures += 1;
+        this.#metrics.messageHandlerFailures += 1;
         break;
       case "system-error":
         break;
     }
-    this.metrics.systemErrors += 1;
-    this.metrics.failedFrames += 1;
+    this.#metrics.systemErrors += 1;
+    this.#metrics.failedFrames += 1;
   }
 
   private registerDecoratedRpcHandlers(): void {
@@ -2026,7 +2032,7 @@ export abstract class EntryScene extends Scene {
             );
           }
           const session = this.getOrCreateSession(connectionId);
-          return this.processHost.runActorMailbox(session.InstanceId, (target) =>
+          return this.#processHost.runActorMailbox(session.InstanceId, (target) =>
             currentHandler().handle(this, target as Session<any[]>, request, context)
           );
         },
@@ -2057,7 +2063,7 @@ export abstract class EntryScene extends Scene {
             );
           }
           const session = this.getOrCreateSession(connectionId);
-          return this.processHost.runActorMailboxVoid(session.InstanceId, (target) =>
+          return this.#processHost.runActorMailboxVoid(session.InstanceId, (target) =>
             currentHandler().handle(this, target as Session<any[]>, message, context)
           );
         },
@@ -2078,7 +2084,7 @@ export abstract class EntryScene extends Scene {
         handler: new binding.handlerCtor(),
       }));
       const handlerByUnitCtor = new Map<Function, (typeof handlers)[number]>();
-      this.actorRegistry.register(msgcode, {
+      this.#actorRegistry.register(msgcode, {
         responseCode: descriptor.responseCode,
         decode: descriptor.requestCodec.decode,
         encode: descriptor.responseCodec.encode,
@@ -2090,13 +2096,13 @@ export abstract class EntryScene extends Scene {
               `actor instance id is missing for msgcode ${msgcode}`,
             );
           }
-          if (!this.processHost.Root.Get(instanceId)) {
+          if (!this.#processHost.Root.Get(instanceId)) {
             throw new RpcError(
               SystemErrCode.ActorLocationNotFound,
               `actor instance not found: ${instanceId}`,
             );
           }
-          return this.processHost.runActorMailbox(instanceId, (actor) => {
+          return this.#processHost.runActorMailbox(instanceId, (actor) => {
             this.requireActorLocationFence(actor, context);
             const unitCtor = actor.constructor;
             let binding = handlerByUnitCtor.get(unitCtor);
@@ -2134,7 +2140,7 @@ export abstract class EntryScene extends Scene {
         handler: new binding.handlerCtor(),
       }));
       const handlerByUnitCtor = new Map<Function, (typeof handlers)[number]>();
-      this.actorRegistry.registerMessage(msgcode, {
+      this.#actorRegistry.registerMessage(msgcode, {
         decode: descriptor.codec.decode,
         handle: (message, context) => {
           const instanceId = context.actorInstanceId;
@@ -2144,13 +2150,13 @@ export abstract class EntryScene extends Scene {
               `actor instance id is missing for msgcode ${msgcode}`,
             );
           }
-          if (!this.processHost.Root.Get(instanceId)) {
+          if (!this.#processHost.Root.Get(instanceId)) {
             throw new RpcError(
               SystemErrCode.ActorLocationNotFound,
               `actor instance not found: ${instanceId}`,
             );
           }
-          return this.processHost.runActorMailboxVoid(instanceId, (actor) => {
+          return this.#processHost.runActorMailboxVoid(instanceId, (actor) => {
             this.requireActorLocationFence(actor, context);
             const unitCtor = actor.constructor;
             let binding = handlerByUnitCtor.get(unitCtor);
@@ -2183,7 +2189,7 @@ export abstract class EntryScene extends Scene {
     const token = context.actorLocationFenceToken;
     if (token === undefined) return;
     if (actor.__matchesActorLocationFenceToken(token)) return;
-    this.actorLocationFenceRejections += 1;
+    this.#actorLocationFenceRejections += 1;
     throw new RpcError(
       SystemErrCode.ActorLocationFenceRejected,
       `actor location fence rejected for instance ${actor.InstanceId}`,
@@ -2203,13 +2209,13 @@ export abstract class EntryScene extends Scene {
         return handler;
       };
       const route = `${binding.method} ${binding.path}`;
-      if (this.httpRoutes.has(route)) {
+      if (this.#httpRoutes.has(route)) {
         throw new Error(`duplicate HTTP handler for ${this.self.sceneType} ${route}`);
       }
-      this.httpRoutes.set(route, (request) => currentHandler().handle(this, request));
-      const methods = this.httpMethodsByPath.get(binding.path) ?? [];
+      this.#httpRoutes.set(route, (request) => currentHandler().handle(this, request));
+      const methods = this.#httpMethodsByPath.get(binding.path) ?? [];
       methods.push(binding.method);
-      this.httpMethodsByPath.set(binding.path, methods);
+      this.#httpMethodsByPath.set(binding.path, methods);
     }
     if (bindings.length > 0 && !this.self.http) {
       this.ctx.logger.warn("scene has HTTP handlers but no http port configured", {
@@ -2234,9 +2240,9 @@ export abstract class EntryScene extends Scene {
       this.replyHttp(requestId, undefined, () => sendHttpError(requestId, 400, "bad request"));
       return;
     }
-    const route = this.httpRoutes.get(`${request.method} ${request.path}`);
+    const route = this.#httpRoutes.get(`${request.method} ${request.path}`);
     if (!route) {
-      const allowed = this.httpMethodsByPath.get(request.path);
+      const allowed = this.#httpMethodsByPath.get(request.path);
       this.replyHttp(requestId, request, () => allowed
         ? sendHttpResponse(requestId, jsonResponse({ error: "method not allowed" }, 405, { allow: allowed.join(", ") }))
         : sendHttpError(requestId, 404, "not found"));
@@ -2295,23 +2301,23 @@ export abstract class EntryScene extends Scene {
   }
 
   private claimRpcHandler(msgcode: number, owner: string): void {
-    const existing = this.registeredRpcHandlers.get(msgcode);
+    const existing = this.#registeredRpcHandlers.get(msgcode);
     if (existing) {
       throw new Error(
         `duplicate RPC handler for ${this.self.sceneType} msgcode ${msgcode}: ${existing}, ${owner}`,
       );
     }
-    this.registeredRpcHandlers.set(msgcode, owner);
+    this.#registeredRpcHandlers.set(msgcode, owner);
   }
 
   private claimMessageHandler(msgcode: number, owner: string): void {
-    const existing = this.registeredMessageHandlers.get(msgcode);
+    const existing = this.#registeredMessageHandlers.get(msgcode);
     if (existing) {
       throw new Error(
         `duplicate message handler for ${this.self.sceneType} msgcode ${msgcode}: ${existing}, ${owner}`,
       );
     }
-    this.registeredMessageHandlers.set(msgcode, owner);
+    this.#registeredMessageHandlers.set(msgcode, owner);
   }
 }
 
@@ -2319,6 +2325,42 @@ const hostCloseConnection = (globalThis as typeof globalThis & {
   __hostCloseConnection: (connectionId: number) => void;
 }).__hostCloseConnection;
 const NO_CLOSES: readonly number[] = Object.freeze([]);
+
+/** 引擎测试观察的 EntryScene 内部状态；不属于 Stable API。 / EntryScene internals observed by engine tests; not Stable API. */
+export interface EntrySceneInternals {
+  readonly actorRegistry: ProtocolRegistry;
+  readonly controlIngress: readonly (QueuedEvent | undefined)[];
+  readonly dataIngress: readonly (QueuedEvent | undefined)[];
+  readonly recycledMailboxTasks: readonly MailboxTask[];
+  readonly connections: EntrySceneConnections;
+  readonly actorTransferBuffers: ReadonlyMap<number, ActorTransferBuffer>;
+  readonly unorderedTasks: ReadonlySet<Promise<void>>;
+  readonly orderedTask: Promise<void> | undefined;
+  readonly mailboxTasks: readonly (MailboxTask | undefined)[];
+}
+
+/** 只供引擎自身测试使用，不从 public.ts 导出。 / For engine tests only; not exported from public.ts. */
+export function entrySceneInternals(scene: EntryScene): EntrySceneInternals {
+  return readEntrySceneInternals(scene);
+}
+
+/**
+ * 释放已消费的入口槽位，必要时压缩数组，返回新的队首下标。帧切片可能引用整个 Host 批次，消费后不得等压缩才释放。
+ * Releases a consumed ingress slot, compacts when needed and returns the new head index. A frame can retain a whole Host
+ * batch, so the slot is cleared immediately rather than at compaction.
+ */
+function releaseIngressSlot(queue: (QueuedEvent | undefined)[], head: number): number {
+  queue[head++] = undefined;
+  if (head === queue.length) {
+    queue.length = 0;
+    return 0;
+  }
+  if (head >= 1024 && head * 2 >= queue.length) {
+    queue.splice(0, head);
+    return 0;
+  }
+  return head;
+}
 
 export type EntrySceneCtor = new (config: RuntimeEntrySceneConfig) => EntryScene;
 

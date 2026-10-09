@@ -122,6 +122,8 @@ pub(crate) enum ConnectionQueueError {
     ByteLimit,
     FrameLimit,
     Full,
+    /// 暂存的帧在写期限内没有任何进展。 / Spilled frames made no progress within the write deadline.
+    Stalled,
     Closed,
 }
 
@@ -132,6 +134,7 @@ impl std::fmt::Display for ConnectionQueueError {
             Self::ByteLimit => "connection outbound byte queue is full",
             Self::FrameLimit => "connection outbound frame queue is full",
             Self::Full => "connection outbound batch queue is full",
+            Self::Stalled => "connection outbound made no progress within the write deadline",
             Self::Closed => "connection outbound queue is closed",
         })
     }

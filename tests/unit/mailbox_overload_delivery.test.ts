@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { EntryScene } from "../../app/core/process/EntryScene";
+import { EntryScene, entrySceneInternals } from "../../app/core/process/EntryScene";
 import { encodeActorLocationEnvelope, encodeActorLocationBatchEnvelope } from "../../app/core/process/ActorLocation";
 import { encodeTraceEnvelope } from "../../app/core/process/TraceEnvelope";
 import { ProcessRuntime } from "../../app/core/process/ProcessRuntime";
@@ -129,7 +129,7 @@ test("a disconnected async source cannot close a new wait using the same connect
 test.each(["trace", "actor", "batch"])("%s envelope keeps overload distinct from malformed input", async kind => {
   const f = await fixture();
   try {
-    const actorRegistry = Reflect.get(f.scene, "actorRegistry") as ProtocolRegistry;
+    const actorRegistry = entrySceneInternals(f.scene).actorRegistry;
     actorRegistry.registerMessage(Latest.msgcode, { decode: Latest.codec.decode,
       handle: () => f.host.runActorMailboxVoid(f.scene.target.InstanceId, () => { f.scene.invoked++; }) });
     const entry = { instanceId: f.scene.target.InstanceId, fenceToken: 1n,
@@ -147,7 +147,7 @@ test.each(["trace", "actor", "batch"])("%s envelope keeps overload distinct from
 
 test("a partially accepted batch closes on the first rejection and still observes earlier asynchronous failures", async () => {
   const f = await fixture(), earlier = deferred(), free = f.scene.SpawnActor(2, BusyActor);
-  const actorRegistry = Reflect.get(f.scene, "actorRegistry") as ProtocolRegistry;
+  const actorRegistry = entrySceneInternals(f.scene).actorRegistry;
   actorRegistry.registerMessage(Latest.msgcode, { decode: Latest.codec.decode,
     handle: (_message, context) => f.host.runActorMailboxVoid(context.actorInstanceId!, () =>
       earlier.promise.then(() => f.host.runActorMailboxVoid(f.scene.target.InstanceId, () => { f.scene.invoked++; }))) });

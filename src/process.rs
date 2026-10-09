@@ -3,11 +3,13 @@
 pub(crate) mod control_ingress;
 mod host_events;
 mod observability;
+mod outbound_spill;
 use host_events::HostEventBatch;
 use observability::{
     GameMetricsSnapshot, MailboxMetricsSnapshot, NativeDataMetricsSnapshot, SceneMetricsSnapshot,
     maybe_log_metrics,
 };
+use outbound_spill::OutboundSpills;
 
 #[cfg(test)]
 mod control_ingress_tests;
@@ -57,12 +59,13 @@ use crate::shutdown::{
 use crate::transport::init_remote_transport;
 #[cfg(test)]
 use crate::transport_backend::{
-    CONNECTION_OUTBOUND_BYTE_CAPACITY, ConnectionKind, ConnectionWriter, validate_frame_access,
+    CONNECTION_OUTBOUND_BYTE_CAPACITY, ConnectionKind, try_queue_connection_frame,
+    validate_frame_access,
 };
 use crate::transport_backend::{
-    ConnectionQueueError, ConnectionWriteBatch, ConnectionWriters, EndpointContext,
-    WRITE_BATCH_BYTE_CAPACITY, WRITE_BATCH_FRAME_CAPACITY, create_io_backend, stop_endpoints,
-    try_queue_connection_batch, try_queue_connection_frame,
+    ConnectionQueueError, ConnectionWriteBatch, ConnectionWriter, ConnectionWriters,
+    EndpointContext, WRITE_BATCH_BYTE_CAPACITY, WRITE_BATCH_FRAME_CAPACITY, create_io_backend,
+    stop_endpoints, try_queue_connection_batch,
 };
 
 const DEFAULT_PROCESS_EVENT_QUEUE_CAPACITY: usize = 4096;
@@ -358,6 +361,10 @@ pub(crate) struct ProcessQueueStats {
     max_depth: AtomicUsize,
     backpressure_waits: AtomicU64,
     slow_client_disconnects: AtomicU64,
+    /// 连接写队列暂满而开始暂存的次数。 / Times a connection started spilling because its write queue was full.
+    outbound_spills: AtomicU64,
+    /// 当前暂存的出站字节。 / Outbound bytes currently spilled.
+    outbound_spilled_bytes: AtomicU64,
     outbound_batches: AtomicU64,
     outbound_recipients: AtomicU64,
     outbound_bridge_bytes: AtomicU64,
@@ -426,6 +433,8 @@ impl ProcessQueueStats {
             max_depth: AtomicUsize::default(),
             backpressure_waits: AtomicU64::default(),
             slow_client_disconnects: AtomicU64::default(),
+            outbound_spills: AtomicU64::default(),
+            outbound_spilled_bytes: AtomicU64::default(),
             outbound_batches: AtomicU64::default(),
             outbound_recipients: AtomicU64::default(),
             outbound_bridge_bytes: AtomicU64::default(),
@@ -587,6 +596,7 @@ struct ProcessEventReceiver {
     previous_consecutive_control: usize,
     pending_control: Option<ProcessEvent>,
     pending_data: Option<ProcessEvent>,
+    async_results: Option<Arc<crate::host_wake::AsyncResultSignal>>,
 }
 
 impl ProcessEventReceiver {
@@ -607,7 +617,15 @@ impl ProcessEventReceiver {
             previous_consecutive_control: 0,
             pending_control: None,
             pending_data: None,
+            async_results: None,
         }
+    }
+
+    /// 让异步结果通知也能结束空闲等待；未设置时只有事件能结束等待。
+    /// Lets async-result notifications end an idle wait; without it only events end the wait.
+    fn with_async_results(mut self, signal: Arc<crate::host_wake::AsyncResultSignal>) -> Self {
+        self.async_results = Some(signal);
+        self
     }
 
     fn received(&mut self, event: ProcessEvent) -> ProcessEvent {
@@ -684,6 +702,15 @@ impl ProcessEventReceiver {
                     return Err(mpsc::RecvTimeoutError::Disconnected);
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
+            }
+            // 有异步结果待交付时不再等待，按“超时”返回让主循环推进一轮 JS。
+            // With an async result pending, stop waiting and report a timeout so the loop pumps JS.
+            if self
+                .async_results
+                .as_ref()
+                .is_some_and(|signal| signal.take())
+            {
+                return Err(mpsc::RecvTimeoutError::Timeout);
             }
             let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
                 return Err(mpsc::RecvTimeoutError::Timeout);
@@ -1016,6 +1043,8 @@ async fn run_runtime_config_with_backend(
     let (control_tx, control_rx) = mpsc::sync_channel::<ProcessEvent>(control_queue_capacity);
     let (data_tx, data_rx) = mpsc::sync_channel::<ProcessEvent>(data_queue_capacity);
     let (wake_tx, wake_rx) = mpsc::sync_channel::<()>(1);
+    let async_results = crate::host_wake::AsyncResultSignal::new(wake_tx.clone());
+    crate::host_wake::install(Arc::clone(&async_results));
     let (runtime_control_tx, runtime_control_rx) = mpsc::channel::<RuntimeControl>();
     let queue_stats = Arc::new(ProcessQueueStats::with_network_limits(
         event_queue_capacity,
@@ -1034,7 +1063,8 @@ async fn run_runtime_config_with_backend(
         wake_rx,
         Arc::clone(&queue_stats.control_admission),
         Arc::clone(&queue_stats.host_events),
-    );
+    )
+    .with_async_results(async_results);
     let runtime_stale_after = config
         .process
         .observability
@@ -1438,6 +1468,8 @@ fn run_process_runtime(
     let mut drain_started: Option<Instant> = None;
     let mut deferred_control = VecDeque::new();
     let mut pause_overflow = false;
+    // 连接写队列暂满时的出站暂存，超过写期限无进展才关闭。 / Outbound spill for momentarily full write queues.
+    let mut spills = OutboundSpills::new(Duration::from_millis(process.network.write_timeout_ms));
     let hotfix_reload_timeout = Duration::from_millis(process.lifecycle.hotfix_reload_timeout_ms);
     loop {
         while let Ok(control) = runtime_control_rx.try_recv() {
@@ -1587,7 +1619,12 @@ fn run_process_runtime(
         let mut events = HostEventBatch::new();
         let mut batch_full = false;
         let mut shutdown_requested = false;
-        let wait_ms = scheduling.idle_tick_ms;
+        // 有暂存时尽快补交，不等整个空闲 tick。 / With spilled frames, re-offer soon instead of waiting a whole idle tick.
+        let wait_ms = if spills.is_empty() {
+            scheduling.idle_tick_ms
+        } else {
+            scheduling.idle_tick_ms.min(1)
+        };
         let batch_capacity = scheduling.batch_capacity(queue_stats.depth.load(Ordering::Relaxed));
         // 内部RPC请求也可能是新业务；暂存有界请求，完成通知仍走控制通道。
         // Inner RPC requests can start new business too; defer them boundedly while completions flow.
@@ -1692,6 +1729,7 @@ fn run_process_runtime(
             &mut last_resource_sample_at,
             &health_state,
             drain_started.is_some(),
+            &mut spills,
         )?;
         if shutdown_requested {
             break;
@@ -1752,7 +1790,7 @@ fn run_process_runtime(
         }
         thread::sleep(Duration::from_millis(1));
     };
-    close_requested_connections(take_close_connection_requests(), &writers);
+    close_requested_connections(take_close_connection_requests(), &writers, &mut spills);
     tracing::info!(target: "tiangz::runtime", process = %process_name, message = %stop_result, "TypeScript process stopped");
 
     runtime
@@ -1869,6 +1907,7 @@ fn flush_runtime_batch(
     last_resource_sample_at: &mut Instant,
     health_state: &ProcessHealthState,
     hotfix_draining: bool,
+    spills: &mut OutboundSpills,
 ) -> Result<(bool, bool)> {
     let event_count = events.len();
     queue_stats.runtime_updates.fetch_add(1, Ordering::Relaxed);
@@ -1884,7 +1923,7 @@ fn flush_runtime_batch(
     pump_js_event_loop_once(js_event_loop, runtime)?;
 
     let sample_metrics = last_metrics_log.elapsed() >= Duration::from_secs(5);
-    let (update_result, outbound) = call_js_update_binary(
+    let (update_result, mut outbound) = call_js_update_binary(
         js_event_loop,
         runtime,
         entrypoints,
@@ -1892,8 +1931,8 @@ fn flush_runtime_batch(
         hotfix_draining,
     )?;
     let (
-        pending_async,
-        pending_ingress,
+        mut pending_async,
+        mut pending_ingress,
         metrics,
         game_metrics,
         native_data_metrics,
@@ -1944,12 +1983,36 @@ fn flush_runtime_batch(
             health_state,
         );
     }
-    flush_outbound(outbound, writers, queue_stats)?;
-    close_requested_connections(take_close_connection_requests(), writers);
+    // async Handler 在 Update 内派发，回包在 Update 返回后的微任务里才产生，会错过本轮取回包；空闲时要等下一个
+    // idle tick。有在途异步任务时补跑微任务并再执行一次 Update 取回包：不等待任何 I/O（不能让 Update 去 await，
+    // 否则宿主 block_on 会把 V8 卡到 op 完成），游戏帧与 Timer 按时间门控，等价于立即多跑一轮空循环。
+    // Async Handlers are dispatched inside Update but reply from microtasks after it returns, missing this drain
+    // and, when idle, waiting a whole idle tick. With async work in flight, run microtasks and update once more to
+    // drain replies: no I/O is awaited (Update must not await, or the host block_on pins V8 until the op finishes),
+    // and frames/Timers are time-gated, so this equals one immediate extra empty loop.
+    if pending_async {
+        runtime.v8_isolate().perform_microtask_checkpoint();
+        let (state, replies) =
+            call_js_update_binary(js_event_loop, runtime, entrypoints, false, hotfix_draining)?;
+        let state = state
+            .parse::<u8>()
+            .with_context(|| format!("TS update returned invalid compact state: {state}"))?;
+        pending_async = state & 1 != 0;
+        pending_ingress = state & 2 != 0;
+        outbound.extend(replies);
+    }
+    flush_outbound(outbound, writers, queue_stats, spills)?;
+    close_requested_connections(take_close_connection_requests(), writers, spills);
     Ok((pending_async, pending_ingress))
 }
 
-fn close_requested_connections(mut connection_ids: Vec<u64>, writers: &ConnectionWriters) {
+/// TS 请求的关闭排在本轮帧之后；连接仍有暂存时延后到暂存交付完（或超期）再关闭。
+/// TS close requests follow this round's frames; a connection still holding a spill closes once it is delivered (or stalls).
+fn close_requested_connections(
+    mut connection_ids: Vec<u64>,
+    writers: &ConnectionWriters,
+    spills: &mut OutboundSpills,
+) {
     if connection_ids.is_empty() {
         return;
     }
@@ -1958,6 +2021,9 @@ fn close_requested_connections(mut connection_ids: Vec<u64>, writers: &Connectio
 
     let mut writers = writers.lock().expect("connection writer map poisoned");
     for connection_id in connection_ids {
+        if spills.defer_close(connection_id) {
+            continue;
+        }
         if let Some(writer) = writers.remove(&connection_id) {
             let _ = writer.shutdown_tx.send(true);
         }
@@ -1995,17 +2061,76 @@ fn push_received_event(
     Ok(true)
 }
 
+/// 只有单连接写队列的容量错误才进入暂存；进程预算耗尽与对端关闭仍立即处理。
+/// Only per-connection queue capacity errors spill; process-budget exhaustion and a closed peer are handled at once.
+fn spills_on(error: ConnectionQueueError) -> bool {
+    matches!(
+        error,
+        ConnectionQueueError::ByteLimit
+            | ConnectionQueueError::FrameLimit
+            | ConnectionQueueError::Full
+    )
+}
+
+/// 把一个连接的帧按顺序交给写队列；已有暂存或队列暂满时其余帧进入暂存，保持顺序。
+/// Hands one connection's frames to its write queue in order; with an existing spill or a momentarily full queue
+/// the rest go to the spill, preserving order.
+fn deliver_connection_frames(
+    connection_id: u64,
+    writer: &ConnectionWriter,
+    frames: Vec<Bytes>,
+    spills: &mut OutboundSpills,
+    queue_stats: &ProcessQueueStats,
+) -> std::result::Result<(), ConnectionQueueError> {
+    let spill = |spills: &mut OutboundSpills, frames: Vec<Bytes>| {
+        if spills.push(connection_id, writer, frames)? {
+            queue_stats.outbound_spills.fetch_add(1, Ordering::Relaxed);
+        }
+        Ok(())
+    };
+    if spills.contains(connection_id) {
+        return spill(spills, frames);
+    }
+    let mut frames = frames.into_iter().peekable();
+    while frames.peek().is_some() {
+        let mut batch = Vec::with_capacity(WRITE_BATCH_FRAME_CAPACITY);
+        let mut bytes = 0_usize;
+        while let Some(frame) = frames.peek() {
+            if !batch.is_empty()
+                && (batch.len() >= WRITE_BATCH_FRAME_CAPACITY
+                    || bytes + frame.len() > WRITE_BATCH_BYTE_CAPACITY)
+            {
+                break;
+            }
+            bytes += frame.len();
+            batch.push(frames.next().unwrap());
+        }
+        match try_queue_connection_batch(writer, ConnectionWriteBatch::from_frames(batch.clone())) {
+            Ok(()) => {}
+            Err(error) if spills_on(error) => {
+                return spill(spills, batch.into_iter().chain(frames).collect());
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
 fn flush_outbound(
     outbound: Vec<BinaryOutboundBatch>,
     writers: &ConnectionWriters,
     queue_stats: &ProcessQueueStats,
+    spills: &mut OutboundSpills,
 ) -> Result<()> {
-    if outbound.is_empty() {
+    if outbound.is_empty() && spills.is_empty() {
         return Ok(());
     }
 
     let mut writers = writers.lock().expect("connection writer map poisoned");
-    let mut failed_connections = HashMap::new();
+    // 先补交上一轮暂存的帧，后续新帧排在其后。 / Re-offer earlier spills first; new frames follow them.
+    let retry = spills.retry(&writers);
+    let mut failed_connections: HashMap<u64, ConnectionQueueError> =
+        retry.failed.into_iter().collect();
     let aggregate_by_connection = outbound
         .iter()
         .map(|batch| batch.connection_ids.len())
@@ -2032,8 +2157,15 @@ fn flush_outbound(
                     .entry(connection_id)
                     .or_default()
                     .push(batch.frame.clone());
-            } else if let Some(writer) = writers.get(&connection_id)
-                && let Err(error) = try_queue_connection_frame(writer, batch.frame.clone())
+            } else if !failed_connections.contains_key(&connection_id)
+                && let Some(writer) = writers.get(&connection_id)
+                && let Err(error) = deliver_connection_frames(
+                    connection_id,
+                    writer,
+                    vec![batch.frame.clone()],
+                    spills,
+                    queue_stats,
+                )
             {
                 failed_connections.entry(connection_id).or_insert(error);
             }
@@ -2041,39 +2173,32 @@ fn flush_outbound(
     }
 
     for (connection_id, frames) in frames_by_connection {
+        if failed_connections.contains_key(&connection_id) {
+            continue;
+        }
         let Some(writer) = writers.get(&connection_id) else {
             continue;
         };
-        let mut pending = Vec::with_capacity(WRITE_BATCH_FRAME_CAPACITY);
-        let mut pending_bytes = 0_usize;
-        for frame in frames {
-            if !pending.is_empty()
-                && (pending.len() >= WRITE_BATCH_FRAME_CAPACITY
-                    || pending_bytes + frame.len() > WRITE_BATCH_BYTE_CAPACITY)
-            {
-                let batch = ConnectionWriteBatch::from_frames(std::mem::take(&mut pending));
-                if let Err(error) = try_queue_connection_batch(writer, batch) {
-                    failed_connections.entry(connection_id).or_insert(error);
-                    break;
-                }
-                pending = Vec::with_capacity(WRITE_BATCH_FRAME_CAPACITY);
-                pending_bytes = 0;
-            }
-            pending_bytes += frame.len();
-            pending.push(frame);
-        }
-        if !pending.is_empty()
-            && !failed_connections.contains_key(&connection_id)
-            && let Err(error) =
-                try_queue_connection_batch(writer, ConnectionWriteBatch::from_frames(pending))
+        if let Err(error) =
+            deliver_connection_frames(connection_id, writer, frames, spills, queue_stats)
         {
             failed_connections.entry(connection_id).or_insert(error);
+        }
+    }
+
+    for connection_id in retry.drained_closes {
+        if !failed_connections.contains_key(&connection_id)
+            && !spills.contains(connection_id)
+            && let Some(writer) = writers.remove(&connection_id)
+        {
+            let _ = writer.shutdown_tx.send(true);
         }
     }
 
     let mut failed_connections: Vec<_> = failed_connections.into_iter().collect();
     failed_connections.sort_unstable_by_key(|(connection_id, _)| *connection_id);
     for (connection_id, error) in failed_connections {
+        spills.remove(connection_id);
         if let Some(writer) = writers.remove(&connection_id) {
             let _ = writer.shutdown_tx.send(true);
             if error == ConnectionQueueError::Closed {
@@ -2091,6 +2216,9 @@ fn flush_outbound(
             }
         }
     }
+    queue_stats
+        .outbound_spilled_bytes
+        .store(spills.spilled_bytes() as u64, Ordering::Relaxed);
     Ok(())
 }
 
@@ -2181,6 +2309,7 @@ mod tests {
             }],
             &writers,
             &stats,
+            &mut OutboundSpills::new(Duration::ZERO),
         )
         .unwrap();
         assert_eq!(writers.lock().unwrap().len(), 1);
@@ -2192,6 +2321,61 @@ mod tests {
         assert_eq!(stats.outbound_buffers.snapshot().rejections, 1);
         drop(receivers);
         assert_eq!(stats.outbound_buffers.snapshot().used_bytes, 0);
+    }
+
+    // 异步结果通知在队列为空时也结束空闲等待；普通（不带事件、不带标志）唤醒仍继续等到超时。
+    // An async-result notification ends an idle wait even with empty queues; a bare wake still waits for the timeout.
+    #[test]
+    fn async_result_signal_ends_idle_wait_but_bare_wake_does_not() {
+        let (_control_sender, control_receiver) = mpsc::sync_channel(1);
+        let (_data_sender, data_receiver) = mpsc::sync_channel(1);
+        let (wake_sender, wake_receiver) = mpsc::sync_channel(1);
+        let stats = Arc::new(ProcessQueueStats::default());
+        let signal = crate::host_wake::AsyncResultSignal::new(wake_sender.clone());
+        let mut receiver = ProcessEventReceiver::new(
+            control_receiver,
+            data_receiver,
+            wake_receiver,
+            Arc::clone(&stats.control_admission),
+            Arc::clone(&stats.host_events),
+        )
+        .with_async_results(Arc::clone(&signal));
+
+        let started = Instant::now();
+        wake_sender.try_send(()).unwrap();
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_millis(120)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        assert!(
+            started.elapsed() >= Duration::from_millis(100),
+            "a bare wake must not end the wait"
+        );
+
+        let notifier = Arc::clone(&signal);
+        let wake_later = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(20));
+            notifier.notify();
+        });
+        let started = Instant::now();
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_secs(10)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "the async-result signal must end the wait"
+        );
+        wake_later.join().unwrap();
+        assert!(!signal.take(), "the receiver consumes the pending flag");
+
+        signal.notify();
+        let started = Instant::now();
+        assert!(receiver.recv_timeout(Duration::from_secs(10)).is_err());
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "a notification before waiting is not lost"
+        );
     }
 
     #[tokio::test]
@@ -2380,11 +2564,19 @@ mod tests {
         assert_eq!(stats.backpressure_waits.load(Ordering::Relaxed), 1);
     }
 
-    #[test]
-    fn slow_connection_is_closed_when_outbound_queue_is_full() {
+    /// 测试用写端：初始已排队字节可模拟写队列已满。 / Test writer; initial queued bytes simulate a full queue.
+    fn spill_test_writer(
+        queued_bytes: usize,
+    ) -> (
+        ConnectionWriters,
+        Arc<AtomicUsize>,
+        tokio_mpsc::Receiver<ConnectionWriteBatch>,
+        watch::Receiver<bool>,
+    ) {
         let writers: ConnectionWriters = Arc::new(Mutex::new(HashMap::new()));
-        let (sender, _receiver) = tokio_mpsc::channel(1);
+        let (sender, receiver) = tokio_mpsc::channel(64);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let queued = Arc::new(AtomicUsize::new(queued_bytes));
         writers.lock().unwrap().insert(
             7,
             ConnectionWriter {
@@ -2392,32 +2584,133 @@ mod tests {
                     64 * 1024 * 1024,
                 ),
                 sender,
-                queued_bytes: Arc::new(AtomicUsize::new(CONNECTION_OUTBOUND_BYTE_CAPACITY)),
+                queued_bytes: Arc::clone(&queued),
                 queued_frames: Arc::new(AtomicUsize::new(0)),
                 shutdown_tx,
             },
         );
+        (writers, queued, receiver, shutdown_rx)
+    }
+
+    fn to_seven(byte: u8) -> BinaryOutboundBatch {
+        BinaryOutboundBatch {
+            connection_ids: vec![7],
+            frame: Bytes::from(vec![0, byte]),
+        }
+    }
+
+    fn received_frames(receiver: &mut tokio_mpsc::Receiver<ConnectionWriteBatch>) -> Vec<u8> {
+        let mut seen = Vec::new();
+        while let Ok(batch) = receiver.try_recv() {
+            seen.extend(batch.frames.iter().map(|frame| frame[1]));
+        }
+        seen
+    }
+
+    // 0.7.0 发布 CI 反例：大批回包超过单连接写队列时健康对端被当作慢连接断开。现在暂存，写期限内无进展才关闭。
+    // 0.7.0 release-CI counterexample: a reply burst beyond the write queue closed a healthy peer as slow. Frames now
+    // spill; the connection closes only after no progress for the write deadline.
+    #[test]
+    fn full_queue_spills_and_closes_only_after_no_progress() {
+        let (writers, _queued, _receiver, shutdown_rx) =
+            spill_test_writer(CONNECTION_OUTBOUND_BYTE_CAPACITY);
         let stats = ProcessQueueStats::default();
+        let mut spills = OutboundSpills::new(Duration::ZERO);
 
         flush_outbound(
-            vec![
-                BinaryOutboundBatch {
-                    connection_ids: vec![7],
-                    frame: Bytes::from_static(&[0, 1]),
-                },
-                BinaryOutboundBatch {
-                    connection_ids: vec![7],
-                    frame: Bytes::from_static(&[0, 2]),
-                },
-            ],
+            vec![to_seven(1), to_seven(2)],
             &writers,
             &stats,
+            &mut spills,
         )
         .unwrap();
+        assert!(
+            writers.lock().unwrap().contains_key(&7),
+            "a full queue no longer closes at once"
+        );
+        assert!(!*shutdown_rx.borrow());
+        assert_eq!(stats.outbound_spills.load(Ordering::Relaxed), 1);
+        assert_eq!(stats.outbound_spilled_bytes.load(Ordering::Relaxed), 4);
+        assert_eq!(stats.slow_client_disconnects.load(Ordering::Relaxed), 0);
 
+        // 写队列仍满且期限为零：下一轮没有进展，按慢连接关闭。 / Still full with a zero deadline: no progress, closed as slow.
+        flush_outbound(Vec::new(), &writers, &stats, &mut spills).unwrap();
         assert!(!writers.lock().unwrap().contains_key(&7));
         assert!(*shutdown_rx.borrow());
         assert_eq!(stats.slow_client_disconnects.load(Ordering::Relaxed), 1);
+        assert_eq!(stats.outbound_spilled_bytes.load(Ordering::Relaxed), 0);
+        assert!(spills.is_empty());
+    }
+
+    #[test]
+    fn spilled_frames_are_delivered_in_order_once_the_queue_drains() {
+        let (writers, queued, mut receiver, shutdown_rx) =
+            spill_test_writer(CONNECTION_OUTBOUND_BYTE_CAPACITY);
+        let stats = ProcessQueueStats::default();
+        let mut spills = OutboundSpills::new(Duration::from_secs(10));
+
+        flush_outbound(
+            vec![to_seven(1), to_seven(2)],
+            &writers,
+            &stats,
+            &mut spills,
+        )
+        .unwrap();
+        // 已有暂存时新帧也进暂存，不能越过前面的帧。 / With a spill, new frames queue behind it.
+        flush_outbound(vec![to_seven(3)], &writers, &stats, &mut spills).unwrap();
+        assert!(received_frames(&mut receiver).is_empty());
+
+        queued.store(0, Ordering::Relaxed); // 写线程写完了原有积压。 / The writer drained the old backlog.
+        flush_outbound(vec![to_seven(4)], &writers, &stats, &mut spills).unwrap();
+        assert_eq!(received_frames(&mut receiver), vec![1, 2, 3, 4]);
+        assert!(spills.is_empty());
+        assert!(writers.lock().unwrap().contains_key(&7));
+        assert!(!*shutdown_rx.borrow());
+        assert_eq!(stats.slow_client_disconnects.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.outbound_spilled_bytes.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn close_request_waits_for_spilled_frames() {
+        let (writers, queued, mut receiver, shutdown_rx) =
+            spill_test_writer(CONNECTION_OUTBOUND_BYTE_CAPACITY);
+        let stats = ProcessQueueStats::default();
+        let mut spills = OutboundSpills::new(Duration::from_secs(10));
+
+        flush_outbound(vec![to_seven(1)], &writers, &stats, &mut spills).unwrap();
+        close_requested_connections(vec![7], &writers, &mut spills);
+        assert!(
+            writers.lock().unwrap().contains_key(&7),
+            "close waits for the spilled frame"
+        );
+        assert!(!*shutdown_rx.borrow());
+
+        queued.store(0, Ordering::Relaxed);
+        flush_outbound(Vec::new(), &writers, &stats, &mut spills).unwrap();
+        assert_eq!(received_frames(&mut receiver), vec![1]);
+        assert!(!writers.lock().unwrap().contains_key(&7));
+        assert!(*shutdown_rx.borrow());
+        assert_eq!(stats.slow_client_disconnects.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn spill_beyond_the_connection_cap_closes_as_slow() {
+        let (writers, _queued, _receiver, shutdown_rx) =
+            spill_test_writer(CONNECTION_OUTBOUND_BYTE_CAPACITY);
+        let stats = ProcessQueueStats::default();
+        let mut spills = OutboundSpills::new(Duration::from_secs(10));
+        let frames = (0..17)
+            .map(|_| BinaryOutboundBatch {
+                connection_ids: vec![7],
+                frame: Bytes::from(vec![0_u8; 1024 * 1024]),
+            })
+            .collect();
+
+        flush_outbound(frames, &writers, &stats, &mut spills).unwrap();
+        assert!(!writers.lock().unwrap().contains_key(&7));
+        assert!(*shutdown_rx.borrow());
+        assert_eq!(stats.slow_client_disconnects.load(Ordering::Relaxed), 1);
+        assert!(spills.is_empty());
     }
 
     #[test]
@@ -2449,6 +2742,7 @@ mod tests {
                 }],
                 &writers,
                 &stats,
+                &mut OutboundSpills::new(Duration::ZERO),
             )
             .unwrap();
             assert!(!writers.lock().unwrap().contains_key(&7));
@@ -2477,7 +2771,11 @@ mod tests {
             },
         );
 
-        close_requested_connections(vec![7, 7, 999], &writers);
+        close_requested_connections(
+            vec![7, 7, 999],
+            &writers,
+            &mut OutboundSpills::new(Duration::ZERO),
+        );
 
         assert!(!writers.lock().unwrap().contains_key(&7));
         assert!(*shutdown_rx.borrow());
@@ -2513,6 +2811,7 @@ mod tests {
             }],
             &writers,
             &stats,
+            &mut OutboundSpills::new(Duration::ZERO),
         )
         .unwrap();
 
@@ -2564,6 +2863,7 @@ mod tests {
             ],
             &writers,
             &stats,
+            &mut OutboundSpills::new(Duration::ZERO),
         )
         .unwrap();
 
@@ -2602,7 +2902,13 @@ mod tests {
             })
             .collect();
 
-        flush_outbound(outbound, &writers, &stats).unwrap();
+        flush_outbound(
+            outbound,
+            &writers,
+            &stats,
+            &mut OutboundSpills::new(Duration::ZERO),
+        )
+        .unwrap();
 
         assert_eq!(
             receiver.try_recv().unwrap().frames.len(),

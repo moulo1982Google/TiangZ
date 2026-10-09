@@ -5,7 +5,7 @@
   "name": "TiangZ Game Backend",
   "description": "为 TiangZ 游戏后端提供只读的领域建模、环境准备、同步、生命周期、持久化和 TypeScript/Rust 边界建议。",
   "whenToUse": "需要开发或评审 TiangZ、DBProxy、Examples/SLG 模块的领域建模、Timer/Update、状态同步、C/S 协议、持久化重试、Hotfix/config 原子热更、测试证据与开发环境时找我。",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "entry": "main.js",
   "launch": "on-demand",
   "command": "tiangz-backend",

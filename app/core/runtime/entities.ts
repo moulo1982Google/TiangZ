@@ -57,22 +57,22 @@ export interface EntityTransferSnapshot {
 }
 
 export abstract class Component<TAwakeArgs extends unknown[] = []> {
-  private awoken = false;
-  private deserialized = false;
-  private disposed = false;
-  private parent: Entity | undefined;
-  private readonly timers = new Set<TimerId>();
-  private readonly children = new Map<EntityId, ChildEntity<any[]>>();
+  #awoken = false;
+  #deserialized = false;
+  #disposed = false;
+  #parent: Entity | undefined;
+  readonly #timers = new Set<TimerId>();
+  readonly #children = new Map<EntityId, ChildEntity<any[]>>();
 
   get IsDisposed(): boolean {
-    return this.disposed;
+    return this.#disposed;
   }
 
   get Parent(): Entity {
-    if (!this.parent) {
+    if (!this.#parent) {
       throw new Error(`component has no parent: ${this.constructor.name}`);
     }
-    return this.parent;
+    return this.#parent;
   }
 
   /** 返回所属 Entity；移除后调用会抛错，因此不可跨越销毁缓存结果。 / Returns the owning Entity or throws after removal; do not cache the result past disposal. */
@@ -100,13 +100,13 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
   ): TimerId {
     let timerId = 0 as TimerId;
     const run = () => {
-      this.timers.delete(timerId);
-      if (!this.disposed) return invokeTimerMethod(this, methodName, args);
+      this.#timers.delete(timerId);
+      if (!this.#disposed) return invokeTimerMethod(this, methodName, args);
     };
     const onCancelled = options.onCancelled
       ? (context: TimerCancelledContext) => {
-          this.timers.delete(timerId);
-          if (!this.disposed) {
+          this.#timers.delete(timerId);
+          if (!this.#disposed) {
             return invokeTimerCancelledMethod(this, options.onCancelled!, args, context);
           }
         }
@@ -118,7 +118,7 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
           onCancelled ? (_actor, context) => onCancelled(context) : undefined,
         )
       : TimerSystem.Instance.NewOnceTimer(delayMs, run, { onCancelled });
-    this.timers.add(timerId);
+    this.#timers.add(timerId);
     return timerId;
   }
 
@@ -138,13 +138,13 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     options: OwnedTimerOptions = {},
   ): TimerId {
     const run = () => {
-      if (!this.disposed) return invokeTimerMethod(this, methodName, args);
+      if (!this.#disposed) return invokeTimerMethod(this, methodName, args);
     };
     let timerId = 0 as TimerId;
     const onCancelled = options.onCancelled
       ? (context: TimerCancelledContext) => {
-          this.timers.delete(timerId);
-          if (!this.disposed) {
+          this.#timers.delete(timerId);
+          if (!this.#disposed) {
             return invokeTimerCancelledMethod(this, options.onCancelled!, args, context);
           }
         }
@@ -156,15 +156,15 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
           onCancelled ? (_actor, context) => onCancelled(context) : undefined,
         )
       : TimerSystem.Instance.NewRepeatedTimer(intervalMs, run, { onCancelled });
-    this.timers.add(timerId);
+    this.#timers.add(timerId);
     return timerId;
   }
 
   /** 取消本组件拥有的定时器，并返回它此前是否仍有效。 / Cancels a timer owned by this component and returns whether it was still active. */
   CancelTimer(timerId: TimerId, reason: TimerCancelReason = "manual"): boolean {
-    if (!this.timers.delete(timerId)) return false;
-    return isActorRuntimeEntity(this.parent)
-      ? this.parent.CancelTimer(timerId, reason)
+    if (!this.#timers.delete(timerId)) return false;
+    return isActorRuntimeEntity(this.#parent)
+      ? this.#parent.CancelTimer(timerId, reason)
       : TimerSystem.Instance.Cancel(timerId, reason);
   }
 
@@ -183,15 +183,15 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     id: EntityId,
     ...args: ChildEntityAwakeArgs<T>
   ): T {
-    if (this.disposed) {
+    if (this.#disposed) {
       throw new Error(`component is disposed: ${this.constructor.name}`);
     }
-    if (this.children.has(id)) {
+    if (this.#children.has(id)) {
       throw new Error(`component already has child: ${String(id)}`);
     }
 
     const child = this.DomainScene<Scene>().__spawnChild(this, id, ctor, ...args);
-    this.children.set(id, child);
+    this.#children.set(id, child);
     return child;
   }
 
@@ -212,7 +212,7 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     ctor: ChildEntityCtor<T>,
     id: EntityId,
   ): T | undefined {
-    const child = this.children.get(id);
+    const child = this.#children.get(id);
     return child instanceof ctor ? child : undefined;
   }
 
@@ -220,7 +220,7 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
   GetChildren<T extends ChildEntity<any[]> = ChildEntity<any[]>>(
     ctor?: ChildEntityCtor<T>,
   ): readonly T[] {
-    const values = [...this.children.values()];
+    const values = [...this.#children.values()];
     return (ctor
       ? values.filter((child): child is T => child instanceof ctor)
       : values) as T[];
@@ -238,34 +238,34 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     ctor: ChildEntityCtor<T>,
     id: EntityId,
   ): T | undefined {
-    if (this.disposed) return undefined;
+    if (this.#disposed) return undefined;
     const child = this.TryGetChild(ctor, id);
     if (!child) return undefined;
 
-    this.children.delete(id);
+    this.#children.delete(id);
     this.DomainScene<Scene>().__despawnChild(this, child);
     return child;
   }
 
   get ChildCount(): number {
-    return this.children.size;
+    return this.#children.size;
   }
 
   __attach(parent: Entity): void {
-    if (this.parent) {
+    if (this.#parent) {
       throw new Error(`component is already attached: ${this.constructor.name}`);
     }
-    this.parent = parent;
+    this.#parent = parent;
   }
 
   __awake(...args: TAwakeArgs): void {
-    if (this.awoken) {
+    if (this.#awoken) {
       throw new Error(`component is already awake: ${this.constructor.name}`);
     }
-    if (this.disposed) {
+    if (this.#disposed) {
       throw new Error(`component is disposed: ${this.constructor.name}`);
     }
-    this.awoken = true;
+    this.#awoken = true;
     const result = this.Awake(...args) as unknown;
     requireSynchronousResult(
       result,
@@ -278,15 +278,15 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
 
   /** 数据恢复完成后至多调用一次业务Deserialize钩子。 / Invokes the business Deserialize hook at most once after state restoration. */
   __deserialize(): void {
-    if (this.disposed) {
+    if (this.#disposed) {
       throw new Error(`component is disposed: ${this.constructor.name}`);
     }
     const candidate = this as Partial<IDeserialize>;
     if (typeof candidate.Deserialize !== "function") return;
-    if (this.deserialized) {
+    if (this.#deserialized) {
       throw new Error(`component is already deserialized: ${this.constructor.name}`);
     }
-    this.deserialized = true;
+    this.#deserialized = true;
     const result = candidate.Deserialize.call(this) as unknown;
     requireSynchronousResult(
       result,
@@ -297,19 +297,19 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
   }
 
   __dispose(): void {
-    if (this.disposed) return;
-    this.disposed = true;
+    if (this.#disposed) return;
+    this.#disposed = true;
     UpdateSystem.TryUnregister(this);
-    for (const timerId of [...this.timers]) {
-      this.timers.delete(timerId);
-      if (isActorRuntimeEntity(this.parent)) {
-        this.parent.__cancelTimer(timerId, "owner-disposed", false);
+    for (const timerId of [...this.#timers]) {
+      this.#timers.delete(timerId);
+      if (isActorRuntimeEntity(this.#parent)) {
+        this.#parent.__cancelTimer(timerId, "owner-disposed", false);
       } else {
         TimerSystem.Instance.Cancel(timerId, "owner-disposed", false);
       }
     }
-    for (const child of [...this.children.values()].reverse()) {
-      this.children.delete(child.Id);
+    for (const child of [...this.#children.values()].reverse()) {
+      this.#children.delete(child.Id);
       this.DomainScene<Scene>().__despawnChild(this, child);
     }
     try {
@@ -321,7 +321,7 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
         { component: this.constructor.name },
       );
     } finally {
-      this.parent = undefined;
+      this.#parent = undefined;
     }
   }
 }
@@ -388,15 +388,15 @@ type ComponentAwakeArgs<TComponent> =
   TComponent extends Component<infer TAwakeArgs> ? TAwakeArgs : never;
 
 export abstract class Entity {
-  private readonly components = new Map<Function, Component<any[]>>();
-  private disposed = false;
-  private entityId: EntityId | undefined;
-  private entityInstanceId: InstanceId = 0;
-  private parent: Entity | Component<any[]> | undefined;
-  private domainScene: Scene | undefined;
+  readonly #components = new Map<Function, Component<any[]>>();
+  #disposed = false;
+  #entityId: EntityId | undefined;
+  #entityInstanceId: InstanceId = 0;
+  #parent: Entity | Component<any[]> | undefined;
+  #domainScene: Scene | undefined;
 
   get IsDisposed(): boolean {
-    return this.disposed;
+    return this.#disposed;
   }
 
   /**
@@ -414,26 +414,26 @@ export abstract class Entity {
   }
 
   get Id(): EntityId {
-    if (this.entityId === undefined) {
+    if (this.#entityId === undefined) {
       throw new Error(`entity is not attached: ${this.constructor.name}`);
     }
-    return this.entityId;
+    return this.#entityId;
   }
 
   get InstanceId(): InstanceId {
-    return this.entityInstanceId;
+    return this.#entityInstanceId;
   }
 
   get Parent(): Entity | Component<any[]> | undefined {
-    return this.parent;
+    return this.#parent;
   }
 
   /** 解析稳定的 DomainScene；挂载前和销毁后调用都会抛错。 / Resolves the stable domain Scene; it throws before attachment and after disposal. */
   DomainScene<T extends Scene = Scene>(): T {
-    if (!this.domainScene) {
+    if (!this.#domainScene) {
       throw new Error(`entity has no domain scene: ${this.constructor.name}`);
     }
-    return this.domainScene as T;
+    return this.#domainScene as T;
   }
 
   /**
@@ -453,17 +453,17 @@ export abstract class Entity {
     ...args: ComponentAwakeArgs<T>
   ): T {
     this.requireAlive();
-    if (this.components.has(ctor)) {
+    if (this.#components.has(ctor)) {
       throw new Error(`entity already has component: ${ctor.name}`);
     }
 
     const instance = new ctor();
     instance.__attach(this);
-    this.components.set(ctor, instance);
+    this.#components.set(ctor, instance);
     try {
       instance.__awake(...args);
     } catch (error) {
-      this.components.delete(ctor);
+      this.#components.delete(ctor);
       instance.__dispose();
       throw error;
     }
@@ -485,26 +485,26 @@ export abstract class Entity {
   TryGetComponent<T extends Component<any[]>>(
     ctor: ComponentCtor<T>,
   ): T | undefined {
-    return this.components.get(ctor) as T | undefined;
+    return this.#components.get(ctor) as T | undefined;
   }
 
   /** 检查组件组合关系，不暴露内部组件表。 / Tests component composition without exposing the internal component map. */
   HasComponent<T extends Component<any[]>>(
     ctor: ComponentCtor<T>,
   ): boolean {
-    return this.components.has(ctor);
+    return this.#components.has(ctor);
   }
 
   /** 立即移除并销毁组件；外部仍持有的引用随即失效。 / Removes and disposes a component immediately; outstanding references become invalid. */
   RemoveComponent<T extends Component<any[]>>(
     ctor: ComponentCtor<T>,
   ): boolean {
-    if (this.disposed) return false;
+    if (this.#disposed) return false;
 
-    const instance = this.components.get(ctor);
+    const instance = this.#components.get(ctor);
     if (!instance) return false;
 
-    this.components.delete(ctor);
+    this.#components.delete(ctor);
     instance.__dispose();
     return true;
   }
@@ -520,7 +520,7 @@ export abstract class Entity {
   CaptureTransfer(): EntityTransferSnapshot {
     this.requireAlive();
     const states = new Map<ComponentCtor, unknown>();
-    for (const [ctor, component] of this.components) {
+    for (const [ctor, component] of this.#components) {
       if (!isTransferableComponent(ctor)) continue;
       const transferable = requireTransferContract(component);
       const state = transferable.CaptureTransfer();
@@ -547,7 +547,7 @@ export abstract class Entity {
     this.requireAlive();
     const restored: Component<any[]>[] = [];
     for (const [ctor, state] of snapshot.components) {
-      const component = this.components.get(ctor);
+      const component = this.#components.get(ctor);
       if (!component) {
         throw new Error(`transfer target component not found: ${ctor.name}`);
       }
@@ -576,7 +576,7 @@ export abstract class Entity {
    */
   CompleteDeserialize(): void {
     this.requireAlive();
-    for (const component of this.components.values()) component.__deserialize();
+    for (const component of this.#components.values()) component.__deserialize();
   }
 
   /** 所有组件销毁后释放 Entity 自身资源。 / Releases Entity-owned resources after all components have been disposed. */
@@ -588,35 +588,35 @@ export abstract class Entity {
     parent: Entity | Component<any[]> | undefined,
     domainScene: Scene,
   ): void {
-    if (this.entityInstanceId !== 0) {
+    if (this.#entityInstanceId !== 0) {
       throw new Error(`entity is already attached: ${this.constructor.name}`);
     }
     if (!Number.isSafeInteger(instanceId) || instanceId <= 0) {
       throw new Error(`invalid entity instance id: ${instanceId}`);
     }
-    this.entityId = id;
-    this.entityInstanceId = instanceId;
-    this.parent = parent;
-    this.domainScene = domainScene;
+    this.#entityId = id;
+    this.#entityInstanceId = instanceId;
+    this.#parent = parent;
+    this.#domainScene = domainScene;
   }
 
   __setParent(parent: Entity | Component<any[]>): void {
-    this.parent = parent;
+    this.#parent = parent;
   }
 
   __dispose(): void {
-    if (this.disposed) return;
-    this.disposed = true;
+    if (this.#disposed) return;
+    this.#disposed = true;
 
     let firstError: unknown;
-    for (const component of [...this.components.values()].reverse()) {
+    for (const component of [...this.#components.values()].reverse()) {
       try {
         component.__dispose();
       } catch (error) {
         firstError ??= error;
       }
     }
-    this.components.clear();
+    this.#components.clear();
 
     try {
       const result = this.OnDestroy() as unknown;
@@ -630,15 +630,15 @@ export abstract class Entity {
       firstError ??= error;
     }
 
-    this.entityInstanceId = 0;
-    this.parent = undefined;
-    this.domainScene = undefined;
+    this.#entityInstanceId = 0;
+    this.#parent = undefined;
+    this.#domainScene = undefined;
 
     if (firstError !== undefined) throw firstError;
   }
 
   private requireAlive(): void {
-    if (this.disposed) {
+    if (this.#disposed) {
       throw new Error(`entity is disposed: ${this.constructor.name}`);
     }
   }
@@ -725,8 +725,8 @@ export type OwnedEntityAwakeArgs<TEntity> =
 export abstract class OwnedEntity<
   TAwakeArgs extends unknown[] = [],
 > extends Entity {
-  private awoken = false;
-  private readonly timers = new Set<TimerId>();
+  #awoken = false;
+  readonly #timers = new Set<TimerId>();
 
   /** 子 Entity 挂载并注册 Root 后同步初始化；不得执行异步 IO。 / Synchronously initializes a child after Root registration; asynchronous I/O is forbidden. */
   protected Awake(..._args: TAwakeArgs): void {}
@@ -740,12 +740,12 @@ export abstract class OwnedEntity<
   ): TimerId {
     let timerId = 0 as TimerId;
     const run = () => {
-      this.timers.delete(timerId);
+      this.#timers.delete(timerId);
       if (!this.IsDisposed) return invokeTimerMethod(this, methodName, args);
     };
     const onCancelled = options.onCancelled
       ? (context: TimerCancelledContext) => {
-          this.timers.delete(timerId);
+          this.#timers.delete(timerId);
           if (!this.IsDisposed) {
             return invokeTimerCancelledMethod(this, options.onCancelled!, args, context);
           }
@@ -759,7 +759,7 @@ export abstract class OwnedEntity<
           onCancelled ? (_actor, context) => onCancelled(context) : undefined,
         )
       : TimerSystem.Instance.NewOnceTimer(delayMs, run, { onCancelled });
-    this.timers.add(timerId);
+    this.#timers.add(timerId);
     return timerId;
   }
 
@@ -777,7 +777,7 @@ export abstract class OwnedEntity<
     let timerId = 0 as TimerId;
     const onCancelled = options.onCancelled
       ? (context: TimerCancelledContext) => {
-          this.timers.delete(timerId);
+          this.#timers.delete(timerId);
           if (!this.IsDisposed) {
             return invokeTimerCancelledMethod(this, options.onCancelled!, args, context);
           }
@@ -790,13 +790,13 @@ export abstract class OwnedEntity<
           onCancelled ? (_actor, context) => onCancelled(context) : undefined,
         )
       : TimerSystem.Instance.NewRepeatedTimer(intervalMs, run, { onCancelled });
-    this.timers.add(timerId);
+    this.#timers.add(timerId);
     return timerId;
   }
 
   /** 取消本子 Entity 拥有的 Timer。 / Cancels one timer owned by this child Entity. */
   CancelTimer(timerId: TimerId, reason: TimerCancelReason = "manual"): boolean {
-    if (!this.timers.delete(timerId)) return false;
+    if (!this.#timers.delete(timerId)) return false;
     const actor = this.OwnerActor();
     return actor
       ? actor.CancelTimer(timerId, reason)
@@ -804,13 +804,13 @@ export abstract class OwnedEntity<
   }
 
   __awake(...args: TAwakeArgs): void {
-    if (this.awoken) {
+    if (this.#awoken) {
       throw new Error(`owned entity is already awake: ${this.constructor.name}`);
     }
     if (this.IsDisposed) {
       throw new Error(`owned entity is disposed: ${this.constructor.name}`);
     }
-    this.awoken = true;
+    this.#awoken = true;
     const result = this.Awake(...args) as unknown;
     if (isPromiseLike(result)) {
       void Promise.resolve(result).catch((error) => {
@@ -825,8 +825,8 @@ export abstract class OwnedEntity<
 
   override __dispose(): void {
     if (this.IsDisposed) return;
-    for (const timerId of [...this.timers]) {
-      this.timers.delete(timerId);
+    for (const timerId of [...this.#timers]) {
+      this.#timers.delete(timerId);
       const actor = this.OwnerActor();
       if (actor) actor.__cancelTimer(timerId, "owner-disposed", false);
       else TimerSystem.Instance.Cancel(timerId, "owner-disposed", false);
@@ -854,9 +854,9 @@ export abstract class ChildEntity<
 
 export abstract class Scene extends Entity {
   protected readonly sceneContext: SceneContext;
-  private lockScope: SceneLockScope | undefined;
-  private eventScope: SceneEventScope | undefined;
-  private taskScope: SceneTaskScope | undefined;
+  #lockScope: SceneLockScope | undefined;
+  #eventScope: SceneEventScope | undefined;
+  #taskScope: SceneTaskScope | undefined;
 
   constructor(ctx: SceneContext) {
     super();
@@ -869,20 +869,20 @@ export abstract class Scene extends Entity {
 
   /** 返回严格限定到当前Scene的协程锁门面；不同Scene即使领域和键相同也不会互相阻塞。 / Returns a coroutine-lock facade strictly scoped to this Scene; identical keys in other Scenes never contend. */
   get Locks(): SceneLockScope {
-    if (!this.lockScope) this.lockScope = new SceneLockScope(this);
-    return this.lockScope;
+    if (!this.#lockScope) this.#lockScope = new SceneLockScope(this);
+    return this.#lockScope;
   }
 
   /** 返回只能发布到当前Scene实例的同步通知/否决Event门面。 / Returns the synchronous notification/veto Event facade bound exclusively to this Scene instance. */
   get Events(): SceneEventScope {
-    if (!this.eventScope) this.eventScope = new SceneEventScope(this);
-    return this.eventScope;
+    if (!this.#eventScope) this.#eventScope = new SceneEventScope(this);
+    return this.#eventScope;
   }
 
   /** 返回当前Scene拥有的短后台任务门面；任务会参与Hotfix排空并统一记录异常。 / Returns this Scene's short background-task facade; tasks participate in Hotfix draining and centralized error reporting. */
   get Tasks(): SceneTaskScope {
-    if (!this.taskScope) this.taskScope = new SceneTaskScope(this);
-    return this.taskScope;
+    if (!this.#taskScope) this.#taskScope = new SceneTaskScope(this);
+    return this.#taskScope;
   }
 
   /** @internal SceneTaskScope 使用所有者的原 Process 额度。 / SceneTaskScope uses its owner's original Process quota. */
@@ -892,7 +892,7 @@ export abstract class Scene extends Entity {
 
   /** 供ProcessHost聚合所有入口与动态Scene的后台任务，不为无任务Scene创建门面。 / Lets ProcessHost aggregate tasks across entry and dynamic Scenes without allocating empty scopes. */
   __taskInFlightCount(): number {
-    return this.taskScope?.InFlightCount ?? 0;
+    return this.#taskScope?.InFlightCount ?? 0;
   }
 
   /** 在本 Scene 创建 Actor，并在 Awake 前注册其 InstanceId。 / Creates an Actor in this Scene and registers its InstanceId before Awake runs. */
@@ -942,7 +942,7 @@ export abstract class Scene extends Entity {
   /** Scene销毁先通知后台任务协作取消，再级联释放组件和Entity。 / Scene disposal first requests cooperative task cancellation, then cascades through Components and Entities. */
   override __dispose(): void {
     if (this.IsDisposed) return;
-    this.taskScope?.Dispose();
+    this.#taskScope?.Dispose();
     super.__dispose();
   }
 }
@@ -951,8 +951,8 @@ export abstract class Actor<
   TAwakeArgs extends unknown[] = [],
 > extends Entity implements ActorRuntimeEntity<TAwakeArgs> {
   readonly [ACTOR_RUNTIME_ENTITY] = true as const;
-  private awoken = false;
-  private actorLocationFenceToken = 0n;
+  #awoken = false;
+  #actorLocationFenceToken = 0n;
   protected readonly ctx: ActorContext;
 
   constructor(ctx: ActorContext) {
@@ -966,12 +966,12 @@ export abstract class Actor<
 
   /** 更新该Actor接受的外部路由代次；零值关闭门禁。 / Updates the external route generation accepted by this Actor; zero disables fencing. */
   __setActorLocationFenceToken(token: bigint): void {
-    this.actorLocationFenceToken = requireActorLocationFenceToken(token);
+    this.#actorLocationFenceToken = requireActorLocationFenceToken(token);
   }
 
   /** 校验外部路由代次；仅供Actor分发器在进入mailbox后调用。 / Validates an external route generation inside the Actor mailbox. */
   __matchesActorLocationFenceToken(token: bigint): boolean {
-    return token > 0n && token === this.actorLocationFenceToken;
+    return token > 0n && token === this.#actorLocationFenceToken;
   }
 
   /** 在所属 Scene 内同步初始化 Actor 状态。 / Initializes Actor state synchronously inside its owning Scene. */
@@ -1072,13 +1072,13 @@ export abstract class Actor<
   }
 
   __awake(...args: TAwakeArgs): void {
-    if (this.awoken) {
+    if (this.#awoken) {
       throw new Error(`actor is already awake: ${this.constructor.name}`);
     }
     if (this.IsDisposed) {
       throw new Error(`actor is disposed: ${this.constructor.name}`);
     }
-    this.awoken = true;
+    this.#awoken = true;
     const result = this.Awake(...args) as unknown;
     if (isPromiseLike(result)) {
       void Promise.resolve(result).catch((error) => {

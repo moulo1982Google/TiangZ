@@ -614,6 +614,8 @@ pub(super) fn maybe_log_metrics(
         dropped_logs: dropped_logs as u64,
         backpressure_waits: queue_stats.backpressure_waits.load(Ordering::Relaxed),
         slow_client_disconnects: queue_stats.slow_client_disconnects.load(Ordering::Relaxed),
+        outbound_spills: queue_stats.outbound_spills.load(Ordering::Relaxed),
+        outbound_spilled_bytes: queue_stats.outbound_spilled_bytes.load(Ordering::Relaxed),
         inbound_frames: queue_stats.inbound_frames.load(Ordering::Relaxed),
         host_completions: queue_stats.host_completions.load(Ordering::Relaxed),
         disconnects: queue_stats.disconnects.load(Ordering::Relaxed),

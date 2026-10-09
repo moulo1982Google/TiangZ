@@ -1,5 +1,19 @@
 # 2026-09-16：先选业务工程，再写模块
 
+## 2026-10-08：异步结果在空闲进程里多等一个 tick
+
+现象：空闲 Process（adaptive）中，async Handler（即使不 await）回包约 59–61ms，DBProxy 读写与模块 NativeWorkers 结果约 60ms，low-latency 约 18ms；同步 Handler 约 0.5ms。worker 计算期间，同进程其他请求 p99 约 16ms。现有 Scene 指标即可看到：`handler_ms=60 max_handler_ms=66` 而 Handler 本身几乎不耗时。有持续流量时被网络帧叫醒掩盖，压测不易发现。
+
+真实原因：见[异步结果唤醒](../design/async-result-wake.md)——异步 op 完成不叫醒主循环；有未完成 op 时推进 JS 等满 1ms 计时器（Windows 约 16ms）；async Handler 回包产生于 Update 之后的微任务。
+
+正确做法：宿主任务在结果可取后（先 `oneshot` 发送、通知守卫先于发送端声明）调用 `host_wake`；推进 JS 不设计时器；Update 后有在途 async 任务时补跑微任务再取回包。新增宿主异步 op 若在其他线程/运行时完成，也必须在结果可取后通知。
+
+禁止的绕过：不能缩短 idle_tick 或改 low-latency 掩盖；不能让 Update await Handler（宿主 block_on 会把 V8 卡到 op 完成，单元测试实测 30ms op 卡 33–42ms）；不能在 worker/宿主线程读写实体存储（线程局部，读到空数据不报错）。
+
+实验中走过的弯路（保留供复测者避免）：给 `poll_event_loop` 传自定义 waker 无效——op 完成只唤醒 deno 的 tokio 本地任务；只发唤醒信号无效——`recv_timeout` 在队列为空时继续睡；推进时用 0ms 超时无效——tokio 计时器仍按 1ms 粒度驻留，Windows 上照样约 16ms；实验驱动用同步方式读进程 CPU 会卡客户端约 150ms，使各场景最大值失真，须异步读取。
+
+复测：`cargo test --bin TiangZ -- host_wake dbproxy native_worker host::tests process::tests`；端到端对比需在真实 Process 中用 starter 模块夹具测修复前后的空闲 RTT（同步/async Handler、NativeWorkers、Repository、HostStreamConsumer），并在并发负载下分别测游戏进程与 DBProxy 进程的每请求 CPU。驱动脚本是一次性实验工具，未入库；数值见设计文档验证记录。
+
 源码落地：双亲合并`c06b244`已快进原`feat/v0.7`，原工作区完整Rust/KCP和启动包重建、真实模块宿主启动/停止通过，Host SHA3d390885...；生成/依赖锁无漂移。原目录证据`temp/v07-065-integration-main/`与隔离矩阵分开，不把旧二进制当新Rust结果。MSVC既有链接警告保留、未push，见[源码对齐](../design/v0.7-merge-0.6.5.md)。
 
 2026-10-07源码对齐终验：0.6.5关闭/Native worker整合保留0.7拆分、预算和RAII，另补成功/业务错误均按UTF-8字节限长，固定panic诊断保持分类。最终实现树044287f8，Windows发布级check8/quick35/full9、Rust279通过；Linux原整合full9/Rust282，最终Rust修复另跑全目标Clippy/Rust283和两模块V8/worker真实热更停机通过，不把旧full或专项互相冒充。API锁/codegen/204导出冻结检查通过、依赖与协议锁不变；首轮夹具、可移植路径和真实超长错误反例均保留，见[源码对齐](../design/v0.7-merge-0.6.5.md)及[失败教训](#整合旧分支时须适配当前架构和宿主abi)。后续核对未完功能、SDK/插件与发行输入，未push；以下为历史快照。
