@@ -7,7 +7,7 @@
 [![tag](https://img.shields.io/github/v/tag/moulo1982Google/TiangZ?label=tag&sort=semver)](https://github.com/moulo1982Google/TiangZ/tags)
 [![license](https://img.shields.io/github/license/moulo1982Google/TiangZ?label=license)](LICENSE)
 
-TiangZ 是 Rust Runtime + TypeScript 的模块化游戏服务端框架。当前版本为 `0.7.2-rc1`（内部长稳候选；最新正式版 `0.7.1`）；上一正式版 `v0.6.5` 于 2026-09-30 发布。
+TiangZ 是 Rust Runtime + TypeScript 的模块化游戏服务端框架。当前版本为 `0.7.2-rc2`（内部长稳候选；最新正式版 `0.7.1`）；上一正式版 `v0.6.5` 于 2026-09-30 发布。
 
 MMORPG 不再是内置宿主：服务端模块、协议、配置、Native 游戏数据与六个客户端都在同级 TiangZ-Examples。TiangZ-ModuleGame 和 TiangZ-WoW335 显式依赖该 MMORPG 模块；SLG 不需要安装它。
 
