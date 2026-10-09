@@ -101,6 +101,9 @@ impl Worker {
                         stats.failed += u64::from(result.is_err());
                     }
                     let _ = job.reply.send(result);
+                    // 结果已可取后再叫醒主循环，空闲 Process 无需等到下一个 idle tick。
+                    // Wake the loop only after the result is observable so an idle Process need not wait for the next idle tick.
+                    crate::host_wake::notify_async_result();
                     state.changed.notify_waiters();
                 }
             })?;
@@ -363,6 +366,34 @@ mod tests {
         assert_eq!(stats.pending, 0);
         assert_eq!(stats.completed, 2);
         assert!(!stats.accepting);
+    }
+
+    // 结果交给 oneshot 之后才叫醒主循环：每个叫醒到来时检查结果，直到结果可取。
+    // The loop is woken after the oneshot holds the result: check the result on each wake until it is observable.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn finished_job_wakes_the_process_loop_after_its_result_is_observable() {
+        let (_guard, _signal, wake) = crate::host_wake::install_for_test();
+        let worker = Worker::new(WorkerSpec {
+            name: "wake",
+            capacity: 1,
+            max_input_bytes: 8,
+            max_output_bytes: 8,
+            compute,
+        })
+        .unwrap();
+        let mut reply = worker.submit("ok".into()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            wake.recv_timeout(remaining)
+                .expect("a finished job must wake the process loop");
+            if let Ok(result) = reply.try_recv() {
+                assert_eq!(result.unwrap(), "ok");
+                break;
+            }
+        }
+        worker.drain().await;
     }
 
     #[tokio::test]

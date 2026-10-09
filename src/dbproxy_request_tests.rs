@@ -140,3 +140,39 @@ async fn success_and_business_error_are_returned_once() {
         Err(ClientError::InvalidConfig("original error"))
     ));
 }
+
+// 结果放入 oneshot 之后才叫醒主循环；panic 时 V8 侧先看到终止，再收到叫醒。
+// The loop is woken only after the result is in the oneshot; on panic the termination is observable before the wake.
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn host_result_is_observable_before_the_process_loop_is_woken() {
+    let (_guard, signal, wake) = crate::host_wake::install_for_test();
+    let value = execute(
+        &Handle::current(),
+        deadline(Duration::from_secs(5), None).unwrap(),
+        |_| async { Ok(7_u32) },
+    )
+    .await;
+    assert_eq!(value.unwrap(), 7);
+    assert!(signal.take(), "a successful host result must wake the loop");
+    let _ = wake.try_recv();
+    let failed = execute(
+        &Handle::current(),
+        deadline(Duration::from_secs(5), None).unwrap(),
+        |_| async {
+            panic!("host task failure");
+            #[allow(unreachable_code)]
+            Ok(0_u32)
+        },
+    )
+    .await;
+    assert!(matches!(failed, Err(ClientError::UnexpectedResponse(_))));
+    let started = std::time::Instant::now();
+    while !signal.take() {
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "a panicking host task must still wake the loop"
+        );
+        tokio::task::yield_now().await;
+    }
+}
