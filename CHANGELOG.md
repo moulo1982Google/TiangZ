@@ -1,5 +1,23 @@
 # 版本记录
 
+## 未发布（0.7.1）
+
+修补 0.7.0 发布时记录的问题。协议、配置字段与 Stable API 不变；需重建宿主并重启。
+
+### 修正
+
+- **大批回包不再断开健康连接。** 一轮 Update 为同一连接产生的帧超过单连接写队列（4096 帧 / 4 MiB）时，宿主原来立即按“慢连接”关闭该连接。0.7.0 发布 CI 的热更故障矩阵中，65,536 个挂起 Inner RPC 同时完成即触发（host 日志 `closing slow connection ... frame queue is full`），读取正常的对端也被断开。现在剩余帧按原顺序暂存并计入进程出站预算，每轮先补交；只有暂存在写期限（`network.writeTimeoutMs`，默认 10 秒）内毫无进展、单连接暂存超过 16 MiB 或进程出站预算耗尽时才关闭。有暂存时 TS 请求的关闭等暂存交付后执行，保持“先帧后关闭”。新增指标 `tiangz_process_outbound_spills_total`、`tiangz_process_outbound_spilled_bytes`。
+- **业务子类可以使用与引擎内部同名的字段。** 0.7 的 `EntryScene` 新增大量 TS `private` 字段（如 `connections`、`metrics`、`lifecycleState`），它们在运行时是普通属性并出现在 `.d.ts` 中：业务 Scene 声明同名字段会编译失败，绕过类型检查还会覆盖引擎状态（苟道三国升级 0.7.0 时 Gate 的 `connections` 不得不改名）。`EntryScene`、`Component`/`Entity`/`OwnedEntity`、`Unit`、`SessionComponent`、`EntityRoot` 的内部状态改为 ES `#` 私有字段，行为不变。
+
+### 恢复：异步结果唤醒
+
+- 0.7.0 撤回的异步结果唤醒重新合入（DBProxy、模块 Native worker、event_stream 的结果到达后立即叫醒主循环）。撤回原因即上面的断连问题：唤醒后回包集中在同一轮交出，更容易超过单连接写队列。出站暂存修复后，该场景在 Windows/Linux CI 的结果记入发布说明。
+
+### 测试与工具
+
+- 热更故障矩阵失败时把各宿主日志尾部写入 `temp/test-logs`，CI 失败制品带出 host 侧原因（本次即靠它定位到断连）。
+- 新增 `tests/unit/subclass_field_names.test.ts`（在 0.7.0 上失败：“scene cannot start from business lifecycle”）与出站暂存的 Rust 单元测试（顺序交付、延后关闭、无进展关闭、单连接上限）。
+
 ## 0.7.0 — 2026-10-08（正式版，标签 `v0.7.0`）
 
 在 `v0.7.0-rc1` 之上加入下列 Scene HTTP 与 outerIp 域名，直接发布为正式版（异步结果唤醒因 CI 发现断连问题未包含，见下）（不再发 rc2 的 GitHub 发布；已推送的底层仓库 `v0.7.0-rc2` 标签保留）。依赖改为固定标签：DBProxy `v0.7.0`（0.7.0，无代码改动）、Developer Tools `v0.16.1`（Core 0.16.1，含 HTTP Handler 热更规则，替代原先固定的 198afe8f 提交）、Native Language `v0.17.1`（Core 0.17.1，无代码改动）。两个工具仓库已有自己 2026-07 的旧 `v0.7.0` 标签，因此用各自版本号作标签。随包 AI 插件 0.3.0 用 Developer Core 0.16.1 重新构建 MCP。以后的缺陷按 0.7.x 小版本修补。

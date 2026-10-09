@@ -612,6 +612,8 @@ Demo 部署配置、示例运维资产和游戏测试在 Examples；旧固定拓
 
 2026-09-14 连接出站队列以 `ConnectionQueueError` 区分字节上限、帧上限、批队列满与接收端关闭。失败撤销本批计数；`flush_outbound` 清理两类失败连接，但只有容量拒绝计入 `slow_client_disconnects` 并发出慢连接警告。接收端关闭仅为 debug 清理记录，不能据普通客户端退出推断容量不足。队列容量、关闭信号、事件/状态投递语义不变。
 
+2026-10-08（0.7.1）：容量拒绝（字节、帧、批队列满）不再立即关闭连接，剩余帧进 `process::outbound_spill` 按序暂存并计入进程出站预算，每轮先补交；写期限内无进展记为 `ConnectionQueueError::Stalled` 再按慢连接关闭，单连接暂存 16 MiB 为上限，进程预算耗尽仍立即关闭。TS 关闭请求遇到暂存时延后到交付完成。指标 `tiangz_process_outbound_spills_total`、`tiangz_process_outbound_spilled_bytes`。
+
 2026-09-13 Native 组合构建在编译前检查 Cargo 已解析依赖图：模块及其正常依赖使用的 deno_core 必须与宿主是同一 crate 身份；相同版本但不同来源也不能混用。失败报告模块 ID 与双方版本，不自动改写模块 Cargo.toml 或锁。测试模板从宿主 Cargo metadata 获取依赖要求，避免依赖升级后仍固定旧 Deno 版本。
 
 2026-09-13 启动可用 `--runtime-root=<目录>` 明确选择包含 `dist/` 和 `configs/` 的资源目录；路径无效立即拒绝，不回退其他工程。未指定时保留工作目录、可执行文件祖先、开发目录的既有推断顺序。启动日志记录实际资源根目录，Watcher 子进程继承确定目录。独立游戏和候选包验收应明确指定目录并核对 Bundle 版本；此选项不跳过模块、Native、协议或 Hotfix 兼容检查。

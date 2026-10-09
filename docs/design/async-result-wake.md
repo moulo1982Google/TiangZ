@@ -73,3 +73,8 @@ rc1 的 59ms 中已包含真实存储耗时（约 2–7ms），被 idle tick 掩
 未覆盖：Linux 与 release 构建；完整 `npm run verify`；真实 PostgreSQL/Redis 后端下的 CPU；高负载下按忙闲合并叫醒以降低 DBProxy 侧每请求 CPU 的优化。
 
 合入 `release/v0.7.0-rc1`（合并提交 d30d8498，含 HTTP 集成）后复测：Rust `cargo test --bin TiangZ` 258/258，`cargo clippy --all-targets -- -D warnings` 与 `cargo fmt --check` 通过；`npm run verify:quick` check 8/8、quick 34/35，唯一失败仍为依赖 PowerShell 7 的 `spawn pwsh ENOENT` 用例。宿主 SHA-256 f9396f93…（debug）。`v0.7.0-rc1` 标签仍指向 bf25dddf，本修正随下一个 0.7 版本发布。
+
+## 0.7.0 撤回与 0.7.1 恢复（2026-10-08）
+
+合入 0.7 集成线后，0.7.0 发布 PR 的 Windows/Linux CI 在 `test:hotfix-faults` 控制入口满额场景 4 次失败 3 次（本机 3/3 通过），0.7.0 因此撤回本改动。0.7.1 让故障矩阵失败时上传宿主日志，CI 复现后日志为 `closing slow connection: outbound queue limit exceeded ... reason=connection outbound frame queue is full`：Worker 放行后 65,536 个挂起 RPC 同时完成，Update 后补取把全部回包放进同一次 flush，超过单连接 4096 帧写队列，宿主把正常读取的 Inner 对端当慢连接关闭。根因在“写队列满即关闭”，本改动只是让回包更集中。修复见 `docs/design/v0.7-design.md` N2 的出站暂存；本改动随修复在 0.7.1 恢复。
+
