@@ -1,6 +1,6 @@
 {
   "name": "ets-runtime",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "license": "Apache-2.0",
   "packageManager": "npm@11.18.0",
@@ -145,8 +145,8 @@
     "release:with-local-deps": "node tools/release/with_candidate_dependencies.mjs"
   },
   "devDependencies": {
-    "@tiangz/developer-tools-core": "git+https://github.com/moulo1982Google/tiangz-developer-tools.git#v0.16.1",
-    "@tiangz/native-language-core": "git+https://github.com/moulo1982Google/tiangz-native-language.git#v0.17.1",
+    "@tiangz/developer-tools-core": "git+https://github.com/moulo1982Google/tiangz-developer-tools.git#v0.16.2",
+    "@tiangz/native-language-core": "git+https://github.com/moulo1982Google/tiangz-native-language.git#v0.17.2",
     "@types/node": "^26.1.0",
     "@vitest/coverage-v8": "^5.0.0",
     "esbuild": "^0.28.0",
