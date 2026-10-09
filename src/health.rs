@@ -83,6 +83,8 @@ pub(crate) struct ProcessObservabilitySnapshot {
     pub(crate) dropped_logs: u64,
     pub(crate) backpressure_waits: u64,
     pub(crate) slow_client_disconnects: u64,
+    pub(crate) outbound_spills: u64,
+    pub(crate) outbound_spilled_bytes: u64,
     pub(crate) inbound_frames: u64,
     pub(crate) host_completions: u64,
     pub(crate) disconnects: u64,

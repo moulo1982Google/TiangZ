@@ -910,6 +910,22 @@ fn append_process_metrics_prometheus(
     .expect("formatting metric");
     writeln!(
         output,
+        "# HELP tiangz_process_outbound_spills_total Connections that spilled outbound frames because their write queue was full
+# TYPE tiangz_process_outbound_spills_total counter
+tiangz_process_outbound_spills_total{{process=\"{}\"}} {}",
+        process_name, snapshot.outbound_spills
+    )
+    .expect("formatting metric");
+    writeln!(
+        output,
+        "# HELP tiangz_process_outbound_spilled_bytes Outbound bytes waiting in connection spills
+# TYPE tiangz_process_outbound_spilled_bytes gauge
+tiangz_process_outbound_spilled_bytes{{process=\"{}\"}} {}",
+        process_name, snapshot.outbound_spilled_bytes
+    )
+    .expect("formatting metric");
+    writeln!(
+        output,
         "# HELP tiangz_process_disconnects_total Client disconnections"
     )
     .expect("formatting metric help");
