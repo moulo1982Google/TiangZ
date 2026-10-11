@@ -2007,7 +2007,7 @@ fn flush_runtime_batch(
     // drain replies: no I/O is awaited (Update must not await, or the host block_on pins V8 until the op finishes),
     // and frames/Timers are time-gated, so this equals one immediate extra empty loop.
     if pending_async {
-        runtime.v8_isolate().perform_microtask_checkpoint();
+        run_microtasks_in_event_loop(js_event_loop, runtime);
         let (state, replies) =
             call_js_update_binary(js_event_loop, runtime, entrypoints, false, hotfix_draining)?;
         let state = state
@@ -2020,6 +2020,19 @@ fn flush_runtime_batch(
     flush_outbound(outbound, writers, queue_stats, spills)?;
     close_requested_connections(take_close_connection_requests(), writers, spills);
     Ok((pending_async, pending_ingress))
+}
+
+/// 在 JS 事件循环的 Tokio 上下文里补跑 V8 微任务。异步续体会在微任务里发起异步 op，deno_core 调用时立即轮询一次，
+/// 需要 Tokio 定时器或 I/O 的 op（如 DBProxy 请求期限）离开上下文会 panic，而 panic 发生在不能展开的 V8 回调里，进程直接中止。
+/// Runs V8 microtasks inside the JS event loop's Tokio context. Continuations start async ops that deno_core polls
+/// once at call time; ops needing Tokio timers or I/O (such as DBProxy request deadlines) panic outside the context,
+/// and that panic inside a non-unwinding V8 callback aborts the process.
+fn run_microtasks_in_event_loop(
+    js_event_loop: &tokio::runtime::Runtime,
+    runtime: &mut deno_core::JsRuntime,
+) {
+    let _guard = js_event_loop.enter();
+    runtime.v8_isolate().perform_microtask_checkpoint();
 }
 
 /// TS 请求的关闭排在本轮帧之后；连接仍有暂存时延后到暂存交付完（或超期）再关闭。
@@ -2241,6 +2254,51 @@ fn flush_outbound(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pending_async_microtasks_run_inside_the_tokio_context() {
+        // 复现 0.7.2-rc2 带数据库开发服务器的中止：补跑的微任务里续体发起需要 Tokio 定时器的异步 op。
+        // 修复前在上下文外补跑，op 立即轮询时 panic 并中止整个测试进程；修复后 op 正常开始等待。
+        // Reproduces the rc2 abort: a continuation in the drained microtasks starts an async op needing a Tokio timer.
+        // Before the fix the eager poll panicked outside the context and aborted the test process.
+        let event_loop = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut runtime = {
+            let _entered = event_loop.enter();
+            let mut runtime = create_runtime(false, 0).unwrap();
+            runtime
+                .execute_script(
+                    "pending-async:continuation",
+                    r#"
+                      globalThis.continuationStarted = false;
+                      globalThis.continuationDone = false;
+                      Promise.resolve().then(async () => {
+                        globalThis.continuationStarted = true;
+                        await __hostWaitDeadline(__hostCreateDeadline(1));
+                        globalThis.continuationDone = true;
+                      });
+                    "#,
+                )
+                .unwrap();
+            runtime
+        };
+        // 与主循环相同：调用方此时不在 Tokio 上下文里。 / As in the main loop, the caller holds no Tokio context here.
+        run_microtasks_in_event_loop(&event_loop, &mut runtime);
+        let started = runtime
+            .execute_script("pending-async:started", "globalThis.continuationStarted")
+            .unwrap();
+        let _entered = event_loop.enter();
+        assert!(started.open(runtime.v8_isolate()).is_true());
+        event_loop
+            .block_on(runtime.run_event_loop(Default::default()))
+            .unwrap();
+        let done = runtime
+            .execute_script("pending-async:done", "globalThis.continuationDone")
+            .unwrap();
+        assert!(done.open(runtime.v8_isolate()).is_true());
+    }
 
     #[test]
     fn gc_metrics_allow_shared_reads_across_real_v8_callbacks() {
