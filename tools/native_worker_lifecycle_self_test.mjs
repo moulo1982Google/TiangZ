@@ -28,7 +28,7 @@ manifest.native={source:'native',crate:'rust',crateName:'lifecycle_worker',gener
 await writeFile(manifestPath,JSON.stringify(manifest));
 await mkdir(path.join(moduleRoot,'native'),{recursive:true}); await mkdir(path.join(moduleRoot,'rust/src'),{recursive:true});
 await writeFile(path.join(moduleRoot,'native/Worker.native'),'namespace fixture;\nabstract entity Entity { readonly id: u32; @transient readonly instanceId: u32; }\n');
-await writeFile(path.join(moduleRoot,'rust/Cargo.toml'),'[package]\nname="lifecycle_worker"\nversion="0.1.0"\nedition="2024"\n[dependencies]\ndeno_core="0.411"\n');
+await writeFile(path.join(moduleRoot,'rust/Cargo.toml'),'[package]\nname="lifecycle_worker"\nversion="0.1.0"\nedition="2024"\n[dependencies]\ndeno_core="0.412"\n');
 await writeFile(path.join(moduleRoot,'rust/src/lib.rs'),'pub mod generated; pub mod native_data; pub use generated::{extension, BOOTSTRAP};\n');
 await writeFile(path.join(moduleRoot,'rust/src/native_data.rs'),`pub fn worker_compute(input: String) -> Result<String,String> {
   let p=std::path::Path::new(&input); let deadline=std::time::Instant::now()+std::time::Duration::from_secs(10);

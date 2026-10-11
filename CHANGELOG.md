@@ -10,6 +10,10 @@
 
 - **异步续体访问 DBProxy 不再中止宿主。**（2026-10-11 补入 rc2，版本号不变）Process 主循环在有在途异步任务时补跑 V8 微任务（0.7.1 起，来自“异步结果唤醒空闲循环”），补跑前没有进入 JS 事件循环的 Tokio 上下文。续体在微任务里发起异步 op，deno_core 调用时立即轮询一次，需要 Tokio 定时器的 op（DBProxy 请求期限 `timeout_at`）panic：`there is no reactor running`；panic 发生在不能展开的 V8 回调里，进程直接中止。苟道三国带数据库的开发服务器登录读区服目录时稳定复现；内存模式不受影响。补跑改为在上下文内执行（`run_microtasks_in_event_loop`）；其余执行 JS 的入口已核对，宿主事件推送只入队或兑现 Promise，续体在已进入上下文的事件循环泵里运行。新增回归测试：微任务续体调用需要 Tokio 定时器的期限 op，修复前同样中止，修复后正常完成。DBProxy 期限语义不变。
 
+### 依赖
+
+- **deno_core 0.411 → 0.412。** 随之升级 deno_ops 0.288、serde_v8 0.321、deno_v8 0.4、deno_inspector_server 0.33；V8 仍为 150.4.0（预编译库可复用），deno_error 仍为 0.7.1（deno_core 固定）。0.412 主要是内存修正：错误堆栈的 source map 缓存改为有上限的 LRU（此前长期运行、抛错文件多时只增不减），op 声明表改为静态常量、共用上下文每个 realm 只存一份，内联 source map 改为用到时才解析，模块实例化后释放导入边与延迟加载模块的源码副本；编译缓存键改为按 UTF-16 精确计算，缓存后端出错时退回无缓存编译。TiangZ 只用标准 `extension!` 宏，无需改代码。tokio 补丁升级到 1.53.2（tokio-util 0.7.20、tokio-rustls 0.26.6）。游戏模块的 Native crate 须同步改为 `deno_core = "0.412"`（宿主会校验版本一致）。
+
 ## 0.7.2-rc1 — 2026-10-09（候选，本地标签 `v0.7.2-rc1`，不发 GitHub 发布）
 
 内部长稳测试用候选，相对 0.7.1 只有下面的修正与诊断工具；协议、配置字段与 Stable API 不变。长稳通过后改为正式 0.7.2。
