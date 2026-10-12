@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -216,6 +217,45 @@ test("多个进程同时发现残留锁：只有一个接管", async () => {
     })));
   }
   await assert.rejects(access(file), { code: "ENOENT" });
+});
+
+test("接管文件已存在：报错附带接管者信息，不改锁与接管文件", async () => {
+  const { root, file } = await freshProject();
+  const lock = JSON.stringify({ pid: 4242, action: "dev", startedAt: new Date(0).toISOString() });
+  const guard = JSON.stringify({ pid: 777, action: "build", startedAt: "2026-10-11T00:00:00.000Z", hostname: os.hostname() });
+  await writeFile(file, lock);
+  await writeFile(`${file}.takeover`, guard);
+  await assert.rejects(acquireGameProjectLock({ root }, "check", { probe: { exists: async () => false } }), /正在接管.*接管者：PID 777，action=build，startedAt=2026-10-11T00:00:00.000Z/);
+  assert.equal(await readFile(file, "utf8"), lock);
+  assert.equal(await readFile(`${file}.takeover`, "utf8"), guard);
+});
+
+test("无权限删除残留锁：友好报错、不继续，锁保留且接管文件释放", async () => {
+  for (const code of ["EACCES", "EPERM"]) {
+    const { root, file } = await freshProject();
+    const lock = JSON.stringify({ pid: 4242, action: "dev", startedAt: new Date(0).toISOString() });
+    await writeFile(file, lock);
+    const unlink = async () => { throw Object.assign(new Error(`${code}: denied`), { code }); };
+    await assert.rejects(acquireGameProjectLock({ root }, "check", { probe: { exists: async () => false }, unlink, log: () => assert.fail("must not report cleared") }), new RegExp(`无权限删除残留开发锁.*PID 4242.*${code}`));
+    assert.equal(await readFile(file, "utf8"), lock);
+    await assert.rejects(access(`${file}.takeover`), { code: "ENOENT" });
+  }
+});
+
+test("每次清除残留锁后都被其他命令抢先：报“多次被抢先”而不是“占用”", async () => {
+  const { root, file } = await freshProject();
+  let generation = 0;
+  const writeStale = () => writeFileSync(file, JSON.stringify({ pid: 4242, action: "dev", startedAt: new Date(++generation * 1000).toISOString() }));
+  writeStale();
+  const lines = [];
+  // 清除后、重新建锁前写入另一把残留锁，模拟其他命令每次都抢先。 / Recreate a stale lock right after each removal to simulate being preempted.
+  const log = line => { lines.push(line); writeStale(); };
+  await assert.rejects(acquireGameProjectLock({ root }, "check", { probe: { exists: async () => false }, log }), error => {
+    assert.match(error.message, /多次尝试取得开发锁均被其他命令抢先/);
+    assert.doesNotMatch(error.message, /占用工程/);
+    return true;
+  });
+  assert.equal(lines.length, 3);
 });
 
 test("释放只删除仍属于自己的锁", async () => {

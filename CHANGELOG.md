@@ -4,7 +4,7 @@
 
 ### 修正
 
-- **开发锁残留时自动清除。** `.tiangz-dev.lock` 原来发现锁就拒绝，命令被直接终止（例如 Windows 上关闭控制台窗口）后每次都要人工删锁。现在遇到已有锁时，只有确认记录的进程已退出才清除并继续，同时在 stderr 打印一行原锁的 PID、action 与 startedAt：PID 不存在，或该 PID 现属于锁写入之后才启动的进程（PID 被复用；Windows 用 CIM `CreationDate`，Linux 用 `/proc` 启动身份，macOS 等用 `ps -o lstart=`）。锁内容无法识别、来自其他主机、读不到进程信息时照旧拒绝。清除经 `.tiangz-dev.lock.takeover` 独占文件串行化并逐字节复核，并发命令只有一个接管。锁新增 `hostname`、`token`（Linux 另有 `processIdentity`）字段，旧格式锁仍可识别；释放只删除带自己 token 的锁。只判断记录的 Node 进程，不检查或停止其 Watcher/宿主子进程。设计见 `docs/design/dev-lock-stale-cleanup.md`；回归 `node --test tools/game_project_lock.test.mjs` 已列入 `verify:quick`。Runtime、协议与 Stable API 不变，不需要重建宿主。
+- **开发锁残留时自动清除。** `.tiangz-dev.lock` 原来发现锁就拒绝，命令被直接终止（例如 Windows 上关闭控制台窗口）后每次都要人工删锁。现在遇到已有锁时，只有确认记录的进程已退出才清除并继续，同时在 stderr 打印一行原锁的 PID、action 与 startedAt：PID 不存在，或该 PID 现属于锁写入之后才启动的进程（PID 被复用；Windows 用 CIM `CreationDate`，Linux 用 `/proc` 启动身份，macOS 等用 `ps -o lstart=`）。锁内容无法识别、来自其他主机、读不到进程信息时照旧拒绝。清除经 `.tiangz-dev.lock.takeover` 独占文件串行化并逐字节复核，并发命令只有一个接管；接管文件已存在时报错附带接管者的 PID/action/startedAt，无权限删除残留锁（`EACCES`/`EPERM`）时提示手动处理且不继续，连续被其他命令抢先时提示重试。墙钟在持锁进程启动后、写锁前大幅回拨，以及同名主机或容器共用工程目录，不在保证范围内，见设计文档。锁新增 `hostname`、`token`（Linux 另有 `processIdentity`）字段，旧格式锁仍可识别；释放只删除带自己 token 的锁。只判断记录的 Node 进程，不检查或停止其 Watcher/宿主子进程。设计见 `docs/design/dev-lock-stale-cleanup.md`；回归 `node --test tools/game_project_lock.test.mjs` 已列入 `verify:quick`。Runtime、协议与 Stable API 不变，不需要重建宿主。
 
 ## 0.7.2 — 2026-10-11（正式版，标签 `v0.7.2`）
 
