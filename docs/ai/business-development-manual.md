@@ -902,6 +902,8 @@ SLG 首次玩法 smoke（临时目录 tiangz-slg-smoke-Lipipu）报 `DBProxy is 
 
 2026-09-16 客户端开发入口迁移：先在 TiangZ 运行 npm run codegen，再到独立 TiangZ-Examples 执行 npm run sdk:sync、npm run check。Cocos/Pixi/Godot/Unity/UE 的手写业务位于该工程 clients/；不得在主工程重新创建 client_demo 或用联接伪装旧目录。SDK 同步命令只更新 tiangz.clients.json 声明的生成目标，--check 不写文件，编辑器 .meta 保留。服务端 MMORPG、Native 与 ModuleGame/WoW335 公共模块依赖迁移仍待完成，本次没有修改玩法或现有数据库。详见 [示例拆分状态](../design/example-extraction.md)。
 
+2026-10-11 开发锁残留清理：`.tiangz-dev.lock` 遇到已有锁时，只有确认记录的进程已退出（PID 不存在，或该 PID 现属于锁写入之后才启动的进程）才清除并打印一行原锁 PID/action/startedAt；锁内容无法识别、来自其他主机或读不到进程信息时保守拒绝。清除经 `.tiangz-dev.lock.takeover` 独占文件并逐字节复核，并发命令只有一个接管；释放只删除带自己 token 的锁。只判断记录的 Node 进程，不检查或停止其 Watcher/宿主子进程。规则与平台做法见[开发锁残留清理](../design/dev-lock-stale-cleanup.md)，回归为 `node --test tools/game_project_lock.test.mjs`。
+
 2026-09-16 modelExports 的提前漏导出诊断只针对唯一直接顶层登记；未调用辅助函数不会覆盖登记结果。动态或多处分支登记不靠静态推测，仍需真实启动验证，不能为规避错误而把正常入口改成动态装配。
 
 2026-09-16 开发模式的 [tiangz-dev-check] begin/end 只划分 Problems 检查轮次，失败也成对结束；不代表游戏就绪。确认服务可用应看 Runtime 就绪与真实请求，不能把该匹配器当作已实现自动附加调试器。

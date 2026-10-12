@@ -57,6 +57,7 @@ const profiles = Object.freeze({
     commandStep("soak control memory and bounded reports", process.execPath, ["--test", "tools/lib/soak_control_io.test.mjs", "tools/lib/soak_control_health.test.mjs", "tools/lib/soak_control_memory.test.mjs", "tools/lib/soak_report_history.test.mjs"]),
     commandStep("soak reconciliation counts and query budget", process.execPath, ["--test", "tools/lib/soak_reconciliation.test.mjs"]),
     commandStep("local replica controller", process.execPath, ["--test", "tools/local_replica_controller.test.mjs"]),
+    commandStep("game project dev lock", process.execPath, ["--test", "tools/game_project_lock.test.mjs"]),
     commandStep("module typecheck host selection", process.execPath, ["tools/module_typecheck_host_self_test.mjs"]),
     commandStep("module live checker", process.execPath, ["--test", "tools/module_type_cache.test.mjs", "tools/module_live_worker.test.mjs"]),
     cargoStep("cargo fmt", ["fmt", "--all", "--", "--check"]),

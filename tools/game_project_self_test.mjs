@@ -50,6 +50,10 @@ try {
   await writeFile(path.join(project, ".tiangz-dev.lock"), "existing owner");
   assert.match(action("check", false).stderr, /已有开发命令占用工程/);
   assert.equal(await readFile(path.join(project, ".tiangz-dev.lock"), "utf8"), "existing owner");
+  const exitedPid = spawnSync(process.execPath, ["-e", ""], { windowsHide: true }).pid;
+  await writeFile(path.join(project, ".tiangz-dev.lock"), JSON.stringify({ pid: exitedPid, action: "dev", startedAt: new Date(Date.now() - 60000).toISOString() }));
+  assert.match(action("check").stderr, new RegExp(`已清除残留开发锁.*PID ${exitedPid}，action=dev`), "stale lock of an exited process is cleared with its original record");
+  await assert.rejects(readFile(path.join(project, ".tiangz-dev.lock")), { code: "ENOENT" });
   const file = path.join(project, "tiangz.project.json");
   const data = JSON.parse(await readFile(file, "utf8"));
   await writeFile(file, JSON.stringify({ ...data, processConfig: "../escape.json" }));
