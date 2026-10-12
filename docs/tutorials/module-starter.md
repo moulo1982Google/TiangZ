@@ -73,7 +73,7 @@ doctor 是只读基础环境检查；host-build 首次或宿主/Rust 变化时�
 
 `tiangz.project.json` 是开发工具配置（formatVersion 1），记录宿主路径、modules 模式、模块集合与本地启动配置；不是新增 Runtime 配置。游戏里的小启动桥只调用 TiangZ `tools/game_project.mjs`，不复制生成、检查和构建实现。
 
-现有工具动作：doctor/setup/check/build/host-build/start/dev/smoke/request/inspect/protocol-update。setup 生成和准备；check 只核对；build 复用生成器和模块 Bundle 检查，不重复类型编译；protocol-update 才显式更新协议锁。互斥锁防止同一工程并行命令覆盖产物，异常遗留锁需要确认旧 PID 停止后人工清理，不自动抢占。
+现有工具动作：doctor/setup/check/build/host-build/start/dev/smoke/request/inspect/protocol-update。setup 生成和准备；check 只核对；build 复用生成器和模块 Bundle 检查，不重复类型编译；protocol-update 才显式更新协议锁。互斥锁 `.tiangz-dev.lock` 防止同一工程并行命令覆盖产物。命令异常退出（例如直接关闭控制台窗口）留下的锁，在下一次命令确认记录的进程已退出时自动清除，并打印一行原锁的 PID、action 与 startedAt；仍在运行或无法确认时照旧拒绝，判断规则见[开发锁残留清理](../design/dev-lock-stale-cleanup.md)。
 
 当前工作流针对 TS 模块；发现 Native 模块会明确拒绝普通二进制回退，须走现有 Native 组合构建/发布流程。start 只启动已构建代码。日常 `npm run dev` 复用共享 Watcher 循环，初次构建不做 Cargo，保存已有 Hotfix 行为后构建不可变候选并提交 Reload；失败保持旧版本。Model、协议、模块声明或启动配置变化会提示重启，不自动重置状态。`dev:debug` 生成调试 Bundle，Inspector 仍需在 Process 配置中显式启用。
 
@@ -95,7 +95,7 @@ Developer Tools 的模块导航可以读取工程声明，调用同一宿主检�
 | `tiangz.module.bridge-missing` | 核对模块 Model 入口的 TS 导出和 `modelExports`，不要靠深层导入绕过桥接。 |
 | 新行为没有生效 | 运行 `inspect`，核对 Hotfix 入口是否实际导入该文件；type-only 导入不会加载行为。再看候选构建/发布是否成功。 |
 | 提示需要重启 | 先停止 `dev`，再启动；不要以重复保存 Hotfix 代替 Model/协议/配置的重建。教学计数会归零。 |
-| `.tiangz-dev.lock` 占用 | 等待或停止自己已打开的开发命令。异常退出后先查看锁记录并确认旧 PID 已停止，才人工清理，不直接抢锁。 |
+| `.tiangz-dev.lock` 占用 | 等待或停止自己已打开的开发命令。记录的进程已退出（或 PID 已被锁写入后启动的其他进程复用）时，下一次命令会自动清除并提示；仍被拒绝说明该进程仍在运行、锁来自其他主机、锁内容无法识别或读不到进程信息，确认记录的进程不是开发命令且已停止后才人工删除。清除锁不会停止旧命令启动的 Watcher/宿主子进程，端口仍被占用时按端口提示处理。 |
 | 端口占用、请求失败 | 区分 `request` 连接现有服务与 `smoke` 启动新服务；确认本工程服务就绪及端口配置，不终止不明进程。 |
 
 独立模块工程不使用旧主工程的 `verify:fast` 或三件套 Component 生成器。插件发现根目录 `tiangz.project.json` 后会提示模块入口；旧 LSP 未执行模块检查不代表模块已通过验证，仍需宿主 `check`。

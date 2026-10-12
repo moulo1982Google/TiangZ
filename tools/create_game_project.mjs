@@ -62,7 +62,7 @@ try {
   child.once("error", error => { console.error("无法调用 TiangZ 开发工具，请检查 engineRoot：" + error.message); process.exitCode = 1; });
   child.once("exit", code => { process.exitCode = code ?? 1; });
   `);
-    await output(".gitignore", "node_modules/\ndist/\n*.log\n.tiangz-dev.lock\n.tiangz-scaffold-*/\n");
+    await output(".gitignore", "node_modules/\ndist/\n*.log\n.tiangz-dev.lock\n.tiangz-dev.lock.takeover\n.tiangz-scaffold-*/\n");
     await output("README.md", (await readFile(path.join(templateRoot, "PROJECT_README.md"), "utf8")).replaceAll("__MODULE_ID__", id));
     if (withRust) {
       await output("README.md", (await readFile(path.join(engine, "tools/templates/module-native/PROJECT_README.md"), "utf8")).replaceAll("__MODULE_ID__", id));

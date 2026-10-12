@@ -596,6 +596,8 @@ Demo 部署配置、示例运维资产和游戏测试在 Examples；旧固定拓
 
 2026-09-16 TS 模块新手工程：project:create 生成不含 SLG 的计数器模块、模块自有协议/SDK、启动配置和分步指南；game_project.mjs 统一 doctor/setup/check/build/host-build/start/smoke/inspect/protocol-update。tiangz.project.json 只记录开发路径，Runtime 配置未变。日常 build 不做 Cargo，互斥锁防止并行覆盖；协议锁只在创建新协议或显式 protocol-update 时生成/更新。test:game-project 覆盖真实两次 RPC 与正常停机。此 TS 开发入口已复用通用 Watcher，但 Native 组合仍未集成，不得误称完整生产工程。
 
+2026-10-11 开发锁残留清理：`.tiangz-dev.lock` 遇到已有锁时，只有确认记录的进程已退出（PID 不存在，或该 PID 现属于锁写入之后才启动的进程）才清除并打印一行原锁 PID/action/startedAt；锁内容无法识别、来自其他主机或读不到进程信息时保守拒绝。清除经 `.tiangz-dev.lock.takeover` 独占文件并逐字节复核，并发命令只有一个接管；释放只删除带自己 token 的锁。只判断记录的 Node 进程，不检查或停止其 Watcher/宿主子进程。规则与平台做法见[开发锁残留清理](../design/dev-lock-stale-cleanup.md)，回归为 `node --test tools/game_project_lock.test.mjs`。
+
 2026-09-16 开发工具分工：Runtime 只拥有运行语义，TiangZ tools 提供可从 CLI/CI 独立调用的模板、构建、检查和结构解析，Developer Tools 插件负责向导、导航和错误呈现。`modules:inspect -- --modules-dir <目录> --json` 复用模块目录校验，输出 formatVersion 1 的只读导航与从 1 开始的位置。静态可达提示不等于完整调用图、类型检查或热更许可；不得让插件另写一套兼容判断，也不执行模块源码进行导航。
 
 2026-09-15 当前目标校正：完善 TiangZ 与通用模块开发流程，SLG 仅作接入样例，不继续扩展玩法。本轮新增显式 `--host-profile modules`：共享 Core ProcessBootstrap，省去默认 MMORPG TS 装配与表数据；demo 默认保持兼容。脚手架/prepare/typecheck/build 对齐 Core-only Model 导出，构建检测实际输入并拒绝示例依赖；模式写入 Model/Hotfix 清单与指纹，切换必须重建重启。配置沿用 Rust 校验信封与 ModuleConfigRegistry。Rust 内置 Native ops/指纹仍保留，不等于物理二进制裁剪。详见外置模块文档；test:module-host 使用框架自有中立夹具验收。

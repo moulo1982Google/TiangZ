@@ -38,6 +38,10 @@ try {
   await writeFile(path.join(project, ".tiangz-dev.lock"), "existing owner");
   assert.match(run(args, false).stderr, /占用工程/);
   assert.equal(await readFile(path.join(project, ".tiangz-dev.lock"), "utf8"), "existing owner");
+  const exitedPid = spawnSync(process.execPath, ["-e", ""], { windowsHide: true }).pid;
+  await writeFile(path.join(project, ".tiangz-dev.lock"), JSON.stringify({ pid: exitedPid, action: "new-component", startedAt: new Date(Date.now() - 60000).toISOString() }));
+  assert.match(run(["tools/tiangz.mjs", "check"], true, project).stderr, /已清除残留开发锁/, "stale lock of an exited process is cleared");
+  await assert.rejects(access(path.join(project, ".tiangz-dev.lock")), { code: "ENOENT" });
 
   const root = path.join(temporary, "unit");
   await mkdir(path.join(root, "src/model"), { recursive: true });

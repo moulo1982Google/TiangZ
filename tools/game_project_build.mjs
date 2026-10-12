@@ -1,5 +1,4 @@
 import path from "node:path";
-import { open, unlink } from "node:fs/promises";
 
 export function gameProjectArguments(project) {
   const moduleArgs = ["--modules-dir", project.modulesDirectory];
@@ -33,14 +32,5 @@ export async function checkGameProject(project, tool) {
   process.stdout.write("[check] 模块路径、生成物和类型检查通过；未启动服务。\n");
 }
 
-/** 不抢占遗留锁，防止两个构建/开发会话同时改写产物。 / Never steal a lock from another build or development session. */
-export async function acquireGameProjectLock(project, action) {
-  const file = path.join(project.root, ".tiangz-dev.lock");
-  const lock = await open(file, "wx").catch(error => {
-    if (error.code === "EEXIST") throw new Error(`已有开发命令占用工程：${file}。等待该命令结束；若上次异常退出，请确认记录的 PID 已停止后手动移除锁，不自动抢占。`);
-    throw error;
-  });
-  try { await lock.writeFile(JSON.stringify({ pid: process.pid, action, startedAt: new Date().toISOString() })); }
-  catch (error) { await lock.close(); await unlink(file); throw error; }
-  return async () => { await lock.close(); await unlink(file); };
-}
+/** 开发锁实现见 game_project_lock.mjs；保留此导出供既有调用方使用。 / The development lock lives in game_project_lock.mjs; this export keeps existing callers working. */
+export { acquireGameProjectLock } from "./game_project_lock.mjs";
