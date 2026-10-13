@@ -4,6 +4,7 @@
 
 - [AI 项目上下文](ai/project-context.md)：架构演进、关键决策、当前状态、性能事实和明确暂缓事项。
 - [AI 业务开发手册](ai/business-development-manual.md)：业务需求的默认修改边界、实现配方、禁区和验证矩阵。
+- [AI 开发规则、工程检查与领域复用设计](design/development-guardrails/README.md)：插件、检查工具与游戏复用的完整方案；仅设计，等待需求方通知动工。
 - 根目录 [`AGENTS.md`](../AGENTS.md)：编码 AI 必须先读的高优先级规则。
 
 ## 学习手册
