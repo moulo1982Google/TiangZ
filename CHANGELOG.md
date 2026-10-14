@@ -1,5 +1,20 @@
 # 版本记录
 
+## 0.7.4 — 2026-10-13（正式版，标签 `v0.7.4`）
+
+相对 0.7.3：开发检查前移，并补充 AI 开发规则。Runtime 行为、协议、配置字段与 Stable API 导出不变；Model 导出校验失败时增加模块、导出路径等诊断上下文，合法与非法的判定不变。依赖 quinn-proto 升到 0.11.18（安全补丁）。宿主 `--version` 变为 0.7.4，使用启动器版本核对的工程需重建宿主。
+
+### 新增
+
+- **真实 Model 导出预检。** 游戏工程检查（`checkGameProject`，即工程的 `npm run check`）在类型检查之后，用真实 Core 的 `defineGameModule` 加载并校验模块 Model；冻结的 `Set`、类实例等非法导出在启动前失败，诊断为 `tiangz.model.invalid-export`。检查环境缺失时报 `tiangz.model.check-unavailable`，不当作通过。
+- **合并后协议撞号检查。** 两个分支各自新增消息、Git 无冲突地合并出重复消息号时，协议生成检查会失败并给出冲突双方。
+- **检查阶段结果与身份。** 工程检查逐阶段记录命令、起止时间、退出码、实际用例数与诊断，状态区分 passed、failed、unavailable、timed-out、aborted、skipped；unavailable 与 skipped 不算通过。
+- **AI 开发规则。** 技能与 Cindy 补充 Model 导出、合并后协议检查、持久化无变化操作的身份、领域接线、目标端实际执行等规则；设计工具依赖升到 `tiangz-developer-tools` v0.16.3。
+
+### 依赖
+
+- quinn-proto 0.11.17 → 0.11.18（安全补丁）。Stable API 声明锁的内部声明图随诊断改动更新，Stable 导出不变。
+
 ## 0.7.3 — 2026-10-11（正式版，标签 `v0.7.3`）
 
 相对 0.7.2：只改开发工具，开发锁残留时自动清除。Runtime、协议、配置字段与 Stable API 不变；Rust 源码未改，但宿主 `--version` 随包版本变为 0.7.3，使用启动器版本核对的工程需重建宿主。
