@@ -1,5 +1,13 @@
 # 2026-09-16 模块拆分后的当前事实
 
+## 2026-10-13：开发检查第一组 P0/T1/T2
+
+需求方已通知推进[开发检查设计](../design/development-guardrails/README.md)第一组。声明宿主的模块 `check` 在生成/类型检查后加载真实 Model 并执行 Core 导出校验；独立入口为 `npm run modules:check-exports -- --modules-dir <目录> --json`。检查用独立受限期限子进程，不启动 Scene；Native 只提供声明桥，实际运算拒绝并报告 unavailable，不能替代真实宿主。
+
+协议生成器先验证合并后的原锁 ownership，再 staging；既有单/多模块唯一性规则继续复用，失败不更新锁/SDK。AI 维护源新增导出形状、合并后检查、no-op 身份、领域覆盖和目标实际执行规则。正式分发/MCP 同步属于 P1，游戏领域重构仍未开始；验证进度见[实施计划](../design/development-guardrails/implementation-plan.md)。
+
+第一组本地快速矩阵 39/39、Model/工程入口 27 项通过，苟道三国当前提交的隔离 Model 副本兼容。首轮夹具和缺调试宿主问题已补验，保留原失败，见[业务手册](business-development-manual.md#2026-10-13模块检查与开发判断接入)。额外发布锁检查仍失败：主分支已有同样五个声明文件漂移，本轮完整声明与基线相同、原锁未改；不得据开发验证宣称发布合格。AI 实际行为评估、分发与安装尚未执行。
+
 2026-10-09：GC 统计改用 `Cell`（V8 回调不再从裸指针构造可变引用），合入 0.7.x 待发版；原 2026-09-30 修正在 0.6.4 诊断工作树中，从未进入 0.7.0/0.7.1。测试专用 TCP 探针只在 Linux 编译。苟道三国登录长稳中 TCP 连接任务状态被写坏的原因仍未查明，见 [TCP 诊断](../testing/tcp-task-diagnostics.md)。
 
 本机 HTTP 合入验证（2026-10-07）：开发热更夹具依赖 INFO 完成日志，继承 `RUST_LOG=warn` 会误报等待超时。复测须显式 `RUST_LOG=info`，保留首次失败，不删除断言；见业务开发手册“本机验证日志环境”。

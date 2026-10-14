@@ -32,6 +32,10 @@ npm run project:create -- --path ../MyGame --id org.example.game
 | modules:link -- --source <模块> --modules-dir <目录> --name <名称> | 安装外部模块根 |
 | modules:prepare -- --modules-dir <目录> | 编辑器路径与声明发现 |
 | modules:typecheck -- --modules-dir <目录> | 检查模块类型和直接依赖 |
+| modules:check-exports -- --modules-dir <目录> --json | 真实 Model 登记/导出预检；不验证 Native 运算或启动服务 |
+| test:module-model-exports | 导出合法/非法值、Native 拒绝执行、期限/收尾与检查顺序 |
+| test:module-protocol-merge | 真实 Git 无冲突合并撞号、正式检查与失败不改写 |
+| test:ai-assistants | AI 维护源生成/规则引用/重复与缺失反例；不是安装或模型行为评估 |
 | codegen:module-protocol | 模块自有 protobuf/SDK |
 | codegen:module-config | 模块自有 Luban 配置 |
 | codegen:module-native | 模块自有 Native 接口 |

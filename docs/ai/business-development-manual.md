@@ -1,5 +1,17 @@
 # 2026-09-16：先选业务工程，再写模块
 
+## 2026-10-13：模块检查与开发判断接入
+
+独立游戏工程的 `npm run check` 经声明宿主检查生成物和类型，再执行真实 Model 导出预检。非法导出错误保留原前缀并附模块/属性路径；Set/Map 实例字段仍允许。预检执行受信任项目的顶层登记代码，子进程不是安全沙箱；不在未信任工作区或实时静态诊断里隐式执行。Native 声明桥不验证运算或二进制，实际调用失败/unavailable，不能伪造返回值。
+
+协议分支合并后即使 Git 无冲突，也要在最终树执行宿主协议 `--check` 和工程声明的客户端同步检查。合并原锁撞号会在 staging 之前失败；修复仍走显式生成和既有开发/Release 政策，不静默改已发布编号。
+
+no-op 也有操作身份：先处理 pending，再按该操作的指纹/历史回执契约判断；数据库查询失败不是未提交，不强制每个 no-op 写库。新增领域按 codec/加载/验证/规划/写入/回执/恢复/视图/副作用列清接入项；跨端推算需双方共享参数和目标实际执行证据。案例见[开发判断场景](development-guardrails-scenarios.md)，范围与验证见[实施计划](../design/development-guardrails/implementation-plan.md)。
+
+本轮复测教训：Native Model 夹具也必须声明合法抽象 Entity 根，模块依赖使用真实清单的 min/max 版本形态；失败后用 finally 恢复夹具，防止污染后续用例。协议反例要匹配原锁校验的既有错误语义，不为新测试改错误前缀。新工作树先构建自己的调试宿主再跑包含真实宿主的矩阵，缺二进制不是框架断言失败；不能跳过宿主测试或借旧二进制报通过。复测入口为 `npm run test:module-model-exports`、`npm run test:module-protocol-merge`、`npm run build:runtime:debug` 与 `npm run verify:quick`；首轮和补验日志位置见实施计划第 11 节。
+
+快速矩阵通过不代表发布锁通过。本轮额外 `node tools/verify_core_api.mjs --strict-lock` 发现五个可达声明文件漂移，主分支基线具有相同失败；隔离副本导出的基线与本轮完整声明快照字节一致。正确做法是分别报告已有漂移和本轮兼容性，发布前审查已有签名变化；禁止在原树直接更新锁取绿。当前原锁未改，发布验证仍有遗留。
+
 ## 2026-10-09：FFI 回调持有裸指针，不等于可以修改共享引用
 
 稳定的 Box 只保证地址和生命期。只要还有普通共享引用在用（例如调用 V8 期间触发 GC 回调），回调就不能从裸指针构造 `&mut` 去改非 `UnsafeCell` 字段，同线程也不行。用 `Cell`/`RefCell` 做内部可变；不要用 unsafe 强转、删除指标或换锁来掩盖。真实 V8 回归只验证集成，不等于 Miri 证明。诊断探针在 Windows 回环上快速建连会遇到客户端 `set_nodelay` 返回 10022，先核对服务端计数，不要把它当作引擎故障。见 [TCP 诊断](../testing/tcp-task-diagnostics.md)。 / A stable Box guarantees address and lifetime only; reentrant FFI writes need interior mutability while a shared reference is live.

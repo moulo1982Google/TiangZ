@@ -1,15 +1,15 @@
 # 实施计划：AI 开发规则、工程检查与领域复用
 
-> **实施状态：未开始，等待需求方通知。** 2026-10-13 仅授权完整设计。本文中的文件和命令是以后批次的计划，不代表已经实现或运行。设计依据：[README.md](README.md)；验收依据：[validation-matrix.md](validation-matrix.md)。
+> **实施状态：第一组 P0/T1/T2 源实现与本地验收完成。** 2026-10-13 需求方“请你推进”；本轮先按第一组交付。T3/P1、游戏试点、正式分发、安装与 AI 行为评估尚未执行。发布锁检查有已核对的主分支遗留；下方计划命令不能当作已运行结果，实际结果登记在文末。设计依据：[README.md](README.md)；验收依据：[validation-matrix.md](validation-matrix.md)。
 
 ## 1. 批次与依赖
 
 | 批次 | 内容 | 所有者 | 前置 | 当前状态 |
 | --- | --- | --- | --- | --- |
 | D0 | 设计、代码基线与文档检查 | TiangZ 文档 | 无 | 本轮完成；无产品改动 |
-| P0 | 通用规则正文、引用和场景样例 | TiangZ AI 维护源 | 开工通知 | 未开始 |
-| T1 | 真实 Model 导出预检与默认检查接入 | TiangZ tools / 内部 Core 诊断 | 开工通知；P0 可并行逻辑设计 | 未开始 |
-| T2 | 协议合并反例、冲突诊断与生成检查接入核对 | TiangZ tools / 游戏验收入口 | 开工通知 | 未开始 |
+| P0 | 通用规则正文、引用和场景样例 | TiangZ AI 维护源 | 已通知推进 | 源与产物检查完成；实际 AI 对话评估待安排 |
+| T1 | 真实 Model 导出预检与默认检查接入 | TiangZ tools / 内部 Core 诊断 | 已通知推进 | 实现与本地验收完成 |
+| T2 | 协议合并反例、冲突诊断与生成检查接入核对 | TiangZ tools / 游戏验收入口 | 已通知推进 | 实现与本地验收完成 |
 | T3 | 阶段结果、失败收尾与检查矩阵接入 | TiangZ tools | T1、T2 | 未开始 |
 | P1 | 设计工具规则同步、技能与插件分发验证 | Developer Tools、TiangZ、AI Plugins | P0；实际 Developer Tools 版本对齐 | 未开始 |
 | G1 | 领域覆盖检查与公共事务装配 | 苟道三国游戏模块 | 游戏试点明确纳入；T1/T2 完成可复用 | 未开始 |
@@ -213,3 +213,25 @@ node --test --test-concurrency=1 GouDaoSanGuo/tools/*.test.mjs
 | 2026-10-13 | D0 | 当前代码/版本只读核对；完整设计、实施计划、验收矩阵；本地文档链接/状态检查结果在本轮交付核对 | 产品代码、规则源修改、生成/分发、服务/数据库、实现测试、独立实现评审、发布/安装/合并/推送全部未执行 |
 
 后续通知到来时在此登记原话、准入范围、批次和实际结果。没有通知，不将任何实施批次改成进行中。
+
+### 2026-10-13 第一组实际交付
+
+基线为 TiangZ 主仓库 `fbd60780bcb974d705d8abe894459ad3a84b8703`，独立分支 `codex/development-guardrails`。游戏、Developer Tools 源码与 AI Plugins 分发仓库没有写入。本轮只调整 Core 内部导出错误上下文，稳定声明与基线完全相同；Rust、依赖锁、协议锁均未修改。官方 `npm run codegen` 更新 `codegen.manifest.json` 的源指纹。
+
+P0 新增五项规则与九个评估场景；Codex/Claude/Cindy 生成及一致性检查通过，规则缺失、重复 ID、断引用反例通过，技能格式检查通过。场景文档是评估输入，不是实际 AI 对话成绩。P1 仍需处理维护源 Cindy 0.3.1 与已分发插件 0.3.2 的身份对齐，以及宿主安装 Developer Tools 0.16.2 与本地源码 0.15.2 的版本差异；本轮未分发、安装或降版本。
+
+| 实际检查 | 结果与证据范围 |
+| --- | --- |
+| `npm run verify:quick` | 39/39 步通过，failed/skipped/timedOut 均 0；180121ms；含 235 项既有单元测试、真实模块宿主、Rust fmt/Clippy/all-targets tests |
+| `npm run test:module-model-exports` | 27/27 测试通过：真实 Core 导出、Public API/依赖边界、Native 声明桥、期限/中止/超输出、输入字节与 mtime、工程入口失败停止 |
+| `npm run test:module-protocol-merge` | 1/1：真实 Git 无文本冲突合并得到撞号；正式 `--check` 明确失败且无改写；只撤回夹具未发布编号后显式生成恢复 |
+| `npm run test:ai-assistants` | 正式生成、检查、`--check` 与 1 项产物反例测试通过 |
+| 构建 helper 提取前后核对 | 两个 bundler 均使用本轮相同 Core 与同一模块夹具，18 个输出逐字节相同；含 Model/Hotfix JS、manifest 与配置 |
+| 苟道三国当前 Model 兼容 | 从游戏提交 `08c335749ed2528d7bfab9aaa813ae121c7b2561` 只读归档模块，在隔离副本用当前宿主生成 402 个协议消息，真实 Model 预检 passed；原游戏文件未改，未验证数据库、UI 或 Native 运算 |
+| `node tools/verify_core_api.mjs --strict-lock` | failed；主分支基线与本轮均出现同样五个声明图文件漂移。隔离副本导出完整声明快照逐字节相同，证明本轮没有新增漂移；没有更新原发布锁 |
+
+原始日志保留在本工作树忽略目录 `temp/guardrails-validation/`：`quick-first.log`/`quick-first.json` 是首轮，`quick-host-ready.log`/`quick-host-ready.json` 是完整补验；另有 `bundler-extraction.json`、`core-api-baseline-comparison.json` 与 `game-copy-model-first.json`。本地时间为 10-13，完整补验报告 UTC 为 2026-10-14T00:03:40.869Z 至 00:06:40.990Z。原始链接器警告保留，不宣称所有日志零警告。
+
+首轮失败分别记录：Model 夹具漏 Native 抽象 Entity 根且依赖版本写成非清单形态；断言曾期待改写后的锁错误文案，而原校验已正确拒绝；快速矩阵 38/39 的唯一失败是新工作树没有调试宿主。修正夹具并保证 finally 恢复、匹配既有错误语义、在自有工作树构建宿主后独立补验，未删测试或放宽标准。技能检查的 PyYAML 依赖仅装入本轮临时目录。
+
+发布锁漂移属于已证明存在于基线的遗留，后续发布前需独立审查签名兼容性；不得直接用更新锁掩盖。本轮没有运行 `verify:release`、完整长稳/性能、真实 Godot（未配置 GODOT_BIN）、实际 AI 对话、插件安装或游戏领域/事务重构，也没有独立实现评审结果。GitHub CI 与 PR 合并状态须按后续实际结果记录，不由本地通过代填。

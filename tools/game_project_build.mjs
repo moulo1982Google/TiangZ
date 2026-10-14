@@ -27,9 +27,11 @@ export async function buildGameProject(project, tool, debug = false) {
 export async function checkGameProject(project, tool) {
   const { moduleArgs, hostArgs } = gameProjectArguments(project);
   await tool("prepare_game_modules.mjs", ...hostArgs, "--check");
-  for (const name of ["codegen_module_protocol.mjs", "codegen_module_configs.mjs", "codegen_module_native.mjs"]) await tool(name, ...moduleArgs, "--check");
+  await tool("codegen_module_protocol.mjs", ...hostArgs, "--check");
+  for (const name of ["codegen_module_configs.mjs", "codegen_module_native.mjs"]) await tool(name, ...moduleArgs, "--check");
   await tool("typecheck_game_modules.mjs", ...hostArgs);
-  process.stdout.write("[check] 模块路径、生成物和类型检查通过；未启动服务。\n");
+  await tool("check_module_model_exports.mjs", ...hostArgs);
+  process.stdout.write("[check] 模块路径、生成物、类型与真实 Model 导出检查通过；未验证 Native 运算或启动服务。\n");
 }
 
 /** 开发锁实现见 game_project_lock.mjs；保留此导出供既有调用方使用。 / The development lock lives in game_project_lock.mjs; this export keeps existing callers working. */

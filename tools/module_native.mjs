@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
+/** 生成器与检查桥共享声明模块的绑定名称，不猜测任意全局。 / Share declared Native binding names without guessing globals. */
+export function moduleNativeGlobalName(moduleId) {
+  return `__etsModuleNative_${createHash("sha256").update(moduleId).digest("hex")}`;
+}
+
 /** Native源码、ABI和crate声明共同决定构建身份，Hotfix不得修改。
  * Native sources, ABI and crate declarations jointly define immutable build identity.
  */

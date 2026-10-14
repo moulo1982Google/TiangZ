@@ -76,7 +76,9 @@ export function defineGameModule<
   }
   const modelObjects: object[] = [];
   const visited = new WeakSet<object>();
-  for (const value of Object.values(modelExports)) collectModelObjects(value, visited, modelObjects);
+  for (const [name, value] of Object.entries(modelExports)) {
+    collectModelObjects(value, visited, modelObjects, definition.id, exportPropertyPath("modelExports", name));
+  }
   for (const value of modelObjects) Object.freeze(value);
 
   registeredModules.push({
@@ -144,10 +146,12 @@ export function sealGameModules(
     }
     // 模块命名空间转为数据属性；引用保持同一份Model身份。
     // Copy module namespaces to data properties while preserving Model identity.
-    const api = copyModelExports({ ...exports }, id);
+    const api = copyModelExports({ ...exports }, id, "publicApi");
     const objects: object[] = [];
     const visited = new WeakSet<object>();
-    for (const value of Object.values(api)) collectModelObjects(value, visited, objects);
+    for (const [name, value] of Object.entries(api)) {
+      collectModelObjects(value, visited, objects, id, exportPropertyPath("publicApi", name));
+    }
     for (const object of objects) Object.freeze(object);
     installedApis[id] = Object.freeze(api);
   }
@@ -173,51 +177,64 @@ export function hasSealedGameModule(id: string): boolean {
   return registeredModules.some((module) => module.identity.id === id);
 }
 
-function copyModelExports(value: unknown, moduleId: string): Record<string, unknown> {
+function copyModelExports(value: unknown, moduleId: string, exportPath = "modelExports"): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`game module modelExports must be a plain object: ${moduleId}`);
+    throw modelExportError(`game module modelExports must be a plain object: ${moduleId}`, moduleId, exportPath);
   }
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) {
-    throw new Error(`game module modelExports must be a plain object: ${moduleId}`);
+    throw modelExportError(`game module modelExports must be a plain object: ${moduleId}`, moduleId, exportPath);
   }
   const result = Object.create(null) as Record<string, unknown>;
   for (const name of Reflect.ownKeys(value)) {
     if (typeof name !== "string" || !EXPORT_NAME.test(name)) {
-      throw new Error(`invalid game module export: ${moduleId}:${String(name)}`);
+      throw modelExportError(`invalid game module export: ${moduleId}:${String(name)}`, moduleId, exportPropertyPath(exportPath, name));
     }
     const descriptor = Object.getOwnPropertyDescriptor(value, name);
     if (!descriptor?.enumerable || !("value" in descriptor)) {
-      throw new Error(`game module exports must be enumerable data properties: ${moduleId}:${name}`);
+      throw modelExportError(`game module exports must be enumerable data properties: ${moduleId}:${name}`, moduleId, exportPropertyPath(exportPath, name));
     }
     if (descriptor.value === undefined) {
-      throw new Error(`undefined game module export: ${moduleId}:${name}`);
+      throw modelExportError(`undefined game module export: ${moduleId}:${name}`, moduleId, exportPropertyPath(exportPath, name));
     }
     result[name] = descriptor.value;
   }
   return result;
 }
 
-function collectModelObjects(value: unknown, visited: WeakSet<object>, result: object[]): void {
+function collectModelObjects(value: unknown, visited: WeakSet<object>, result: object[], moduleId: string, exportPath: string): void {
   if (value === null || (typeof value !== "object" && typeof value !== "function")) return;
   if (typeof value === "function") return;
   if (visited.has(value)) return;
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null && !Array.isArray(value)) {
-    throw new Error("game module Model exports must be constructors, primitives, arrays, or plain objects");
+    throw modelExportError("game module Model exports must be constructors, primitives, arrays, or plain objects", moduleId, exportPath);
   }
   visited.add(value);
   result.push(value);
   for (const name of Reflect.ownKeys(value)) {
     if (typeof name !== "string") {
-      throw new Error("game module Model export values must not contain symbol properties");
+      throw modelExportError("game module Model export values must not contain symbol properties", moduleId, exportPropertyPath(exportPath, name));
     }
     const descriptor = Object.getOwnPropertyDescriptor(value, name);
     if (!descriptor || !("value" in descriptor)) {
-      throw new Error("game module Model export values must contain data properties only");
+      throw modelExportError("game module Model export values must contain data properties only", moduleId, exportPropertyPath(exportPath, name));
     }
-    collectModelObjects(descriptor.value, visited, result);
+    collectModelObjects(descriptor.value, visited, result, moduleId, exportPropertyPath(exportPath, name));
   }
+}
+
+/** 给真实加载错误附稳定模块与属性路径，不读取 getter 或改变合法值判断。 / Add module and property context without invoking getters or changing validation. */
+function modelExportError(message: string, moduleId: string, exportPath: string): Error {
+  return Object.assign(new Error(`${message} (${moduleId}:${exportPath})`), {
+    code: "tiangz.model.invalid-export", moduleId, exportPath,
+  });
+}
+
+/** 路径仅使用属性名，不调用被检查对象的方法。 / Render paths from property names only, never from inspected objects. */
+function exportPropertyPath(parent: string, name: string | symbol): string {
+  return typeof name === "string" && EXPORT_NAME.test(name)
+    ? `${parent}.${name}` : `${parent}[${JSON.stringify(String(name))}]`;
 }
 
 function validateIdentity(definition: GameModuleDefinition): void {

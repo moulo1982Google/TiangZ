@@ -35,10 +35,11 @@ export function main(): void {
     () => defineGameModule({ id: "org.example.invalid-version", version: "1.0.0-01", modelExports: {} }),
     /invalid game module version/,
   );
+  let getterCalls = 0;
   const accessorExports = Object.create(null) as Record<string, unknown>;
   Object.defineProperty(accessorExports, "Dynamic", {
     enumerable: true,
-    get: () => ({}),
+    get: () => { getterCalls++; return {}; },
   });
   assert.throws(
     () => defineGameModule({
@@ -47,6 +48,19 @@ export function main(): void {
       modelExports: accessorExports,
     }),
     /enumerable data properties/,
+  );
+  assert.equal(getterCalls, 0);
+  assert.throws(
+    () => defineGameModule({ id: "org.example.invalid-nested", version: "1.0.0",
+      modelExports: { Rules: { blocked: [Object.freeze(new Set([1]))] } } }),
+    (error: unknown) => {
+      const diagnostic = error as Error & { code: string; moduleId: string; exportPath: string };
+      assert.match(diagnostic.message, /^game module Model exports must be constructors/);
+      assert.equal(diagnostic.code, "tiangz.model.invalid-export");
+      assert.equal(diagnostic.moduleId, "org.example.invalid-nested");
+      assert.equal(diagnostic.exportPath, 'modelExports.Rules.blocked["0"]');
+      return true;
+    },
   );
 
   const moduleMetadata = { labels: ["fixture"] };
