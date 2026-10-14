@@ -4,6 +4,8 @@
 
 完整设计实现已完成，本机与远端验收分列：[交付记录](../design/development-guardrails/delivery-report.md)。框架代码b7ea5b92的八项GitHub CI通过；游戏af9eab3全工具1551通过/0失败/1历史原件skip，7801五阶段21 PASS、12次Host启动，旧数据保护、源字节恢复与测试库停止完成。后续4d1633d只修既有T4 smoke合同，1818生产文件与af9相同；远端新tag在原门禁等待中，未开始不能记PASS。原失败、历史缺项、A07部分关闭和不可量化的工时收益均保留，不能将不同提交命令身份混写。
 
+交付文档同样受可移植性检查：fc3d6b1e的报告直接链接环境专有内网Gitea地址，Linux CI在`verify:no-local-traces`失败，本机原命令亦复现；相对文件链接检查和AI生成检查不能覆盖这条门禁。正确做法是公共框架文档保留仓库名、PR号和Git origin查找方式，实际环境地址只留本地忽略证据，并运行`node tools/verify_no_local_traces.mjs`。不得新增allowlist、放宽检查或把旧代码提交的CI通过当新文档通过；原诊断与日志位置见交付记录。
+
 完整剩余设计已获准继续。独立评审指出报告不能用进程退出码覆盖 Model 的 unavailable/内层 timeout，也不能让人类输出绕过 JSON 模式的字节预算；两者现统一走有界捕获和真实结构化状态。版本与模块 graphHash 不含实际源码，阶段结果另记源/依赖字节 SHA、command/cwd/起止时间；这是验证阶段，testCount 为不适用，不填虚假用例数。新增真实 CLI 与受控状态/输出/身份反例，首轮因误列宿主未依赖的 protobufjs 而失败；改为该宿主实际四个工具依赖，未 fallback 或忽略缺包。日志在 `temp/guardrails-validation/t3-review-fixed-first.log` 与 `t3-review-fixed.log`。
 
 设计 MCP 的 list_design_rules 原合同为 text JSON 数组，新增测试误读 structuredContent 曾失败；应修测试读取，不为测试改服务器合同。Core 发布锁独立 AST 复核确认 212 个 Stable exports/apiSurface 与全部 public/protected 类成员保持，五个文件仅 private/#private 与未进 Stable 的内部类型变化；已用官方生成入口更新内部声明图，strict-lock 通过，首次失败仍保留。这不是宣称声明图完全未变。

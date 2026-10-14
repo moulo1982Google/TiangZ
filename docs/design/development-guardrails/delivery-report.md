@@ -38,6 +38,8 @@ Developer Tools完整check为157 passed、3既有平台skipped、0 failed；Wind
 - 框架：[TiangZ PR #8](https://github.com/moulo1982Google/TiangZ/pull/8)，维护源位于TiangZ主仓库，游戏框架副本未开发。
 - 设计工具：[Developer Tools PR #6](https://github.com/moulo1982Google/tiangz-developer-tools/pull/6)，提交16c05c9，宿主锁定该Git SHA。
 - 分发：[AI Plugins PR #4](https://github.com/moulo1982Google/TiangZ-AI-Plugins/pull/4)，产物提交9a0ecb4、CLI反例记录7c23c7a；未覆盖旧tag/归档，没有正式安装或Marketplace发布。
-- 游戏：[Gitea PR #1](http://192.168.0.220:3000/admin/GouDaoSanGuo_Server/pulls/1)，生产候选af9eab3、smoke修订4d1633d；验收见该仓库`GouDaoSanGuo/docs/features/development-guardrails/implementation-plan.md`。游戏领域代码留在其仓库。
+- 游戏：Gitea仓库`admin/GouDaoSanGuo_Server`的PR #1，实际地址由该工程的Git origin定位，不写入框架可移植文档；生产候选af9eab3、smoke修订4d1633d，验收见该仓库`GouDaoSanGuo/docs/features/development-guardrails/implementation-plan.md`。游戏领域代码留在其仓库。
 
 未安排新玩法、跨游戏推广、生产迁移、长稳/性能、Godot、正式Claude/Cindy客户端安装或目标UI重验。这些不属于本轮实现完成的证明。框架与游戏的源身份、Native桥、实际进程和数据库证据分别记录。
+
+文档提交fc3d6b1e的Linux CI因本报告原游戏PR链接含环境专有地址失败，quick为38/39、full为8/9；原provider诊断和日志窗口保留在忽略目录`temp/guardrails-validation/ci-fc-linux-failure.json`，本机同门禁复现亦保留。仅移除文档中的环境专有地址，真实仓库/PR身份仍在本地证据，不增加豁免或放宽门禁；修订后原门禁通过864个Git候选文件，AI生成一致性、466相对链接及diff均通过。CI结果另按新提交登记。
