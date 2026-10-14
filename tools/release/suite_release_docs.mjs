@@ -11,7 +11,7 @@ import { pathToFileURL } from "node:url";
 // Generates the common suite release attachments (manifest, dependency audit, post-release test plan, SHA256SUMS). Commits, trees, CI runs, audit counts and
 // asset hashes are read from git, the GitHub CLI and the real files at run time. The post-release test plan is hand-written per release and copied verbatim.
 
-export const RELEASE_TYPE = "GitHub Release (stable, not npm/crates.io/VS Code Marketplace)";
+export const RELEASE_TYPE = "GitHub Release (stable)";
 export const CHECKSUM_POLICY = "SHA256SUMS covers this manifest and every release payload asset; it excludes itself";
 export const COMMON_DOCUMENTS = Object.freeze(["DEPENDENCY-AUDIT.md", "POST-RELEASE-TEST-PLAN.md", "suite-release-manifest.json"]);
 

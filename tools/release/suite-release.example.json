@@ -1,6 +1,7 @@
 {
   "suite": "TiangZ",
   "version": "0.0.0",
+  "releaseType": "可选：发布类型说明，默认 GitHub Release (stable)。 / Optional release type text; defaults to GitHub Release (stable).",
   "tagNote": "可选：对各仓库标签的说明。 / Optional note about the tags of the repositories.",
   "repositories": [
     {
