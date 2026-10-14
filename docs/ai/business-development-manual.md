@@ -2,6 +2,8 @@
 
 ## 2026-10-13：模块检查与开发判断接入
 
+完整设计实现已完成，本机与远端验收分列：[交付记录](../design/development-guardrails/delivery-report.md)。框架代码b7ea5b92的八项GitHub CI通过；游戏af9eab3全工具1551通过/0失败/1历史原件skip，7801五阶段21 PASS、12次Host启动，旧数据保护、源字节恢复与测试库停止完成。后续4d1633d只修既有T4 smoke合同，1818生产文件与af9相同；远端新tag在原门禁等待中，未开始不能记PASS。原失败、历史缺项、A07部分关闭和不可量化的工时收益均保留，不能将不同提交命令身份混写。
+
 完整剩余设计已获准继续。独立评审指出报告不能用进程退出码覆盖 Model 的 unavailable/内层 timeout，也不能让人类输出绕过 JSON 模式的字节预算；两者现统一走有界捕获和真实结构化状态。版本与模块 graphHash 不含实际源码，阶段结果另记源/依赖字节 SHA、command/cwd/起止时间；这是验证阶段，testCount 为不适用，不填虚假用例数。新增真实 CLI 与受控状态/输出/身份反例，首轮因误列宿主未依赖的 protobufjs 而失败；改为该宿主实际四个工具依赖，未 fallback 或忽略缺包。日志在 `temp/guardrails-validation/t3-review-fixed-first.log` 与 `t3-review-fixed.log`。
 
 设计 MCP 的 list_design_rules 原合同为 text JSON 数组，新增测试误读 structuredContent 曾失败；应修测试读取，不为测试改服务器合同。Core 发布锁独立 AST 复核确认 212 个 Stable exports/apiSurface 与全部 public/protected 类成员保持，五个文件仅 private/#private 与未进 Stable 的内部类型变化；已用官方生成入口更新内部声明图，strict-lock 通过，首次失败仍保留。这不是宣称声明图完全未变。
@@ -2778,7 +2780,7 @@ SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools
 
 ### Scene HTTP 与 0.7 生命周期
 
-HTTP 使用 Scene 的独立 `http.port` 和 `httpHandler(SceneCtor, method, path)` 精确路由，面向工具接口。入站复用 0.7 Host 事件字节预算，队列或预算不足立即返回 503。调用方超时不取消已开始的业务，也不提前归还执行名额；尚未开始的过期请求不进入 Handler，Scene 销毁会清理排队请求。业务需要自行保证修改操作的幂等性。共享 Developer Tools Hotfix 检查器必须包含 `httpHandler` 状态规则，宿主锁定提交为 `198afe8f040d1fc1e17d1a3250791cb62e25109b`。出站 HTTP 尚未提供。
+HTTP 使用 Scene 的独立 `http.port` 和 `httpHandler(SceneCtor, method, path)` 精确路由，面向工具接口。入站复用 0.7 Host 事件字节预算，队列或预算不足立即返回 503。调用方超时不取消已开始的业务，也不提前归还执行名额；尚未开始的过期请求不进入 Handler，Scene 销毁会清理排队请求。业务需要自行保证修改操作的幂等性。共享 Developer Tools Hotfix 检查器必须包含 `httpHandler` 状态规则；本轮宿主锁定 `16c05c9ca68c530464aced4d85257e3d608736f3`（Core 0.16.3，保留既有 HTTP 检查）。出站 HTTP 尚未提供。
 
 HTTP 合入 0.7 的首次完整矩阵在 Rust 测试编译失败：`process_endpoint_tests.rs` 手工构造 `SceneConfig` 时缺少新增的 `http` 字段，quick 为 33/35。修正为 `http: None`，保持原端点断言；不能只用 `cargo check --bin` 代替全目标测试。原日志保留在 `target/http-rc1-verify-20261007.log`，完整复测另写日志，不覆盖失败证据。此前 0.6.2 基线的日志过滤与 Windows V8 构建路径失败也保留在 `target/http-verify-full-20261007.log`；本轮设置进程级 `RUST_LOG=info`，使用本机可编译的 Cargo 输出目录并把新宿主复制到测试实际读取的 `target/debug`。不能把旧宿主的通过结果算给新源码。
 
