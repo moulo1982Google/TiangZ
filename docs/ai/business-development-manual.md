@@ -2,7 +2,7 @@
 
 ## 2026-10-13：模块检查与开发判断接入
 
-完整设计实现已完成，本机与远端验收分列：[交付记录](../design/development-guardrails/delivery-report.md)。框架代码b7ea5b92的八项GitHub CI通过；游戏af9eab3全工具1551通过/0失败/1历史原件skip，7801五阶段21 PASS、12次Host启动，旧数据保护、源字节恢复与测试库停止完成。后续4d1633d只修既有T4 smoke合同，1818生产文件与af9相同；远端新tag在原门禁等待中，未开始不能记PASS。原失败、历史缺项、A07部分关闭和不可量化的工时收益均保留，不能将不同提交命令身份混写。
+完整设计实现与本轮适用验证已完成，本机与远端验收分列：[交付记录](../design/development-guardrails/delivery-report.md)。框架代码b7ea5b92八项GitHub CI通过；游戏af9eab3全工具1551通过/0失败/1历史原件skip，7801五阶段21 PASS、12次Host启动，旧数据保护、源字节恢复与测试库停止完成。4d只修既有T4 smoke合同，固定4d新唯一tag0340原门禁后完整133 PASS/exit0；合最新main后的d41客户端网络400/同步通过，服务端等明确范围与4d字节一致，不继承旧1818整组客户端或Creator/UI身份。游戏PR #1合远端main，完整证据保存后仅清理自有工作树。原失败、历史缺项、A07部分关闭和不可量化的工时收益均保留，不能将不同提交命令身份混写。
 
 交付文档同样受可移植性检查：fc3d6b1e的报告直接链接环境专有内网Gitea地址，Linux CI在`verify:no-local-traces`失败，本机原命令亦复现；相对文件链接检查和AI生成检查不能覆盖这条门禁。正确做法是公共框架文档保留仓库名、PR号和Git origin查找方式，实际环境地址只留本地忽略证据，并运行`node tools/verify_no_local_traces.mjs`。不得新增allowlist、放宽检查或把旧代码提交的CI通过当新文档通过；原诊断与日志位置见交付记录。
 

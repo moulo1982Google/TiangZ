@@ -6,7 +6,7 @@
 
 需求方已通知推进[开发检查设计](../design/development-guardrails/README.md)第一组。声明宿主的模块 `check` 在生成/类型检查后加载真实 Model 并执行 Core 导出校验；独立入口为 `npm run modules:check-exports -- --modules-dir <目录> --json`。检查用独立受限期限子进程，不启动 Scene；Native 只提供声明桥，实际运算拒绝并报告 unavailable，不能替代真实宿主。
 
-协议生成器先验证合并后的原锁 ownership，再 staging；既有单/多模块唯一性规则继续复用，失败不更新锁/SDK。AI 维护源新增导出形状、合并后检查、no-op 身份、领域覆盖和目标实际执行规则。P1 已正式分发插件 0.3.3/MCP 0.16.3 并核对实际包与五项CLI反例；十域游戏实现及独立评审完成，af9eab3全工具1551通过/0失败/1历史原件skip，7801五阶段21 PASS/12次Host启动。4d1633d仅修既有T4 smoke期望，1818生产文件与af9原字节相同；远端新tag等待正式门禁。最新结果与边界见[交付记录](../design/development-guardrails/delivery-report.md)。
+协议生成器先验证合并后的原锁ownership，再staging；既有单/多模块唯一性规则继续复用，失败不更新锁/SDK。AI维护源新增导出形状、合并后检查、no-op身份、领域覆盖和目标实际执行规则。P1正式分发插件0.3.3/MCP0.16.3并核对实际包与五项CLI反例；十域游戏实现及独立评审、af9工具1551通过/0失败/1历史原件skip、7801五阶段21 PASS/12次Host启动完成。4d仅修既有T4 smoke期望，固定4d新唯一tag0340原门禁后完整133 PASS；合cb6后的d41客户端网络400/同步通过，服务端等明确范围字节与4d一致，不继承旧1818整组客户端身份。游戏PR #1已合远端main bfc45fe，完整证据保存后自有工作树清理。最新结果与边界见[交付记录](../design/development-guardrails/delivery-report.md)。
 
 第一组本地快速矩阵 39/39、Model/工程入口 27 项通过，游戏提交 08c3357 的隔离 Model 副本兼容。后续 T3 十项结果/身份/进程回收用例通过；身份采集连目录加载一起在有界子进程中执行，明确源码根优先于缓存排除，越界链接失败。发布锁经独立兼容性审查与官方更新后 strict-lock 通过（212 Stable exports 不变，内部声明图更新）。首轮失败保留，见[业务手册](business-development-manual.md#2026-10-13模块检查与开发判断接入)。插件九场景核心判断经独立评审通过，独立文件读取/实际命令与部分后续证据仍未验收；完整 AI 行为仅部分关闭，客户端正式安装未做。
 

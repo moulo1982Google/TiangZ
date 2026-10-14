@@ -21,7 +21,9 @@ Developer Tools完整check为157 passed、3既有平台skipped、0 failed；Wind
 
 固定7801测试库五阶段全部21 PASS（guardrails 1、all 14、climb 1、army-expiry 2、IU 3），包含12次真实Host启动、回执恢复、提交后回复丢失、停服跨截止和重启不重复生效。旧18表历史主键内容及原100条普通记录保护通过，catalog原内容恢复、合法revision/globalId维护单列；自有进程与三测试容器已停止。首轮隔离遗漏辅助探针的失败保留，不把其旧部分PASS当最终资格，也不宣称原45907原因已被证明。
 
-220首轮原负载门禁ABORTED-BUSY、0PASS；af9eab3第二轮119 PASS后失败于旧T4等级断言。独立核对既有T4合同后，4d1633d仅更新三个smoke/文档文件，保留完整旧JS战报、无领域写入和全部边界断言；当时1818个生产文件原字节与已实测af9eab3相同。固定4d的第三tag构建通过，11次原门禁拒绝后ABORTED-BUSY（02:45:52 UTC），smoke未执行/0PASS；保留这三轮各自资格，待主机真正空闲后新tag复验。
+220首轮原负载门禁ABORTED-BUSY、0PASS；af9eab3第二轮119 PASS后失败于旧T4等级断言。独立核对既有T4合同后，4d1633d仅更新三个smoke/文档文件，保留完整旧JS战报、无领域写入和全部边界断言；当时1818个生产文件原字节与已实测af9eab3相同。固定4d的第三tag构建通过，11次原门禁拒绝后ABORTED-BUSY（02:45:52 UTC），smoke未执行/0PASS；这三轮各自资格与原失败保留。
+
+最后新唯一tag `guardrails-4d1633d-20261014-0340` 固定4d；03:42:17 UTC构建完成，真实Linux Host0.7.3/SHA `8b4a6a13a9186ac86840f70a4df63a177aca7adfa8d2be3198df844d6188bf74`。03:42:27原构建后门禁通过（load1 5.22/maxBusy5.4），至03:47:08完整smoke **133 PASS、exit0、PASSED**。本tag实际Model d15b23b0、Hotfix46f949ec、Nativebecc6250已在清理前保存；源码包242451517bytes/SHA `2864a0de74a47117bf6814682f1ab792f8a3ef828e41e3e90dae1fb7c9f12d7f`，39项取回结果逐SHA一致，自有容器/网络/卷0且远端src删除。未降低门禁或从旧tag拼成绩。
 
 合并前远端main新增既有IU5客户端与文档，已在独立工作树合cb6eeda，提交d41e4cf/tree c7877a02；三个文档冲突保留双方教训和功能状态，经独立复审通过。服务器/Host/Native/proto/config/生成物与4d原字节相同，四手写客户端与三测试/夹具完整保留main；合并后不能继承原1818整组客户端或Creator身份。d41完整网络23文件/400用例全通过（7978ms），正式client/config检查通过。首次缺本客户端TypeScript的0用例失败保留，按该包锁npm ci后重跑；未改源码或依赖锁。
 
@@ -38,7 +40,9 @@ Developer Tools完整check为157 passed、3既有平台skipped、0 failed；Wind
 - 框架：[TiangZ PR #8](https://github.com/moulo1982Google/TiangZ/pull/8)，维护源位于TiangZ主仓库，游戏框架副本未开发。
 - 设计工具：[Developer Tools PR #6](https://github.com/moulo1982Google/tiangz-developer-tools/pull/6)，提交16c05c9，宿主锁定该Git SHA。
 - 分发：[AI Plugins PR #4](https://github.com/moulo1982Google/TiangZ-AI-Plugins/pull/4)，产物提交9a0ecb4、CLI反例记录7c23c7a；未覆盖旧tag/归档，没有正式安装或Marketplace发布。
-- 游戏：Gitea仓库`admin/GouDaoSanGuo_Server`的PR #1，实际地址由该工程的Git origin定位，不写入框架可移植文档；生产候选af9eab3、smoke修订4d1633d，验收见该仓库`GouDaoSanGuo/docs/features/development-guardrails/implementation-plan.md`。游戏领域代码留在其仓库。
+- 游戏：Gitea仓库`admin/GouDaoSanGuo_Server`的PR #1，实际地址由该工程的Git origin定位，不写入框架可移植文档；生产候选af9eab3、smoke修订4d1633d、最终文档1253cf9，已合远端main `bfc45fe0dba6c1d0351c55e98d13d06dab058f57`。两个父提交cb6eeda/1253cf9与最终tree `dca536c712917fec0b0eed43fd02d1e31490fcf4`已核对；验收见该仓库`GouDaoSanGuo/docs/features/development-guardrails/implementation-plan.md`。游戏领域代码留在其仓库，用户运行中的本地main未更新。
+
+完整游戏日志、实际Host/元数据、四tag源码包和原失败已冻结并复制到本工作树忽略目录 `temp/guardrails-validation/game-evidence-final/`（1160文件、2227546070bytes），`preservation-manifest.json`逐文件记录SHA。复制前/复制后/原件再核及收尾全量重新哈希均一致；三份游戏最终文档另存 `game-final-documents/`，实际合并核验为 `game-closure-audit.json`。保存后仅清理本任务游戏工作树，其他任务/共享缓存和用户两项本地设置修改均保留。
 
 未安排新玩法、跨游戏推广、生产迁移、长稳/性能、Godot、正式Claude/Cindy客户端安装或目标UI重验。这些不属于本轮实现完成的证明。框架与游戏的源身份、Native桥、实际进程和数据库证据分别记录。
 

@@ -1,6 +1,6 @@
 # 实施计划：AI 开发规则、工程检查与领域复用
 
-> **实施状态：P0/T1/T2/T3/P1/G1/G2/M1 实现完成；游戏远端 smoke 收尾中。** 2026-10-13 需求方明确“可以，请继续推进直到完成”，覆盖完整剩余设计，不再等待分组开工。独立评审、框架代码 CI、本机工具与五阶段实库已完成；下方计划命令不是运行成绩，实际结果登记在文末与[交付记录](delivery-report.md)。设计依据：[README.md](README.md)；验收依据：[validation-matrix.md](validation-matrix.md)。
+> **实施状态：P0/T1/T2/T3/P1/G1/G2/M1 实现与本轮适用验证完成；游戏smoke133 PASS并已合远端main。** 2026-10-13 需求方明确“可以，请继续推进直到完成”，覆盖完整剩余设计，不再等待分组开工。独立评审、框架代码CI、本机工具、五阶段实库与远端功能验证完成；A07完整自主行为仅部分关闭，未证明的收益仍未知。下方计划命令不是运行成绩，实际结果登记在文末与[交付记录](delivery-report.md)。设计依据：[README.md](README.md)；验收依据：[validation-matrix.md](validation-matrix.md)。
 
 ## 1. 批次与依赖
 
@@ -12,8 +12,8 @@
 | T2 | 协议合并反例、冲突诊断与生成检查接入核对 | TiangZ tools / 游戏验收入口 | 已通知推进 | 实现与本地验收完成 |
 | T3 | 阶段结果、失败收尾与检查矩阵接入 | TiangZ tools | T1、T2 | 实现、十项反例与独立评审通过；最终 quick 39/39 |
 | P1 | 设计工具规则同步、技能与插件分发验证 | Developer Tools、TiangZ、AI Plugins | P0；实际 Developer Tools 版本对齐 | 源/分发/MCP 验证完成；Developer Tools CI 全通过 |
-| G1 | 领域覆盖检查与公共事务装配 | 苟道三国游戏模块 | 已明确纳入；T1/T2 | 十域实现和独立兼容性评审完成；工具1551通过、五阶段DB21 PASS；远端smoke收尾中 |
-| G2 | 公共夹具与失败场景复用 | 苟道三国 tools | G1 | 实现、旧字节对照和独立评审完成；12次真实Host启动与恢复验收通过；远端smoke收尾中 |
+| G1 | 领域覆盖检查与公共事务装配 | 苟道三国游戏模块 | 已明确纳入；T1/T2 | 十域实现和独立兼容性评审完成；工具1551通过/1历史skip、五阶段DB21 PASS、远端smoke133 PASS，游戏PR #1合远端main |
+| G2 | 公共夹具与失败场景复用 | 苟道三国 tools | G1 | 实现、旧字节对照和独立评审完成；12次真实Host启动与恢复、远端smoke133 PASS；最终证据已保存 |
 | M1 | 实际开发效果记录 | 游戏功能文档 | 适用实施批次 | 记录机制及本次接线减少、失败类别、发现阶段完成；工时未知，新功能可比采样留待后续 |
 
 建议分三组交付：第一组 P0/T1/T2；第二组 T3/P1；第三组 G1/G2/M1。通知某一组开工不能自动推进其他组。合并、推送、发布与安装另核授权范围。
@@ -251,7 +251,7 @@ P0 新增五项规则与九个评估场景；Codex/Claude/Cindy 生成及一致�
 | 宿主依赖 | 正式 npm 安装并锁定 Developer Tools Git SHA 16c05c9ca68c530464aced4d85257e3d608736f3，不覆盖旧 tag；安装包实际 0.16.3，规则/文档核对 29/7 通过 |
 | AI 分发 | 源正式生成、显式分发及 --check 通过（13 产物、0 stale）；12 项 SHA、Cindy CRC、两技能格式、源/分发字节核对及提取 MCP 0.16.3 握手、三只读工具、29规则/Quest 建议通过。插件候选 0.3.3，分发提交 9a0ecb4，GitHub PR 4；未安装生产配置或发布 Marketplace |
 | AI 行为 | 两个真实 fresh Codex CLI 0.162.0-alpha.17.2 会话实际调用随包 MCP。首轮策略拒绝文件读取，未绕过；后续提供实际技能/reference 原文与主会话真实 Model JSON，独立评审确认九场景核心判断正确。模型后端身份 unknown，独立文件读/命令执行及部分下一步证据未验证，A07 仅部分关闭 |
-| 游戏 G1/G2 | 基线 fee4e32，实施224b767、检查维护0acca01、SG2源错误码补齐af9eab3；封闭十域登记、两 Store/Unit/Factory 接线及真实状态夹具完成，独立评审16/16及Unit 99方法/旧字节轨迹兼容。af9全工具1551 pass/0 fail/1历史归档skip、7801五阶段21 PASS/12次真实Host启动，源/生成物原字节恢复。4d1633d仅修既有T4 smoke合同的3文件，1818生产文件与af9相同；远端新tag等待正式门禁，不提前关闭 |
+| 游戏 G1/G2 | 基线fee4e32，实施224b767、检查维护0acca01、SG2源错误码补齐af9eab3；封闭十域登记、两Store/Unit/Factory接线及真实状态夹具完成，独立评审16/16及Unit99方法/旧字节轨迹兼容。af9全工具1551 pass/0 fail/1历史归档skip、7801五阶段21 PASS/12次真实Host启动，源/生成物原字节恢复。4d仅修既有T4 smoke合同3文件；固定4d新tag0340完整133 PASS。合cb6后d41客户端网络400/同步通过；服务端证据按与4d相同字节的明确范围沿用，不继承旧1818整组客户端身份 |
 | M1 | 记录十域重复接线与两主要测试消费者的真实减少；生命周期整块移动不计玩法算法减少。有效工时未知，无两次新领域可比扩展，不填写节省百分比或可靠性提升比例 |
 
 候选归档 SHA256 `5559169063fe40bc4bc00de7920127e25e838fee400212530d93bae113bb1660`，MCP bundle SHA256 `cb7afb57e7089cfbda1fa6717e07c50031cf4ec0ad66d7e3fd9b09fed76b148b`。原始日志位于忽略目录 `temp/guardrails-validation/`，包括 `t3-identity-bounded-first.log`、`p1-artifact-identity.json`、两次 AI 事件/结果和真实 Model 正反例；测试结果不含凭据，原失败不替换。
@@ -261,3 +261,7 @@ GitHub 依赖审计发现 quinn-proto 0.11.17 三项新安全公告：[RUSTSEC-2
 首失败另外保留：T3 误列 protobufjs（非本宿主工具依赖）、MCP 测试误读 structuredContent、评估 harness 的相对路径与 Windows 过长参数问题。均修夹具/调用方式，未改工具合同、放宽检查或抹除失败。
 
 最终 `npm run verify:quick` 为 **39/39**，failed/skipped=0，239563ms；UTC 2026-10-14T01:15:19.851Z 至 01:19:19.414Z，包含 Model/工程检查35项、TS既有单元235项及Rust全目标测试。此轮使用 quinn-proto 补丁后本工作树新构建宿主；`node tools/verify_core_api.mjs --strict-lock` 再验通过。原始记录为 `final-verify-quick.log`/`.json`。没有运行 release/full资格、Godot、长稳/性能或目标UI，CI审计与游戏V1另记。
+
+最终远端smoke固定4d1633d，唯一tag `guardrails-4d1633d-20261014-0340`：03:42:17 UTC构建完成，03:42:27原构建后idle门通过（load1 5.22/maxBusy5.4），至03:47:08完整133 PASS/exit0；39项结果文件逐SHA一致，自有资源全部清理。前三tag的ABORTED-BUSY或119 PASS后失败原资格保留。游戏最终文档1253cf9经70相对链接和diff检查，PR #1合远端main `bfc45fe0dba6c1d0351c55e98d13d06dab058f57`，父提交cb6eeda与1253cf9、最终tree `dca536c712917fec0b0eed43fd02d1e31490fcf4`全部核对。本任务未更新用户运行中的本地main或设置。
+
+完整游戏日志、实际二进制/元数据和四tag源码包冻结于本工作树忽略目录 `temp/guardrails-validation/game-evidence-final/`：1160文件、2227546070bytes，复制前/后/原件再核及收尾重新哈希一致，清单为 `preservation-manifest.json`；游戏三份最终文档另存 `game-final-documents/`。随后仅移除本任务游戏工作树，其他工作树和共享缓存保留。GitHub三个主仓库PR继续按各自准确HEAD核对CI，生产安装、发布和框架PR合并不由功能测试成绩代替。
