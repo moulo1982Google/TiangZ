@@ -134,6 +134,8 @@
     "test:unit:coverage": "node tools/integration_coverage.mjs",
     "test:matrix-runner": "node tools/run_test_matrix.mjs --self-test",
     "release:package": "node tools/release/package_release.mjs",
+    "release:suite-docs": "node tools/release/suite_release_docs.mjs",
+    "test:release-suite-docs": "node --test tools/release/suite_release_docs.test.mjs",
     "profile:ts": "node tools/capture_v8_profile.mjs",
     "test:inspector": "npm run build:debug && cargo test --test inspector_debug -- --nocapture",
     "perf:bridge": "cargo run --release --bin bridge_perf --",

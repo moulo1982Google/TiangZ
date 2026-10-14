@@ -62,6 +62,7 @@ const profiles = Object.freeze({
     commandStep("module typecheck host selection", process.execPath, ["tools/module_typecheck_host_self_test.mjs"]),
     commandStep("module Model export preflight", process.execPath, ["--test", "--test-concurrency=1", "tools/module_model_exports_self_test.mjs", "tools/game_project_check.test.mjs"]),
     commandStep("merged protocol locks", process.execPath, ["--test", "tools/module_protocol_merge_self_test.mjs"]),
+    commandStep("suite release documents", process.execPath, ["--test", "tools/release/suite_release_docs.test.mjs"]),
     commandStep("module live checker", process.execPath, ["--test", "tools/module_type_cache.test.mjs", "tools/module_live_worker.test.mjs"]),
     cargoStep("cargo fmt", ["fmt", "--all", "--", "--check"]),
     cargoStep("cargo clippy", ["clippy", "--all-targets", ...featureArguments, "--", "-D", "warnings"]),

@@ -2,6 +2,10 @@
 
 ## 未发布
 
+### 发布工具
+
+- **套件发布通用附件生成器。** 新增 `npm run release:suite-docs`（`tools/release/suite_release_docs.mjs`）：按配置文件为一次套件发布生成清单、依赖审计、发布后测试执行单与 SHA256SUMS，哈希、提交、树、CI 运行和审计结果都从 git、GitHub CLI 与实际文件读取，缺附件或读不到 CI 运行时报错、不写出半成品；`tools/release/suite-release.example.json` 是配置示例，`npm run test:release-suite-docs` 是单元测试，并登记进快速测试矩阵。
+
 ### CI
 
 - **代码覆盖率上传 Codecov。** 新增 `coverage` 工作流：框架自带测试加 TiangZ-Examples（`v0.7.2`）的外置游戏场景，沿用 `vitest.config.ts` 的原 Core 门槛，把 `lcov` 报告上传 Codecov（仓库密钥 `CODECOV_TOKEN`）；README 增加覆盖率徽章，`codecov.yml` 先把项目与补丁检查设为只提示。只统计 `app/core` 的 TypeScript，不含 Rust 运行时。`tools/integration_coverage.mjs` 把多出的命令行参数原样交给 vitest。本机合并运行 428 项通过，语句 80.62%、分支 72.64%、函数 86.45%、行 82.88%。

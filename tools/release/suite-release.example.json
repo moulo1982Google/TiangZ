@@ -1,0 +1,42 @@
+{
+  "suite": "TiangZ",
+  "version": "0.0.0",
+  "tagNote": "可选：对各仓库标签的说明。 / Optional note about the tags of the repositories.",
+  "repositories": [
+    {
+      "repo": "ExampleHost",
+      "github": "example-owner/ExampleHost",
+      "path": "../ExampleHost",
+      "tag": "v0.0.0",
+      "mainRef": "origin/main",
+      "mainAheadNote": "main 在标签之后只增加了不影响发布内容的提交。 / main is ahead of the tag by commits that do not change the release.",
+      "versions": { "package": "0.0.0" },
+      "assets": [
+        { "name": "ExampleHost-v0.0.0-windows-x64.zip", "source": "CI artifact from the tag push run" }
+      ]
+    },
+    {
+      "repo": "ExampleTools",
+      "github": "example-owner/ExampleTools",
+      "path": "../ExampleTools",
+      "tag": "v0.0.1",
+      "ci": false,
+      "versions": { "core": "0.0.1" },
+      "assetsNote": "只有标签，没有发布附件。 / Tag only; no release assets."
+    }
+  ],
+  "unchangedRepositories": [
+    { "repo": "ExampleOther", "tag": "v0.0.0", "reason": "no changes" }
+  ],
+  "auditRepositories": [
+    { "label": "ExampleHost（v0.0.0）", "path": "../ExampleHost", "ref": "v0.0.0" }
+  ],
+  "auditNote": "可选：写在审计表后面的说明。 / Optional note written after the audit table.",
+  "validation": {
+    "ExampleHost": { "tag_ci": "自由格式的验证记录，原样写入清单。 / Free-form validation notes copied into the manifest." }
+  },
+  "knownIssues": [
+    "本次发布没有执行的项目。 / Items not executed for this release."
+  ],
+  "testPlanFile": "POST-RELEASE-TEST-PLAN.md"
+}
