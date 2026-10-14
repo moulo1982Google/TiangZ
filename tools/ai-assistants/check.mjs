@@ -44,6 +44,8 @@ assert.equal((await call('infer_system_archetype', { text: '持续伤害buff' })
 for (const archetype of ['item', 'buff', 'quest', 'achievement', 'numeric', 'custom']) {
   const result = await call('recommend_system_design', { archetype, name: '验收', owner: 'player' });
   assert.ok(result.markdown.length > 0);
+  assert.ok(result.recommendation.ruleIds.includes('model.export-shape'));
+  assert.ok(result.recommendation.ruleIds.includes('persistence.no-change-identity'));
 }
 assert.equal(manifest.tools.length, 4);
 assert.ok(!manifest.fs && !manifest.network && !manifest.node && !manifest.skill);

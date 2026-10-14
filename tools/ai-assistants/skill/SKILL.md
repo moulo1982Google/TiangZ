@@ -58,7 +58,12 @@ Read only the additional source material relevant to the request:
 
 ## Change routing
 
-- Model exports must pass the selected host's real module loader. A frozen Set/Map remains an invalid exported value; Map/Set fields on Component instances are allowed. Run the host Model export check; its Native declaration bridge does not verify Native execution.
+- Choose the serial boundary for handlers that await DBProxy or another Host. A player's ordered mailbox remains valid; if independent control requests share a Scene with data work, consider separating the control owner or using an unordered mailbox with keyed coroutine locks. Re-check shared records after await when restart or release can invalidate them. Do not generalize a measured throughput value into a framework limit.
+- Lease renewal deadlines and any grace window come from the actual lease and ownership contract. Check queue wait, expiry, owner generation and failure behavior; a slow renewal alone does not prove the owner is gone. Do not silently extend validity or accept a stale owner.
+- Host 0.7.2 added Watcher persistent restart policy and the host's Native deno_core ABI changed to 0.412. Host 0.7.3 launchers compare executable and package versions. Verify the selected checkout and rebuild the host when necessary; equal version strings alone do not prove equal source identity.
+- A stale development lock is removed only when its recorded process is proven gone or reused. Do not delete a lock that may have a live owner; keep takeover files out of version control.
+
+- Model exports must pass the selected host's real module loader, whose current validation accepts function values (including constructors), primitives, arrays and plain objects. A frozen Set/Map remains an invalid exported value; Map/Set fields on Component instances are allowed. Run the host Model export check; its Native declaration bridge does not verify Native execution.
 - After merging protocol changes, check the final merged tree even when Git reports no conflict. Use the declared host's protocol generator in check mode and the project's declared SDK/config synchronization checks. Do not silently reassign published opcodes or hand-edit generated files.
 - A no-change operation still has an identity: resolve pending work first, then honor its fingerprint and historical receipt contract. Decide whether that operation needs a durable receipt; do not force every no-op to write a record.
 - Adding a persistence domain requires explicit load/codec/validation/plan/write/receipt/restore/view/side-effect coverage. Reuse the game's existing transaction path; a complete registry does not prove its economic rules.
@@ -101,6 +106,7 @@ Select validation from the changed surface rather than running every expensive s
 - Protocol, mailbox, process communication, lifecycle, backpressure, or Hotfix-barrier changes: use the full `npm run verify` path when authorized.
 - Model, Proto, Native schema, or generated-source changes: run the required codegen/build and restart-sensitive checks; never bypass fingerprint or lock failures.
 - DBProxy changes: use the repository's Rust formatting, workspace tests, Clippy, and TypeScript SDK tests. Real PostgreSQL/Redis integration and fault scripts change local services and require explicit authorization before running.
+- For an authorized long-soak evaluation, define the warm-up window from the actual workload and compare all valid steady windows, preserving the first samples and concurrent-load evidence. A memory plateau or shared-host interference must be supported by measurements; neither is a universal exemption for growth, jitter or skipped work.
 - Long soak, capacity, fault-injection, release, or production-style tests require explicit user permission. Do not start them merely because they are available.
 
 In the final report, state the repositories and files changed, whether code generation ran, the exact validations executed, and validations intentionally not run.

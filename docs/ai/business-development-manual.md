@@ -2,6 +2,10 @@
 
 ## 2026-10-13：模块检查与开发判断接入
 
+完整剩余设计已获准继续。独立评审指出报告不能用进程退出码覆盖 Model 的 unavailable/内层 timeout，也不能让人类输出绕过 JSON 模式的字节预算；两者现统一走有界捕获和真实结构化状态。版本与模块 graphHash 不含实际源码，阶段结果另记源/依赖字节 SHA、command/cwd/起止时间；这是验证阶段，testCount 为不适用，不填虚假用例数。新增真实 CLI 与受控状态/输出/身份反例，首轮因误列宿主未依赖的 protobufjs 而失败；改为该宿主实际四个工具依赖，未 fallback 或忽略缺包。日志在 `temp/guardrails-validation/t3-review-fixed-first.log` 与 `t3-review-fixed.log`。
+
+设计 MCP 的 list_design_rules 原合同为 text JSON 数组，新增测试误读 structuredContent 曾失败；应修测试读取，不为测试改服务器合同。Core 发布锁独立 AST 复核确认 212 个 Stable exports/apiSurface 与全部 public/protected 类成员保持，五个文件仅 private/#private 与未进 Stable 的内部类型变化；已用官方生成入口更新内部声明图，strict-lock 通过，首次失败仍保留。这不是宣称声明图完全未变。
+
 独立游戏工程的 `npm run check` 经声明宿主检查生成物和类型，再执行真实 Model 导出预检。非法导出错误保留原前缀并附模块/属性路径；Set/Map 实例字段仍允许。预检执行受信任项目的顶层登记代码，子进程不是安全沙箱；不在未信任工作区或实时静态诊断里隐式执行。Native 声明桥不验证运算或二进制，实际调用失败/unavailable，不能伪造返回值。
 
 协议分支合并后即使 Git 无冲突，也要在最终树执行宿主协议 `--check` 和工程声明的客户端同步检查。合并原锁撞号会在 staging 之前失败；修复仍走显式生成和既有开发/Release 政策，不静默改已发布编号。
@@ -10,7 +14,9 @@ no-op 也有操作身份：先处理 pending，再按该操作的指纹/历史�
 
 本轮复测教训：Native Model 夹具也必须声明合法抽象 Entity 根，模块依赖使用真实清单的 min/max 版本形态；失败后用 finally 恢复夹具，防止污染后续用例。协议反例要匹配原锁校验的既有错误语义，不为新测试改错误前缀。新工作树先构建自己的调试宿主再跑包含真实宿主的矩阵，缺二进制不是框架断言失败；不能跳过宿主测试或借旧二进制报通过。复测入口为 `npm run test:module-model-exports`、`npm run test:module-protocol-merge`、`npm run build:runtime:debug` 与 `npm run verify:quick`；首轮和补验日志位置见实施计划第 11 节。
 
-快速矩阵通过不代表发布锁通过。本轮额外 `node tools/verify_core_api.mjs --strict-lock` 发现五个可达声明文件漂移，主分支基线具有相同失败；隔离副本导出的基线与本轮完整声明快照字节一致。正确做法是分别报告已有漂移和本轮兼容性，发布前审查已有签名变化；禁止在原树直接更新锁取绿。当前原锁未改，发布验证仍有遗留。
+快速矩阵通过不代表发布锁通过。首轮额外 `node tools/verify_core_api.mjs --strict-lock` 发现五个可达声明文件漂移，主分支基线具有相同失败；隔离副本导出的基线与本轮完整声明快照字节一致。后续独立 AST 审查确认 Stable/API 成员兼容，才用 `npm run core-api:update-lock` 更新内部声明图；strict-lock 已通过，原失败保留。不能未审查就更新锁取绿，也不将更新说成声明图完全不变。
+
+P1 正式产物 13 个、12 项哈希、Cindy CRC、两份技能格式和提取 MCP 的 0.16.3 握手/29 规则/只读工具通过。实际 Codex 会话中策略阻断文件读取，后续提供真实原文与 Model JSON 的九场景核心判断通过独立评审；没有证明模型自主读工程和执行检查。下一步证据清单在生命周期、仍未知、真实 DB、不同键并发及逐帧核对上仍有缺项，A07 完整行为仅部分关闭。
 
 ## 2026-10-09：FFI 回调持有裸指针，不等于可以修改共享引用
 

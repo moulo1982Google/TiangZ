@@ -10,6 +10,7 @@
 4. [生命周期与持久化](lifecycle-and-persistence.md)
 5. [Timer、Update与Action](timer-update-and-action.md)
 6. [TypeScript与Rust数据位置](data-placement.md)
+7. [模块接入、合并与执行验证](development-validation.md)
 
 Developer Tools 的设计助手使用相同的稳定规则ID生成建议。文档是解释依据，`design-core`是确定性决策实现；两者发生冲突时必须在同一次改动中修正。
 
