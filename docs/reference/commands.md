@@ -12,6 +12,8 @@ npm run project:create -- --path ../MyGame --id org.example.game
 
 插件的创建与检查入口调用同一组宿主工具。模块系统以 tiangz.project.json 和 tiangz.module.json 为事实，不靠 Demo 目录猜测。
 
+`node <声明宿主>/tools/game_project.mjs check --project <工程> --json` 输出单份分阶段报告。源字节/实际解析包身份与清单 graphHash 分开记录；验证阶段 testCount 不适用。首个失败、中止或 unavailable 后剩余阶段 skipped，无 Native 模块单列 not-applicable。人类与 JSON 模式使用相同期限和有界输出；真实 Model/Native 编译与 Native 运算、服务、数据库、目标客户端分别报告。
+
 ## 引擎维护
 
 热更一小时持续负载（先取得测试授权）：`node tools/hotfix_load_soak.mjs --seconds 3600 --clients 500 --reload-seconds 600 --requests-per-second 2`。先构建匹配宿主并运行完整回归；报告留在脚本打印的 `temp/hotfix-load-*`，不连接现有数据库。边界与判定见[热更设计](../design/typescript-hot-reload.md#持续负载与换机复测)。
@@ -32,6 +34,10 @@ npm run project:create -- --path ../MyGame --id org.example.game
 | modules:link -- --source <模块> --modules-dir <目录> --name <名称> | 安装外部模块根 |
 | modules:prepare -- --modules-dir <目录> | 编辑器路径与声明发现 |
 | modules:typecheck -- --modules-dir <目录> | 检查模块类型和直接依赖 |
+| modules:check-exports -- --modules-dir <目录> --json | 真实 Model 登记/导出预检；不验证 Native 运算或启动服务 |
+| test:module-model-exports | 导出合法/非法值、Native 拒绝执行、期限/收尾与检查顺序 |
+| test:module-protocol-merge | 真实 Git 无冲突合并撞号、正式检查与失败不改写 |
+| test:ai-assistants | AI 维护源生成/规则引用/重复与缺失反例；不是安装或模型行为评估 |
 | codegen:module-protocol | 模块自有 protobuf/SDK |
 | codegen:module-config | 模块自有 Luban 配置 |
 | codegen:module-native | 模块自有 Native 接口 |

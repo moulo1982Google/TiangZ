@@ -1,22 +1,24 @@
 # 实施计划：AI 开发规则、工程检查与领域复用
 
-> **实施状态：未开始，等待需求方通知。** 2026-10-13 仅授权完整设计。本文中的文件和命令是以后批次的计划，不代表已经实现或运行。设计依据：[README.md](README.md)；验收依据：[validation-matrix.md](validation-matrix.md)。
+> **实施状态：P0/T1/T2/T3/P1/G1/G2/M1 实现与本轮适用验证完成；游戏smoke133 PASS并已合远端main。** 2026-10-13 需求方明确“可以，请继续推进直到完成”，覆盖完整剩余设计，不再等待分组开工。独立评审、框架代码CI、本机工具、五阶段实库与远端功能验证完成；A07完整自主行为仅部分关闭，未证明的收益仍未知。下方计划命令不是运行成绩，实际结果登记在文末与[交付记录](delivery-report.md)。设计依据：[README.md](README.md)；验收依据：[validation-matrix.md](validation-matrix.md)。
 
 ## 1. 批次与依赖
 
 | 批次 | 内容 | 所有者 | 前置 | 当前状态 |
 | --- | --- | --- | --- | --- |
 | D0 | 设计、代码基线与文档检查 | TiangZ 文档 | 无 | 本轮完成；无产品改动 |
-| P0 | 通用规则正文、引用和场景样例 | TiangZ AI 维护源 | 开工通知 | 未开始 |
-| T1 | 真实 Model 导出预检与默认检查接入 | TiangZ tools / 内部 Core 诊断 | 开工通知；P0 可并行逻辑设计 | 未开始 |
-| T2 | 协议合并反例、冲突诊断与生成检查接入核对 | TiangZ tools / 游戏验收入口 | 开工通知 | 未开始 |
-| T3 | 阶段结果、失败收尾与检查矩阵接入 | TiangZ tools | T1、T2 | 未开始 |
-| P1 | 设计工具规则同步、技能与插件分发验证 | Developer Tools、TiangZ、AI Plugins | P0；实际 Developer Tools 版本对齐 | 未开始 |
-| G1 | 领域覆盖检查与公共事务装配 | 苟道三国游戏模块 | 游戏试点明确纳入；T1/T2 完成可复用 | 未开始 |
-| G2 | 公共夹具与失败场景复用 | 苟道三国 tools | G1；服务验证另按该轮范围 | 未开始 |
-| M1 | 实际开发效果记录 | 游戏功能文档 | 首个后续授权批次 | 未开始 |
+| P0 | 通用规则正文、引用和场景样例 | TiangZ AI 维护源 | 已通知推进 | 源与产物完成；九场景核心判断通过，完整行为评估部分关闭 |
+| T1 | 真实 Model 导出预检与默认检查接入 | TiangZ tools / 内部 Core 诊断 | 已通知推进 | 实现与本地验收完成 |
+| T2 | 协议合并反例、冲突诊断与生成检查接入核对 | TiangZ tools / 游戏验收入口 | 已通知推进 | 实现与本地验收完成 |
+| T3 | 阶段结果、失败收尾与检查矩阵接入 | TiangZ tools | T1、T2 | 实现、十项反例与独立评审通过；最终 quick 39/39 |
+| P1 | 设计工具规则同步、技能与插件分发验证 | Developer Tools、TiangZ、AI Plugins | P0；实际 Developer Tools 版本对齐 | 源/分发/MCP 验证完成；Developer Tools CI 全通过 |
+| G1 | 领域覆盖检查与公共事务装配 | 苟道三国游戏模块 | 已明确纳入；T1/T2 | 十域实现和独立兼容性评审完成；工具1551通过/1历史skip、五阶段DB21 PASS、远端smoke133 PASS，游戏PR #1合远端main |
+| G2 | 公共夹具与失败场景复用 | 苟道三国 tools | G1 | 实现、旧字节对照和独立评审完成；12次真实Host启动与恢复、远端smoke133 PASS；最终证据已保存 |
+| M1 | 实际开发效果记录 | 游戏功能文档 | 适用实施批次 | 记录机制及本次接线减少、失败类别、发现阶段完成；工时未知，新功能可比采样留待后续 |
 
 建议分三组交付：第一组 P0/T1/T2；第二组 T3/P1；第三组 G1/G2/M1。通知某一组开工不能自动推进其他组。合并、推送、发布与安装另核授权范围。
+
+2026-10-13 补充：需求方现已明确授权完整剩余实施；上述分组仅用于交付与验证顺序，不再作为等待许可的理由。客户端正式安装、长稳/性能和生产操作仍按实际请求范围区分。
 
 ## 2. 开工共通准入
 
@@ -213,3 +215,53 @@ node --test --test-concurrency=1 GouDaoSanGuo/tools/*.test.mjs
 | 2026-10-13 | D0 | 当前代码/版本只读核对；完整设计、实施计划、验收矩阵；本地文档链接/状态检查结果在本轮交付核对 | 产品代码、规则源修改、生成/分发、服务/数据库、实现测试、独立实现评审、发布/安装/合并/推送全部未执行 |
 
 后续通知到来时在此登记原话、准入范围、批次和实际结果。没有通知，不将任何实施批次改成进行中。
+
+### 2026-10-13 第一组实际交付
+
+基线为 TiangZ 主仓库 `fbd60780bcb974d705d8abe894459ad3a84b8703`，独立分支 `codex/development-guardrails`。游戏、Developer Tools 源码与 AI Plugins 分发仓库没有写入。本轮只调整 Core 内部导出错误上下文，稳定声明与基线完全相同；Rust、依赖锁、协议锁均未修改。官方 `npm run codegen` 更新 `codegen.manifest.json` 的源指纹。
+
+P0 新增五项规则与九个评估场景；Codex/Claude/Cindy 生成及一致性检查通过，规则缺失、重复 ID、断引用反例通过，技能格式检查通过。场景文档是评估输入，不是实际 AI 对话成绩。P1 仍需处理维护源 Cindy 0.3.1 与已分发插件 0.3.2 的身份对齐，以及宿主安装 Developer Tools 0.16.2 与本地源码 0.15.2 的版本差异；本轮未分发、安装或降版本。
+
+| 实际检查 | 结果与证据范围 |
+| --- | --- |
+| `npm run verify:quick` | 39/39 步通过，failed/skipped/timedOut 均 0；180121ms；含 235 项既有单元测试、真实模块宿主、Rust fmt/Clippy/all-targets tests |
+| `npm run test:module-model-exports` | 27/27 测试通过：真实 Core 导出、Public API/依赖边界、Native 声明桥、期限/中止/超输出、输入字节与 mtime、工程入口失败停止 |
+| `npm run test:module-protocol-merge` | 1/1：真实 Git 无文本冲突合并得到撞号；正式 `--check` 明确失败且无改写；只撤回夹具未发布编号后显式生成恢复 |
+| `npm run test:ai-assistants` | 正式生成、检查、`--check` 与 1 项产物反例测试通过 |
+| 构建 helper 提取前后核对 | 两个 bundler 均使用本轮相同 Core 与同一模块夹具，18 个输出逐字节相同；含 Model/Hotfix JS、manifest 与配置 |
+| 苟道三国当前 Model 兼容 | 从游戏提交 `08c335749ed2528d7bfab9aaa813ae121c7b2561` 只读归档模块，在隔离副本用当前宿主生成 402 个协议消息，真实 Model 预检 passed；原游戏文件未改，未验证数据库、UI 或 Native 运算 |
+| `node tools/verify_core_api.mjs --strict-lock` | failed；主分支基线与本轮均出现同样五个声明图文件漂移。隔离副本导出完整声明快照逐字节相同，证明本轮没有新增漂移；没有更新原发布锁 |
+
+原始日志保留在本工作树忽略目录 `temp/guardrails-validation/`：`quick-first.log`/`quick-first.json` 是首轮，`quick-host-ready.log`/`quick-host-ready.json` 是完整补验；另有 `bundler-extraction.json`、`core-api-baseline-comparison.json` 与 `game-copy-model-first.json`。本地时间为 10-13，完整补验报告 UTC 为 2026-10-14T00:03:40.869Z 至 00:06:40.990Z。原始链接器警告保留，不宣称所有日志零警告。
+
+首轮失败分别记录：Model 夹具漏 Native 抽象 Entity 根且依赖版本写成非清单形态；断言曾期待改写后的锁错误文案，而原校验已正确拒绝；快速矩阵 38/39 的唯一失败是新工作树没有调试宿主。修正夹具并保证 finally 恢复、匹配既有错误语义、在自有工作树构建宿主后独立补验，未删测试或放宽标准。技能检查的 PyYAML 依赖仅装入本轮临时目录。
+
+发布锁漂移属于已证明存在于基线的遗留，后续发布前需独立审查签名兼容性；不得直接用更新锁掩盖。本轮没有运行 `verify:release`、完整长稳/性能、真实 Godot（未配置 GODOT_BIN）、实际 AI 对话、插件安装或游戏领域/事务重构，也没有独立实现评审结果。GitHub CI 与 PR 合并状态须按后续实际结果记录，不由本地通过代填。
+
+### 2026-10-13 完整剩余实施记录
+
+需求方随后明确“可以，请继续推进直到完成”。本段更新当前结果，上一段保留第一组当时的历史事实。所有代码使用各主仓库独立工作树；没有开发游戏的 TiangZ 副本。
+
+| 项目 | 实际结果与边界 |
+| --- | --- |
+| T3 工程检查 | 十项测试通过：真实 CLI、失败停止/skipped、Native 失败、内层 unavailable/timeout/abort、两种输出模式统一预算、输入字节及依赖身份、无限身份探针超时和运行中止回收。身份目录加载与哈希一起在首阶段有界子进程执行，最多 60 秒；没有在父进程先做无界采集 |
+| 输入身份 | 四个实际解析工具包的路径/版本/内容哈希、模块声明源与 Native Rust 源/工具链纳入 SHA256；明确源码根优先于缓存排除。嵌套合法 dist/temp 源保留，缓存目录可跳过，指向根外的链接失败，根内链接绑定纳入身份；不以同版本号代表同字节 |
+| 独立框架评审 | 两轮真实发现的问题修正后复核通过，无必须修复项；Core Stable exports 212、apiSurface 和 public/protected 成员兼容。内部 private/#private 声明图确实更新，官方更新锁后 strict-lock 通过，签名 9f6da82c6b9c |
+| Developer Tools | 从远端真实 0.16.2 实施为 Core 0.16.3，五规则同步为 29，既有三个 MCP 工具/text JSON 合同不变；完整 check 157 passed、3 既有平台 skipped、0 failed。提交 16c05c9，GitHub PR 6 的 Windows/Linux 检查及 package 全通过；VSIX 0.16.4 历史身份未改，未发布新 npm 包 |
+| 宿主依赖 | 正式 npm 安装并锁定 Developer Tools Git SHA 16c05c9ca68c530464aced4d85257e3d608736f3，不覆盖旧 tag；安装包实际 0.16.3，规则/文档核对 29/7 通过 |
+| AI 分发 | 源正式生成、显式分发及 --check 通过（13 产物、0 stale）；12 项 SHA、Cindy CRC、两技能格式、源/分发字节核对及提取 MCP 0.16.3 握手、三只读工具、29规则/Quest 建议通过。插件候选 0.3.3，分发提交 9a0ecb4，GitHub PR 4；未安装生产配置或发布 Marketplace |
+| AI 行为 | 两个真实 fresh Codex CLI 0.162.0-alpha.17.2 会话实际调用随包 MCP。首轮策略拒绝文件读取，未绕过；后续提供实际技能/reference 原文与主会话真实 Model JSON，独立评审确认九场景核心判断正确。模型后端身份 unknown，独立文件读/命令执行及部分下一步证据未验证，A07 仅部分关闭 |
+| 游戏 G1/G2 | 基线fee4e32，实施224b767、检查维护0acca01、SG2源错误码补齐af9eab3；封闭十域登记、两Store/Unit/Factory接线及真实状态夹具完成，独立评审16/16及Unit99方法/旧字节轨迹兼容。af9全工具1551 pass/0 fail/1历史归档skip、7801五阶段21 PASS/12次真实Host启动，源/生成物原字节恢复。4d仅修既有T4 smoke合同3文件；固定4d新tag0340完整133 PASS。合cb6后d41客户端网络400/同步通过；服务端证据按与4d相同字节的明确范围沿用，不继承旧1818整组客户端身份 |
+| M1 | 记录十域重复接线与两主要测试消费者的真实减少；生命周期整块移动不计玩法算法减少。有效工时未知，无两次新领域可比扩展，不填写节省百分比或可靠性提升比例 |
+
+候选归档 SHA256 `5559169063fe40bc4bc00de7920127e25e838fee400212530d93bae113bb1660`，MCP bundle SHA256 `cb7afb57e7089cfbda1fa6717e07c50031cf4ec0ad66d7e3fd9b09fed76b148b`。原始日志位于忽略目录 `temp/guardrails-validation/`，包括 `t3-identity-bounded-first.log`、`p1-artifact-identity.json`、两次 AI 事件/结果和真实 Model 正反例；测试结果不含凭据，原失败不替换。
+
+GitHub 依赖审计发现 quinn-proto 0.11.17 三项新安全公告：[RUSTSEC-2026-0343](https://rustsec.org/advisories/RUSTSEC-2026-0343.html)、[RUSTSEC-2026-0340](https://rustsec.org/advisories/RUSTSEC-2026-0340.html)、[RUSTSEC-2026-0338](https://rustsec.org/advisories/RUSTSEC-2026-0338.html)。正式 Cargo 更新锁到修复版 0.11.18 并重新构建本轮宿主；没有新增审计例外或改 Rust 业务源。当地未安装 cargo-audit，审计通过状态以新提交的 GitHub CI 为准。
+
+首失败另外保留：T3 误列 protobufjs（非本宿主工具依赖）、MCP 测试误读 structuredContent、评估 harness 的相对路径与 Windows 过长参数问题。均修夹具/调用方式，未改工具合同、放宽检查或抹除失败。
+
+最终 `npm run verify:quick` 为 **39/39**，failed/skipped=0，239563ms；UTC 2026-10-14T01:15:19.851Z 至 01:19:19.414Z，包含 Model/工程检查35项、TS既有单元235项及Rust全目标测试。此轮使用 quinn-proto 补丁后本工作树新构建宿主；`node tools/verify_core_api.mjs --strict-lock` 再验通过。原始记录为 `final-verify-quick.log`/`.json`。没有运行 release/full资格、Godot、长稳/性能或目标UI，CI审计与游戏V1另记。
+
+最终远端smoke固定4d1633d，唯一tag `guardrails-4d1633d-20261014-0340`：03:42:17 UTC构建完成，03:42:27原构建后idle门通过（load1 5.22/maxBusy5.4），至03:47:08完整133 PASS/exit0；39项结果文件逐SHA一致，自有资源全部清理。前三tag的ABORTED-BUSY或119 PASS后失败原资格保留。游戏最终文档1253cf9经70相对链接和diff检查，PR #1合远端main `bfc45fe0dba6c1d0351c55e98d13d06dab058f57`，父提交cb6eeda与1253cf9、最终tree `dca536c712917fec0b0eed43fd02d1e31490fcf4`全部核对。本任务未更新用户运行中的本地main或设置。
+
+完整游戏日志、实际二进制/元数据和四tag源码包冻结于本工作树忽略目录 `temp/guardrails-validation/game-evidence-final/`：1160文件、2227546070bytes，复制前/后/原件再核及收尾重新哈希一致，清单为 `preservation-manifest.json`；游戏三份最终文档另存 `game-final-documents/`。随后仅移除本任务游戏工作树，其他工作树和共享缓存保留。GitHub三个主仓库PR继续按各自准确HEAD核对CI，生产安装、发布和框架PR合并不由功能测试成绩代替。

@@ -5,6 +5,11 @@
   // TiangZ design knowledge so the .cindy package is portable by itself.
   // All tools are read-only: they do not access the network or edit files.
   var DESIGN_RULES = [
+    rule("model.export-shape", "真实Model导出", "按选定宿主真实加载规则检查导出值；冻结Set/Map仍非法，实例字段可用。声明桥只验证导出形状，不证明Native运算或进程启动。", "docs/patterns/development-validation.md"),
+    rule("protocol.post-merge", "合并后检查协议", "合并协议分支后无论Git是否冲突，都在最终树运行宿主协议检查与声明SDK同步检查；不默改已发布编号、手编生成物或回收墓碑。", "docs/patterns/development-validation.md"),
+    rule("persistence.no-change-identity", "无变化操作身份", "先原字节恢复pending，再遵守操作指纹和历史回执契约；值相同不等于操作相同。查询失败不当未提交，不强制每个no-op持久写入。", "docs/patterns/development-validation.md"),
+    rule("persistence.domain-integration", "领域接入覆盖", "新增领域明确codec/加载/校验/规划/写入/回执/恢复/视图/副作用及不适用项，复用既有原子路径；登记完整不证明经济规则或幂等。", "docs/patterns/development-validation.md"),
+    rule("validation.target-execution", "目标实际执行", "跨端推算共享参数，以真实权威样本驱动真实客户端；源测试、构建、目标运行分别报告。平台差异核对实际产物，未执行不算通过。", "docs/patterns/development-validation.md"),
     rule("ownership.single-owner", "唯一所有者", "每个运行时对象只有一个直接所有者，集合增删经过所有者Component。", "docs/patterns/ownership-and-entity.md"),
     rule("entity.actor-target", "Actor消息目标", "只有需要mailbox和网络寻址的Scene、Session、Unit成为Actor目标。", "docs/patterns/ownership-and-entity.md"),
     rule("entity.local-child", "本地子Entity", "有稳定身份和独立生命周期、但不接收网络消息的对象使用ChildEntity。", "docs/patterns/ownership-and-entity.md"),
@@ -172,15 +177,20 @@
   }
 
   function recommendSystemDesign(request) {
+    var result;
     switch (request.archetype) {
-      case "item": return itemRecommendation(request.name);
-      case "buff": return buffRecommendation(request.name);
-      case "quest": return questRecommendation(request.name);
-      case "achievement": return achievementRecommendation(request.name);
-      case "numeric": return numericRecommendation(request.name);
-      case "custom": return customRecommendation(request);
+      case "item": result = itemRecommendation(request.name); break;
+      case "buff": result = buffRecommendation(request.name); break;
+      case "quest": result = questRecommendation(request.name); break;
+      case "achievement": result = achievementRecommendation(request.name); break;
+      case "numeric": result = numericRecommendation(request.name); break;
+      case "custom": result = customRecommendation(request); break;
       default: throw new Error("archetype 必须是 item、buff、quest、achievement、numeric 或 custom");
     }
+    result.ruleIds = unique(result.ruleIds.concat(["model.export-shape", "protocol.post-merge", "validation.target-execution"],
+      request.persistent === false ? [] : ["persistence.no-change-identity", "persistence.domain-integration"]));
+    result.documents = unique(result.ruleIds.map(function (id) { return RULES_BY_ID[id].document; }));
+    return result;
   }
 
   function formatDesignRecommendation(result) {

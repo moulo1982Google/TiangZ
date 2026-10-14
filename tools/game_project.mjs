@@ -7,6 +7,7 @@ import { loadGameProject } from "./game_project_config.mjs";
 import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
 import { resolveModuleRuntimeBinary } from "./module_runtime_binary.mjs";
 import { prepareGameProject, buildGameProject, checkGameProject, acquireGameProjectLock } from "./game_project_build.mjs";
+import { gameProjectCheckTool } from "./game_project_check_runner.mjs";
 
 const engine = path.resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
@@ -16,12 +17,15 @@ let projectDirectory = process.cwd();
 let json = false;
 let debug = false;
 let devRegenSchemaLock = false;
+const checkCancellation = new AbortController();
+const checkAbort = () => checkCancellation.abort();
+if (action === "check") for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]) process.on(signal, checkAbort);
 try {
   if (!allowed.includes(action)) throw new Error(`未知开发动作 ${action}；可用：${allowed.join(", ")}`);
   while (args.length) {
     const arg = args.shift();
     if (arg === "--project" && args[0] && !args[0].startsWith("--")) projectDirectory = args.shift();
-    else if (arg === "--json" && action === "inspect") json = true;
+    else if (arg === "--json" && ["inspect", "check"].includes(action)) json = true;
     else if (arg === "--debug" && action === "dev") debug = true;
     else if (arg === "--dev-regen-schema-lock" && action === "protocol-update") devRegenSchemaLock = true;
     else throw new Error(`未知或不完整参数：${arg}`);
@@ -67,12 +71,14 @@ try {
   } else {
     const release = await acquireGameProjectLock(project, action);
     try {
-      const catalog = await loadGameModuleCatalog({ projectRoot: engine, modulesDirectory: project.modulesDirectory });
-      const hasNative = catalog.modules.some(module => module.native);
+      const catalog = action === "check" ? undefined : await loadGameModuleCatalog({ projectRoot: engine, modulesDirectory: project.modulesDirectory });
+      const hasNative = catalog?.modules.some(module => module.native) ?? false;
       if (action === "setup" || action === "protocol-update") await prepareGameProject(project, tool, action === "protocol-update", devRegenSchemaLock);
       else if (action === "check") {
-        await checkGameProject(project, tool);
-        if (hasNative) await tool("build_module_native.mjs", ...moduleArgs, "--check");
+        const report = await checkGameProject(project, gameProjectCheckTool(engine,
+          { env, signal: checkCancellation.signal, quiet: json }),
+        { collectIdentity: true, signal: checkCancellation.signal, quiet: json });
+        if (json) process.stdout.write(`${JSON.stringify(report)}\n`);
       }
       else if (action === "build") await buildGameProject(project, tool);
       else if (action === "host-build") {
@@ -146,8 +152,13 @@ try {
     process.stdout.write("[smoke] 真实请求验收通过，测试进程已停止。\n");
   }
 } catch (error) {
-  process.stderr.write(`[${action}] ${error.message}\n`);
-  process.exitCode = 1;
+  if (json && action === "check") process.stdout.write(`${JSON.stringify(error.checkReport ?? {
+    formatVersion: 1, action, ok: false, status: "unavailable", diagnostics: [{ message: error.message }], stages: [],
+  })}\n`);
+  else process.stderr.write(`[${action}] ${error.message}\n`);
+  process.exitCode = error.checkReport?.stages.some(stage => stage.status === "aborted") ? 130 : 1;
+} finally {
+  if (action === "check") for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]) process.off(signal, checkAbort);
 }
 
 async function run(command, args, cwd, env) {

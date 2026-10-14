@@ -1,5 +1,27 @@
 # 2026-09-16：先选业务工程，再写模块
 
+## 2026-10-13：模块检查与开发判断接入
+
+完整设计实现与本轮适用验证已完成，本机与远端验收分列：[交付记录](../design/development-guardrails/delivery-report.md)。框架代码b7ea5b92八项GitHub CI通过；游戏af9eab3全工具1551通过/0失败/1历史原件skip，7801五阶段21 PASS、12次Host启动，旧数据保护、源字节恢复与测试库停止完成。4d只修既有T4 smoke合同，固定4d新唯一tag0340原门禁后完整133 PASS/exit0；合最新main后的d41客户端网络400/同步通过，服务端等明确范围与4d字节一致，不继承旧1818整组客户端或Creator/UI身份。游戏PR #1合远端main，完整证据保存后仅清理自有工作树。原失败、历史缺项、A07部分关闭和不可量化的工时收益均保留，不能将不同提交命令身份混写。
+
+交付文档同样受可移植性检查：fc3d6b1e的报告直接链接环境专有内网Gitea地址，Linux CI在`verify:no-local-traces`失败，本机原命令亦复现；相对文件链接检查和AI生成检查不能覆盖这条门禁。正确做法是公共框架文档保留仓库名、PR号和Git origin查找方式，实际环境地址只留本地忽略证据，并运行`node tools/verify_no_local_traces.mjs`。不得新增allowlist、放宽检查或把旧代码提交的CI通过当新文档通过；原诊断与日志位置见交付记录。
+
+完整剩余设计已获准继续。独立评审指出报告不能用进程退出码覆盖 Model 的 unavailable/内层 timeout，也不能让人类输出绕过 JSON 模式的字节预算；两者现统一走有界捕获和真实结构化状态。版本与模块 graphHash 不含实际源码，阶段结果另记源/依赖字节 SHA、command/cwd/起止时间；这是验证阶段，testCount 为不适用，不填虚假用例数。新增真实 CLI 与受控状态/输出/身份反例，首轮因误列宿主未依赖的 protobufjs 而失败；改为该宿主实际四个工具依赖，未 fallback 或忽略缺包。日志在 `temp/guardrails-validation/t3-review-fixed-first.log` 与 `t3-review-fixed.log`。
+
+设计 MCP 的 list_design_rules 原合同为 text JSON 数组，新增测试误读 structuredContent 曾失败；应修测试读取，不为测试改服务器合同。Core 发布锁独立 AST 复核确认 212 个 Stable exports/apiSurface 与全部 public/protected 类成员保持，五个文件仅 private/#private 与未进 Stable 的内部类型变化；已用官方生成入口更新内部声明图，strict-lock 通过，首次失败仍保留。这不是宣称声明图完全未变。
+
+独立游戏工程的 `npm run check` 经声明宿主检查生成物和类型，再执行真实 Model 导出预检。非法导出错误保留原前缀并附模块/属性路径；Set/Map 实例字段仍允许。预检执行受信任项目的顶层登记代码，子进程不是安全沙箱；不在未信任工作区或实时静态诊断里隐式执行。Native 声明桥不验证运算或二进制，实际调用失败/unavailable，不能伪造返回值。
+
+协议分支合并后即使 Git 无冲突，也要在最终树执行宿主协议 `--check` 和工程声明的客户端同步检查。合并原锁撞号会在 staging 之前失败；修复仍走显式生成和既有开发/Release 政策，不静默改已发布编号。
+
+no-op 也有操作身份：先处理 pending，再按该操作的指纹/历史回执契约判断；数据库查询失败不是未提交，不强制每个 no-op 写库。新增领域按 codec/加载/验证/规划/写入/回执/恢复/视图/副作用列清接入项；跨端推算需双方共享参数和目标实际执行证据。案例见[开发判断场景](development-guardrails-scenarios.md)，范围与验证见[实施计划](../design/development-guardrails/implementation-plan.md)。
+
+本轮复测教训：Native Model 夹具也必须声明合法抽象 Entity 根，模块依赖使用真实清单的 min/max 版本形态；失败后用 finally 恢复夹具，防止污染后续用例。协议反例要匹配原锁校验的既有错误语义，不为新测试改错误前缀。新工作树先构建自己的调试宿主再跑包含真实宿主的矩阵，缺二进制不是框架断言失败；不能跳过宿主测试或借旧二进制报通过。复测入口为 `npm run test:module-model-exports`、`npm run test:module-protocol-merge`、`npm run build:runtime:debug` 与 `npm run verify:quick`；首轮和补验日志位置见实施计划第 11 节。
+
+快速矩阵通过不代表发布锁通过。首轮额外 `node tools/verify_core_api.mjs --strict-lock` 发现五个可达声明文件漂移，主分支基线具有相同失败；隔离副本导出的基线与本轮完整声明快照字节一致。后续独立 AST 审查确认 Stable/API 成员兼容，才用 `npm run core-api:update-lock` 更新内部声明图；strict-lock 已通过，原失败保留。不能未审查就更新锁取绿，也不将更新说成声明图完全不变。
+
+P1 正式产物 13 个、12 项哈希、Cindy CRC、两份技能格式和提取 MCP 的 0.16.3 握手/29 规则/只读工具通过。实际 Codex 会话中策略阻断文件读取，后续提供真实原文与 Model JSON 的九场景核心判断通过独立评审；没有证明模型自主读工程和执行检查。下一步证据清单在生命周期、仍未知、真实 DB、不同键并发及逐帧核对上仍有缺项，A07 完整行为仅部分关闭。
+
 ## 2026-10-09：FFI 回调持有裸指针，不等于可以修改共享引用
 
 稳定的 Box 只保证地址和生命期。只要还有普通共享引用在用（例如调用 V8 期间触发 GC 回调），回调就不能从裸指针构造 `&mut` 去改非 `UnsafeCell` 字段，同线程也不行。用 `Cell`/`RefCell` 做内部可变；不要用 unsafe 强转、删除指标或换锁来掩盖。真实 V8 回归只验证集成，不等于 Miri 证明。诊断探针在 Windows 回环上快速建连会遇到客户端 `set_nodelay` 返回 10022，先核对服务端计数，不要把它当作引擎故障。见 [TCP 诊断](../testing/tcp-task-diagnostics.md)。 / A stable Box guarantees address and lifetime only; reentrant FFI writes need interior mutability while a shared reference is live.
@@ -2760,7 +2782,7 @@ SLG默认权威读取联合验收入口在`../TiangZ-Examples/packages/slg/tools
 
 ### Scene HTTP 与 0.7 生命周期
 
-HTTP 使用 Scene 的独立 `http.port` 和 `httpHandler(SceneCtor, method, path)` 精确路由，面向工具接口。入站复用 0.7 Host 事件字节预算，队列或预算不足立即返回 503。调用方超时不取消已开始的业务，也不提前归还执行名额；尚未开始的过期请求不进入 Handler，Scene 销毁会清理排队请求。业务需要自行保证修改操作的幂等性。共享 Developer Tools Hotfix 检查器必须包含 `httpHandler` 状态规则，宿主锁定提交为 `198afe8f040d1fc1e17d1a3250791cb62e25109b`。出站 HTTP 尚未提供。
+HTTP 使用 Scene 的独立 `http.port` 和 `httpHandler(SceneCtor, method, path)` 精确路由，面向工具接口。入站复用 0.7 Host 事件字节预算，队列或预算不足立即返回 503。调用方超时不取消已开始的业务，也不提前归还执行名额；尚未开始的过期请求不进入 Handler，Scene 销毁会清理排队请求。业务需要自行保证修改操作的幂等性。共享 Developer Tools Hotfix 检查器必须包含 `httpHandler` 状态规则；本轮宿主锁定 `16c05c9ca68c530464aced4d85257e3d608736f3`（Core 0.16.3，保留既有 HTTP 检查）。出站 HTTP 尚未提供。
 
 HTTP 合入 0.7 的首次完整矩阵在 Rust 测试编译失败：`process_endpoint_tests.rs` 手工构造 `SceneConfig` 时缺少新增的 `http` 字段，quick 为 33/35。修正为 `http: None`，保持原端点断言；不能只用 `cargo check --bin` 代替全目标测试。原日志保留在 `target/http-rc1-verify-20261007.log`，完整复测另写日志，不覆盖失败证据。此前 0.6.2 基线的日志过滤与 Windows V8 构建路径失败也保留在 `target/http-verify-full-20261007.log`；本轮设置进程级 `RUST_LOG=info`，使用本机可编译的 Cargo 输出目录并把新宿主复制到测试实际读取的 `target/debug`。不能把旧宿主的通过结果算给新源码。
 

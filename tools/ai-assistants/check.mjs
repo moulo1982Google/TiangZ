@@ -21,8 +21,16 @@ async function call(tool, args = {}) {
 const rules = await call('list_design_rules');
 assert.equal(rules.count, rules.rules.length);
 assert.equal(new Set(rules.rules.map(x => x.id)).size, rules.count);
+const engineRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+for (const rule of rules.rules) {
+  assert.ok(typeof rule.document === 'string' && rule.document.startsWith('docs/'), `Invalid rule document: ${rule.id}`);
+  const document = path.resolve(engineRoot, rule.document);
+  assert.ok(document.startsWith(path.join(engineRoot, 'docs') + path.sep), `Rule document escapes docs: ${rule.id}`);
+  assert.ok(fs.existsSync(document), `Missing rule document: ${rule.id} ${rule.document}`);
+}
 for (const id of ['execution.timer', 'protocol.inner-identity', 'persistence.no-fallback', 'persistence.unknown-result', 'hotfix.atomic-config', 'validation.evidence',
   'persistence.operation-budget', 'lifecycle.in-flight-owner', 'routing.optional-directory', 'compatibility.package-identity',
+  'model.export-shape', 'protocol.post-merge', 'persistence.no-change-identity', 'persistence.domain-integration', 'validation.target-execution',
   'validation.program-contracts', 'deployment.module-owned', 'transport.budget-scope', 'transport.host-event-batch', 'runtime.host-event-admission', 'persistence.readonly-capacity']) {
   assert.ok(rules.rules.some(x => x.id === id), `Missing rule ${id}`);
 }
@@ -36,6 +44,8 @@ assert.equal((await call('infer_system_archetype', { text: '持续伤害buff' })
 for (const archetype of ['item', 'buff', 'quest', 'achievement', 'numeric', 'custom']) {
   const result = await call('recommend_system_design', { archetype, name: '验收', owner: 'player' });
   assert.ok(result.markdown.length > 0);
+  assert.ok(result.recommendation.ruleIds.includes('model.export-shape'));
+  assert.ok(result.recommendation.ruleIds.includes('persistence.no-change-identity'));
 }
 assert.equal(manifest.tools.length, 4);
 assert.ok(!manifest.fs && !manifest.network && !manifest.node && !manifest.skill);

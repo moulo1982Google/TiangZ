@@ -40,6 +40,16 @@ if (protocolModules.length === 0) {
   process.exit(0);
 }
 
+// 合并后的原锁先核对，再建立 staging；检查不能把撞号锁静默修成有效锁。
+// Validate merged source locks before staging; checking must never silently repair collisions.
+await validateGlobalOpcodeOwnership(await Promise.all(protocolModules.map(async module => {
+  const file = module.protocol.opcodeLock;
+  const optional = updateLocks ? await readOptionalLock(file) : undefined;
+  const opcodeLock = updateLocks ? optional === undefined ? { version: 1, entries: [] } : validateLock(optional, file, "opcode")
+    : await readLock(file, "opcode");
+  return { module, opcodeLock };
+})));
+
 const generated = [];
 const regenerationReports = [];
 const stagingDirectories = [];
@@ -221,24 +231,24 @@ async function validateGlobalOpcodeOwnership(records) {
   const hostLockFile = path.join(root, "proto", "opcode.lock.json");
   const hostLock = hostProfile === "modules" ? { entries: [] } : await readLock(hostLockFile, "host opcode");
   for (const entry of hostLock.entries) {
-    addOwner(entry.code, `engine:${entry.key}`, owners);
+    addOwner(entry.code, `engine:${entry.key}`, owners, hostLockFile);
   }
   for (const record of records) {
     for (const entry of record.opcodeLock.entries) {
-      addOwner(entry.code, `${record.module.id}:${entry.key}`, owners);
+      addOwner(entry.code, `${record.module.id}:${entry.key}`, owners, record.module.protocol.opcodeLock);
     }
   }
 }
 
-function addOwner(code, owner, owners) {
+function addOwner(code, owner, owners, source) {
   if (!Number.isInteger(code) || code < 1 || code > 0xffff) {
     throw new Error(`protocol opcode must be an integer from 1 to 65535: ${owner}=${String(code)}`);
   }
   const previous = owners.get(code);
-  if (previous && previous !== owner) {
-    throw new Error(`protocol msgcode collision ${code}: ${previous} and ${owner}`);
+  if (previous) {
+    throw new Error(`protocol msgcode collision ${code}: ${previous.owner} (${previous.source}) and ${owner} (${source})`);
   }
-  owners.set(code, owner);
+  owners.set(code, { owner, source });
 }
 
 async function writeProtocolManifest({
@@ -349,6 +359,11 @@ async function readLock(file, kind) {
   } catch (error) {
     throw new Error(`failed to read ${kind} protocol lock ${file}: ${error.message}`, { cause: error });
   }
+  return validateLock(value, file, kind);
+}
+
+/** 现有锁与待生成的可选锁共用形状检查。 / Validate existing and optional generation locks with the same shape rules. */
+function validateLock(value, file, kind) {
   if (value?.version !== 1 || !Array.isArray(value.entries)) {
     throw new Error(`${file}: ${kind} lock must contain version=1 and an entries array`);
   }
