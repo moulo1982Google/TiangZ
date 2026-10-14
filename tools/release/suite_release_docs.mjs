@@ -64,7 +64,11 @@ function defaultNpmAudit({ repoPath, ref }, omitDev) {
   const directory = mkdtempSync(path.join(os.tmpdir(), "tiangz-audit-"));
   try {
     for (const name of ["package.json", "package-lock.json"]) writeFileSync(path.join(directory, name), gitOutput(["show", `${ref}:${name}`], repoPath));
-    const result = spawnSync("npm", ["audit", "--json", ...(omitDev ? ["--omit=dev"] : [])], { cwd: directory, encoding: "utf8", maxBuffer: 1 << 28, shell: process.platform === "win32" });
+    const options = { cwd: directory, encoding: "utf8", maxBuffer: 1 << 28 };
+    // Windows 上 npm 是 .cmd，需要 shell；此时把固定的整条命令作为字符串传入，避免“带参数数组又开 shell”的弃用警告。 / On Windows npm is a .cmd and needs a shell; pass the fixed command as one string to avoid the args-with-shell deprecation.
+    const result = process.platform === "win32"
+      ? spawnSync(`npm audit --json${omitDev ? " --omit=dev" : ""}`, { ...options, shell: true })
+      : spawnSync("npm", ["audit", "--json", ...(omitDev ? ["--omit=dev"] : [])], options);
     if (result.error) throw result.error;
     return JSON.parse(result.stdout);
   } finally {
