@@ -1,5 +1,11 @@
 # 版本记录
 
+## 未发布
+
+### CI
+
+- **代码覆盖率上传 Codecov。** 新增 `coverage` 工作流：框架自带测试加 TiangZ-Examples（`v0.7.2`）的外置游戏场景，沿用 `vitest.config.ts` 的原 Core 门槛，把 `lcov` 报告上传 Codecov（仓库密钥 `CODECOV_TOKEN`）；README 增加覆盖率徽章，`codecov.yml` 先把项目与补丁检查设为只提示。只统计 `app/core` 的 TypeScript，不含 Rust 运行时。`tools/integration_coverage.mjs` 把多出的命令行参数原样交给 vitest。本机合并运行 428 项通过，语句 80.62%、分支 72.64%、函数 86.45%、行 82.88%。
+
 ## 0.7.4 — 2026-10-13（正式版，标签 `v0.7.4`）
 
 相对 0.7.3：开发检查前移，并补充 AI 开发规则。Runtime 行为、协议、配置字段与 Stable API 导出不变；Model 导出校验失败时增加模块、导出路径等诊断上下文，合法与非法的判定不变。依赖 quinn-proto 升到 0.11.18（安全补丁）。宿主 `--version` 变为 0.7.4，使用启动器版本核对的工程需重建宿主。

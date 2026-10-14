@@ -46,7 +46,7 @@ npm run project:create -- --path ../MyGame --id org.example.game
 | modules:inspect -- --modules-dir <目录> --json | 结构导航，供终端和插件共用 |
 | verify:quick | 框架快速矩阵，不含固定拓扑游戏测试 |
 | test:game-project、test:game-project-dev | 中立脚手架真实启动/热更验收 |
-| test:unit:coverage | 调用 Examples 的联合覆盖率，保持原 Core 门槛 |
+| test:unit:coverage | 调用 Examples 的联合覆盖率，保持原 Core 门槛；多出的参数原样交给 vitest（CI 用 `-- --coverage.reporter=lcov` 生成 Codecov 报告） |
 | verify:release | 发布前严格检查版本、协议与 API 锁 |
 
 上表命令均使用 npm run。完整当前脚本清单以根 package.json 为准。旧 --host-profile demo 已移除，默认 modules；不通过兼容别名偷偷装配 MMORPG。

@@ -1,0 +1,39 @@
+name: coverage
+
+# 框架 Core 的代码覆盖率：框架自带测试加 TiangZ-Examples 里的外置游戏场景，门槛沿用 vitest.config.ts 的原 Core 门槛。
+# 报告上传 Codecov（仓库密钥 CODECOV_TOKEN）；只统计 app/core 下的 TypeScript，不含 Rust 运行时。
+# Core coverage = framework tests + the relocated example scenarios, with the original thresholds; the lcov report goes to Codecov.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: moulo1982Google/TiangZ-Examples
+          ref: v0.7.2
+          path: TiangZ-Examples
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm install
+      - name: Install the example scenarios
+        run: npm ci
+        working-directory: TiangZ-Examples
+      - name: Framework and example scenario coverage
+        env:
+          TIANGZ_ENGINE_ROOT: ${{ github.workspace }}
+          TIANGZ_EXAMPLES_ROOT: ${{ github.workspace }}/TiangZ-Examples
+        run: node tools/integration_coverage.mjs --coverage.reporter=lcov --coverage.reporter=json-summary --coverage.reporter=text-summary
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: dist/coverage/integration/lcov.info
+          fail_ci_if_error: true
