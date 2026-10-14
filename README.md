@@ -1,4 +1,4 @@
-> 本轮发布：`v0.7.1`，修补 0.7.0：大批回包不再断开健康连接（出站暂存）、业务子类可用与引擎内部同名的字段、恢复异步结果唤醒。说明见 [RELEASE-v0.7.1.md](RELEASE-v0.7.1.md)。
+> 本轮发布：`v0.7.4`（2026-10-13）：开发检查前移（真实 Model 导出预检、合并后协议撞号检查、检查阶段结果与身份）、AI 开发规则同步、quinn-proto 安全补丁；Runtime 行为、协议与 Stable API 不变，需重建宿主。说明见 [RELEASE-v0.7.4.md](RELEASE-v0.7.4.md)。
 
 # TiangZ
 [![verify](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml)

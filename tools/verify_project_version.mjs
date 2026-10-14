@@ -19,6 +19,11 @@ const readme = await readFile(path.join(root, "README.md"), "utf8");
 // After a release the README says “当前版本为”, during development “当前开发版本为”; both must match Cargo.toml.
 const readmeVersion = readme.match(/当前(?:开发)?版本为 `([^`]+)`/)?.[1];
 
+// 发布后 README 顶部“本轮发布”一段必须写当前版本（需求方 2026-10-14：该段曾停在 v0.7.1 而没人发现）；开发期不检查。
+// After a release the README's leading “本轮发布” note must name the current version; development builds skip it.
+const releaseNoteVersion = readme.match(/^> 本轮发布：`v?([^`]+)`/m)?.[1];
+const isReleaseReadme = /当前版本为 `/.test(readme);
+
 const mismatches = [];
 if (packageJson.version !== cargoVersion) {
   mismatches.push(`package.json=${packageJson.version ?? "missing"}`);
@@ -33,6 +38,9 @@ if (
 }
 if (readmeVersion !== cargoVersion) {
   mismatches.push(`README.md=${readmeVersion ?? "missing"}`);
+}
+if (isReleaseReadme && releaseNoteVersion !== cargoVersion) {
+  mismatches.push(`README.md 本轮发布=${releaseNoteVersion ?? "missing"}`);
 }
 if (mismatches.length > 0 && strict) {
   throw new Error(
