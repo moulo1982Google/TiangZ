@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 报告安全漏洞 / Report a vulnerability
+    url: https://github.com/moulo1982Google/TiangZ/security/advisories/new
+    about: 请私下报告，不要开公开 Issue。 / Please report privately, not as a public issue.
