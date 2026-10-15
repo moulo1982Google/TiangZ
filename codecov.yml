@@ -1,5 +1,7 @@
 # Codecov 配置。刚接入时检查只提示、不拦合并，看清基线后再决定是否收紧。
+# typescript 与 rust 两份报告分开标记；src/bin 下的压测工具和 *_tests.rs 测试文件不计入。
 # Codecov settings: status checks are informational for now and never block a merge.
+# The typescript and rust reports carry separate flags; load tools under src/bin and *_tests.rs files are excluded.
 coverage:
   status:
     project:
@@ -9,6 +11,18 @@ coverage:
       default:
         informational: true
 
+flags:
+  typescript:
+    paths:
+      - app/
+  rust:
+    paths:
+      - src/
+
+ignore:
+  - "src/bin/**"
+  - "src/**/*_tests.rs"
+
 comment:
-  layout: "condensed_header, diff, files"
+  layout: "condensed_header, diff, flags, files"
   require_changes: true

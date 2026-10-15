@@ -1,8 +1,12 @@
 name: coverage
 
-# 框架 Core 的代码覆盖率：框架自带测试加 TiangZ-Examples 里的外置游戏场景，门槛沿用 vitest.config.ts 的原 Core 门槛。
-# 报告上传 Codecov（仓库密钥 CODECOV_TOKEN）；只统计 app/core 下的 TypeScript，不含 Rust 运行时。
-# Core coverage = framework tests + the relocated example scenarios, with the original thresholds; the lcov report goes to Codecov.
+# 代码覆盖率，分两份上传 Codecov（仓库密钥 CODECOV_TOKEN）：
+# - typescript：框架 Core（app/core）的 TypeScript，框架自带测试加 TiangZ-Examples 里的外置游戏场景，门槛沿用 vitest.config.ts 的原 Core 门槛；
+# - rust：Rust 运行时。整个 verify 在加了统计的构建上跑一遍，Rust 单测和启动真实调试宿主的工具自测都计入。
+# Coverage, uploaded to Codecov in two flags:
+# - typescript: app/core TypeScript from the framework tests plus the relocated example scenarios, with the original thresholds;
+# - rust: the Rust runtime. The whole verify run uses an instrumented build, so Rust unit tests and the tool self-tests
+#   that launch the real debug host both count.
 on:
   push:
     branches: [main]
@@ -36,4 +40,50 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: dist/coverage/integration/lcov.info
+          flags: typescript
+          fail_ci_if_error: true
+
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy, llvm-tools-preview
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - run: npm install
+      # show-env 导出加统计的编译参数与输出位置；之后同一步里的 cargo 与它启动的宿主进程都写覆盖率数据。
+      # 宿主仍在 target/debug/TiangZ，工具自测照常找到它。
+      # show-env exports the instrumentation flags and profile path; every cargo build and host process in the step records
+      # coverage. The host stays at target/debug/TiangZ, where the tool self-tests look for it.
+      - name: Verify on an instrumented build
+        run: |
+          set -euo pipefail
+          eval "$(cargo llvm-cov show-env --export-prefix)"
+          cargo llvm-cov clean --workspace
+          npm run build:runtime:debug
+          npm run verify
+          cargo llvm-cov report --lcov --output-path rust-lcov.info --ignore-filename-regex '(^|/)src/bin/|_tests\.rs$'
+          cargo llvm-cov report --summary-only --ignore-filename-regex '(^|/)src/bin/|_tests\.rs$'
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-coverage-failure-logs
+          path: temp/test-logs/
+          if-no-files-found: ignore
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: rust-lcov.info
+          flags: rust
           fail_ci_if_error: true
