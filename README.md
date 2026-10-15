@@ -1,4 +1,4 @@
-> 本轮发布：`v0.7.4`（2026-10-13）：开发检查前移（真实 Model 导出预检、合并后协议撞号检查、检查阶段结果与身份）、AI 开发规则同步、quinn-proto 安全补丁；Runtime 行为、协议与 Stable API 不变，需重建宿主。说明见 [RELEASE-v0.7.4.md](RELEASE-v0.7.4.md)。
+> 本轮发布：`v0.7.5`（2026-10-15）：依赖的 DBProxy 升到 `v0.7.3`（Rust 客户端与 TypeScript SDK），业务能直接识别新错误码 `OPERATION_EXPIRED`（2007，多记录事务回执已过保留期）；rustls 安全补丁；套件发布附件生成器、开源社区文件与 Codecov 覆盖率（TypeScript 与 Rust）。Stable API 不变，需重建宿主。见 [RELEASE-v0.7.5.md](RELEASE-v0.7.5.md)。
 
 # TiangZ
 [![verify](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml)
@@ -8,7 +8,7 @@
 [![tag](https://img.shields.io/github/v/tag/moulo1982Google/TiangZ?label=tag&sort=semver)](https://github.com/moulo1982Google/TiangZ/tags)
 [![license](https://img.shields.io/github/license/moulo1982Google/TiangZ?label=license)](LICENSE)
 
-TiangZ 是 Rust Runtime + TypeScript 的模块化游戏服务端框架。当前版本为 `0.7.4`（2026-10-13 正式版）；上一正式版 `v0.6.5` 于 2026-09-30 发布。
+TiangZ 是 Rust Runtime + TypeScript 的模块化游戏服务端框架。当前版本为 `0.7.5`（2026-10-15 正式版）；上一正式版 `v0.6.5` 于 2026-09-30 发布。
 
 MMORPG 不再是内置宿主：服务端模块、协议、配置、Native 游戏数据与六个客户端都在同级 TiangZ-Examples。TiangZ-ModuleGame 和 TiangZ-WoW335 显式依赖该 MMORPG 模块；SLG 不需要安装它。
 

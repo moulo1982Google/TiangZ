@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "TiangZ"
-version = "0.7.4"
+version = "0.7.5"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -2309,9 +2309,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
  "once_cell",
@@ -2892,8 +2892,8 @@ dependencies = [
 
 [[package]]
 name = "tiangz-dbproxy-client"
-version = "0.7.0"
-source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?tag=v0.7.0#dcee5642f4c2ec22f77f751da4bb7226085750d1"
+version = "0.7.3"
+source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?tag=v0.7.3#ac320b4ca94973f7bc0c7de53d9922eafaf02ef1"
 dependencies = [
  "async-trait",
  "thiserror 2.0.19",
@@ -2904,8 +2904,8 @@ dependencies = [
 
 [[package]]
 name = "tiangz-dbproxy-core"
-version = "0.7.0"
-source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?tag=v0.7.0#dcee5642f4c2ec22f77f751da4bb7226085750d1"
+version = "0.7.3"
+source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?tag=v0.7.3#ac320b4ca94973f7bc0c7de53d9922eafaf02ef1"
 dependencies = [
  "async-trait",
  "serde",
@@ -2915,8 +2915,8 @@ dependencies = [
 
 [[package]]
 name = "tiangz-dbproxy-protocol"
-version = "0.7.0"
-source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?tag=v0.7.0#dcee5642f4c2ec22f77f751da4bb7226085750d1"
+version = "0.7.3"
+source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?tag=v0.7.3#ac320b4ca94973f7bc0c7de53d9922eafaf02ef1"
 dependencies = [
  "prost",
  "prost-build",
