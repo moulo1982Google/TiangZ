@@ -1,6 +1,12 @@
 # 版本记录
 
-## 未发布
+## 0.7.5 — 2026-10-15（正式版，标签 `v0.7.5`）
+
+相对 0.7.4：依赖的 DBProxy 从 `v0.7.0` 升到 `v0.7.3`；套件发布附件生成器、开源社区文件与 Codecov 覆盖率上传。Runtime 行为、协议、配置字段与 Stable API 导出不变。宿主 `--version` 变为 0.7.5，使用启动器版本核对的工程需重建宿主。
+
+### 依赖
+
+- **DBProxy `v0.7.3`。** 宿主内置的 Rust 客户端（`tiangz-dbproxy-client/core/protocol`）与 TypeScript SDK `@tiangz/dbproxy-sdk` 都改为固定 `v0.7.3`。新增错误码 `DbProxyErrorCode.OperationExpired`（2007）：多记录事务回执超过服务端保留期（`storage.operationReceiptRetentionDays`，默认 30 天）被回收后，再查询或用原操作号提交得到它，表示结果未知、不能当成没执行过。宿主把错误码原值传给 TypeScript，因此业务现在能直接区分它；旧宿主收到的是 `Internal`。协议、读写语义与其他 SDK 接口不变；DBProxy 服务端 0.7.3 仍接受 0.7.0 客户端，服务端与宿主可以分别升级。服务端升级规则（同库实例一起升级、退休执行后不能回滚）见 DBProxy 的 `RELEASE-v0.7.3.md`。
 
 ### 发布工具
 
