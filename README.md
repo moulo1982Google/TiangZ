@@ -1,4 +1,4 @@
-> 本轮发布：`v0.7.5`（2026-10-15）：依赖的 DBProxy 升到 `v0.7.3`（Rust 客户端与 TypeScript SDK），业务能直接识别新错误码 `OPERATION_EXPIRED`（2007，多记录事务回执已过保留期）；套件发布附件生成器、开源社区文件与 Codecov 覆盖率上传。Runtime 行为与 Stable API 不变，需重建宿主。见 [RELEASE-v0.7.5.md](RELEASE-v0.7.5.md)。
+> 本轮发布：`v0.7.5`（2026-10-15）：依赖的 DBProxy 升到 `v0.7.3`（Rust 客户端与 TypeScript SDK），业务能直接识别新错误码 `OPERATION_EXPIRED`（2007，多记录事务回执已过保留期）；rustls 安全补丁；套件发布附件生成器、开源社区文件与 Codecov 覆盖率（TypeScript 与 Rust）。Stable API 不变，需重建宿主。见 [RELEASE-v0.7.5.md](RELEASE-v0.7.5.md)。
 
 # TiangZ
 [![verify](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml)

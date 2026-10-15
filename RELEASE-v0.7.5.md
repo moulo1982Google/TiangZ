@@ -1,6 +1,6 @@
 # v0.7.5
 
-TiangZ 套件 0.7.5 正式版：依赖的 DBProxy 升到 `v0.7.3`。Runtime 行为、协议、配置字段与 Stable API 导出不变；Rust 源码未改，只换了 DBProxy 客户端依赖。
+TiangZ 套件 0.7.5 正式版：依赖的 DBProxy 升到 `v0.7.3`，rustls 安全补丁，Rust 运行时开始统计覆盖率。协议、配置字段与 Stable API 导出不变；Runtime 行为只有一处延迟指标修正（见下）；Rust 源码未改，只换了依赖版本。
 
 宿主 `--version` 取自 `Cargo.toml`，现为 0.7.5。`tools/game_project.mjs`、`dev_runtime.mjs` 等启动器会核对宿主版本与 `package.json`，因此用这些入口的工程升级后需要重建宿主。
 
@@ -20,7 +20,12 @@ TiangZ 套件 0.7.5 正式版：依赖的 DBProxy 升到 `v0.7.3`。Runtime 行�
   - 新增 `DbProxyErrorCode.OperationExpired`（2007）。含义：多记录事务回执超过服务端保留期（`storage.operationReceiptRetentionDays`，默认 30 天）被回收后，再查询或用原操作号提交，就得到这个码。它表示**结果未知，不能当成没执行过**。
   - 宿主把错误码原值传给 TypeScript，因此升级后业务能直接认出它；旧宿主收到的是 `Internal`，同样算结果未知。
   - 协议、读写语义与其他 SDK 接口不变。
+- **rustls 0.23.45 → 0.23.46**（安全补丁）：修复 RUSTSEC-2026-0346（会话值的调试输出泄露 TLS 密钥）、0347、0348、0349。锁文件只改这一个包。
 - **兼容**：DBProxy 服务端 0.7.3 仍接受 0.7.0 客户端，服务端和宿主可以分别升级。服务端的升级规则（同库所有实例一起升级、回收执行后不能回滚）见 DBProxy 的 `RELEASE-v0.7.3.md`。
+
+## 修正
+
+- **延迟指标名含 `#` 时不再被拆错。** 原来按“名字#msgcode”拼键再拆回：名字本身带 `#` 且没有 msgcode 时会拆成错误的名字和 NaN，`"a#1"`（无 msgcode）与 `"a"`（msgcode 1）会算成同一个指标。框架内置指标名都不含 `#`，快照输出格式不变。
 
 ## 发布工具、社区文件与 CI（0.7.4 之后已在 main 上、本版首次随标签发布）
 
@@ -30,7 +35,9 @@ TiangZ 套件 0.7.5 正式版：依赖的 DBProxy 升到 `v0.7.3`。Runtime 行�
   - 发布类型默认值不再写死分发渠道；
   - Windows 上用 shell 调用 `npm audit`，消除弃用警告。
 - **开源社区文件**：`SECURITY.md`、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、Issue 与 PR 模板。
-- **Codecov**：`coverage` 工作流把框架测试加 Examples 外置场景的 `app/core` TypeScript 覆盖率上传 Codecov。Rust 运行时还没有统计。
+- **Codecov**：`coverage` 工作流上传两份报告：
+  - typescript：框架测试加 Examples 外置场景的 `app/core` TypeScript；本版补了 DBProxy 宿主传输、协议编解码、进程桥等低覆盖文件的单测，本机行覆盖 82.9% → 约 85%；
+  - rust（本版新增）：整个 `npm run verify` 在加了统计的构建上跑一遍，Rust 单测与启动真实调试宿主的工具自测都计入；压测工具（`src/bin`）与 `*_tests.rs` 不计入。首次结果行覆盖 87.08%（19,810 行），CI 约 15 分钟。
 
 ## 验证
 

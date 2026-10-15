@@ -2,11 +2,16 @@
 
 ## 0.7.5 — 2026-10-15（正式版，标签 `v0.7.5`）
 
-相对 0.7.4：依赖的 DBProxy 从 `v0.7.0` 升到 `v0.7.3`；套件发布附件生成器、开源社区文件与 Codecov 覆盖率上传。Runtime 行为、协议、配置字段与 Stable API 导出不变。宿主 `--version` 变为 0.7.5，使用启动器版本核对的工程需重建宿主。
+相对 0.7.4：依赖的 DBProxy 从 `v0.7.0` 升到 `v0.7.3`，rustls 安全补丁；套件发布附件生成器、开源社区文件与 Codecov 覆盖率上传（TypeScript 与 Rust）。协议、配置字段与 Stable API 导出不变；Runtime 行为只修正一处延迟指标命名。宿主 `--version` 变为 0.7.5，使用启动器版本核对的工程需重建宿主。
 
 ### 依赖
 
 - **DBProxy `v0.7.3`。** 宿主内置的 Rust 客户端（`tiangz-dbproxy-client/core/protocol`）与 TypeScript SDK `@tiangz/dbproxy-sdk` 都改为固定 `v0.7.3`。新增错误码 `DbProxyErrorCode.OperationExpired`（2007）：多记录事务回执超过服务端保留期（`storage.operationReceiptRetentionDays`，默认 30 天）被回收后，再查询或用原操作号提交得到它，表示结果未知、不能当成没执行过。宿主把错误码原值传给 TypeScript，因此业务现在能直接区分它；旧宿主收到的是 `Internal`。协议、读写语义与其他 SDK 接口不变；DBProxy 服务端 0.7.3 仍接受 0.7.0 客户端，服务端与宿主可以分别升级。服务端升级规则（同库实例一起升级、退休执行后不能回滚）见 DBProxy 的 `RELEASE-v0.7.3.md`。
+- **rustls 0.23.45 → 0.23.46（安全补丁）。** 修复 RUSTSEC-2026-0346（客户端会话值的 `Debug` 输出泄露 TLS 密钥）、0347、0348、0349；锁文件只改这一个包。
+
+### 修正
+
+- **延迟指标名含 `#` 时不再被拆错。** `LatencyRecorder` 原来按“名字#msgcode”拼键、快照时再拆回：名字带 `#` 且无 msgcode 时得到错误的名字与 NaN，`"a#1"`（无 msgcode）与 `"a"`（msgcode 1）合并成同一指标。现在指标自己记住名字和 msgcode。框架内置指标名都不含 `#`，快照输出格式不变。
 
 ### 发布工具
 
@@ -19,6 +24,8 @@
 ### CI
 
 - **代码覆盖率上传 Codecov。** 新增 `coverage` 工作流：框架自带测试加 TiangZ-Examples（`v0.7.2`）的外置游戏场景，沿用 `vitest.config.ts` 的原 Core 门槛，把 `lcov` 报告上传 Codecov（仓库密钥 `CODECOV_TOKEN`）；README 增加覆盖率徽章，`codecov.yml` 先把项目与补丁检查设为只提示。只统计 `app/core` 的 TypeScript，不含 Rust 运行时。`tools/integration_coverage.mjs` 把多出的命令行参数原样交给 vitest。本机合并运行 428 项通过，语句 80.62%、分支 72.64%、函数 86.45%、行 82.88%。
+- **补低覆盖文件的单测。** `HostDbProxyTransport`（全部接口的转换、批量逐条错误、错误码原值透传含 2007、畸形 uint64 拒绝、请求期限校验）、协议编解码 `binary`、进程桥 `ProcessBootstrap`（宿主事件批次分发与截断/未知类型/多余字节报错）、`SceneMessageHelper`、`PrepareGlobalIds`、`LatencyRecorder`。`app/core` 行覆盖 82.88% → 约 85%。
+- **Rust 运行时覆盖率。** `coverage` 工作流新增 `rust` 任务：用 `cargo llvm-cov show-env` 给构建加统计，把整个 `npm run verify` 跑一遍，Rust 单测和启动真实调试宿主的工具自测都计入；`src/bin` 压测工具与 `*_tests.rs` 不计入。Codecov 按 typescript / rust 两个标记分开显示。首次结果行覆盖 87.08%（19,810 行）。
 
 ## 0.7.4 — 2026-10-13（正式版，标签 `v0.7.4`）
 
