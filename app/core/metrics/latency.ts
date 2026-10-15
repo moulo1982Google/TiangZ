@@ -18,6 +18,8 @@ export interface LatencyRecorderOptions {
 }
 
 interface MetricState {
+  readonly name: string;
+  readonly msgcode?: number;
   count: number;
   totalMs: number;
   maxMs: number;
@@ -62,6 +64,8 @@ export class LatencyRecorder {
     let metric = this.metrics.get(key);
     if (!metric) {
       metric = {
+        name,
+        msgcode,
         count: 0,
         totalMs: 0,
         maxMs: 0,
@@ -77,11 +81,11 @@ export class LatencyRecorder {
   }
 
   snapshot(): LatencyMetricSnapshot[] {
-    return [...this.metrics.entries()]
-      .map(([key, metric]) => {
-        const parsed = parseMetricKey(key);
+    return [...this.metrics.values()]
+      .map((metric) => {
         return {
-          ...parsed,
+          name: metric.name,
+          ...(metric.msgcode === undefined ? {} : { msgcode: metric.msgcode }),
           count: metric.count,
           avgMs: metric.count > 0 ? metric.totalMs / metric.count : 0,
           p50Ms: percentile(metric, 0.5),
@@ -124,15 +128,7 @@ function percentile(metric: MetricState, ratio: number): number {
   return metric.maxMs;
 }
 
+/** 名字可以含任意字符，所以按有无 msgcode 分前缀，两类键不会相撞。 / Names may contain any character, so the prefix separates keys with and without a msgcode. */
 function metricKey(name: string, msgcode?: number): string {
-  return msgcode === undefined ? name : `${name}#${msgcode}`;
-}
-
-function parseMetricKey(key: string): { name: string; msgcode?: number } {
-  const marker = key.lastIndexOf("#");
-  if (marker < 0) return { name: key };
-  return {
-    name: key.slice(0, marker),
-    msgcode: Number(key.slice(marker + 1)),
-  };
+  return msgcode === undefined ? `n:${name}` : `m:${msgcode}:${name}`;
 }
