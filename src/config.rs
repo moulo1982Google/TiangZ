@@ -25,6 +25,9 @@ pub struct ProcessConfig {
     /// 部署环境；缺省 development。宿主只校验并投影给业务，由业务选择环境相关逻辑。 / Deployment environment (default development); the host validates and projects it, business code decides what it means.
     #[serde(default)]
     pub environment: ProcessEnvironment,
+    /// 配置文件是否显式写了 environment；由 load_runtime_config 填写，只供宿主判断（如崩溃自测防误设）。 / Whether the config file states environment explicitly; set by load_runtime_config for host-only checks such as the crash self-test guard.
+    #[serde(skip)]
+    pub environment_declared: bool,
     #[serde(default)]
     pub identity: ProcessIdentityConfig,
     #[serde(default)]
@@ -879,9 +882,11 @@ fn validate_crash_diagnostics(crash: &CrashDiagnosticsConfig) -> Result<()> {
     if crash
         .directory
         .as_ref()
-        .is_some_and(|directory| directory.trim().is_empty())
+        .is_some_and(|directory| directory.trim().is_empty() || directory.trim() != directory)
     {
-        bail!("process diagnostics.crash.directory must not be empty");
+        bail!(
+            "process diagnostics.crash.directory must not be empty or have leading/trailing whitespace"
+        );
     }
     if crash.recent_log_lines > MAX_CRASH_RECENT_LOG_LINES {
         bail!(
@@ -951,6 +956,10 @@ pub fn load_runtime_config(resolved_config: &Path) -> Result<RuntimeConfig> {
     let mut config: RuntimeConfig = serde_json::from_value(raw_config.clone())
         .with_context(|| format!("failed to parse {}", resolved_config.display()))?;
     let known_scene_files = parse_known_scene_files(&raw_config, resolved_config)?;
+    config.process.environment_declared = raw_config
+        .get("process")
+        .and_then(|process| process.get("environment"))
+        .is_some();
 
     if config.scenes.is_empty() {
         bail!("process must start at least one scene");
@@ -1736,6 +1745,7 @@ mod tests {
         ProcessConfig {
             name: "test".to_string(),
             environment: ProcessEnvironment::default(),
+            environment_declared: false,
             identity: ProcessIdentityConfig::default(),
             logging: ProcessLoggingConfig::default(),
             network: ProcessNetworkConfig::default(),
@@ -2914,6 +2924,13 @@ mod tests {
             (
                 CrashDiagnosticsConfig {
                     directory: Some("  ".to_string()),
+                    ..base.clone()
+                },
+                "directory",
+            ),
+            (
+                CrashDiagnosticsConfig {
+                    directory: Some(" crash".to_string()),
                     ..base.clone()
                 },
                 "directory",

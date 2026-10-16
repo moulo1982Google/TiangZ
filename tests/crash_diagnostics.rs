@@ -14,17 +14,16 @@ struct Fixture {
 
 impl Fixture {
     fn new(crash: Value) -> Self {
-        Self::with_environment(crash, "development")
+        Self::with_environment(crash, Some("development"))
     }
 
-    fn with_environment(crash: Value, environment: &str) -> Self {
+    fn with_environment(crash: Value, environment: Option<&str>) -> Self {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir(root.path().join("dist")).unwrap();
         std::fs::create_dir(root.path().join("configs")).unwrap();
-        let config = json!({
+        let mut config = json!({
             "process": {
                 "name": "crash_probe",
-                "environment": environment,
                 "diagnostics": { "crash": crash }
             },
             "scenes": [{
@@ -34,6 +33,9 @@ impl Fixture {
                 "port": 47999
             }]
         });
+        if let Some(environment) = environment {
+            config["process"]["environment"] = json!(environment);
+        }
         std::fs::write(
             root.path().join("configs").join("probe.json"),
             serde_json::to_vec_pretty(&config).unwrap(),
@@ -153,7 +155,7 @@ fn self_test_is_ignored_while_diagnostics_are_disabled() {
 fn self_test_outside_development_or_test_refuses_to_start() {
     let fixture = Fixture::with_environment(
         json!({ "enabled": true, "directory": "crash" }),
-        "production",
+        Some("production"),
     );
     let output = fixture.run("probe.json", &[("TIANGZ_CRASH_SELF_TEST", "panic")]);
     assert!(!output.status.success(), "{}", describe(&output));
@@ -169,6 +171,23 @@ fn self_test_outside_development_or_test_refuses_to_start() {
             .is_empty(),
         "{:?}",
         fixture.files()
+    );
+
+    // 省略 environment 时缺省为 development，但自测仍拒绝运行。 / An omitted environment defaults to development, yet the self-test still refuses.
+    let omitted = Fixture::with_environment(json!({ "enabled": true, "directory": "crash" }), None);
+    let output = omitted.run("probe.json", &[("TIANGZ_CRASH_SELF_TEST", "panic")]);
+    assert!(!output.status.success(), "{}", describe(&output));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("not stated in the config"),
+        "{}",
+        describe(&output)
+    );
+    assert!(
+        omitted
+            .reports("crash-crash_probe-", Some("panic"))
+            .is_empty(),
+        "{:?}",
+        omitted.files()
     );
 }
 

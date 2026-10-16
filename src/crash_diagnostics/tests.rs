@@ -197,15 +197,20 @@ fn report_follows_the_shared_format_version_1_key_order() {
     buffer.push("newest log line");
     let mut text = Vec::new();
     write_report_header(&mut text, "map:1", "panic", 4242, UNIX_EPOCH).unwrap();
-    write_panic_details(
-        &mut text,
-        "boom\nsecond line",
-        Some("src/x.rs:1:2".to_string()),
-        3,
-    )
-    .unwrap();
+    let capture =
+        report::PanicCapture::capture("boom\nsecond line", Some("src/x.rs:1:2".to_string()));
+    write_panic_details(&mut text, &capture, 3, None).unwrap();
     write_recent_logs(&mut text, Some(&buffer)).unwrap();
     let text = String::from_utf8(text).unwrap();
+    let mut deferred = Vec::new();
+    write_panic_details(&mut deferred, &capture, 0, Some("runtime thread panicked")).unwrap();
+    let deferred = String::from_utf8(deferred).unwrap();
+    assert!(
+        deferred.contains(
+            "\nsuppressed_since_last: 0\ndeferred: true\ndeferred_reason: runtime thread panicked\n\nbacktrace:\n"
+        ),
+        "{deferred}"
+    );
     let header = format!(
         "TiangZ crash report\nformat_version: 1\nprocess: map:1\nversion: {}\npid: 4242\nplatform: {}-{}\ntime_utc: 1970-01-01T00:00:00.000Z\nkind: panic\nthread: ",
         env!("CARGO_PKG_VERSION"),
@@ -351,7 +356,11 @@ fn windows_exit_codes_decode_common_ntstatus_values() {
         ),
         (0xC000_0374, "NTSTATUS 0xC0000374 (STATUS_HEAP_CORRUPTION"),
         (0xC0DE_0001, "NTSTATUS 0xC0DE0001 (unrecognized NTSTATUS"),
-        (101, "exit code 101 (Rust panic"),
+        (101, "exit code 101 (Rust panic on the main thread"),
+        (
+            1,
+            "exit code 1 (process returned an error; for a TiangZ Process usually a panic on the process-runtime thread",
+        ),
         (0, "exit code 0 (success"),
         (7, "exit code 7"),
     ] {
@@ -523,30 +532,28 @@ fn panic_reports_are_rate_limited_except_on_the_main_thread() {
 
 #[test]
 fn self_test_requires_known_mode_and_development_or_test_environment() {
+    let development = Some(ProcessEnvironment::Development);
+    let test = Some(ProcessEnvironment::Test);
     assert!(
-        parse_self_test(None, ProcessEnvironment::Production)
+        parse_self_test(None, Some(ProcessEnvironment::Production))
             .unwrap()
             .is_none()
     );
     assert_eq!(
-        parse_self_test(Some(" PANIC "), ProcessEnvironment::Development).unwrap(),
+        parse_self_test(Some(" PANIC "), development).unwrap(),
         Some(SelfTestMode::Panic)
     );
     assert_eq!(
-        parse_self_test(Some("stack-overflow"), ProcessEnvironment::Test).unwrap(),
+        parse_self_test(Some("stack-overflow"), test).unwrap(),
         Some(SelfTestMode::StackOverflow)
     );
     for mode in ["thread-panic", "abort", "access-violation", "oom"] {
-        assert!(
-            parse_self_test(Some(mode), ProcessEnvironment::Test)
-                .unwrap()
-                .is_some()
-        );
+        assert!(parse_self_test(Some(mode), test).unwrap().is_some());
     }
-    let unknown = parse_self_test(Some("segv"), ProcessEnvironment::Development).unwrap_err();
+    let unknown = parse_self_test(Some("segv"), development).unwrap_err();
     assert!(unknown.to_string().contains("not one of"), "{unknown}");
     for environment in [ProcessEnvironment::Staging, ProcessEnvironment::Production] {
-        let error = parse_self_test(Some("panic"), environment).unwrap_err();
+        let error = parse_self_test(Some("panic"), Some(environment)).unwrap_err();
         assert!(
             error
                 .to_string()
@@ -554,6 +561,28 @@ fn self_test_requires_known_mode_and_development_or_test_environment() {
             "{error}"
         );
     }
+    // 省略 environment 时缺省为 development，但不能据此放行自测。 / An omitted environment defaults to development but must not unlock self-tests.
+    let omitted = parse_self_test(Some("panic"), None).unwrap_err();
+    assert!(omitted.to_string().contains("not stated"), "{omitted}");
+}
+
+#[test]
+fn install_fails_when_the_crash_directory_cannot_be_created() {
+    let directory = tempfile::tempdir().unwrap();
+    let blocker = directory.path().join("not-a-directory");
+    std::fs::write(&blocker, "x").unwrap();
+    // 目录创建在设置全局状态与钩子之前失败，因此本测试进程不会被安装任何钩子。
+    // Directory creation fails before global state and hooks are set, so this test process gets no hook.
+    let error = CrashDiagnostics::new(Some(settings_in(&blocker.join("crash"))))
+        .install()
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("failed to create crash directory"),
+        "{error}"
+    );
+    assert!(state().is_none());
 }
 
 #[test]
@@ -597,7 +626,7 @@ fn crash_child_entry() {
         crash.recent_log_layer(),
     )
     .unwrap();
-    crash.install();
+    crash.install().unwrap();
     // V8 延迟任务需要 Tokio 上下文；真实宿主的自测在 tokio main 里运行。 / V8 delayed tasks need a Tokio context; the real host self-test runs inside tokio main.
     let tokio = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -619,6 +648,38 @@ fn crash_child_entry() {
         }
         "oom" => v8_handlers::self_test_out_of_memory(),
         "stack-overflow" => trigger_self_test(SelfTestMode::StackOverflow),
+        "runtime-thread-fatal" => {
+            // 模拟 process.rs：同一条运行线程先有一次被兜住的 panic，再有致命 panic，主线程 join 到错误后退出码 1。
+            // Mirrors process.rs: one contained panic then a fatal one on the runtime thread; the joiner exits with code 1.
+            let worker = std::thread::Builder::new()
+                .name("process-runtime".to_string())
+                .spawn(|| {
+                    let caught = std::panic::catch_unwind(|| panic!("contained runtime panic"));
+                    if caught.is_ok() {
+                        std::process::exit(3);
+                    }
+                    panic!("fatal runtime panic");
+                })
+                .unwrap();
+            if worker.join().is_err() {
+                report_deferred_panic("process runtime thread panicked");
+                std::process::exit(1);
+            }
+            std::process::exit(2);
+        }
+        #[cfg(windows)]
+        "js-access-violation" => {
+            let mut runtime = deno_core::JsRuntime::new(deno_core::RuntimeOptions {
+                extensions: vec![crash_test_ops::init()],
+                ..Default::default()
+            });
+            register_isolate(runtime.v8_isolate());
+            let _ = runtime.execute_script(
+                "tiangz:crash-js-access-violation.js",
+                "function crashFromJs() { Deno.core.ops.op_crash_test_invalid_write(); } crashFromJs();",
+            );
+            std::process::exit(2);
+        }
         other => panic!("unknown child mode {other}"),
     }
 }
@@ -734,6 +795,79 @@ fn v8_out_of_memory_in_child_writes_reports() {
     let near = read_reports(&child.files, "v8-near-heap-limit");
     assert_eq!(near.len(), 1, "files {:?}", child.files);
     assert!(near[0].contains("\ncurrent_heap_limit: "), "{}", near[0]);
+}
+
+#[test]
+fn fatal_runtime_thread_panic_after_a_reported_one_is_flushed_as_deferred() {
+    let (_directory, child) = run_child("runtime-thread-fatal");
+    assert_eq!(child.status.code(), Some(1), "{}", child.output);
+    let reports = read_reports(&child.files, "panic");
+    assert_eq!(
+        reports.len(),
+        2,
+        "files {:?}\n{}",
+        child.files,
+        child.output
+    );
+    let contained = reports
+        .iter()
+        .find(|text| text.contains("\nmessage: contained runtime panic\n"))
+        .expect("contained panic report");
+    assert!(!contained.contains("\ndeferred: true\n"), "{contained}");
+    let fatal = reports
+        .iter()
+        .find(|text| text.contains("\nmessage: fatal runtime panic\n"))
+        .expect("deferred fatal panic report");
+    for expected in [
+        "\nthread: process-runtime (",
+        "\nsuppressed_since_last: 0\ndeferred: true\ndeferred_reason: process runtime thread panicked\n\nbacktrace:\n",
+        "crash_child_entry",
+    ] {
+        assert!(fatal.contains(expected), "missing {expected:?} in\n{fatal}");
+    }
+    assert!(
+        child
+            .output
+            .contains("crash report suppressed by the rate limit"),
+        "{}",
+        child.output
+    );
+}
+
+#[cfg(windows)]
+#[deno_core::op2(fast)]
+fn op_crash_test_invalid_write() {
+    // SAFETY: 不安全且有意为之：在 JS 调用的 op 里制造真实访问违规。 / Deliberately unsound: a real access violation inside an op called from JS.
+    unsafe { std::ptr::write_volatile(std::ptr::without_provenance_mut::<u8>(0x10), 1) };
+}
+
+#[cfg(windows)]
+deno_core::extension!(crash_test_ops, ops = [op_crash_test_invalid_write]);
+
+#[cfg(windows)]
+#[test]
+fn access_violation_with_js_frames_on_the_stack_reaches_the_filter() {
+    let (_directory, child) = run_child("js-access-violation");
+    assert_eq!(
+        child.status.code().map(|code| code as u32),
+        Some(0xC000_0005),
+        "{:?}\n{}",
+        child.status,
+        child.output
+    );
+    let native = read_reports(&child.files, "native-exception");
+    assert_eq!(native.len(), 1, "files {:?}\n{}", child.files, child.output);
+    assert!(
+        native[0].contains("\naccess_violation: write at 0x0000000000000010\n"),
+        "{}",
+        native[0]
+    );
+    let dumps = child
+        .files
+        .iter()
+        .filter(|path| path.extension().is_some_and(|extension| extension == "dmp"))
+        .count();
+    assert_eq!(dumps, 1, "files {:?}", child.files);
 }
 
 #[cfg(windows)]

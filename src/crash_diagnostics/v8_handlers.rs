@@ -126,14 +126,16 @@ fn c_text(value: *const c_char) -> String {
 }
 
 unsafe extern "C" fn v8_oom_error(location: *const c_char, details: &v8::OomDetails) {
-    let location = c_text(location);
-    let detail = c_text(details.detail);
+    let (location_ptr, detail_ptr) = (location, details.detail);
     let oom_type = if details.is_heap_oom {
         "heap"
     } else {
         "process"
     };
-    let _ = std::panic::catch_unwind(move || {
+    // 字符串复制也放进 catch_unwind：进程级内存耗尽时分配可能失败。 / String copies also run inside catch_unwind: allocation may fail on process-level OOM.
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        let location = c_text(location_ptr);
+        let detail = c_text(detail_ptr);
         let _ = writeln!(
             io::stderr(),
             "[tiangz] V8 out of memory ({oom_type}) at {location}: {detail}"
@@ -144,7 +146,7 @@ unsafe extern "C" fn v8_oom_error(location: *const c_char, details: &v8::OomDeta
             report::write_field(out, "detail", &detail)?;
             write_heap_snapshot(out)
         });
-    });
+    }));
 }
 
 unsafe extern "C" fn v8_near_heap_limit(

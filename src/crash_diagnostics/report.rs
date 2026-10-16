@@ -239,33 +239,57 @@ pub(crate) fn write_crash_report(
     Some(path)
 }
 
-/// 写入 panic 报告主体：thread、message、location、suppressed_since_last（TiangZ 新增），空行后
-/// `backtrace:` 与强制捕获的回溯。
+/// panic 发生时廉价采集的现场：文本字段与尚未符号化的回溯；符号化推迟到写报告时。
 ///
-/// Writes the panic body: thread, message, location, suppressed_since_last (a TiangZ addition),
-/// then a blank line, `backtrace:` and a force-captured backtrace.
+/// Cheap snapshot taken at panic time: text fields plus an unsymbolized backtrace; symbolization
+/// is deferred until a report is written.
+pub(crate) struct PanicCapture {
+    pub(crate) thread: String,
+    pub(crate) message: String,
+    pub(crate) location: String,
+    pub(crate) backtrace: std::backtrace::Backtrace,
+}
+
+impl PanicCapture {
+    /// 在当前线程采集；`force_capture` 只遍历栈帧，不解析符号。 / Captures on the current thread; `force_capture` walks frames without resolving symbols.
+    pub(crate) fn capture(message: &str, location: Option<String>) -> Self {
+        let thread = std::thread::current();
+        Self {
+            thread: format!(
+                "{} ({:?})",
+                thread.name().unwrap_or("<unnamed>"),
+                thread.id()
+            ),
+            message: message.to_string(),
+            location: location.unwrap_or_else(|| "unknown".to_string()),
+            backtrace: std::backtrace::Backtrace::force_capture(),
+        }
+    }
+}
+
+/// 写入 panic 报告主体：thread、message、location、suppressed_since_last，补写时再加 deferred 与
+/// deferred_reason（TiangZ 新增），空行后 `backtrace:` 与回溯正文（此时才符号化）。
+///
+/// Writes the panic body: thread, message, location, suppressed_since_last and, for a deferred
+/// report, deferred and deferred_reason (TiangZ additions), then a blank line, `backtrace:` and the
+/// backtrace, which is symbolized only now.
 pub(crate) fn write_panic_details(
     out: &mut dyn Write,
-    message: &str,
-    location: Option<String>,
+    capture: &PanicCapture,
     suppressed_since_last: u64,
+    deferred_reason: Option<&str>,
 ) -> io::Result<()> {
-    let thread = std::thread::current();
-    write_field(
-        out,
-        "thread",
-        &format!(
-            "{} ({:?})",
-            thread.name().unwrap_or("<unnamed>"),
-            thread.id()
-        ),
-    )?;
-    write_field(out, "message", message)?;
-    write_field(out, "location", location.as_deref().unwrap_or("unknown"))?;
+    write_field(out, "thread", &capture.thread)?;
+    write_field(out, "message", &capture.message)?;
+    write_field(out, "location", &capture.location)?;
     writeln!(out, "suppressed_since_last: {suppressed_since_last}")?;
+    if let Some(reason) = deferred_reason {
+        writeln!(out, "deferred: true")?;
+        write_field(out, "deferred_reason", reason)?;
+    }
     writeln!(out)?;
     writeln!(out, "backtrace:")?;
-    let backtrace = std::backtrace::Backtrace::force_capture().to_string();
+    let backtrace = capture.backtrace.to_string();
     writeln!(out, "{}", backtrace.trim_end())
 }
 

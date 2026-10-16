@@ -54,12 +54,12 @@ Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置�
 ```
 
 - `enabled`：默认 `false`。环境变量 `TIANGZ_CRASH_DIAGNOSTICS=on|off` 优先于本字段（空值视为未设置，其他取值拒绝启动）。
-- `directory`：省略时为日志目录同级的 `crash`；相对路径以工程根目录为基准，与 `logging.file.directory` 相同；不能为空。
+- `directory`：省略时为日志目录同级的 `crash`；相对路径以工程根目录为基准，与 `logging.file.directory` 相同；不能为空、不能有前后空白；启用时建不出来则拒绝启动。
 - `recentLogLines`：0–2000，默认 200；0 表示不保留最近日志但仍写报告。
 - `miniDump`（仅 Windows）、`coreDump`（仅 Linux/Unix）：默认 `false`；core 写到哪里由宿主机 `kernel.core_pattern` 决定，Docker 需 `--ulimit core=-1`。
 - `maxReports`：1–10000，默认 50；`maxDumps`：1–1000，默认 5。按进程名分别计数，多个 Process 共用目录时互不删除对方的报告。
 - 未知字段、越界取值在加载配置时拒绝启动，即使 `enabled` 为 `false`。
-- 自测变量 `TIANGZ_CRASH_SELF_TEST` 只在 `environment` 为 `development`/`test` 时生效，其他环境设置了会拒绝启动；生产勿设。
+- 自测变量 `TIANGZ_CRASH_SELF_TEST` 只在配置**显式**写了 `environment` 且为 `development`/`test` 时生效；其他环境或省略 `environment` 时设置了会拒绝启动；生产勿设。
 
 报告格式、平台差异、限制与验证见[崩溃诊断](../design/crash-diagnostics.md)。
 

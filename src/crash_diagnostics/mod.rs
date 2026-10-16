@@ -25,7 +25,7 @@ use std::cell::Cell;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, TryLockError};
 use std::time::{Duration, Instant};
 
 use crate::config::{
@@ -184,18 +184,20 @@ thread_local! {
     static IN_PANIC_REPORT: Cell<bool> = const { Cell::new(false) };
 }
 
-/// 非主线程 panic 报告的最小间隔；被 catch_unwind 兜住的 panic 可能高频发生。 / Minimum interval between non-main-thread panic reports; contained panics may repeat quickly.
+/// panic 报告的最小间隔（主线程与不能展开的 panic 除外）；被 catch_unwind 兜住的 panic 可能高频发生。 / Minimum interval between panic reports (except main-thread and non-unwinding panics); contained panics may repeat quickly.
 pub(crate) const PANIC_REPORT_INTERVAL: Duration = Duration::from_secs(10);
 
-/// panic 报告限流：非主线程 10 秒内最多 1 份，跳过的次数写入下一份报告。
+/// panic 报告限流：10 秒内最多写 1 份，跳过的次数写入下一份报告。
 ///
-/// 主线程 panic 会结束进程，永远写报告；其余线程（tokio 任务、Native worker、KCP 回调等）的 panic
-/// 多数会被 catch_unwind 兜住、进程继续服务，若每次都同步符号化回溯并落盘会拖慢工作线程。
+/// 只限制“符号化 + 写盘 + fsync”；被跳过的 panic 仍在钩子里廉价采集并缓存最后一次，由致命退出
+/// 路径（Process 运行线程 panic、主线程 panic、不能展开的 panic）补写。主线程与不能展开的 panic
+/// 必然结束进程，不受限流。
 ///
-/// Panic-report limiter: at most one non-main-thread report per 10 seconds, with skipped counts
-/// written into the next report. Main-thread panics end the process and are always reported;
-/// panics elsewhere (tokio tasks, native workers, KCP callbacks) are mostly contained, and
-/// symbolizing and syncing every one would stall worker threads.
+/// Panic-report limiter: at most one report per 10 seconds, with skipped counts written into the
+/// next report. Only symbolizing, writing and syncing are limited; a skipped panic is still
+/// captured cheaply and the latest one is cached for fatal exit paths (runtime-thread panic,
+/// main-thread panic, non-unwinding panic) to flush. Main-thread and non-unwinding panics always
+/// end the process and bypass the limit.
 pub(crate) struct PanicRateLimiter {
     started: Instant,
     /// 上次写报告的时刻（相对 started 的毫秒数加 1；0 表示从未写过）。 / Last report time in ms since start plus one; 0 means never.
@@ -232,6 +234,11 @@ impl PanicRateLimiter {
             self.last_report_ms.store(now, Ordering::Relaxed);
         }
         Some(self.suppressed.swap(0, Ordering::Relaxed))
+    }
+
+    /// 取走并清零被跳过的次数。 / Takes and resets the skipped count.
+    pub(crate) fn take_suppressed(&self) -> u64 {
+        self.suppressed.swap(0, Ordering::Relaxed)
     }
 }
 
@@ -324,10 +331,19 @@ impl CrashDiagnostics {
     /// Installs the panic hook and native handlers and runs one retention pass; call once per process.
     ///
     /// Must run after logging is initialized so the outcome is logged; a second call has no effect.
-    pub(crate) fn install(self) {
+    /// 崩溃目录无法创建时返回错误，进程不启动。 / Returns an error, so the process does not start, when the crash directory cannot be created.
+    pub(crate) fn install(self) -> anyhow::Result<()> {
         let Some(settings) = self.settings else {
-            return;
+            return Ok(());
         };
+        // 与 DBProxy 一致：启用时崩溃目录建不出来就拒绝启动，避免以为有诊断其实写不出。
+        // Like DBProxy, refuse to start when the crash directory cannot be created, so diagnostics are never silently missing.
+        report::create_private_dir(&settings.directory).map_err(|error| {
+            anyhow::anyhow!(
+                "failed to create crash directory {}: {error}",
+                settings.directory.display()
+            )
+        })?;
         if STATE
             .set(CrashState {
                 settings,
@@ -337,13 +353,12 @@ impl CrashDiagnostics {
             })
             .is_err()
         {
-            return;
+            return Ok(());
         }
-        let Some(crash) = state() else { return };
+        let Some(crash) = state() else {
+            return Ok(());
+        };
         let settings = &crash.settings;
-        if let Err(error) = report::create_private_dir(&settings.directory) {
-            tracing::warn!(target: "tiangz::crash", directory = %settings.directory.display(), %error, "failed to create crash directory; reports may be lost");
-        }
         install_panic_hook();
         install_native_handlers(settings);
         if let Ok(outcome) = report::enforce_retention(settings) {
@@ -356,6 +371,7 @@ impl CrashDiagnostics {
             target: "tiangz::crash",
             directory = %settings.directory.display(),
             enabled_by = ?settings.enabled_by,
+            environment_override = settings.enabled_by == EnabledBy::Environment,
             recent_log_lines = settings.recent_log_lines,
             mini_dump = settings.mini_dump,
             core_dump = settings.core_dump,
@@ -363,49 +379,114 @@ impl CrashDiagnostics {
             max_dumps = settings.max_dumps,
             "crash diagnostics enabled"
         );
+        Ok(())
     }
 }
 
 fn install_panic_hook() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        // 写报告期间再次 panic 时跳过报告，直接交给原钩子，避免递归。
-        // Skip reporting on a nested panic during report writing and go straight to the previous hook.
-        let nested = IN_PANIC_REPORT
+        // 钩子路径必须无 panic：Rust std 在钩子执行期间再次 panic 会直接 abort，不会回到钩子。
+        // 本标志只用于线程本地存储已销毁等无法判断的情形，此时跳过报告。
+        // The hook path must never panic: std aborts on a panic while the hook runs and never
+        // re-enters it. This flag only covers cases such as destroyed thread-local storage, where
+        // reporting is skipped.
+        let busy = IN_PANIC_REPORT
             .try_with(|flag| flag.replace(true))
             .unwrap_or(true);
-        if !nested {
-            let main_thread = std::thread::current().name() == Some("main");
-            let admitted = state().and_then(|crash| {
-                crash
-                    .panic_limiter
-                    .admit(main_thread, PANIC_REPORT_INTERVAL)
-            });
-            if let Some(suppressed) = admitted {
-                let message = info
-                    .payload_as_str()
-                    .unwrap_or("<non-string panic payload>");
-                let location = info.location().map(|location| {
-                    format!(
-                        "{}:{}:{}",
-                        location.file(),
-                        location.line(),
-                        location.column()
-                    )
-                });
-                write_report("panic", &mut |out| {
-                    report::write_panic_details(out, message, location.clone(), suppressed)
-                });
-            } else if state().is_some() {
-                let _ = writeln!(
-                    io::stderr(),
-                    "[tiangz] crash report suppressed by the rate limit"
-                );
-            }
-            let _ = IN_PANIC_REPORT.try_with(|flag| flag.set(false));
+        if !busy && let Some(crash) = state() {
+            handle_panic(crash, info);
         }
+        let _ = IN_PANIC_REPORT.try_with(|flag| flag.set(false));
         previous(info);
     }));
+}
+
+/// std 在不能展开的位置 panic 时使用的消息；这类 panic 之后进程必然 abort。 / Messages std uses for panics where unwinding is impossible; the process always aborts afterwards.
+const NOUNWIND_PANIC_MESSAGES: [&str; 2] = [
+    "panic in a function that cannot unwind",
+    "panic in a destructor during cleanup",
+];
+
+fn handle_panic(crash: &CrashState, info: &std::panic::PanicHookInfo<'_>) {
+    let message = info
+        .payload_as_str()
+        .unwrap_or("<non-string panic payload>");
+    let location = info.location().map(|location| {
+        format!(
+            "{}:{}:{}",
+            location.file(),
+            location.line(),
+            location.column()
+        )
+    });
+    let capture = report::PanicCapture::capture(message, location);
+    // 主线程 panic 与不能展开的 panic 一定结束进程：先补写此前被限流的 panic，再无条件写本份报告。
+    // Main-thread and non-unwinding panics always end the process: flush the deferred panic first,
+    // then report this one unconditionally.
+    let fatal = std::thread::current().name() == Some("main")
+        || NOUNWIND_PANIC_MESSAGES
+            .iter()
+            .any(|prefix| message.starts_with(prefix));
+    if fatal {
+        report_deferred_panic("a fatal panic followed on the main thread or a non-unwinding frame");
+    }
+    match crash.panic_limiter.admit(fatal, PANIC_REPORT_INTERVAL) {
+        Some(suppressed) => {
+            write_report("panic", &mut |out| {
+                report::write_panic_details(out, &capture, suppressed, None)
+            });
+            // 已写出报告，此前缓存的被限流 panic 不再需要补写。 / A report was written, so the earlier cached panic needs no flush.
+            if let Some(mut slot) = lock_deferred(false) {
+                *slot = None;
+            }
+        }
+        None => {
+            let _ = writeln!(
+                io::stderr(),
+                "[tiangz] crash report suppressed by the rate limit"
+            );
+            // 钩子内只 try_lock：拿不到锁就放弃缓存，绝不阻塞或 panic。 / Only try_lock inside the hook: give up caching rather than block or panic.
+            if let Some(mut slot) = lock_deferred(false) {
+                *slot = Some(capture);
+            }
+        }
+    }
+}
+
+/// 最近一次被限流的 panic，在致命退出路径补写；只存一份，内存有界。 / The latest rate-limited panic, flushed on fatal exit paths; holds one entry so memory stays bounded.
+static DEFERRED_PANIC: Mutex<Option<report::PanicCapture>> = Mutex::new(None);
+
+fn lock_deferred(wait: bool) -> Option<MutexGuard<'static, Option<report::PanicCapture>>> {
+    let attempts = if wait { 150 } else { 1 };
+    for attempt in 0..attempts {
+        match DEFERRED_PANIC.try_lock() {
+            Ok(slot) => return Some(slot),
+            Err(TryLockError::Poisoned(poisoned)) => return Some(poisoned.into_inner()),
+            Err(TryLockError::WouldBlock) if attempt < 50 => std::thread::yield_now(),
+            Err(TryLockError::WouldBlock) => std::thread::sleep(Duration::from_millis(1)),
+        }
+    }
+    None
+}
+
+/// 致命退出路径调用：把最后一次被限流的 panic 补写成 `panic` 报告（`deferred: true`）。
+///
+/// 例如 Process 运行线程（承载业务 V8、Scene 更新、KCP 回调）panic 后，主线程以错误退出（退出码 1），
+/// 若这次 panic 恰在上一份报告 10 秒内被限流，就由这里补写。没有缓存时什么也不做；未启用时返回 None。
+///
+/// Called on fatal exit paths: writes the latest rate-limited panic as a `panic` report with
+/// `deferred: true`. For example, when the Process runtime thread (business V8, Scene updates, KCP
+/// callbacks) panics, the main thread exits with an error (exit code 1); if that panic was
+/// rate-limited within 10 seconds of the previous report, it is written here. Does nothing when
+/// nothing is cached; returns None when disabled.
+pub(crate) fn report_deferred_panic(reason: &str) -> Option<PathBuf> {
+    let crash = state()?;
+    let capture = lock_deferred(true)?.take()?;
+    let suppressed = crash.panic_limiter.take_suppressed().saturating_sub(1);
+    write_report("panic", &mut |out| {
+        report::write_panic_details(out, &capture, suppressed, Some(reason))
+    })
 }
 
 #[cfg(windows)]
@@ -455,7 +536,7 @@ pub(crate) enum SelfTestMode {
 /// development and test environments are allowed.
 pub(crate) fn parse_self_test(
     value: Option<&str>,
-    environment: ProcessEnvironment,
+    environment: Option<ProcessEnvironment>,
 ) -> anyhow::Result<Option<SelfTestMode>> {
     let Some(value) = value else {
         return Ok(None);
@@ -471,16 +552,16 @@ pub(crate) fn parse_self_test(
             "{SELF_TEST_ENV}={other} is not one of panic, thread-panic, abort, access-violation, stack-overflow, oom"
         ),
     };
-    if !matches!(
-        environment,
-        ProcessEnvironment::Development | ProcessEnvironment::Test
-    ) {
-        anyhow::bail!(
+    match environment {
+        Some(ProcessEnvironment::Development | ProcessEnvironment::Test) => Ok(Some(mode)),
+        Some(other) => anyhow::bail!(
             "{SELF_TEST_ENV} is set but process.environment is {}; crash self-tests only run in development or test",
-            environment.as_str()
-        );
+            other.as_str()
+        ),
+        None => anyhow::bail!(
+            "{SELF_TEST_ENV} is set but process.environment is not stated in the config; crash self-tests only run when it is explicitly development or test"
+        ),
     }
-    Ok(Some(mode))
 }
 
 /// 若设置了 `TIANGZ_CRASH_SELF_TEST` 且诊断已启用，则主动制造对应崩溃；只用于验证，生产勿设。
@@ -491,7 +572,9 @@ pub(crate) fn parse_self_test(
 /// verification only; never set it in production. With diagnostics disabled it only logs a
 /// warning; an unknown value or a non-development/test environment returns an error so the
 /// process does not start.
-pub(crate) fn run_self_test_if_requested(environment: ProcessEnvironment) -> anyhow::Result<()> {
+pub(crate) fn run_self_test_if_requested(
+    environment: Option<ProcessEnvironment>,
+) -> anyhow::Result<()> {
     let value = std::env::var(SELF_TEST_ENV).ok();
     if value.is_none() {
         return Ok(());

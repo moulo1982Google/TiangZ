@@ -357,6 +357,11 @@ fn restart_child(
     // A failed spawn counts as a short run, so it escalates instead of resetting.
     child.started_at = Instant::now();
     child.started_wall = SystemTime::now();
+    // 重启时按磁盘上的配置重新解析崩溃诊断设置（运维可能改了目录或开关）；读不到时沿用旧设置。
+    // Re-resolve crash settings from the config on disk at restart (operators may change them); keep the old ones if it cannot be read.
+    if let Ok(config) = load_runtime_config(&root.join(&child.arg)) {
+        child.crash = CrashSettings::resolve(root, &config.process);
+    }
     let (process, control) = spawn_child(exe, root, &child.arg)?;
     child.child = process;
     child.control = control;

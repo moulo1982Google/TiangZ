@@ -50,8 +50,12 @@ pub(crate) fn describe_windows_exit_code(code: u32) -> String {
     if code < 0x8000_0000 {
         let meaning = match code {
             0 => " (success / 正常退出)",
-            1 => " (error returned by the process / 进程返回错误)",
-            101 => " (Rust panic default exit code / Rust panic 默认退出码)",
+            1 => {
+                " (process returned an error; for a TiangZ Process usually a panic on the process-runtime thread or a startup/runtime error, see related_files / 进程返回错误：TiangZ Process 多为运行线程 panic 或启动、运行错误，见 related_files)"
+            }
+            101 => {
+                " (Rust panic on the main thread, default exit code / 主线程 panic，Rust 默认退出码)"
+            }
             _ => "",
         };
         return format!("exit code {code}{meaning}");
@@ -90,7 +94,12 @@ pub(crate) fn describe_unix_wait_status(raw: i32) -> String {
         let code = (raw >> 8) & 0xff;
         let meaning = match code {
             0 => " (success / 正常退出)",
-            101 => " (Rust panic default exit code / Rust panic 默认退出码)",
+            1 => {
+                " (process returned an error; for a TiangZ Process usually a panic on the process-runtime thread or a startup/runtime error, see related_files / 进程返回错误：TiangZ Process 多为运行线程 panic 或启动、运行错误，见 related_files)"
+            }
+            101 => {
+                " (Rust panic on the main thread, default exit code / 主线程 panic，Rust 默认退出码)"
+            }
             _ => "",
         };
         return format!("exit code {code}{meaning}");

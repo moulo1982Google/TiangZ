@@ -67,12 +67,12 @@ impl RecentLogBuffer {
         lines.push_back(slot);
     }
 
-    /// 在崩溃路径读取全部行；最多等待约 50ms，拿不到锁返回 None 而不是阻塞崩溃处理。
+    /// 在崩溃路径读取全部行；最多等待约 100ms（与 DBProxy 一致），拿不到锁返回 None 而不是阻塞崩溃处理。
     ///
-    /// Reads every line on a crash path; waits about 50ms at most and returns None instead of
+    /// Reads every line on a crash path; waits about 100ms at most (like DBProxy) and returns None instead of
     /// blocking crash handling when the lock stays busy.
     pub(crate) fn with_lines<R>(&self, read: impl FnOnce(&VecDeque<String>) -> R) -> Option<R> {
-        for attempt in 0..100 {
+        for attempt in 0..150 {
             match self.lines.try_lock() {
                 Ok(lines) => return Some(read(&lines)),
                 Err(TryLockError::Poisoned(poisoned)) => return Some(read(&poisoned.into_inner())),

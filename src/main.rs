@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
             &crate::config::ProcessLoggingConfig::default(),
             crash.recent_log_layer(),
         )?;
-        crash.install();
+        crash.install()?;
         tracing::info!(target: "tiangz::runtime", runtime_root = %root.display(), "resolved runtime assets");
         run_start_machine(&root, resolved_config).await?;
         return Ok(());
@@ -69,9 +69,14 @@ async fn main() -> Result<()> {
         &config.process.logging,
         crash.recent_log_layer(),
     )?;
-    crash.install();
+    crash.install()?;
     tracing::info!(target: "tiangz::runtime", runtime_root = %root.display(), "resolved runtime assets");
-    crash_diagnostics::run_self_test_if_requested(config.process.environment)?;
+    crash_diagnostics::run_self_test_if_requested(
+        config
+            .process
+            .environment_declared
+            .then_some(config.process.environment),
+    )?;
     let _telemetry = telemetry::init(
         &config.process.name,
         config
