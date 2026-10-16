@@ -1,5 +1,17 @@
 # 版本记录
 
+## 0.7.6 — 2026-10-16（正式版，标签 `v0.7.6`）
+
+相对 0.7.5：新增崩溃诊断（默认关闭）。运行时行为、协议、Stable API 导出与 TypeScript 类型不变（新增的配置只在宿主内使用，不投影给业务 V8）。宿主 `--version` 变为 0.7.6，使用启动器版本核对的工程需重建宿主。DBProxy 依赖仍固定 `v0.7.3`（同日发布的 DBProxy 0.7.4 只增加其服务端的同名能力，宿主客户端无需改）。
+
+### 新增
+
+- **崩溃诊断（默认关闭）。** 新配置 `process.diagnostics.crash`（`enabled`、`directory`、`recentLogLines`、`miniDump`、`coreDump`、`maxReports`、`maxDumps`），环境变量 `TIANGZ_CRASH_DIAGNOSTICS=on|off` 优先于配置。启用后：Rust panic 同步写报告（强制回溯、最近日志；每 10 秒最多一份，被限流的最后一份在运行线程或主线程致命退出时补写为 `deferred: true`）后再交给原钩子，退出码与 catch_unwind 行为不变；tracing 上增加有界的最近日志缓冲，补上非阻塞日志在硬崩溃时丢失的尾部；V8 内存耗尽、接近堆上限（只记录、不扩容）与致命错误写报告；Windows 未处理异常由预建写入线程写文本记录与可选 MiniDump；Linux 启动时放开 `RLIMIT_CORE`；Watcher 为子进程意外退出写记录（NTSTATUS 或信号与 core 标志解码、是否重启、同 pid 的报告文件）。崩溃目录按进程名限制文件数，Unix 上目录 0o700、文件 0o600。报告格式 `format_version: 1` 与 DBProxy 共用。自测变量 `TIANGZ_CRASH_SELF_TEST` 只在配置显式写明 development/test 环境时生效。Process 运行线程现命名为 `process-runtime`（只影响日志与报告中的线程名）；改用 `thread::Builder` 后，该线程创建失败从 panic（退出码 101）变为返回错误（退出码 1）。配置不投影给 TS，Stable API 不变；需重建宿主。release 构建的回溯没有行号（未改 release profile）。详见 [崩溃诊断](docs/design/crash-diagnostics.md)。
+
+### 依赖
+
+- 直接依赖新增 `windows-sys` 0.61.2（仅 Windows，Win32 调试/线程/文件特性）与 `libc` 0.2.189（仅 Unix）；两者原本已在依赖树中，`Cargo.lock` 只增加两条依赖边，没有新包。
+
 ## 0.7.5 — 2026-10-15（正式版，标签 `v0.7.5`）
 
 相对 0.7.4：依赖的 DBProxy 从 `v0.7.0` 升到 `v0.7.3`，rustls 安全补丁；套件发布附件生成器、开源社区文件与 Codecov 覆盖率上传（TypeScript 与 Rust）。协议、配置字段与 Stable API 导出不变；Runtime 行为只修正一处延迟指标命名。宿主 `--version` 变为 0.7.5，使用启动器版本核对的工程需重建宿主。

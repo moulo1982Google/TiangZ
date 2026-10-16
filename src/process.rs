@@ -1185,31 +1185,35 @@ async fn run_runtime_config_with_backend(
         .iter()
         .any(|scene| scene.http.is_some())
         .then(|| http_pending.clone());
-    let runtime_thread = thread::spawn(move || {
-        // HTTP 回复 op 在 V8 线程读取回复表，必须在本线程安装。
-        // The HTTP reply op reads the table on the V8 thread, so it is installed on this thread.
-        if let Some(pending) = runtime_http_pending {
-            crate::http_endpoint::configure(pending);
-        }
-        let result = run_process_runtime(
-            project_root,
-            process,
-            scenes,
-            known_scenes,
-            runtime_bundles,
-            runtime_data_packs,
-            event_rx,
-            runtime_control_rx,
-            runtime_writers,
-            runtime_queue_stats,
-            host_runtime,
-            completion_sink,
-            Arc::clone(&runtime_health),
-        );
-        runtime_health.mark_runtime_stopped();
-        let _ = runtime_exit_tx.send(());
-        result
-    });
+    // 线程名只用于崩溃报告与日志可读性，不改变调度语义。 / The thread name only makes crash reports and logs readable; scheduling is unchanged.
+    let runtime_thread = thread::Builder::new()
+        .name(crate::crash_diagnostics::RUNTIME_THREAD_NAME.to_string())
+        .spawn(move || {
+            // HTTP 回复 op 在 V8 线程读取回复表，必须在本线程安装。
+            // The HTTP reply op reads the table on the V8 thread, so it is installed on this thread.
+            if let Some(pending) = runtime_http_pending {
+                crate::http_endpoint::configure(pending);
+            }
+            let result = run_process_runtime(
+                project_root,
+                process,
+                scenes,
+                known_scenes,
+                runtime_bundles,
+                runtime_data_packs,
+                event_rx,
+                runtime_control_rx,
+                runtime_writers,
+                runtime_queue_stats,
+                host_runtime,
+                completion_sink,
+                Arc::clone(&runtime_health),
+            );
+            runtime_health.mark_runtime_stopped();
+            let _ = runtime_exit_tx.send(());
+            result
+        })
+        .context("failed to start the process runtime thread")?;
 
     let mut parent_control = spawn_parent_control_receiver();
     let shutdown_signal = wait_for_shutdown_signal();
@@ -1302,6 +1306,11 @@ async fn run_runtime_config_with_backend(
     http_pending.clear();
     if let Some(server) = health_server {
         server.stop().await;
+    }
+    // 运行线程 panic 是致命的；若它在上一份报告 10 秒内被限流，在任何错误出口之前补写（包括监管错误提前返回）。
+    // A runtime-thread panic is fatal; flush it if it was rate-limited, before any error exit, including the early supervision-error return.
+    if matches!(runtime_join, Ok(Err(_))) {
+        crate::crash_diagnostics::report_deferred_panic("process runtime thread panicked", false);
     }
     if let Some(error) = supervision_error {
         return Err(error).context("process supervision failed; shutdown completed");
@@ -1427,6 +1436,8 @@ fn run_process_runtime(
         gc_metrics_ptr,
         deno_core::v8::GCType::kGCTypeAll,
     );
+    // 崩溃诊断关闭时不注册任何 V8 回调。 / No V8 callback is registered while crash diagnostics are disabled.
+    crate::crash_diagnostics::register_isolate(runtime.v8_isolate());
     let _inspector = ProcessInspector::start(
         &mut runtime,
         &process,

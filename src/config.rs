@@ -25,6 +25,9 @@ pub struct ProcessConfig {
     /// 部署环境；缺省 development。宿主只校验并投影给业务，由业务选择环境相关逻辑。 / Deployment environment (default development); the host validates and projects it, business code decides what it means.
     #[serde(default)]
     pub environment: ProcessEnvironment,
+    /// 配置文件是否显式写了 environment；由 load_runtime_config 填写，只供宿主判断（如崩溃自测防误设）。 / Whether the config file states environment explicitly; set by load_runtime_config for host-only checks such as the crash self-test guard.
+    #[serde(skip)]
+    pub environment_declared: bool,
     #[serde(default)]
     pub identity: ProcessIdentityConfig,
     #[serde(default)]
@@ -46,6 +49,67 @@ pub struct ProcessConfig {
     pub debug: Option<ProcessDebugConfig>,
     #[serde(default)]
     pub observability: Option<ProcessObservabilityConfig>,
+    /// 宿主专用的崩溃诊断等配置；目录等部署信息永不投影到业务 V8。 / Host-only diagnostics such as crash reports; directories and other deployment details never reach business V8.
+    #[serde(default, skip_serializing)]
+    pub diagnostics: ProcessDiagnosticsConfig,
+}
+
+/// 崩溃诊断最近日志行数上限；内存按每行至多 4 KiB 估算约 8 MiB。 / Upper bound for recent crash-log lines, roughly 8 MiB at the 4 KiB per-line cap.
+pub const MAX_CRASH_RECENT_LOG_LINES: usize = 2_000;
+/// 崩溃目录文本报告与退出记录的保留上限。 / Retention ceiling for text crash reports and exit records.
+pub const MAX_CRASH_REPORTS: usize = 10_000;
+/// 崩溃目录转储文件（.dmp/core）的保留上限。 / Retention ceiling for dump files (.dmp/core) in the crash directory.
+pub const MAX_CRASH_DUMPS: usize = 1_000;
+
+/// 宿主诊断配置分组；目前只有崩溃诊断。 / Host diagnostics group; currently only crash diagnostics.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProcessDiagnosticsConfig {
+    #[serde(default)]
+    pub crash: CrashDiagnosticsConfig,
+}
+
+/// 崩溃诊断开关与保留上限；默认关闭，旧配置行为不变。
+///
+/// 环境变量 `TIANGZ_CRASH_DIAGNOSTICS=on|off` 优先于 `enabled`。
+///
+/// Crash-diagnostics switch and retention limits; disabled by default so existing configs keep their behavior.
+///
+/// The `TIANGZ_CRASH_DIAGNOSTICS=on|off` environment variable takes precedence over `enabled`.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CrashDiagnosticsConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// 省略时为日志目录同级的 `crash`；相对路径以工程根目录为基准。 / Defaults to a `crash` sibling of the log directory; relative paths resolve against the project root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub directory: Option<String>,
+    #[serde(default = "default_crash_recent_log_lines")]
+    pub recent_log_lines: usize,
+    /// 仅 Windows 生效：未处理异常时写 MiniDump。 / Windows only: writes a MiniDump on unhandled exceptions.
+    #[serde(default)]
+    pub mini_dump: bool,
+    /// 仅 Linux/Unix 生效：启动时把 RLIMIT_CORE 提到上限。 / Linux/Unix only: raises RLIMIT_CORE at startup.
+    #[serde(default)]
+    pub core_dump: bool,
+    #[serde(default = "default_crash_max_reports")]
+    pub max_reports: usize,
+    #[serde(default = "default_crash_max_dumps")]
+    pub max_dumps: usize,
+}
+
+impl Default for CrashDiagnosticsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            directory: None,
+            recent_log_lines: default_crash_recent_log_lines(),
+            mini_dump: false,
+            core_dump: false,
+            max_reports: default_crash_max_reports(),
+            max_dumps: default_crash_max_dumps(),
+        }
+    }
 }
 
 /// 与部署工具的环境取值一致；未知取值在解析阶段拒绝。 / Matches deployment tooling values; unknown values are rejected at parse time.
@@ -801,6 +865,43 @@ fn default_max_catch_up_steps() -> usize {
     2
 }
 
+fn default_crash_recent_log_lines() -> usize {
+    200
+}
+
+fn default_crash_max_reports() -> usize {
+    50
+}
+
+fn default_crash_max_dumps() -> usize {
+    5
+}
+
+/// 校验崩溃诊断字段；即使未启用也校验，避免应急打开时才发现配置错误。 / Validates crash diagnostics even when disabled so an emergency enable never reveals a bad config.
+fn validate_crash_diagnostics(crash: &CrashDiagnosticsConfig) -> Result<()> {
+    if crash
+        .directory
+        .as_ref()
+        .is_some_and(|directory| directory.trim().is_empty() || directory.trim() != directory)
+    {
+        bail!(
+            "process diagnostics.crash.directory must not be empty or have leading/trailing whitespace"
+        );
+    }
+    if crash.recent_log_lines > MAX_CRASH_RECENT_LOG_LINES {
+        bail!(
+            "process diagnostics.crash.recentLogLines must be between 0 and {MAX_CRASH_RECENT_LOG_LINES}"
+        );
+    }
+    if !(1..=MAX_CRASH_REPORTS).contains(&crash.max_reports) {
+        bail!("process diagnostics.crash.maxReports must be between 1 and {MAX_CRASH_REPORTS}");
+    }
+    if !(1..=MAX_CRASH_DUMPS).contains(&crash.max_dumps) {
+        bail!("process diagnostics.crash.maxDumps must be between 1 and {MAX_CRASH_DUMPS}");
+    }
+    Ok(())
+}
+
 /// 根据项目根目录解析 CLI 路径，并将目录展开为 `StartMachine.json`。
 ///
 /// 本函数不执行 I/O，不能用它证明目标存在；加载与校验保持分离，
@@ -855,6 +956,10 @@ pub fn load_runtime_config(resolved_config: &Path) -> Result<RuntimeConfig> {
     let mut config: RuntimeConfig = serde_json::from_value(raw_config.clone())
         .with_context(|| format!("failed to parse {}", resolved_config.display()))?;
     let known_scene_files = parse_known_scene_files(&raw_config, resolved_config)?;
+    config.process.environment_declared = raw_config
+        .get("process")
+        .and_then(|process| process.get("environment"))
+        .is_some();
 
     if config.scenes.is_empty() {
         bail!("process must start at least one scene");
@@ -1088,6 +1193,7 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     {
         bail!("process logging.file.directory must not be empty");
     }
+    validate_crash_diagnostics(&config.process.diagnostics.crash)?;
     if config.process.game.fixed_update_ms == 0 {
         bail!("process game.fixedUpdateMs must be greater than 0");
     }
@@ -1639,6 +1745,7 @@ mod tests {
         ProcessConfig {
             name: "test".to_string(),
             environment: ProcessEnvironment::default(),
+            environment_declared: false,
             identity: ProcessIdentityConfig::default(),
             logging: ProcessLoggingConfig::default(),
             network: ProcessNetworkConfig::default(),
@@ -1654,6 +1761,7 @@ mod tests {
                 allow_remote: false,
             }),
             observability: None,
+            diagnostics: ProcessDiagnosticsConfig::default(),
         }
     }
 
@@ -2722,5 +2830,114 @@ mod tests {
             known_scenes: vec![],
         };
         assert!(validate_runtime_config(&config).is_err());
+    }
+
+    #[test]
+    fn crash_diagnostics_default_off_and_parse_camel_case_fields() {
+        let omitted: ProcessConfig = serde_json::from_str(r#"{"name":"map1"}"#).unwrap();
+        assert_eq!(omitted.diagnostics.crash, CrashDiagnosticsConfig::default());
+        assert!(!omitted.diagnostics.crash.enabled);
+        assert_eq!(omitted.diagnostics.crash.directory, None);
+        assert_eq!(omitted.diagnostics.crash.recent_log_lines, 200);
+        assert_eq!(omitted.diagnostics.crash.max_reports, 50);
+        assert_eq!(omitted.diagnostics.crash.max_dumps, 5);
+        assert!(!omitted.diagnostics.crash.mini_dump && !omitted.diagnostics.crash.core_dump);
+
+        let explicit: ProcessConfig = serde_json::from_str(
+            r#"{"name":"map1","diagnostics":{"crash":{"enabled":true,"directory":"var/crash",
+                "recentLogLines":2000,"miniDump":true,"coreDump":true,"maxReports":7,"maxDumps":2}}}"#,
+        )
+        .unwrap();
+        let crash = &explicit.diagnostics.crash;
+        assert!(crash.enabled && crash.mini_dump && crash.core_dump);
+        assert_eq!(crash.directory.as_deref(), Some("var/crash"));
+        assert_eq!(
+            (crash.recent_log_lines, crash.max_reports, crash.max_dumps),
+            (2000, 7, 2)
+        );
+        // 宿主专用：目录不投影给业务 V8。 / Host-only: the directory never reaches business V8.
+        let projected = serde_json::to_value(&explicit).unwrap();
+        assert!(projected.get("diagnostics").is_none(), "{projected}");
+
+        for invalid in [
+            r#"{"name":"m","diagnostics":{"crash":{"enable":true}}}"#,
+            r#"{"name":"m","diagnostics":{"heap":{}}}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<ProcessConfig>(invalid).is_err(),
+                "{invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn crash_diagnostics_ranges_are_validated_even_when_disabled() {
+        let accepts = |crash: CrashDiagnosticsConfig| {
+            let mut process = process(None);
+            process.diagnostics.crash = crash;
+            validate_runtime_config(&RuntimeConfig {
+                process,
+                scenes: vec![scene("map", 7100)],
+                known_scenes: vec![],
+            })
+        };
+        let base = CrashDiagnosticsConfig::default();
+        assert!(accepts(base.clone()).is_ok());
+        assert!(
+            accepts(CrashDiagnosticsConfig {
+                recent_log_lines: 0,
+                max_reports: MAX_CRASH_REPORTS,
+                max_dumps: MAX_CRASH_DUMPS,
+                ..base.clone()
+            })
+            .is_ok()
+        );
+        for (invalid, field) in [
+            (
+                CrashDiagnosticsConfig {
+                    recent_log_lines: MAX_CRASH_RECENT_LOG_LINES + 1,
+                    ..base.clone()
+                },
+                "recentLogLines",
+            ),
+            (
+                CrashDiagnosticsConfig {
+                    max_reports: 0,
+                    ..base.clone()
+                },
+                "maxReports",
+            ),
+            (
+                CrashDiagnosticsConfig {
+                    max_reports: MAX_CRASH_REPORTS + 1,
+                    ..base.clone()
+                },
+                "maxReports",
+            ),
+            (
+                CrashDiagnosticsConfig {
+                    max_dumps: 0,
+                    ..base.clone()
+                },
+                "maxDumps",
+            ),
+            (
+                CrashDiagnosticsConfig {
+                    directory: Some("  ".to_string()),
+                    ..base.clone()
+                },
+                "directory",
+            ),
+            (
+                CrashDiagnosticsConfig {
+                    directory: Some(" crash".to_string()),
+                    ..base.clone()
+                },
+                "directory",
+            ),
+        ] {
+            let error = accepts(invalid).unwrap_err().to_string();
+            assert!(error.contains(field), "{field}: {error}");
+        }
     }
 }

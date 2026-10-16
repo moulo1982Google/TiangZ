@@ -11,6 +11,7 @@ use crate::watcher::run_start_machine;
 
 mod allocator;
 mod config;
+mod crash_diagnostics;
 mod data_pack;
 mod dbproxy;
 mod event_stream;
@@ -47,19 +48,35 @@ async fn main() -> Result<()> {
     let root = resolve_runtime_root(explicit_root.as_deref())?;
     let resolved_config = resolve_startup_path(&root, startup_path);
     if is_start_machine_path(&resolved_config) {
+        let crash = crash_diagnostics::CrashDiagnostics::for_watcher(&root)?;
         let _logging = logging::init(
             &root,
             "watcher",
             &crate::config::ProcessLoggingConfig::default(),
+            crash.recent_log_layer(),
         )?;
+        crash.install()?;
         tracing::info!(target: "tiangz::runtime", runtime_root = %root.display(), "resolved runtime assets");
         run_start_machine(&root, resolved_config).await?;
         return Ok(());
     }
 
     let config = load_runtime_config(&resolved_config)?;
-    let _logging = logging::init(&root, &config.process.name, &config.process.logging)?;
+    let crash = crash_diagnostics::CrashDiagnostics::for_process(&root, &config.process)?;
+    let _logging = logging::init(
+        &root,
+        &config.process.name,
+        &config.process.logging,
+        crash.recent_log_layer(),
+    )?;
+    crash.install()?;
     tracing::info!(target: "tiangz::runtime", runtime_root = %root.display(), "resolved runtime assets");
+    crash_diagnostics::run_self_test_if_requested(
+        config
+            .process
+            .environment_declared
+            .then_some(config.process.environment),
+    )?;
     let _telemetry = telemetry::init(
         &config.process.name,
         config
