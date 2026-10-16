@@ -436,16 +436,11 @@ fn handle_panic(crash: &CrashState, info: &std::panic::PanicHookInfo<'_>) {
         );
     }
     match crash.panic_limiter.admit(fatal, PANIC_REPORT_INTERVAL) {
-        Some(suppressed) => {
+        Some(suppressed) => clear_then_write(&DEFERRED_PANIC, runtime_thread, || {
             write_report("panic", &mut |out| {
                 report::write_panic_details(out, &capture, suppressed, None)
             });
-            // 已写出报告，同类线程此前缓存的被限流 panic 不再需要补写；运行线程那一格不受其他线程影响。
-            // A report was written, so the cached panic of the same thread class needs no flush; other threads never touch the runtime slot.
-            if let Some(mut slots) = lock_deferred(false) {
-                slots.reported(runtime_thread);
-            }
-        }
+        }),
         None => {
             let _ = writeln!(
                 io::stderr(),
@@ -521,6 +516,28 @@ impl<T> DeferredPanics<T> {
 /// 被限流的 panic 缓存实例，在致命退出路径补写。 / Rate-limited panic cache flushed on fatal exit paths.
 static DEFERRED_PANIC: Mutex<DeferredPanics<report::PanicCapture>> =
     Mutex::new(DeferredPanics::new());
+
+/// 报告放行后先清本线程所属那一格，再写报告。
+///
+/// 槽里那份一定早于本份报告、已计入 `suppressed_since_last`；符号化与写盘期间新进槽的被限流 panic
+/// 保留给致命路径补写。钩子内只 try_lock，拿不到就不清。
+///
+/// After a report is admitted, clears the slot of this thread class first and then writes the
+/// report. The cached entry is older than this report and already counted in
+/// `suppressed_since_last`; rate-limited panics cached while symbolizing and writing stay for
+/// fatal paths to flush. Only try_lock is used in the hook; if the lock is busy nothing is cleared.
+pub(crate) fn clear_then_write<T>(
+    slots: &Mutex<DeferredPanics<T>>,
+    runtime_thread: bool,
+    write: impl FnOnce(),
+) {
+    match slots.try_lock() {
+        Ok(mut slots) => slots.reported(runtime_thread),
+        Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner().reported(runtime_thread),
+        Err(TryLockError::WouldBlock) => {}
+    }
+    write();
+}
 
 fn lock_deferred(wait: bool) -> Option<MutexGuard<'static, DeferredPanics<report::PanicCapture>>> {
     let attempts = if wait { 150 } else { 1 };

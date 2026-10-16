@@ -588,6 +588,41 @@ fn deferred_runtime_panic_is_never_overwritten_or_cleared_by_other_threads() {
 }
 
 #[test]
+fn panic_cached_while_a_report_is_being_written_is_kept() {
+    let slots = std::sync::Mutex::new(DeferredPanics::new());
+    slots
+        .lock()
+        .unwrap()
+        .suppressed(false, "older, counted in this report");
+    // 写报告期间（符号化、写盘）同一类线程又有一次 panic 被限流进槽。
+    // While the report is written, another panic of the same thread class is rate-limited into the slot.
+    clear_then_write(&slots, false, || {
+        slots
+            .lock()
+            .unwrap()
+            .suppressed(false, "arrived during the write");
+    });
+    assert_eq!(
+        slots.lock().unwrap().take(true),
+        [None, Some("arrived during the write")]
+    );
+    // 运行线程同样如此，且其他线程那一格不受影响。 / Same for the runtime thread, leaving the other slot alone.
+    let slots = std::sync::Mutex::new(DeferredPanics::new());
+    slots.lock().unwrap().suppressed(true, "older runtime");
+    slots.lock().unwrap().suppressed(false, "other");
+    clear_then_write(&slots, true, || {
+        slots
+            .lock()
+            .unwrap()
+            .suppressed(true, "runtime during the write");
+    });
+    assert_eq!(
+        slots.lock().unwrap().take(true),
+        [Some("runtime during the write"), Some("other")]
+    );
+}
+
+#[test]
 fn install_fails_when_the_crash_directory_cannot_be_created() {
     let directory = tempfile::tempdir().unwrap();
     let blocker = directory.path().join("not-a-directory");

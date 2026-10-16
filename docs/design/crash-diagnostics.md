@@ -79,7 +79,7 @@ panic 钩子先同步写报告，再调用原钩子：stderr 照常打印 `threa
 - 缓存分两格：运行线程一格、其他线程一格，各只保留最后一份。运行线程的那份不会被其他线程（tokio、KCP、Native worker）的 panic 覆盖，也不会因为其他线程的报告被放行而清除；运行线程致命退出路径只补写运行线程那一格，避免把别的线程的 panic 标成运行线程。
 - **主线程 panic** 与 std 的不能展开的 panic（消息以 `panic in a function that cannot unwind`、`panic in a destructor during cleanup` 开头，之后必然 abort）：钩子先补写两格里的缓存（运行线程在前），再无条件写本份报告，不受限流。
 
-所以“10 秒内先有一次被兜住的 panic、随后运行线程致命 panic”时，致命那份也有报告（已有子进程用例覆盖）。剩余缺口：在不能展开的 V8 回调里 panic 时，若 std 的消息不在上述前缀内，仍可能只有前一份报告与 stderr。DBProxy 对所有线程统一限流、没有补写；TiangZ 多出的补写与主线程豁免是有意差异。限流只管 panic 报告；Windows 原生异常本来就只处理一次。
+所以“10 秒内先有一次被兜住的 panic、随后运行线程致命 panic”时，致命那份也有报告（已有子进程用例覆盖）。报告被放行时，先清本线程所属那一格再符号化、写盘：槽里那份一定早于本份报告、已计入 `suppressed_since_last`，而写盘期间新进槽的被限流 panic 会保留给致命路径补写（与 DBProxy 相同）。剩余缺口：在不能展开的 V8 回调里 panic 时，若 std 的消息不在上述前缀内，仍可能只有前一份报告与 stderr。DBProxy 同样有主线程与不能展开 panic 的补写；TiangZ 多出运行线程一格及其补写入口。限流只管 panic 报告；Windows 原生异常本来就只处理一次。
 
 ### 最近日志
 
@@ -189,7 +189,13 @@ Unix 上新建的崩溃目录权限 `0o700`、报告与转储文件 `0o600`（�
 
 ## 与 DBProxy 的对外约定及差异
 
-一致：配置字段名、默认值与范围；文件名规则；`format_version: 1` 报告的公共头、`panic`（含 `suppressed_since_last`）/`native-exception` 的键顺序、`recent_logs` 段与续行规则；MiniDump 类型；未处理异常过滤器 + 预建写入线程的做法；截断标记；stderr 提示 `crash report suppressed by the rate limit`、`crash dump timed out`；Unix 目录 0o700、文件 0o600；开关环境变量取值 `on|off`（其他值启动失败、空值视为未设置）；自测取值 `panic|thread-panic|abort|access-violation|stack-overflow`。
+一致（以 DBProxy `docs/crash-diagnostics.md` 的“对外约定”为准）：
+
+- 配置字段名、默认值与范围；文件名规则；`format_version: 1` 报告的公共头、`panic`/`native-exception` 的键顺序、`recent_logs` 段与续行规则。
+- panic 报告：`thread`、`message`、`location`、`suppressed_since_last`，补写时**可选**的 `deferred: true` 与 `deferred_reason`（`format_version` 仍为 1）。
+- panic 限流：可存活的 panic 每 10 秒最多一份；主线程与不能展开的 panic 不受限流，并先补写缓存的被限流 panic；限流只门控符号化、写盘与 fsync，每次 panic 都廉价采集；放行后**先清缓存槽再写报告**，写盘期间新进槽的保留给致命路径补写。
+- MiniDump 类型；未处理异常过滤器 + 预建写入线程的做法；截断标记；stderr 提示 `crash report suppressed by the rate limit`、`crash dump timed out`；Unix 目录 0o700、文件 0o600；崩溃目录建不出来时启动失败；崩溃路径等最近日志缓冲锁约 100 ms；`directory` 拒绝前后空白；启动日志字段 `environment_override`。
+- 开关环境变量取值 `on|off`（其他值启动失败、空值视为未设置）；共同的自测取值 `panic|thread-panic|abort|access-violation|stack-overflow`。
 
 差异（有意为之）：
 
@@ -202,13 +208,13 @@ Unix 上新建的崩溃目录权限 `0o700`、报告与转储文件 `0o600`（�
 | 保留范围 | 按进程名计，另含目录级 core 文件 | 只处理 `crash-dbproxy-` 文件 | 多 Process 共用目录 |
 | 最近日志接入 | 独立 tracing Layer | fmt 外层复制写入器 | 见“最近日志” |
 | 新增 kind | `v8-oom`、`v8-near-heap-limit`、`v8-fatal-error`、`child-exit` | 无 | V8 与 Watcher 只在 TiangZ |
-| panic 限流 | 每 10 秒 1 份；主线程与不能展开的 panic 不限流；被限流的最后一份在致命退出路径补写（`deferred: true`） | 所有线程每 10 秒 1 份，不补写 | TiangZ 的致命 panic 多在运行线程上，不能只靠线程名判断 |
-| panic 报告附加键 | 补写时多 `deferred`、`deferred_reason`（位于 `suppressed_since_last` 之后） | 无 | 同上 |
-| 自测取值 | `panic|thread-panic|abort|access-violation|stack-overflow|oom` | 同左去掉 `oom` | V8 只在 TiangZ |
+| 补写缓存与触发点 | 运行线程、其他线程各一格；除主线程与不能展开的 panic 外，Process 运行线程（`process-runtime`）panic 后主线程 join 到错误时也补写运行线程那一格 | 单格；只在主线程与不能展开的 panic 时补写 | TiangZ 的致命 panic 多在运行线程上，进程以退出码 1 结束而不是在钩子里 |
+| `deferred_reason` 取值 | 说明句子，如 `process runtime thread panicked`、`a fatal panic followed on the main thread or a non-unwinding frame` | 枚举 `main-thread-panic`、`non-unwinding-panic` | 各自文档写明；解析方只应依赖 `deferred: true` |
+| 自测取值 | 共同取值加 `oom` | 共同取值加 `panic-after-thread-panic` | V8 只在 TiangZ；TiangZ 的补写由子进程单测验证 |
 | 自测防误设 | 只在 `process.environment` **显式**为 development/test 时生效，否则启动失败 | 只允许内存存储后端，否则启动失败 | 各自用本仓库已有的“非生产”标志 |
 | 启动日志字段 | `enabled_by`（Config/Environment）与同名的 `environment_override` | `environment_override` | 已对齐 `environment_override`，`enabled_by` 为 TiangZ 额外字段 |
 
-已按 DBProxy 对齐（原先不同）：崩溃目录建不出来时启动失败（原先只 warn）；崩溃路径等最近日志缓冲锁约 100 ms（原先约 50 ms）；`directory` 拒绝前后空白（原先只拒全空白）。
+已按 DBProxy 对齐（原先不同）：崩溃目录建不出来时启动失败（原先只 warn）；崩溃路径等最近日志缓冲锁约 100 ms（原先约 50 ms）；`directory` 拒绝前后空白（原先只拒全空白）；放行报告后先清缓存槽再写报告（原先写完才清，会清掉写盘期间新进槽的 panic）。
 
 ## 限制
 
@@ -234,7 +240,7 @@ Unix 上新建的崩溃目录权限 `0o700`、报告与转储文件 `0o600`（�
 
 2026-10-16，Windows 10 本机，debug 构建（`cargo test`，Rust 1.97.1）：
 
-- 单元测试 `cargo test --locked --bin TiangZ -- crash_diagnostics:: config::tests::crash`：32 项通过（`crash_diagnostics::tests` 30 项、`config::tests` 2 项）。覆盖配置默认值与越界（含目录前后空白）、环境变量优先级、自测取值与环境限制（含省略 environment 时拒绝）、报告格式逐行（含 `deferred` 键）、UTC 换算、环形缓冲上限与截断、Layer 过滤与字段格式、同名不覆盖、按进程名保留与 core 清理、估计计数、限流、补写缓存两格的覆盖与清除规则、崩溃目录建不出来时安装失败、退出状态解码（Windows/Unix 两套纯函数，各自平台另有 `ExitStatus` 用例，含退出码 1 与 101 的说明）、退出记录格式与同 pid 文件。其中 8 项在重新执行的子进程里装真实钩子：
+- 单元测试 `cargo test --locked --bin TiangZ -- crash_diagnostics:: config::tests::crash`：33 项通过（`crash_diagnostics::tests` 31 项、`config::tests` 2 项）。覆盖配置默认值与越界（含目录前后空白）、环境变量优先级、自测取值与环境限制（含省略 environment 时拒绝）、报告格式逐行（含 `deferred` 键）、UTC 换算、环形缓冲上限与截断、Layer 过滤与字段格式、同名不覆盖、按进程名保留与 core 清理、估计计数、限流、补写缓存两格的覆盖与清除规则、放行后先清槽（写盘期间进槽的那份不会被清）、崩溃目录建不出来时安装失败、退出状态解码（Windows/Unix 两套纯函数，各自平台另有 `ExitStatus` 用例，含退出码 1 与 101 的说明）、退出记录格式与同 pid 文件。其中 8 项在重新执行的子进程里装真实钩子：
   - panic（报告含回溯与最近日志、原钩子输出仍在）；
   - 被 catch_unwind 兜住的 panic（写报告、进程继续、退出码 0）；
   - **运行线程先兜住一次 panic、再致命 panic**（线程名 `process-runtime`，join 出错后补写，退出码 1；共 2 份报告，致命那份含 `deferred: true`、`deferred_reason: process runtime thread panicked` 与回溯，stderr 有限流提示）；
@@ -244,7 +250,7 @@ Unix 上新建的崩溃目录权限 `0o700`、报告与转储文件 `0o600`（�
   - **Windows 栈上有 JS 帧时的访问违规**（JS 函数调用 op 写 `0x10`，退出码 `0xC0000005`，`native-exception` 记录与 `.dmp` 各 1 份）；
   - **Windows 栈溢出**（退出码 `0xC00000FD`，写入线程写出 `native-exception` 与 `.dmp`）。
 - 集成测试 `cargo test --locked --test crash_diagnostics -- --test-threads=1`：8 项通过（按文件计数，0 项被过滤），启动真实 `TiangZ.exe`（临时根目录，无 dist）：关闭时自测被忽略且无文件；`thread-panic` 自测（只写 1 份报告、stderr 两行限流提示、进程继续启动）；`panic` 自测（退出码 101、报告含 `trigger_self_test` 回溯帧与启动日志）；环境变量 `on` 打开、`off` 覆盖配置、非法取值启动失败；`production` 环境与省略 environment 时设置自测都拒绝启动；`oom` 自测（退出码 `0x80000003`，三份报告 `v8-near-heap-limit`、`v8-oom`、`v8-fatal-error`）；Windows `access-violation` 自测（`.dmp` 约 1.05 MB）；Watcher 启动子进程 panic 后写 `child-exit` 记录（`exit code 101`、`restart: no (restart not configured…`、列出子进程的 panic 报告文件名、pid 一致）。
-- 回归：`cargo test --locked --bin TiangZ --lib` 共 314 项通过（bin 305、lib 9）；`cargo clippy --all-targets --locked -- -D warnings` 通过；`cargo fmt --check` 通过。
+- 回归：`cargo test --locked --bin TiangZ --lib` 共 315 项通过（bin 306、lib 9）；`cargo clippy --all-targets --locked -- -D warnings` 通过；`cargo fmt --check` 通过。
 - 门禁：`verify:comments`、`verify:no-local-traces`、`verify:dependency-policy`、`verify:version`（版本保持 0.7.5）通过。
 
 未验证：
