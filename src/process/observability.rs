@@ -285,6 +285,7 @@ pub(super) fn maybe_log_metrics(
     *last_process_cpu_time_ms = cpu_time_ms;
     *last_resource_sample_at = Instant::now();
     let heap = runtime.v8_isolate().get_heap_statistics();
+    crate::crash_diagnostics::record_heap_statistics(&heap);
     let timestamp_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()

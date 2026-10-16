@@ -6,7 +6,7 @@ use std::io::Write;
 use std::net::UdpSocket;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, Result, bail};
 
@@ -14,6 +14,7 @@ use crate::config::{
     ProcessRestartConfig, ProcessRestartPolicy, RuntimeConfig, StartMachineConfig,
     load_runtime_config,
 };
+use crate::crash_diagnostics::{CrashSettings, ExitRecord, RestartDecision, write_exit_record};
 use crate::shutdown::{ParentControlCommand, receive_parent_control, spawn_stdin_control_receiver};
 
 struct ManagedChild {
@@ -30,6 +31,10 @@ struct ManagedChild {
     consecutive_failures: u32,
     /// 最近一次启动（或尝试启动）的时间，用来判断是否已稳定运行。 / Last start or start attempt, used to detect stable runs.
     started_at: Instant,
+    /// 与 started_at 同时记录的墙钟时间，只用于退出记录。 / Wall-clock time recorded with started_at, used only by exit records.
+    started_wall: SystemTime,
+    /// 该子进程配置解析出的崩溃诊断设置；关闭时为 None，不写退出记录。 / Crash settings resolved from the child config; None disables exit records.
+    crash: Option<CrashSettings>,
 }
 
 struct ConfiguredProcess {
@@ -118,6 +123,7 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
         let process_config = configured.config;
         tracing::info!(target: "tiangz::watcher", config = %arg.display(), "starting process config");
         let (child, control) = spawn_child(&exe, root, &arg)?;
+        let crash = CrashSettings::resolve(root, &process_config.process);
         children.push(ManagedChild {
             name: process_config.process.name,
             arg,
@@ -130,6 +136,8 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
             restart_at: None,
             consecutive_failures: 0,
             started_at: Instant::now(),
+            started_wall: SystemTime::now(),
+            crash,
         });
     }
 
@@ -257,9 +265,16 @@ async fn wait_for_watcher_trigger(
                         let delay_ms = child.restart_at.map_or(0, |at| at.saturating_duration_since(Instant::now()).as_millis());
                         tracing::error!(target: "tiangz::watcher", process = %child.name, %status, policy = ?child.restart.as_ref().map(|r| r.policy),
                             consecutive_failures = child.consecutive_failures, delay_ms, "child process exited unexpectedly; restart scheduled");
+                        let policy = match child.restart.as_ref().map(|restart| restart.policy) {
+                            Some(ProcessRestartPolicy::Persistent) => "persistent",
+                            _ => "bounded",
+                        };
+                        record_child_exit(child, status, RestartDecision::Scheduled { policy: policy.to_string(), delay_ms });
                         continue;
                     }
                     tracing::error!(target: "tiangz::watcher", process = %child.name, %status, "child process exited unexpectedly; restart disabled or exhausted");
+                    let decision = if child.restart.is_some() { RestartDecision::BudgetExhausted } else { RestartDecision::NotConfigured };
+                    record_child_exit(child, status, decision);
                     return Ok(WatcherTrigger::ChildExited {
                         name: child.name.clone(),
                         status,
@@ -341,6 +356,7 @@ fn restart_child(
     // 启动失败也算一次短命运行，连续次数继续累加，不会因旧的长运行时间被清零。
     // A failed spawn counts as a short run, so it escalates instead of resetting.
     child.started_at = Instant::now();
+    child.started_wall = SystemTime::now();
     let (process, control) = spawn_child(exe, root, &child.arg)?;
     child.child = process;
     child.control = control;
@@ -480,6 +496,7 @@ async fn wait_for_child_shutdown(child: &mut ManagedChild) -> Result<()> {
         {
             tracing::info!(target: "tiangz::watcher", process = %child.name, %status, "child process stopped");
             if !status.success() {
+                record_child_exit(child, status, RestartDecision::DuringShutdown);
                 bail!(
                     "child process {} stopped unsuccessfully: {status}",
                     child.name
@@ -504,6 +521,32 @@ async fn wait_for_child_shutdown(child: &mut ManagedChild) -> Result<()> {
             );
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+/// 子进程启用了崩溃诊断时，在其崩溃目录写退出记录；写入失败只记日志，不影响监管流程。
+///
+/// When the child has crash diagnostics enabled, writes an exit record into its crash directory;
+/// write failures are only logged and never change supervision.
+fn record_child_exit(child: &ManagedChild, status: ExitStatus, restart: RestartDecision) {
+    let Some(crash) = &child.crash else {
+        return;
+    };
+    let record = ExitRecord {
+        process_name: &child.name,
+        pid: child.child.id(),
+        started_at: child.started_wall,
+        exited_at: SystemTime::now(),
+        status,
+        restart,
+    };
+    match write_exit_record(crash, &record) {
+        Some(path) => {
+            tracing::info!(target: "tiangz::watcher", process = %child.name, path = %path.display(), "child exit record written")
+        }
+        None => {
+            tracing::warn!(target: "tiangz::watcher", process = %child.name, directory = %crash.directory.display(), "failed to write child exit record")
+        }
     }
 }
 

@@ -31,8 +31,37 @@ Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置�
 | `dataPacks` | object? | 宿主启动期运行时数据包发现与大小限制；路径不投影给TS业务 |
 | `observability` | object? | 延迟采样、健康检查、分布式追踪和Native Store诊断配置 |
 | `debug` | object? | 该 V8 的 Inspector 配置 |
+| `diagnostics` | object? | 宿主专用诊断；目前只有 `crash`（崩溃报告、最近日志、V8 OOM、MiniDump/core、Watcher 退出记录），默认关闭；不投影给 TS 业务（未发布） |
 
 `debug` 支持 `inspectorIp`、`inspectorPort`、`breakOnStart`、`allowRemote`。
+
+`diagnostics.crash` 默认关闭，旧配置行为不变：
+
+```json
+{
+  "diagnostics": {
+    "crash": {
+      "enabled": true,
+      "directory": "crash",
+      "recentLogLines": 200,
+      "miniDump": false,
+      "coreDump": false,
+      "maxReports": 50,
+      "maxDumps": 5
+    }
+  }
+}
+```
+
+- `enabled`：默认 `false`。环境变量 `TIANGZ_CRASH_DIAGNOSTICS=on|off` 优先于本字段（空值视为未设置，其他取值拒绝启动）。
+- `directory`：省略时为日志目录同级的 `crash`；相对路径以工程根目录为基准，与 `logging.file.directory` 相同；不能为空。
+- `recentLogLines`：0–2000，默认 200；0 表示不保留最近日志但仍写报告。
+- `miniDump`（仅 Windows）、`coreDump`（仅 Linux/Unix）：默认 `false`；core 写到哪里由宿主机 `kernel.core_pattern` 决定，Docker 需 `--ulimit core=-1`。
+- `maxReports`：1–10000，默认 50；`maxDumps`：1–1000，默认 5。按进程名分别计数，多个 Process 共用目录时互不删除对方的报告。
+- 未知字段、越界取值在加载配置时拒绝启动，即使 `enabled` 为 `false`。
+- 自测变量 `TIANGZ_CRASH_SELF_TEST` 只在 `environment` 为 `development`/`test` 时生效，其他环境设置了会拒绝启动；生产勿设。
+
+报告格式、平台差异、限制与验证见[崩溃诊断](../design/crash-diagnostics.md)。
 
 `dataPacks`用于在代码模块之外装入只读运行时资料：
 

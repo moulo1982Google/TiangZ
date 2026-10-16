@@ -7,10 +7,13 @@ use anyhow::{Context, Result};
 use tracing_appender::non_blocking::{ErrorCounter, NonBlocking, NonBlockingBuilder, WorkerGuard};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::writer::{BoxMakeWriter, MakeWriterExt};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use crate::config::{
     ProcessLogFileConfig, ProcessLogFormat, ProcessLogRotation, ProcessLoggingConfig,
 };
+use crate::crash_diagnostics::RecentLogLayer;
 
 static PROCESS_NAME: OnceLock<String> = OnceLock::new();
 static DROP_COUNTERS: OnceLock<Vec<ErrorCounter>> = OnceLock::new();
@@ -77,16 +80,19 @@ fn level_code(level: crate::config::ProcessLogLevel) -> u8 {
 ///
 /// 丢弃 Guard 会刷新缓冲输出。本函数每个 OS 进程只能调用一次；
 /// 需要隔离 subscriber 的测试应使用局部 dispatch，而不是重复调用本函数。
+/// `recent_logs` 为崩溃诊断的最近日志 Layer；None 时不挂载，日志路径与旧版本相同。
 ///
 /// Installs the process-global tracing subscriber and returns guards that must outlive the runtime.
 ///
 /// Dropping the guard flushes buffered output. This function may be called only
 /// once per OS process; tests that need isolated subscribers should use local
-/// dispatch rather than repeatedly invoking it.
+/// dispatch rather than repeatedly invoking it. `recent_logs` is the crash-diagnostics
+/// recent-log layer; when None nothing is attached and the logging path matches earlier versions.
 pub fn init(
     root: &Path,
     process_name: &str,
     config: &ProcessLoggingConfig,
+    recent_logs: Option<RecentLogLayer>,
 ) -> Result<LoggingGuard> {
     let _ = PROCESS_NAME.set(process_name.to_string());
     let mut workers = Vec::new();
@@ -122,6 +128,8 @@ pub fn init(
             .with_env_filter(filter)
             .with_writer(writer)
             .with_target(true)
+            .finish()
+            .with(recent_logs)
             .try_init()
             .map_err(|error| anyhow::anyhow!("failed to initialize logging subscriber: {error}"))?,
         ProcessLogFormat::Json => tracing_subscriber::fmt()
@@ -130,6 +138,8 @@ pub fn init(
             .with_target(true)
             .json()
             .flatten_event(true)
+            .finish()
+            .with(recent_logs)
             .try_init()
             .map_err(|error| anyhow::anyhow!("failed to initialize logging subscriber: {error}"))?,
     }
@@ -185,7 +195,8 @@ fn combine_writers(
     }
 }
 
-fn sanitize_file_name(value: &str) -> String {
+/// 把进程名转换为可用作文件名的文本；日志与崩溃诊断共用。 / Converts a process name into file-name-safe text, shared by logs and crash diagnostics.
+pub(crate) fn sanitize_file_name(value: &str) -> String {
     value
         .chars()
         .map(|character| match character {
@@ -235,7 +246,7 @@ mod tests {
             }),
             ..ProcessLoggingConfig::default()
         };
-        let guard = init(directory.path(), "logging-test", &config).unwrap();
+        let guard = init(directory.path(), "logging-test", &config, None).unwrap();
         tracing::warn!(target: "tiangz::test", answer = 42, "structured logging test");
         drop(guard);
 

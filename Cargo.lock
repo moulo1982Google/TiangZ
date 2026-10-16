@@ -18,6 +18,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "libc",
  "mimalloc",
  "opentelemetry",
  "opentelemetry-otlp",
@@ -39,6 +40,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

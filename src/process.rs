@@ -1427,6 +1427,8 @@ fn run_process_runtime(
         gc_metrics_ptr,
         deno_core::v8::GCType::kGCTypeAll,
     );
+    // 崩溃诊断关闭时不注册任何 V8 回调。 / No V8 callback is registered while crash diagnostics are disabled.
+    crate::crash_diagnostics::register_isolate(runtime.v8_isolate());
     let _inspector = ProcessInspector::start(
         &mut runtime,
         &process,
