@@ -75,8 +75,9 @@ panic 钩子先同步写报告，再调用原钩子：stderr 照常打印 `threa
 
 限流只门控“符号化 + 写盘 + fsync”：每次 panic 钩子都会廉价采集 message、location、线程名和**未符号化**的回溯（`Backtrace::force_capture` 只遍历栈帧），被限流时把它存进一个只保留最后一份的槽（钩子里只 try_lock，拿不到就放弃，内存有界）。在致命退出路径把槽里的那份补写成报告，kind 仍为 `panic`，`suppressed_since_last` 之后多两行 `deferred: true` 与 `deferred_reason`：
 
-- **Process 运行线程 panic**：TiangZ Process 的业务 V8、Scene 更新、deno op、KCP 回调都在 `process.rs` 起的运行线程上（现命名为 `process-runtime`，只为报告与日志可读，不改调度语义），它 panic 后主线程 join 到错误、以 anyhow 错误退出，**退出码是 1，不是 101**。join 出错的分支调用 `report_deferred_panic` 补写。
-- **主线程 panic** 与 std 的不能展开的 panic（消息以 `panic in a function that cannot unwind`、`panic in a destructor during cleanup` 开头，之后必然 abort）：钩子先补写槽里的那份，再无条件写本份报告，不受限流。
+- **Process 运行线程 panic**：TiangZ Process 的业务 V8、Scene 更新、deno op、KCP 回调都在 `process.rs` 起的运行线程上（现命名为 `process-runtime`，只为报告与日志可读，不改调度语义；改用 `thread::Builder` 后，线程创建失败从 panic（退出码 101）变为返回错误（退出码 1）），它 panic 后主线程 join 到错误、以 anyhow 错误退出，**退出码是 1，不是 101**。主线程拿到 join 结果后、任何错误出口之前（包括停机期间监管错误的提前返回）调用 `report_deferred_panic` 补写。
+- 缓存分两格：运行线程一格、其他线程一格，各只保留最后一份。运行线程的那份不会被其他线程（tokio、KCP、Native worker）的 panic 覆盖，也不会因为其他线程的报告被放行而清除；运行线程致命退出路径只补写运行线程那一格，避免把别的线程的 panic 标成运行线程。
+- **主线程 panic** 与 std 的不能展开的 panic（消息以 `panic in a function that cannot unwind`、`panic in a destructor during cleanup` 开头，之后必然 abort）：钩子先补写两格里的缓存（运行线程在前），再无条件写本份报告，不受限流。
 
 所以“10 秒内先有一次被兜住的 panic、随后运行线程致命 panic”时，致命那份也有报告（已有子进程用例覆盖）。剩余缺口：在不能展开的 V8 回调里 panic 时，若 std 的消息不在上述前缀内，仍可能只有前一份报告与 stderr。DBProxy 对所有线程统一限流、没有补写；TiangZ 多出的补写与主线程豁免是有意差异。限流只管 panic 报告；Windows 原生异常本来就只处理一次。
 
@@ -93,7 +94,7 @@ panic 钩子先同步写报告，再调用原钩子：stderr 照常打印 `threa
 
 在 Process 的主 V8 Isolate 创建后（`process.rs`，紧接 GC 回调注册）调用 `register_isolate`，启用时注册下列回调。只注册在主 Isolate 上：启动预检与热更预检（`hotfix-preflight` 线程）另建的临时 Isolate 不注册 OOM 与接近堆上限回调，它们内存耗尽时按 V8 默认行为打印并中止；但进程级的致命错误回调对它们同样生效，会写 `v8-fatal-error` 报告。
 
-- `Isolate::set_oom_error_handler`：写 `v8-oom` 报告（位置、`oom_type: heap|process`、详情、最近一次堆统计），往 stderr 打一行，然后返回（字符串复制也在 catch_unwind 内，进程级内存耗尽时分配失败不会越过 FFI 边界）；V8 随后按原逻辑终止进程。注册了 OOM 回调后 V8 不再打印它自己的 `Fatal JavaScript out of memory` 一行，所以本回调代为打印。
+- `Isolate::set_oom_error_handler`：写 `v8-oom` 报告（位置、`oom_type: heap|process`、详情、最近一次堆统计），往 stderr 打一行，然后返回（字符串复制也在 catch_unwind 内，防止其中的 Rust panic 越过 V8 回调；Rust 分配失败走 `handle_alloc_error` 直接 abort，不会被 catch_unwind 拦住）；V8 随后按原逻辑终止进程。注册了 OOM 回调后 V8 不再打印它自己的 `Fatal JavaScript out of memory` 一行，所以本回调代为打印。
 - `Isolate::add_near_heap_limit_callback`：每个 Isolate 只写一次 `v8-near-heap-limit` 报告（当前与初始上限、当场读取的堆统计），**返回当前上限，不扩容**。
 - `V8::set_fatal_error_handler`（进程级，只注册一次）：写 `v8-fatal-error` 报告后返回，V8 随后中止进程。
 - OOM 回调拿不到 Isolate，报告里的堆统计来自最近一次采样：接近堆上限回调当场采样，或周期性的 `[process-metrics]` 采样（启用时把同一份统计存入原子变量，关闭时立即返回）。
@@ -233,16 +234,17 @@ Unix 上新建的崩溃目录权限 `0o700`、报告与转储文件 `0o600`（�
 
 2026-10-16，Windows 10 本机，debug 构建（`cargo test`，Rust 1.97.1）：
 
-- 单元测试 `cargo test --locked --bin TiangZ -- crash_diagnostics:: config::tests::crash`：30 项通过（`crash_diagnostics::tests` 28 项、`config::tests` 2 项）。覆盖配置默认值与越界（含目录前后空白）、环境变量优先级、自测取值与环境限制（含省略 environment 时拒绝）、报告格式逐行（含 `deferred` 键）、UTC 换算、环形缓冲上限与截断、Layer 过滤与字段格式、同名不覆盖、按进程名保留与 core 清理、估计计数、限流、崩溃目录建不出来时安装失败、退出状态解码（Windows/Unix 两套纯函数，各自平台另有 `ExitStatus` 用例，含退出码 1 与 101 的说明）、退出记录格式与同 pid 文件。其中 7 项在重新执行的子进程里装真实钩子：
+- 单元测试 `cargo test --locked --bin TiangZ -- crash_diagnostics:: config::tests::crash`：32 项通过（`crash_diagnostics::tests` 30 项、`config::tests` 2 项）。覆盖配置默认值与越界（含目录前后空白）、环境变量优先级、自测取值与环境限制（含省略 environment 时拒绝）、报告格式逐行（含 `deferred` 键）、UTC 换算、环形缓冲上限与截断、Layer 过滤与字段格式、同名不覆盖、按进程名保留与 core 清理、估计计数、限流、补写缓存两格的覆盖与清除规则、崩溃目录建不出来时安装失败、退出状态解码（Windows/Unix 两套纯函数，各自平台另有 `ExitStatus` 用例，含退出码 1 与 101 的说明）、退出记录格式与同 pid 文件。其中 8 项在重新执行的子进程里装真实钩子：
   - panic（报告含回溯与最近日志、原钩子输出仍在）；
   - 被 catch_unwind 兜住的 panic（写报告、进程继续、退出码 0）；
   - **运行线程先兜住一次 panic、再致命 panic**（线程名 `process-runtime`，join 出错后补写，退出码 1；共 2 份报告，致命那份含 `deferred: true`、`deferred_reason: process runtime thread panicked` 与回溯，stderr 有限流提示）；
+  - **运行线程致命 panic 被缓存后，停机窗口里其他线程再 panic**（其他线程先写出一份报告开启限流窗口；最终 2 份报告，补写的是 `process-runtime` 线程那份，停机窗口里的其他线程 panic 只被限流，没有冒充运行线程）；
   - V8 OOM（`v8-oom` 与 `v8-near-heap-limit` 各 1 份）；
   - **Windows 访问违规**（退出码 `0xC0000005`，`.dmp` 以 `MDMP` 开头，文本记录含异常码、`access_violation: write at 0x0000000000000010`、转储文件名与最近日志）；
   - **Windows 栈上有 JS 帧时的访问违规**（JS 函数调用 op 写 `0x10`，退出码 `0xC0000005`，`native-exception` 记录与 `.dmp` 各 1 份）；
   - **Windows 栈溢出**（退出码 `0xC00000FD`，写入线程写出 `native-exception` 与 `.dmp`）。
 - 集成测试 `cargo test --locked --test crash_diagnostics -- --test-threads=1`：8 项通过（按文件计数，0 项被过滤），启动真实 `TiangZ.exe`（临时根目录，无 dist）：关闭时自测被忽略且无文件；`thread-panic` 自测（只写 1 份报告、stderr 两行限流提示、进程继续启动）；`panic` 自测（退出码 101、报告含 `trigger_self_test` 回溯帧与启动日志）；环境变量 `on` 打开、`off` 覆盖配置、非法取值启动失败；`production` 环境与省略 environment 时设置自测都拒绝启动；`oom` 自测（退出码 `0x80000003`，三份报告 `v8-near-heap-limit`、`v8-oom`、`v8-fatal-error`）；Windows `access-violation` 自测（`.dmp` 约 1.05 MB）；Watcher 启动子进程 panic 后写 `child-exit` 记录（`exit code 101`、`restart: no (restart not configured…`、列出子进程的 panic 报告文件名、pid 一致）。
-- 回归：`cargo test --locked --bin TiangZ --lib` 共 312 项通过（bin 303、lib 9）；`cargo clippy --all-targets --locked -- -D warnings` 通过；`cargo fmt --check` 通过。
+- 回归：`cargo test --locked --bin TiangZ --lib` 共 314 项通过（bin 305、lib 9）；`cargo clippy --all-targets --locked -- -D warnings` 通过；`cargo fmt --check` 通过。
 - 门禁：`verify:comments`、`verify:no-local-traces`、`verify:dependency-policy`、`verify:version`（版本保持 0.7.5）通过。
 
 未验证：
@@ -251,7 +253,7 @@ Unix 上新建的崩溃目录权限 `0o700`、报告与转储文件 `0o600`（�
 - `abort` 自测未在真实进程中运行（Windows 上只会得到 WER 处理与退出码，Linux 需 CI）。
 - release 构建下的回溯内容、MiniDump 大小与 `.pdb` 可用性未验证。
 - 业务负载下的 Layer 开销未测量（按要求不做压测）。
-- 真实 Process 中“运行线程 panic → 补写”的完整链路（`process.rs` 的 join 分支）没有端到端运行：需要 dist 与业务 V8；子进程用例按同一函数和同一线程名复刻该路径。主线程 panic 前先补写、不能展开的 panic 前缀判定也只有代码与单元层面的覆盖。
+- 真实 Process 中“运行线程 panic → 补写”的完整链路（`process.rs` 的 join 分支，包括停机期间监管错误提前返回之前的补写）没有端到端运行：需要 dist、业务 V8，且要在停机窗口内同时制造监管错误与运行线程 panic，现有生命周期夹具不支持；子进程用例按同一函数和同一线程名复刻该路径，`process.rs` 的补写放在所有错误出口之前，由代码评审保证。“其他线程 panic 被放行时不清除运行线程那一格”只有纯逻辑单测（放行需要等满 10 秒窗口）。主线程 panic 前先补写、不能展开的 panic 前缀判定也只有代码与单元层面的覆盖。
 
 ## English summary
 

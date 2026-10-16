@@ -421,6 +421,7 @@ fn handle_panic(crash: &CrashState, info: &std::panic::PanicHookInfo<'_>) {
         )
     });
     let capture = report::PanicCapture::capture(message, location);
+    let runtime_thread = std::thread::current().name() == Some(RUNTIME_THREAD_NAME);
     // 主线程 panic 与不能展开的 panic 一定结束进程：先补写此前被限流的 panic，再无条件写本份报告。
     // Main-thread and non-unwinding panics always end the process: flush the deferred panic first,
     // then report this one unconditionally.
@@ -429,16 +430,20 @@ fn handle_panic(crash: &CrashState, info: &std::panic::PanicHookInfo<'_>) {
             .iter()
             .any(|prefix| message.starts_with(prefix));
     if fatal {
-        report_deferred_panic("a fatal panic followed on the main thread or a non-unwinding frame");
+        report_deferred_panic(
+            "a fatal panic followed on the main thread or a non-unwinding frame",
+            true,
+        );
     }
     match crash.panic_limiter.admit(fatal, PANIC_REPORT_INTERVAL) {
         Some(suppressed) => {
             write_report("panic", &mut |out| {
                 report::write_panic_details(out, &capture, suppressed, None)
             });
-            // 已写出报告，此前缓存的被限流 panic 不再需要补写。 / A report was written, so the earlier cached panic needs no flush.
-            if let Some(mut slot) = lock_deferred(false) {
-                *slot = None;
+            // 已写出报告，同类线程此前缓存的被限流 panic 不再需要补写；运行线程那一格不受其他线程影响。
+            // A report was written, so the cached panic of the same thread class needs no flush; other threads never touch the runtime slot.
+            if let Some(mut slots) = lock_deferred(false) {
+                slots.reported(runtime_thread);
             }
         }
         None => {
@@ -447,17 +452,77 @@ fn handle_panic(crash: &CrashState, info: &std::panic::PanicHookInfo<'_>) {
                 "[tiangz] crash report suppressed by the rate limit"
             );
             // 钩子内只 try_lock：拿不到锁就放弃缓存，绝不阻塞或 panic。 / Only try_lock inside the hook: give up caching rather than block or panic.
-            if let Some(mut slot) = lock_deferred(false) {
-                *slot = Some(capture);
+            if let Some(mut slots) = lock_deferred(false) {
+                slots.suppressed(runtime_thread, capture);
             }
         }
     }
 }
 
-/// 最近一次被限流的 panic，在致命退出路径补写；只存一份，内存有界。 / The latest rate-limited panic, flushed on fatal exit paths; holds one entry so memory stays bounded.
-static DEFERRED_PANIC: Mutex<Option<report::PanicCapture>> = Mutex::new(None);
+/// Process 运行线程的线程名；它承载业务 V8、Scene 更新、deno op 与 KCP 回调，panic 即致命。
+///
+/// Name of the Process runtime thread, which hosts business V8, Scene updates, deno ops and KCP
+/// callbacks; a panic there is fatal.
+pub(crate) const RUNTIME_THREAD_NAME: &str = "process-runtime";
 
-fn lock_deferred(wait: bool) -> Option<MutexGuard<'static, Option<report::PanicCapture>>> {
+/// 被限流的 panic 缓存：运行线程与其他线程各一格、各只保留最后一份，内存有界。
+///
+/// 运行线程的那份不会被其他线程的 panic 覆盖或清除：运行线程致命 panic 后到主线程 join 之前还有
+/// 停机窗口，期间 tokio、KCP、Native worker 等线程的 panic 只影响“其他”一格。
+///
+/// Cache of rate-limited panics: one slot for the runtime thread and one for every other thread,
+/// each keeping only the latest entry so memory stays bounded. Panics on other threads never
+/// overwrite or clear the runtime slot: between a fatal runtime-thread panic and the main thread's
+/// join there is a shutdown window in which tokio, KCP or native-worker panics only touch the
+/// other slot.
+pub(crate) struct DeferredPanics<T> {
+    runtime: Option<T>,
+    other: Option<T>,
+}
+
+impl<T> DeferredPanics<T> {
+    /// 创建两格都为空的缓存。 / Creates a cache with both slots empty.
+    pub(crate) const fn new() -> Self {
+        Self {
+            runtime: None,
+            other: None,
+        }
+    }
+
+    /// 记录一次被限流的 panic，只替换同类线程那一格。 / Records a rate-limited panic, replacing only its own slot.
+    pub(crate) fn suppressed(&mut self, runtime_thread: bool, capture: T) {
+        if runtime_thread {
+            self.runtime = Some(capture);
+        } else {
+            self.other = Some(capture);
+        }
+    }
+
+    /// 某线程的 panic 已正常写出报告，只清除同类线程那一格。 / A panic was reported normally; clears only its own slot.
+    pub(crate) fn reported(&mut self, runtime_thread: bool) {
+        if runtime_thread {
+            self.runtime = None;
+        } else {
+            self.other = None;
+        }
+    }
+
+    /// 取出待补写的项：总是先取运行线程那一格，`include_other` 时再取其他线程那一格。 / Takes entries to flush: the runtime slot first, then the other slot when `include_other`.
+    pub(crate) fn take(&mut self, include_other: bool) -> [Option<T>; 2] {
+        let other = if include_other {
+            self.other.take()
+        } else {
+            None
+        };
+        [self.runtime.take(), other]
+    }
+}
+
+/// 被限流的 panic 缓存实例，在致命退出路径补写。 / Rate-limited panic cache flushed on fatal exit paths.
+static DEFERRED_PANIC: Mutex<DeferredPanics<report::PanicCapture>> =
+    Mutex::new(DeferredPanics::new());
+
+fn lock_deferred(wait: bool) -> Option<MutexGuard<'static, DeferredPanics<report::PanicCapture>>> {
     let attempts = if wait { 150 } else { 1 };
     for attempt in 0..attempts {
         match DEFERRED_PANIC.try_lock() {
@@ -470,23 +535,37 @@ fn lock_deferred(wait: bool) -> Option<MutexGuard<'static, Option<report::PanicC
     None
 }
 
-/// 致命退出路径调用：把最后一次被限流的 panic 补写成 `panic` 报告（`deferred: true`）。
+/// 致命退出路径调用：把被限流缓存的 panic 补写成 `panic` 报告（`deferred: true`），返回写出的份数。
 ///
-/// 例如 Process 运行线程（承载业务 V8、Scene 更新、KCP 回调）panic 后，主线程以错误退出（退出码 1），
-/// 若这次 panic 恰在上一份报告 10 秒内被限流，就由这里补写。没有缓存时什么也不做；未启用时返回 None。
+/// 总是补写运行线程那一格；`include_other` 为 true（主线程或不能展开的 panic）时再补写其他线程那一格。
+/// 例如 Process 运行线程 panic 后主线程以错误退出（退出码 1），若这次 panic 恰在上一份报告 10 秒内
+/// 被限流，就由这里补写。没有缓存或未启用时返回 0。
 ///
-/// Called on fatal exit paths: writes the latest rate-limited panic as a `panic` report with
-/// `deferred: true`. For example, when the Process runtime thread (business V8, Scene updates, KCP
-/// callbacks) panics, the main thread exits with an error (exit code 1); if that panic was
-/// rate-limited within 10 seconds of the previous report, it is written here. Does nothing when
-/// nothing is cached; returns None when disabled.
-pub(crate) fn report_deferred_panic(reason: &str) -> Option<PathBuf> {
-    let crash = state()?;
-    let capture = lock_deferred(true)?.take()?;
-    let suppressed = crash.panic_limiter.take_suppressed().saturating_sub(1);
-    write_report("panic", &mut |out| {
-        report::write_panic_details(out, &capture, suppressed, Some(reason))
-    })
+/// Called on fatal exit paths: writes cached rate-limited panics as `panic` reports with
+/// `deferred: true` and returns how many were written. The runtime slot is always flushed; the
+/// other slot is flushed too when `include_other` is true (main-thread or non-unwinding panics).
+/// For example, when the Process runtime thread panics the main thread exits with an error (exit
+/// code 1); if that panic was rate-limited within 10 seconds of the previous report, it is written
+/// here. Returns 0 when nothing is cached or diagnostics are disabled.
+pub(crate) fn report_deferred_panic(reason: &str, include_other: bool) -> usize {
+    let Some(crash) = state() else {
+        return 0;
+    };
+    let Some(entries) = lock_deferred(true).map(|mut slots| slots.take(include_other)) else {
+        return 0;
+    };
+    let mut written = 0;
+    for capture in entries.into_iter().flatten() {
+        let suppressed = crash.panic_limiter.take_suppressed().saturating_sub(1);
+        if write_report("panic", &mut |out| {
+            report::write_panic_details(out, &capture, suppressed, Some(reason))
+        })
+        .is_some()
+        {
+            written += 1;
+        }
+    }
+    written
 }
 
 #[cfg(windows)]

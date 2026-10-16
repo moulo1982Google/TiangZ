@@ -132,7 +132,8 @@ unsafe extern "C" fn v8_oom_error(location: *const c_char, details: &v8::OomDeta
     } else {
         "process"
     };
-    // 字符串复制也放进 catch_unwind：进程级内存耗尽时分配可能失败。 / String copies also run inside catch_unwind: allocation may fail on process-level OOM.
+    // 字符串复制也放进 catch_unwind，防止其中的 Rust panic 越过 V8 回调；注意 Rust 分配失败走 handle_alloc_error 直接 abort，catch_unwind 拦不住。
+    // String copies also run inside catch_unwind so a Rust panic there cannot cross the V8 callback; a Rust allocation failure still aborts via handle_alloc_error and is not caught.
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
         let location = c_text(location_ptr);
         let detail = c_text(detail_ptr);

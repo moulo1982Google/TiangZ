@@ -1187,7 +1187,7 @@ async fn run_runtime_config_with_backend(
         .then(|| http_pending.clone());
     // 线程名只用于崩溃报告与日志可读性，不改变调度语义。 / The thread name only makes crash reports and logs readable; scheduling is unchanged.
     let runtime_thread = thread::Builder::new()
-        .name("process-runtime".to_string())
+        .name(crate::crash_diagnostics::RUNTIME_THREAD_NAME.to_string())
         .spawn(move || {
             // HTTP 回复 op 在 V8 线程读取回复表，必须在本线程安装。
             // The HTTP reply op reads the table on the V8 thread, so it is installed on this thread.
@@ -1307,17 +1307,17 @@ async fn run_runtime_config_with_backend(
     if let Some(server) = health_server {
         server.stop().await;
     }
+    // 运行线程 panic 是致命的；若它在上一份报告 10 秒内被限流，在任何错误出口之前补写（包括监管错误提前返回）。
+    // A runtime-thread panic is fatal; flush it if it was rate-limited, before any error exit, including the early supervision-error return.
+    if matches!(runtime_join, Ok(Err(_))) {
+        crate::crash_diagnostics::report_deferred_panic("process runtime thread panicked", false);
+    }
     if let Some(error) = supervision_error {
         return Err(error).context("process supervision failed; shutdown completed");
     }
     let runtime_result = runtime_join
         .context("failed to join process runtime task")?
-        .map_err(|_| {
-            // 运行线程 panic 是致命的；若它在上一份报告 10 秒内被限流，这里补写。
-            // A runtime-thread panic is fatal; flush it here if it was rate-limited.
-            crate::crash_diagnostics::report_deferred_panic("process runtime thread panicked");
-            anyhow::anyhow!("process runtime thread panicked")
-        })?;
+        .map_err(|_| anyhow::anyhow!("process runtime thread panicked"))?;
     if runtime_exited_early {
         runtime_result.context("V8 runtime failed before process shutdown was requested")?;
         bail!("V8 runtime exited unexpectedly before process shutdown was requested");

@@ -4,7 +4,7 @@
 
 ### 新增
 
-- **崩溃诊断（默认关闭）。** 新配置 `process.diagnostics.crash`（`enabled`、`directory`、`recentLogLines`、`miniDump`、`coreDump`、`maxReports`、`maxDumps`），环境变量 `TIANGZ_CRASH_DIAGNOSTICS=on|off` 优先于配置。启用后：Rust panic 同步写报告（强制回溯、最近日志；每 10 秒最多一份，被限流的最后一份在运行线程或主线程致命退出时补写为 `deferred: true`）后再交给原钩子，退出码与 catch_unwind 行为不变；tracing 上增加有界的最近日志缓冲，补上非阻塞日志在硬崩溃时丢失的尾部；V8 内存耗尽、接近堆上限（只记录、不扩容）与致命错误写报告；Windows 未处理异常由预建写入线程写文本记录与可选 MiniDump；Linux 启动时放开 `RLIMIT_CORE`；Watcher 为子进程意外退出写记录（NTSTATUS 或信号与 core 标志解码、是否重启、同 pid 的报告文件）。崩溃目录按进程名限制文件数，Unix 上目录 0o700、文件 0o600。报告格式 `format_version: 1` 与 DBProxy 共用。自测变量 `TIANGZ_CRASH_SELF_TEST` 只在配置显式写明 development/test 环境时生效。Process 运行线程现命名为 `process-runtime`（只影响日志与报告中的线程名）。配置不投影给 TS，Stable API 不变；需重建宿主。release 构建的回溯没有行号（未改 release profile）。详见 [崩溃诊断](docs/design/crash-diagnostics.md)。
+- **崩溃诊断（默认关闭）。** 新配置 `process.diagnostics.crash`（`enabled`、`directory`、`recentLogLines`、`miniDump`、`coreDump`、`maxReports`、`maxDumps`），环境变量 `TIANGZ_CRASH_DIAGNOSTICS=on|off` 优先于配置。启用后：Rust panic 同步写报告（强制回溯、最近日志；每 10 秒最多一份，被限流的最后一份在运行线程或主线程致命退出时补写为 `deferred: true`）后再交给原钩子，退出码与 catch_unwind 行为不变；tracing 上增加有界的最近日志缓冲，补上非阻塞日志在硬崩溃时丢失的尾部；V8 内存耗尽、接近堆上限（只记录、不扩容）与致命错误写报告；Windows 未处理异常由预建写入线程写文本记录与可选 MiniDump；Linux 启动时放开 `RLIMIT_CORE`；Watcher 为子进程意外退出写记录（NTSTATUS 或信号与 core 标志解码、是否重启、同 pid 的报告文件）。崩溃目录按进程名限制文件数，Unix 上目录 0o700、文件 0o600。报告格式 `format_version: 1` 与 DBProxy 共用。自测变量 `TIANGZ_CRASH_SELF_TEST` 只在配置显式写明 development/test 环境时生效。Process 运行线程现命名为 `process-runtime`（只影响日志与报告中的线程名）；改用 `thread::Builder` 后，该线程创建失败从 panic（退出码 101）变为返回错误（退出码 1）。配置不投影给 TS，Stable API 不变；需重建宿主。release 构建的回溯没有行号（未改 release profile）。详见 [崩溃诊断](docs/design/crash-diagnostics.md)。
 
 ### 依赖
 

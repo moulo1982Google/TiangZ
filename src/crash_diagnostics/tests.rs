@@ -567,6 +567,27 @@ fn self_test_requires_known_mode_and_development_or_test_environment() {
 }
 
 #[test]
+fn deferred_runtime_panic_is_never_overwritten_or_cleared_by_other_threads() {
+    let mut slots = DeferredPanics::new();
+    slots.suppressed(true, "runtime");
+    // 其他线程被限流：只替换其他线程那一格。 / Another thread rate-limited: only the other slot changes.
+    slots.suppressed(false, "other suppressed");
+    // 其他线程被放行写出报告：只清除其他线程那一格。 / Another thread reported: only the other slot is cleared.
+    slots.reported(false);
+    assert_eq!(slots.take(false), [Some("runtime"), None]);
+    assert_eq!(slots.take(true), [None, None]);
+
+    slots.suppressed(true, "runtime");
+    slots.suppressed(false, "other");
+    assert_eq!(slots.take(false), [Some("runtime"), None]);
+    // 运行线程致命路径不取其他线程那一格；主线程致命路径两格都取。 / The runtime path leaves the other slot; the main-thread path takes both.
+    assert_eq!(slots.take(true), [None, Some("other")]);
+    slots.suppressed(true, "runtime");
+    slots.reported(true);
+    assert_eq!(slots.take(true), [None, None]);
+}
+
+#[test]
 fn install_fails_when_the_crash_directory_cannot_be_created() {
     let directory = tempfile::tempdir().unwrap();
     let blocker = directory.path().join("not-a-directory");
@@ -662,7 +683,26 @@ fn crash_child_entry() {
                 })
                 .unwrap();
             if worker.join().is_err() {
-                report_deferred_panic("process runtime thread panicked");
+                report_deferred_panic("process runtime thread panicked", false);
+                std::process::exit(1);
+            }
+            std::process::exit(2);
+        }
+        "runtime-deferred-survives-others" => {
+            // 另一线程先写出一份报告开启限流窗口；运行线程致命 panic 被缓存后，停机窗口里又有其他线程 panic。
+            // Another thread reports first to open the window; after the runtime panic is cached, another thread panics during shutdown.
+            let run = |name: &str, message: &'static str| {
+                let worker = std::thread::Builder::new()
+                    .name(name.to_string())
+                    .spawn(move || panic!("{message}"))
+                    .unwrap();
+                worker.join().is_err()
+            };
+            let _ = run("tokio-runtime-worker", "other panic before");
+            let runtime_failed = run(RUNTIME_THREAD_NAME, "fatal runtime panic");
+            let _ = run("tiangz-kcp", "other panic during shutdown");
+            if runtime_failed {
+                report_deferred_panic("process runtime thread panicked", false);
                 std::process::exit(1);
             }
             std::process::exit(2);
@@ -831,6 +871,38 @@ fn fatal_runtime_thread_panic_after_a_reported_one_is_flushed_as_deferred() {
             .contains("crash report suppressed by the rate limit"),
         "{}",
         child.output
+    );
+}
+
+#[test]
+fn deferred_runtime_panic_survives_other_thread_panics_in_the_shutdown_window() {
+    let (_directory, child) = run_child("runtime-deferred-survives-others");
+    assert_eq!(child.status.code(), Some(1), "{}", child.output);
+    let reports = read_reports(&child.files, "panic");
+    // 写出：第一份（其他线程，开启窗口）+ 补写的运行线程那份；停机窗口里的其他线程 panic 只被限流。
+    // Written: the first report (another thread) plus the deferred runtime one; the shutdown-window panic is only rate-limited.
+    assert_eq!(
+        reports.len(),
+        2,
+        "files {:?}\n{}",
+        child.files,
+        child.output
+    );
+    let deferred = reports
+        .iter()
+        .find(|text| text.contains("\ndeferred: true\n"))
+        .expect("deferred report");
+    assert!(
+        deferred.contains("\nthread: process-runtime (")
+            && deferred.contains("\nmessage: fatal runtime panic\n")
+            && deferred.contains("\ndeferred_reason: process runtime thread panicked\n"),
+        "{deferred}"
+    );
+    assert!(
+        reports
+            .iter()
+            .all(|text| !text.contains("other panic during shutdown")),
+        "{reports:?}"
     );
 }
 

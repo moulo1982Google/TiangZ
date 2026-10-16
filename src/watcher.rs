@@ -359,8 +359,11 @@ fn restart_child(
     child.started_wall = SystemTime::now();
     // 重启时按磁盘上的配置重新解析崩溃诊断设置（运维可能改了目录或开关）；读不到时沿用旧设置。
     // Re-resolve crash settings from the config on disk at restart (operators may change them); keep the old ones if it cannot be read.
-    if let Ok(config) = load_runtime_config(&root.join(&child.arg)) {
-        child.crash = CrashSettings::resolve(root, &config.process);
+    match load_runtime_config(&root.join(&child.arg)) {
+        Ok(config) => child.crash = CrashSettings::resolve(root, &config.process),
+        Err(error) => {
+            tracing::warn!(target: "tiangz::watcher", process = %child.name, error = %format!("{error:#}"), "failed to reload child config for crash diagnostics; keeping previous settings")
+        }
     }
     let (process, control) = spawn_child(exe, root, &child.arg)?;
     child.child = process;
