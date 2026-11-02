@@ -18,6 +18,8 @@ Proto 会生成：
 
 当前 Unity Adapter 只支持 WebSocket；选择 TCP/KCP 必须由上层明确报错，不能静默降级。
 
+远端关闭也由 `Update()` 处理：接收线程只记下关闭，`Update()` 先分发关闭前已收到的回复和 Push，再拒绝剩余 RPC 并触发 `Closed`（在调用 `Update()` 的线程）。所以一次 RPC 可能在连接关闭的同一帧成功返回；本地 `Close()`/`Dispose()` 仍立即清空队列并拒绝全部 RPC。
+
 ## 最小调用
 
 ```csharp

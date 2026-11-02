@@ -843,6 +843,7 @@ SLG 首次玩法 smoke（临时目录 tiangz-slg-smoke-Lipipu）报 `DBProxy is 
 | 写法长稳memory档位AOF核对20个玩家全判masked；`write-modes-run-2026-09-19T13-22-09-909Z` | 控制器账本靠解析探针日志更新，高频时滞后，强杀时取的已尝试值偏旧 | 在Redis重启前再取已尝试值。依赖账本快照的核对要考虑日志解析滞后 |
 | 500玩家过夜长稳第8轮在dbproxy-all后业务恢复超时；夹具问题，`write-modes-run-2026-09-19T17-03-32-149Z` | 探针出错退避固定30秒，全部DBProxy节点重启后数百玩家同时重试，反复压满每节点8条PG连接（2秒连接排队后快速失败），4个玩家连续失败凑不齐两次确认。失败时直接查PG，普通写与钱包全部一致 | 退避加50%–150%抖动。TiangZ业务仓库本来就是随机退避；写负载探针也必须如此。DBProxy的2秒快速失败是设计行为，不要靠加大超时掩盖 |
 | 500玩家时探针恢复读取约2分钟、接近3分钟就绪上限；AOF核对把500个键放进一条redis-cli命令触发Windows命令行长度上限（2026-09-20） | 恢复读取逐个玩家串行；核对键在命令行传递 | 恢复读取按玩家并发（降到4秒），键改在Redis脚本内按`RedisSnapshotBacklog::member`规则生成。规模参数变化时要重算每一处的串行耗时与命令行长度 |
+| 重连回复已到客户端，紧接着远端断开，下一次重连仍带旧凭证被拒（45207）；框架SDK缺陷，苟道三国T-R2b（2026-11-01） | TS `RpcSocket`在`onclose`时先拒绝全部等待中的RPC，已入队的回复在`update()`时找不到等待者被丢弃；C# SDK关闭时还清空了队列。按到达顺序处理：回复已入队的RPC交给`update()`，C#把远端关闭交给`Update()`在已收到的帧之后执行 | 不在游戏模块里用`on(msgcode)`截获回复帧自己解码，那是给SDK加第二条转发路径。复测`npx vitest run tests/unit/client_rpc_socket_close.test.ts`；C#无仓库测试，需本地WebSocket服务端驱动真实`RpcSocket`验证回复、单向消息与`Closed`线程 |
 | 执行`core-api:update-lock`后锁里出现无关声明变化；证据风险，同上 | HEAD锁自`a16344c`/`1da8f58`起已落后源码（`GlobalIdConfig`、`GlobalIdSystem`、`EntryScene`、`Game`、`HotfixSystem`）。开发期`verify:core-api`跳过锁比对，锁在发布前统一更新 | 功能改动不要顺手吸收他人漂移；先确认漂移来源，发布时连同说明一次评审 |
 
 上述错误的修正不得降低安全断言。预期拒绝/断线属于故障测试的一部分；必须验证拒绝原因、generation不变、恢复后请求仅执行一次，而不是要求所有故障路径都返回成功。
@@ -2015,7 +2016,7 @@ const stop = loginFlow.onSessionReplaced((message) => {
 });
 ```
 
-`disconnectClient`的关闭请求随本Scene下一次出站排空交给宿主，排在此前`sendClient`入队的帧之后；宿主本轮先写出站帧再执行关闭，传输层关闭前再排空已交付的帧，因此健康传输下“先推送通知再断开”保持提交顺序；断网、发送失败或期限耗尽仍可能丢帧，即使调用发生在RPC续体等Scene更新之后的时点（0.6.3起；此前关闭可能抢在通知之前，业务曾需延迟断开绕过）。关闭最多晚一次更新生效，生效前已在途的入站帧仍可能到达，业务应先使Session失效再请求关闭。SDK的`RpcSocket`会保留关闭前已经收到、但尚未由游戏循环`update()`分发的单向消息。客户端仍必须持续驱动`update()`，不能只依赖网络回调。同Gate顶号使用连接代次；跨Gate故障接管使用Location gateEpoch与ActorLocation fencing。两者都不会迁移原Socket。
+`disconnectClient`的关闭请求随本Scene下一次出站排空交给宿主，排在此前`sendClient`入队的帧之后；宿主本轮先写出站帧再执行关闭，传输层关闭前再排空已交付的帧，因此健康传输下“先推送通知再断开”保持提交顺序；断网、发送失败或期限耗尽仍可能丢帧，即使调用发生在RPC续体等Scene更新之后的时点（0.6.3起；此前关闭可能抢在通知之前，业务曾需延迟断开绕过）。关闭最多晚一次更新生效，生效前已在途的入站帧仍可能到达，业务应先使Session失效再请求关闭。SDK的`RpcSocket`会保留关闭前已经收到、但尚未由游戏循环`update()`分发的单向消息和RPC回复（回复部分0.7.7起）：TypeScript只让回复已入队的RPC等到`update()`交付，其余立即失败；C#与C++把远端关闭排在已收到的帧之后，由`Update()`处理并在该线程触发`Closed`。因此`call()`可能在连接已关闭后成功返回，业务要在续体里检查连接状态（例如重连回复带来的新凭证仍要保存，再按断线处理）。客户端仍必须持续驱动`update()`，不能只依赖网络回调。同Gate顶号使用连接代次；跨Gate故障接管使用Location gateEpoch与ActorLocation fencing。两者都不会迁移原Socket。
 
 Gate候选排序统一复用`RankStickyScenes/SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。Login先保留Location记录的当前健康Gate；仅当它不可达时才依Rendezvous顺序探测其他Gate。恢复节点不自动回切现存玩家；绕过Login连接旧Gate也必须在旧所有者健康探测和Location CAS处被拒绝。
 

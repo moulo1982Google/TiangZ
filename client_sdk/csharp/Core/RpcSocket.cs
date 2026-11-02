@@ -12,8 +12,10 @@ namespace TiangZ.Client
 
 /// <summary>
 /// Unity-safe WebSocket RPC socket. Network callbacks only enqueue frames;
-/// business handlers run when Unity calls Update from its main thread.
+/// business handlers run when Unity calls Update from its main thread. A remote close is also
+/// handled by Update, after every frame received before it has been dispatched.
 /// Unity 安全的 WebSocket RPC Socket。网络线程只入队，业务 Handler 由 Unity 主线程 Update 分发。
+/// 远端关闭同样由 Update 处理，先分发关闭前已收到的全部帧。
 /// </summary>
 public sealed class RpcSocket : IDisposable
 {
@@ -40,6 +42,7 @@ public sealed class RpcSocket : IDisposable
     private int queuedMessages;
     private int closed;
     private bool overflowed;
+    private Exception? remoteCloseReason;
 
     public RpcSocket(ClientEndpoint endpoint, int maxQueuedMessages = 4096, int defaultTimeoutMs = 5000)
     {
@@ -180,6 +183,9 @@ public sealed class RpcSocket : IDisposable
             Close(new ClientRpcException("客户端入站队列已满"));
             return 0;
         }
+        // 先读远端关闭再取帧：接收线程入队最后一帧之后才记下关闭，读到关闭说明此前的帧都已在队列里。
+        // Read the remote close before dequeuing: the receive loop records it after its last frame.
+        var remoteClose = Volatile.Read(ref remoteCloseReason);
         var handled = 0;
         while (handled < maxMessages && inbound.TryDequeue(out var frame))
         {
@@ -187,6 +193,9 @@ public sealed class RpcSocket : IDisposable
             handled++;
             HandleFrame(frame);
         }
+        // 关闭前收到的回复和单向消息都已分发，才拒绝剩余 RPC 并触发 Closed。
+        // Replies and one-way messages received before the close are dispatched before remaining calls fail.
+        if (remoteClose != null && inbound.IsEmpty) Close(remoteClose);
         return handled;
     }
 
@@ -244,7 +253,7 @@ public sealed class RpcSocket : IDisposable
                     result = await current.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken).ConfigureAwait(false);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        Close(new ClientRpcException("服务器关闭了 WebSocket"));
+                        SignalRemoteClose(new ClientRpcException("服务器关闭了 WebSocket"));
                         return;
                     }
                     message.Write(buffer, 0, result.Count);
@@ -258,13 +267,20 @@ public sealed class RpcSocket : IDisposable
                 }
                 inbound.Enqueue(message.ToArray());
             }
+            if (!cancellationToken.IsCancellationRequested) SignalRemoteClose(new ClientRpcException("WebSocket 连接已关闭"));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception error)
         {
-            Close(error);
+            SignalRemoteClose(error);
         }
     }
+
+    /// <summary>
+    /// 只记下远端关闭，由主线程 Update 在分发完此前的帧后执行 Close。只保留第一个原因。
+    /// Records a remote close only; Update closes on the main thread after earlier frames. The first reason wins.
+    /// </summary>
+    private void SignalRemoteClose(Exception reason) => Interlocked.CompareExchange(ref remoteCloseReason, reason, null);
 
     private void HandleFrame(byte[] frame)
     {

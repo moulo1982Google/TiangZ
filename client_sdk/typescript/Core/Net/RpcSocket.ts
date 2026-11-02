@@ -57,6 +57,7 @@ export class RpcSocket {
   private readonly defaultTimeoutMs: number;
   private readonly maxQueuedMessages: number;
   private stateValue: ClientConnectionState = "idle";
+  private closeCause?: ClientSdkError;
   private nextRpcId = 1;
 
   constructor(
@@ -114,6 +115,10 @@ export class RpcSocket {
     } else if (this.inboundHead >= 1_024) {
       this.inbound.splice(0, this.inboundHead);
       this.inboundHead = 0;
+    }
+    // 关闭前入队的帧已全部分发，仍在等待的 RPC 不会再有回复。 / Every frame queued before the close has been dispatched; remaining calls will get no reply.
+    if (this.stateValue === "closed" && this.queuedMessages === 0 && this.pending.size > 0) {
+      this.rejectAll(this.closeCause ?? new ClientConnectionClosedError(this.endpoint));
     }
     return count;
   }
@@ -293,12 +298,25 @@ export class RpcSocket {
     return rpcId;
   }
 
-  private rejectAll(error: Error): void {
-    for (const pending of this.pending.values()) {
+  private rejectAll(error: Error, keep?: ReadonlySet<number>): void {
+    for (const [rpcId, pending] of this.pending) {
+      if (keep?.has(rpcId)) continue;
+      this.pending.delete(rpcId);
       clearTimeout(pending.timer);
       pending.reject(error);
     }
-    this.pending.clear();
+  }
+
+  /** 入站队列中已有回复帧的等待中 RPC。 / Pending calls whose reply frame is already queued. */
+  private queuedReplyIds(): Set<number> | undefined {
+    if (this.pending.size === 0 || this.queuedMessages === 0) return undefined;
+    const ids = new Set<number>();
+    for (let index = this.inboundHead; index < this.inbound.length; index += 1) {
+      const frame = this.inbound[index];
+      const rpcId = frame ? extractRpcId(frame) : undefined;
+      if (rpcId !== undefined && this.pending.has(rpcId)) ids.add(rpcId);
+    }
+    return ids;
   }
 
   private enqueue(frame: Uint8Array): void {
@@ -315,11 +333,18 @@ export class RpcSocket {
 
   private handleClosed(cause: unknown): void {
     if (this.stateValue === "closed") return;
+    const error = this.closedError(cause);
+    // 先记下原因：onStateChange 回调可能同步调用 update()，其中的收尾拒绝要用它。
+    // Record the cause first: onStateChange may call update() synchronously, whose final rejection uses it.
+    this.closeCause = error;
     this.setState("closed");
-    // 连接关闭不等于丢弃已经收到的单向消息；例如顶号通知会先入队、随后才收到 onclose。
-    // A closed transport must not discard already-received one-way messages;
-    // takeover notices can be queued before the following onclose event.
-    this.rejectAll(this.closedError(cause));
+    // 连接关闭不等于丢弃已经收到的帧：顶号通知等单向消息和 RPC 回复都可能先入队、随后才收到 onclose，
+    // 它们留给 update() 按到达顺序分发；只有回复不在队列里的 RPC 立即失败。入站队列溢出时全部立即失败。
+    // A closed transport must not discard already-received frames: one-way messages such as takeover
+    // notices and RPC replies can be queued before onclose, and update() dispatches them in arrival order.
+    // Only calls without a queued reply fail now; an inbound overflow fails every call.
+    const answered = error instanceof ClientInboundOverflowError ? undefined : this.queuedReplyIds();
+    this.rejectAll(error, answered);
   }
 
   private setState(state: ClientConnectionState): void {
