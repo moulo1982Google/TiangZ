@@ -928,7 +928,7 @@ Actor是“拥有mailbox并能按InstanceId路由”的运行时能力，不是�
 
 Gate连接状态分成两层：`GateSession`只代表一次物理连接，断开即销毁；`GatePlayerRoute`按账号保存`UnitId -> MapHost/Map/ActorInstanceId`和当前`connectionId`，在30秒重连宽限期内继续存在。客户端每5秒调用`C2G_Ping -> G2C_Ping`，响应携带Gate生成响应时的Unix毫秒`serverTime`；Gate收到任意客户端帧都会先刷新`lastReceiveTime`，出站排队只更新`lastSendTime`，绝不能延长存活期限。Ping是无锁的普通TS RPC Handler；Session为unordered，所以它不会排在长时间EnterMap之后。会修改Route的操作按账号进入协程锁，断线和超时下线取得锁后必须重新校验连接所有权或超时条件。Gate使用一个1秒合并扫描器检查全部Route，不为每名玩家创建Timer。
 
-同账号新连接会在Gate内原子替换旧`connectionId`。旧Session会先失去账号、角色、Token和Route所有权，再收到`G2C_SessionReplaced`（错误码`10040`），最后请求关闭旧Socket；旧socket迟到的disconnect和在途Handler只会失败，不能清理新连接或Map Unit。`disconnectClient`的关闭请求随本Scene出站帧一起交给宿主、排在此前入队的通知之后（0.6.3），服务端传输层在关闭前再排空已交付的下行帧，客户端`RpcSocket`也会保留关闭前已经收到但尚未由`update()`分发的单向消息，健康传输下Cocos/Web/Pixi可以显示“账号已在其他设备登录”。客户端SDK通过`LoginFlow.onSessionReplaced`暴露通知，业务回调负责清理本地场景并回到登录界面。同Gate顶号由连接代次保证；跨Gate故障接管由Location gateEpoch和Actor fencing保证，两者不能混成一个全局Session对象。
+同账号新连接会在Gate内原子替换旧`connectionId`。旧Session会先失去账号、角色、Token和Route所有权，再收到`G2C_SessionReplaced`（错误码`10040`），最后请求关闭旧Socket；旧socket迟到的disconnect和在途Handler只会失败，不能清理新连接或Map Unit。`disconnectClient`的关闭请求随本Scene出站帧一起交给宿主、排在此前入队的通知之后（0.6.3），服务端传输层在关闭前再排空已交付的下行帧，客户端`RpcSocket`也会保留关闭前已经收到但尚未由`update()`分发的单向消息和RPC回复（回复部分0.7.7起；C# SDK的远端关闭改由主线程`Update()`在已收到的帧之后处理，与C++一致），健康传输下Cocos/Web/Pixi可以显示“账号已在其他设备登录”。客户端SDK通过`LoginFlow.onSessionReplaced`暴露通知，业务回调负责清理本地场景并回到登录界面。同Gate顶号由连接代次保证；跨Gate故障接管由Location gateEpoch和Actor fencing保证，两者不能混成一个全局Session对象。
 
 重连后Gate以现有Actor路由调用`SecondEnterMap`，Map只清除旧移动意图并返回权威全量快照，不创建Unit、不重新广播AOI进入、不改绑Gate。宽限期结束后Gate才调用`PlayerOffline`；Map完成保存和Location移除后先响应Unit RPC，再由下一轮Map Timer完成AOI离开和Actor销毁，不能在PlayerUnit自己的mailbox中同步`DespawnActor`自己，否则运行时会把正常下线误判为Actor在mailbox执行期间消失。Map不拥有断线Timer，也不保存`gateSessionId`。
 
