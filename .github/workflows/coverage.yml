@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: moulo1982Google/TiangZ-Examples
-          ref: v0.7.2
+          ref: v0.7.3
           path: TiangZ-Examples
       - uses: actions/setup-node@v4
         with:
