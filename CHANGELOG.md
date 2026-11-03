@@ -1,5 +1,11 @@
 # 版本记录
 
+## 未发布
+
+### 依赖
+
+- **套件内依赖对齐到各仓库最新标签。** DBProxy 的 Rust 客户端三个包（`tiangz-dbproxy-client/core/protocol`）与 TypeScript SDK `@tiangz/dbproxy-sdk` 从 `v0.7.3` 改为 `v0.7.6`；`@tiangz/native-language-core` 从 `v0.17.2` 改为 `v0.17.3`（依赖安全补丁）。DBProxy 0.7.4–0.7.6 只改服务端，客户端与 SDK 代码与 0.7.3 相同，宿主行为不变。`Cargo.lock` 与 `package-lock.json` 只改这四个包的版本与提交；`codegen.manifest.json` 随 `package.json` 重新生成。Developer Tools Core（`v0.16.6`）与 coverage 用的 Examples（`v0.7.3`）已是最新。
+
 ## 0.7.8 — 2026-11-02（正式版，标签 `v0.7.8`）
 
 相对 0.7.7：只改依赖与套件内其他仓库的版本。服务端运行时行为、协议、Stable API 导出、TypeScript 类型与客户端 SDK 不变。宿主 `--version` 变为 0.7.8，使用启动器版本核对的工程需重建宿主。DBProxy 依赖仍固定 `v0.7.3`。
