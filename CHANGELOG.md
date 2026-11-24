@@ -4,6 +4,10 @@
 
 相对 0.7.9：只修正模块游戏配置生成工具。Rust 运行时、协议、Stable API 导出、TypeScript 类型、客户端 SDK 与依赖不变。宿主 `--version` 变为 0.7.10，使用启动器版本核对的工程需重建宿主。
 
+### 遗留
+
+- `dependency-audit` 为红（main 自 2026-11-16 起即如此）：`quinn-proto` 0.11.18、`quinn-udp` 0.5.15、`url` 2.5.8 有新的 RustSec 公告。本版不改 `Cargo.lock`，补丁（试算只改这三个包与 `form_urlencoded`，均为同次版本内升级）留到 0.7.11，详见 RELEASE-v0.7.10.md。
+
 ### 修正
 
 - **模块游戏配置：服务端 `schema.ts` 超过 Luban 单模板输出上限时不再被静默截断。** Luban 4.10.2 自带的 Scriban 7 把单个模板的渲染结果限制在 1,048,576 字符，超出后截断并接 `...`，Luban 与 `codegen_module_game_config` 仍以 0 退出，只有之后的 `tsc` 报语法错误。现在服务端目标改用删除了注释块的 `typescript-json` 模板（`tools/third_party/luban/server-templates`，其余与官方模板逐字相同），同样的表集合约少两成字符；生成器在发布前检查服务端与客户端的每个 `schema.ts`，以 `...` 结尾或 TypeScript 语法诊断不为零即失败且不覆盖已有产物，达到上限 90% 时在标准错误输出告警。客户端生成物不变。

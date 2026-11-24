@@ -30,7 +30,13 @@ Luban 4.10.2 自带的 Scriban 7 把单个模板的渲染结果限制在 `Templa
 
 ## 验证
 
-- 本地（Windows，发布分支）：`TIANGZ_LOCK_VERSIONS=1` 下 verify:version、verify:codegen 通过；修正提交在 0.7.8 基线上已跑过 `verify:quick` 的非 cargo 部分（`module Model export preflight` 首跑一项截止时间用例超时，单项与整步重跑均通过），本版重新执行 `test:game-modules`。
+- 本地（Windows，发布分支）：`TIANGZ_LOCK_VERSIONS=1` 下 `verify:quick` 的非 cargo 部分 38 步全部通过（含 verify:version、verify:codegen、test:game-modules）。修正提交最初在 0.7.8 基线上跑同一组检查时，`module Model export preflight` 首跑有一项截止时间用例超时，单项与整步重跑均通过。
 - 本版不改 Rust 代码，本地未重跑 `cargo clippy` / `cargo test`；以 GitHub CI 的完整 verify 为准。
 - GitHub CI 结果以发布 PR 与 Release 页面为准，本文不重复记录。
+- 发布 PR #15：framework（Windows/Linux 完整 verify）、coverage 与 rust、acceptance、codecov/patch 通过；`dependency-audit` 失败，原因见下文“遗留”。
 - 本次未执行：长稳与性能测量。
+
+## 遗留
+
+- `dependency-audit` 为红，不是本版引入：main 的定时 security 运行自 2026-11-16 起就失败。`cargo audit` 报 4 条 RustSec 公告——`quinn-proto` 0.11.18（RUSTSEC-2026-0523、RUSTSEC-2026-0524，修复于 0.11.19）、`quinn-udp` 0.5.15（RUSTSEC-2026-0538，修复于 0.5.16）、`url` 2.5.8（RUSTSEC-2026-0592，修复于 2.5.9）。本版只发配置生成修正，不改 `Cargo.lock`。
+- 修复留到 0.7.11：`cargo update -p quinn-proto -p quinn-udp -p url` 试算只改 4 个包且都在原次版本内——`quinn-proto` 0.11.18 → 0.11.19、`quinn-udp` 0.5.15 → 0.5.16、`url` 2.5.8 → 2.5.9、`form_urlencoded` 1.2.2 → 1.2.3。
