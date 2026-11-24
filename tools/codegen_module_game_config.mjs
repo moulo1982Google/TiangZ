@@ -11,6 +11,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import ts from "typescript";
 
 import { loadGameModuleCatalog } from "./game_module_catalog.mjs";
 import { publishModuleOutputs } from "./module_generated_outputs.mjs";
@@ -34,6 +35,17 @@ if (!module.gameConfig) {
 }
 
 const lubanDll = path.join(root, "tools", "third_party", "luban", "4.10.2", "Luban.dll");
+// 服务端目标使用去掉注释块的 schema 模板，给单模板输出上限留出余量；客户端仍用官方模板保留注释。
+// The server target uses a comment-free schema template to leave room under the single-template output
+// limit; the client target keeps the official template and its comments.
+const serverTemplateDir = path.join(root, "tools", "third_party", "luban", "server-templates");
+// Luban 4.10.2 自带的 Scriban 7 把单个模板的渲染结果限制为 TemplateContext.LimitToString（默认 1,048,576
+// 字符，Luban 未覆盖）；超出时静默截成前 1,048,576 字符加 "..."，Luban 仍以 0 退出。
+// Scriban 7 bundled with Luban 4.10.2 caps one template render at TemplateContext.LimitToString
+// (1,048,576 characters by default, not overridden by Luban); longer output is silently cut to that
+// length plus "..." while Luban still exits with code 0.
+const lubanTemplateOutputLimit = 1_048_576;
+const lubanTemplateOutputWarning = Math.floor(lubanTemplateOutputLimit * 0.9);
 const stagingRoot = await mkdtemp(path.join(os.tmpdir(), "tiangz-module-game-config-"));
 try {
   const codeDirectory = path.join(stagingRoot, "code");
@@ -51,6 +63,8 @@ try {
     "-d",
     "json",
     "--validationFailAsError",
+    "--customTemplateDir",
+    serverTemplateDir,
     "--conf",
     module.gameConfig.project,
     "-x",
@@ -59,7 +73,10 @@ try {
     `outputDataDir=${dataDirectory}`,
   ], module.root);
 
-  const schema = normalizeText(await readFile(path.join(codeDirectory, "schema.ts"), "utf8"));
+  const schema = checkedSchema(
+    await readFile(path.join(codeDirectory, "schema.ts"), "utf8"),
+    module.gameConfig.target,
+  );
   const tableFiles = (await readdir(dataDirectory))
     .filter((name) => name.endsWith(".json"))
     .sort((left, right) => left.localeCompare(right, "en"));
@@ -109,7 +126,7 @@ try {
     run("dotnet", [lubanDll, "-t", client.target, "-c", "typescript-json", "-d", "json",
       "--validationFailAsError", "--conf", module.gameConfig.project,
       "-x", `outputCodeDir=${code}`, "-x", `outputDataDir=${dataDir}`], module.root);
-    const clientSchema = normalizeText(await readFile(path.join(code, "schema.ts"), "utf8"));
+    const clientSchema = checkedSchema(await readFile(path.join(code, "schema.ts"), "utf8"), client.target);
     const names = (await readdir(dataDir)).filter((name) => name.endsWith(".json")).sort();
     const clientTables = Object.fromEntries(await Promise.all(names.map(async (name) => [
       name.slice(0, -5), JSON.parse(await readFile(path.join(dataDir, name), "utf8")),
@@ -183,6 +200,39 @@ function isWithin(directory, candidate) {
 
 function canonicalJson(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+// 校验 Luban 生成的 schema.ts 完整且语法正确，再返回规范化文本；截断或语法错误直接失败，不发布任何产物。
+// 接近单模板输出上限时只告警，提示该目标还剩多少字符。
+// Validate that a Luban schema.ts is complete and syntactically valid before normalizing it; truncation or
+// syntax errors fail before any output is published. Near the single-template limit only a warning is
+// printed with the remaining character budget for that target.
+function checkedSchema(raw, target) {
+  const text = raw.replaceAll("\r\n", "\n");
+  const truncatedHint = `Luban/Scriban caps one template render at ${lubanTemplateOutputLimit} characters `
+    + "and silently appends \"...\"; reduce the tables exported to this target or split the target";
+  if (text.trimEnd().endsWith("...")) {
+    throw new Error(`generated ${target} schema.ts was truncated at ${text.length} characters: ${truncatedHint}`);
+  }
+  const { diagnostics = [] } = ts.transpileModule(text, {
+    fileName: "schema.ts",
+    reportDiagnostics: true,
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+  });
+  if (diagnostics.length > 0) {
+    const [first] = diagnostics;
+    const where = first.file && first.start !== undefined
+      ? first.file.getLineAndCharacterOfPosition(first.start)
+      : undefined;
+    const location = where ? `${where.line + 1}:${where.character + 1}` : "?";
+    throw new Error(`generated ${target} schema.ts is not valid TypeScript at ${location} (${text.length} characters): `
+      + `${ts.flattenDiagnosticMessageText(first.messageText, "\n")}; ${truncatedHint}`);
+  }
+  if (text.length >= lubanTemplateOutputWarning) {
+    process.stderr.write(`[codegen:module-game-config] warning: ${target} schema.ts has ${text.length} characters, `
+      + `${lubanTemplateOutputLimit - text.length} left before the ${lubanTemplateOutputLimit}-character Luban template limit\n`);
+  }
+  return normalizeText(raw);
 }
 
 function normalizeText(value) {

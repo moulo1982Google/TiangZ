@@ -1,6 +1,6 @@
 {
   "name": "ets-runtime",
-  "version": "0.7.9",
+  "version": "0.7.10",
   "private": true,
   "license": "Apache-2.0",
   "packageManager": "npm@11.18.0",
@@ -106,7 +106,7 @@
     "test:ai-assistants": "node tools/ai-assistants/build.mjs && node tools/ai-assistants/check.mjs && node tools/ai-assistants/build.mjs --check && node --test tools/ai-assistants/check.test.mjs",
     "modules:create": "node tools/create_game_module.mjs",
     "modules:codegen-config": "node tools/codegen_module_game_config.mjs",
-    "test:game-modules": "node tools/game_module_catalog_self_test.mjs && node tools/module_game_config_codegen_self_test.mjs && node tools/module_protocol_codegen_self_test.mjs && node tools/game_module_scaffold_self_test.mjs && node tools/typecheck_game_modules.mjs --modules-dir tools/fixtures/game-modules && vitest run tests/legacy/game_module_system_self_test.test.ts && node tools/game_module_build_self_test.mjs",
+    "test:game-modules": "node tools/game_module_catalog_self_test.mjs && node tools/module_game_config_codegen_self_test.mjs && node tools/module_game_config_limit_self_test.mjs && node tools/module_protocol_codegen_self_test.mjs && node tools/game_module_scaffold_self_test.mjs && node tools/typecheck_game_modules.mjs --modules-dir tools/fixtures/game-modules && vitest run tests/legacy/game_module_system_self_test.test.ts && node tools/game_module_build_self_test.mjs",
     "check:project": "tiangz-check-project .",
     "verify:design-rule-sync": "node tools/verify_design_rules.mjs",
     "verify:design-rules": "npm run verify:design-rule-sync",

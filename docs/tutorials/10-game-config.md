@@ -86,6 +86,8 @@ game_config/generated/                         完整JSON数据包与schema/data
 
 所有Generated文件都禁止手改。服务端Model记录结构指纹，独立数据包记录数据指纹；客户端生成物记录它所携带的数据指纹，用于版本诊断。
 
+游戏模块的服务端`schema.ts`不带字段、表和枚举的注释块，客户端生成物保留注释；字段含义以表格定义为准。原因是Luban单个模板的输出上限为1,048,576字符，超出会被静默截断。生成器在发布前检查每个`schema.ts`：被截断或TypeScript语法不完整时直接失败、不覆盖已有产物；达到上限90%时输出`warning: ... left before ...`告警，此时应规划拆分导出到该目标的表。详见`tools/third_party/luban/README.md`。
+
 ## 服务端使用
 
 Model可以从生成目录导入；Hotfix通过`#tiangz/model`取得公开的`GameConfigs`：
