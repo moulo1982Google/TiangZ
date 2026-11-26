@@ -55,24 +55,7 @@ try {
     mkdir(codeDirectory, { recursive: true }),
     mkdir(dataDirectory, { recursive: true }),
   ]);
-  run("dotnet", [
-    lubanDll,
-    "-t",
-    module.gameConfig.target,
-    "-c",
-    "typescript-json",
-    "-d",
-    "json",
-    "--validationFailAsError",
-    "--customTemplateDir",
-    schemaTemplateDir,
-    "--conf",
-    module.gameConfig.project,
-    "-x",
-    `outputCodeDir=${codeDirectory}`,
-    "-x",
-    `outputDataDir=${dataDirectory}`,
-  ], module.root);
+  runLuban(module.gameConfig.target, codeDirectory, dataDirectory);
 
   const schema = checkedSchema(
     await readFile(path.join(codeDirectory, "schema.ts"), "utf8"),
@@ -124,9 +107,7 @@ try {
     const client = module.gameConfig.client;
     const code = path.join(stagingRoot, "client-code");
     const dataDir = path.join(stagingRoot, "client-data");
-    run("dotnet", [lubanDll, "-t", client.target, "-c", "typescript-json", "-d", "json",
-      "--validationFailAsError", "--customTemplateDir", schemaTemplateDir, "--conf", module.gameConfig.project,
-      "-x", `outputCodeDir=${code}`, "-x", `outputDataDir=${dataDir}`], module.root);
+    runLuban(client.target, code, dataDir);
     const clientSchema = checkedSchema(await readFile(path.join(code, "schema.ts"), "utf8"), client.target);
     const names = (await readdir(dataDir)).filter((name) => name.endsWith(".json")).sort();
     const clientTables = Object.fromEntries(await Promise.all(names.map(async (name) => [
@@ -169,6 +150,22 @@ async function fingerprintSources(directory, excludedDirectories) {
       hashes.push(`${relative}:${sha256(await readFile(file))}`);
     }
   }
+}
+
+// 两端共用同一组 Luban 参数（含去注释模板与严格校验），只差目标名与输出目录。
+// Both targets share one Luban argument list (comment-free template, strict validation); only target and outputs differ.
+function runLuban(target, codeDirectory, dataDirectory) {
+  run("dotnet", [
+    lubanDll,
+    "-t", target,
+    "-c", "typescript-json",
+    "-d", "json",
+    "--validationFailAsError",
+    "--customTemplateDir", schemaTemplateDir,
+    "--conf", module.gameConfig.project,
+    "-x", `outputCodeDir=${codeDirectory}`,
+    "-x", `outputDataDir=${dataDirectory}`,
+  ], module.root);
 }
 
 function run(command, argumentsList, cwd) {

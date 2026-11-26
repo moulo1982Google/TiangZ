@@ -47,6 +47,9 @@ try {
 
   const checked = runCodegen("--check");
   assert.equal(checked.status, 0, checked.output);
+  // 服务端清单的 sourceFingerprint 随表定义变化，只要服务端被重新发布就会不同；schema 相同时靠它发现部分发布。
+  // The server manifest's sourceFingerprint follows the table definitions, so any republish changes it.
+  const manifests = await readManifests();
 
   // 只有客户端超限：服务端 140 张仍可生成，但整次生成必须失败且两端产物都不变。
   // Only the client overflows: the 140 server tables still fit, yet the whole run must fail and keep both outputs.
@@ -56,6 +59,7 @@ try {
   assert.match(clientOverflow.output, /generated client schema\.ts was truncated at \d+ characters/);
   assert.equal(await readFile(schemaFile, "utf8"), schema, "client failure replaced the published server schema");
   assert.equal(await readFile(clientSchemaFile, "utf8"), clientSchema, "client failure replaced the published client schema");
+  assert.deepEqual(await readManifests(), manifests, "client failure republished a manifest");
 
   await writeTables(moduleRoot, 170);
   const overflow = runCodegen();
@@ -63,11 +67,18 @@ try {
   assert.match(overflow.output, /generated server schema\.ts was truncated at \d+ characters/);
   assert.equal(await readFile(schemaFile, "utf8"), schema, "failed generation replaced the published schema");
   assert.equal(await readFile(clientSchemaFile, "utf8"), clientSchema, "failed generation replaced the published client schema");
+  assert.deepEqual(await readManifests(), manifests, "failed generation republished a manifest");
 } finally {
   await rm(temporary, { recursive: true, force: true });
 }
 
 process.stdout.write("module game config limit self-test passed\n");
+
+// 读取两端已发布的版本清单。 / Read both published manifests.
+async function readManifests() {
+  return Promise.all(["game_config/generated", "generated/client/data"].map((directory) =>
+    readFile(path.join(moduleRoot, directory, "module-game-config.manifest.json"), "utf8")));
+}
 
 async function writeModule(target) {
   await Promise.all([

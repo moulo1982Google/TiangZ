@@ -109,10 +109,15 @@ try {
   const configText = await readFile(configFile, "utf8");
   const brokenClient = JSON.parse(configText);
   brokenClient.targets = brokenClient.targets.filter((target) => target.name !== "client");
+  // server.json 内容不随 luban.conf 变化；清单的 sourceFingerprint 会变，用它发现服务端被部分发布。
+  // server.json does not depend on luban.conf, but the manifest sourceFingerprint does and exposes a partial publish.
+  const serverManifestFile = path.join(generatedDataRoot, "module-game-config.manifest.json");
   const beforeFailure = await readFile(path.join(generatedDataRoot, "server.json"), "utf8");
+  const manifestBeforeFailure = await readFile(serverManifestFile, "utf8");
   await writeFile(configFile, JSON.stringify(brokenClient));
   assert.notEqual((await runCodegen(undefined, true)).code, 0);
   assert.equal(await readFile(path.join(generatedDataRoot, "server.json"), "utf8"), beforeFailure);
+  assert.equal(await readFile(serverManifestFile, "utf8"), manifestBeforeFailure, "client failure republished the server manifest");
   await writeFile(configFile, configText);
   const schemaFile = path.join(moduleRoot, "game_config/Defines/cards.xml");
   await writeFile(schemaFile, (await readFile(schemaFile, "utf8")).replace('name="name"', 'name="title"'));
