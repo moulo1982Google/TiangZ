@@ -39,10 +39,13 @@ try {
   if (!schema.includes("export class Card") || !schema.includes("export class Tables")) {
     throw new Error("generated TypeScript schema is missing the declared table types");
   }
-  // 服务端 schema 不带注释块，客户端保留官方模板的注释。 / Server schema drops comment blocks; client keeps them.
+  // 服务端与客户端 schema 都不带注释块，但仍导出声明的表类型。 / Both schemas drop comment blocks but still export the table types.
   const clientSchema = await readFile(path.join(moduleRoot, "generated/client/code/schema.ts"), "utf8");
   assert.ok(!schema.includes("Card definition comment"), "server schema still carries comments");
-  assert.ok(clientSchema.includes("Card definition comment"), "client schema lost its comments");
+  assert.ok(!clientSchema.includes("Card definition comment"), "client schema still carries comments");
+  assert.ok(!clientSchema.includes("/**"), "client schema still carries comment blocks");
+  assert.ok(clientSchema.includes("export class Card") && clientSchema.includes("export class Tables"),
+    "client schema is missing the declared table types");
 
   await runCodegen("--check");
   const other = path.join(temporary, "modules", "catalog");

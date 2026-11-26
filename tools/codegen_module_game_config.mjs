@@ -35,10 +35,11 @@ if (!module.gameConfig) {
 }
 
 const lubanDll = path.join(root, "tools", "third_party", "luban", "4.10.2", "Luban.dll");
-// 服务端目标使用去掉注释块的 schema 模板，给单模板输出上限留出余量；客户端仍用官方模板保留注释。
-// The server target uses a comment-free schema template to leave room under the single-template output
-// limit; the client target keeps the official template and its comments.
-const serverTemplateDir = path.join(root, "tools", "third_party", "luban", "server-templates");
+// 服务端与客户端目标都使用去掉注释块的 schema 模板，给单模板输出上限留出余量；目录名沿用 0.7.10 的
+// server-templates，下游脚本按同一路径传 --customTemplateDir。
+// Both the server and client targets use the comment-free schema template to leave room under the
+// single-template output limit; the directory keeps its 0.7.10 name so downstream scripts pass the same path.
+const schemaTemplateDir = path.join(root, "tools", "third_party", "luban", "server-templates");
 // Luban 4.10.2 自带的 Scriban 7 把单个模板的渲染结果限制为 TemplateContext.LimitToString（默认 1,048,576
 // 字符，Luban 未覆盖）；超出时静默截成前 1,048,576 字符加 "..."，Luban 仍以 0 退出。
 // Scriban 7 bundled with Luban 4.10.2 caps one template render at TemplateContext.LimitToString
@@ -64,7 +65,7 @@ try {
     "json",
     "--validationFailAsError",
     "--customTemplateDir",
-    serverTemplateDir,
+    schemaTemplateDir,
     "--conf",
     module.gameConfig.project,
     "-x",
@@ -124,7 +125,7 @@ try {
     const code = path.join(stagingRoot, "client-code");
     const dataDir = path.join(stagingRoot, "client-data");
     run("dotnet", [lubanDll, "-t", client.target, "-c", "typescript-json", "-d", "json",
-      "--validationFailAsError", "--conf", module.gameConfig.project,
+      "--validationFailAsError", "--customTemplateDir", schemaTemplateDir, "--conf", module.gameConfig.project,
       "-x", `outputCodeDir=${code}`, "-x", `outputDataDir=${dataDir}`], module.root);
     const clientSchema = checkedSchema(await readFile(path.join(code, "schema.ts"), "utf8"), client.target);
     const names = (await readdir(dataDir)).filter((name) => name.endsWith(".json")).sort();
