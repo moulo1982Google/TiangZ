@@ -1,6 +1,12 @@
 # 版本记录
 
-## 未发布
+## 0.7.11 — 2026-11-27（正式版，标签 `v0.7.11`）
+
+相对 0.7.10：模块游戏配置生成器的客户端目标也改用去注释块模板；Rust 依赖安全补丁（0.7.10 的遗留）。Rust 运行时行为、协议、Stable API 导出、TypeScript 类型与客户端 SDK 不变。宿主 `--version` 变为 0.7.11，使用启动器版本核对的工程需重建宿主。
+
+### 依赖
+
+- **RustSec 安全补丁（0.7.10 遗留）。** `cargo update -p quinn-proto -p quinn-udp -p url`，`Cargo.lock` 只改 4 个包且都在原次版本内：`quinn-proto` 0.11.18 → 0.11.19（RUSTSEC-2026-0523、RUSTSEC-2026-0524）、`quinn-udp` 0.5.15 → 0.5.16（RUSTSEC-2026-0538）、`url` 2.5.8 → 2.5.9（RUSTSEC-2026-0592）、`form_urlencoded` 1.2.2 → 1.2.3。本地 `npm run audit:dependencies` 通过（npm=0、cargo=0）。
 
 ### 变更
 
