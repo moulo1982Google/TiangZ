@@ -1,5 +1,19 @@
 # 版本记录
 
+## 0.7.11 — 2026-11-27（正式版，标签 `v0.7.11`）
+
+相对 0.7.10：模块游戏配置生成器的客户端目标也改用去注释块模板；Rust 依赖安全补丁（0.7.10 的遗留）。Rust 运行时行为、协议、Stable API 导出、TypeScript 类型与客户端 SDK 不变。宿主 `--version` 变为 0.7.11，使用启动器版本核对的工程需重建宿主。
+
+### 依赖
+
+- **RustSec 安全补丁（0.7.10 遗留）。** `cargo update -p quinn-proto -p quinn-udp -p url`，`Cargo.lock` 只改 4 个包且都在原次版本内：`quinn-proto` 0.11.18 → 0.11.19（RUSTSEC-2026-0523、RUSTSEC-2026-0524）、`quinn-udp` 0.5.15 → 0.5.16（RUSTSEC-2026-0538）、`url` 2.5.8 → 2.5.9（RUSTSEC-2026-0592）、`form_urlencoded` 1.2.2 → 1.2.3。本地 `npm run audit:dependencies` 通过（npm=0、cargo=0）。
+
+### 变更
+
+- **模块游戏配置：客户端 `schema.ts` 也改用去注释块模板，与服务端一致。** 0.7.10 只给服务端目标换了模板，客户端目标仍用 Luban 官方带注释模板，注释块约占客户端 `schema.ts` 的两成多，客户端会比服务端先撞上 Luban 单模板 1,048,576 字符的输出上限。现在 `codegen_module_game_config` 对客户端目标同样传 `--customTemplateDir tools/third_party/luban/server-templates`（目录名不变）。一个约 1,600 个顶层声明的下游模块实测：客户端渲染结果从 948,815 字符降到 725,089 字符（剩余从 99,761 增到 323,487），顶层导出、类成员与去掉注释后的打印结果逐一相同；服务端产物逐字节不变。代价是客户端编辑器里不再有表、字段与枚举的注释悬停说明，字段含义以表格定义为准。
+- `module_game_config_limit_self_test` 夹具增加客户端目标：140 张带注释的表在两个目标上都超过官方模板的上限，生成后两端都无注释块、完整且严格类型检查通过；只让客户端多出 30 张表时整次生成必须失败（报客户端截断），服务端与客户端已发布产物都不变。原自测“客户端保留注释”断言改为“客户端无注释块且仍导出表类型”。
+- 升级影响：已有模块的客户端 `schema.ts` 只少了注释块（导出符号、类型与解码代码不变），但字节与客户端清单里的 `schemaFingerprint` 会变，升级后须重新运行配置生成并提交、重新构建客户端；服务端 `schema.ts`、`fingerprint.ts`、`server.json` 与清单不变，不需要重启 Process。直接调用 Luban 自行生成或比对客户端 `schema.ts` 的下游脚本，须同样给客户端目标加 `--customTemplateDir tools/third_party/luban/server-templates`，否则会把注释差异误报为结构变化。
+
 ## 0.7.10 — 2026-11-24（正式版，标签 `v0.7.10`）
 
 相对 0.7.9：只修正模块游戏配置生成工具。Rust 运行时、协议、Stable API 导出、TypeScript 类型、客户端 SDK 与依赖不变。宿主 `--version` 变为 0.7.10，使用启动器版本核对的工程需重建宿主。

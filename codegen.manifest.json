@@ -82,7 +82,7 @@
     "native-data": {
       "command": "npm run codegen:native-data",
       "contentInputs": {
-        "package.json": "84b78ab32df85fbbf3ab0c0c4f96ac9292d0813993e09dd931e4feaab54f4c3c",
+        "package.json": "0341059ca49b97922fe99e5aa3fb1d8d2e9aeab9f0a4665b5ccc0cad588779bd",
         "tools/codegen_manifest.mjs": "3821d68ef1d1dda4b989134be4c4db98b41bb4be267519e1fa880606c77c07d1",
         "tools/codegen_native_data.mjs": "267f844863431b362f7c8aa74d52029171d49e5d8fbc0cf55a4468f16dd5dc6e"
       },
